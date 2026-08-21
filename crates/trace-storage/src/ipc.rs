@@ -9,7 +9,11 @@ use std::{
 use arrow_array::{
     Array, Float32Array, Float64Array, Int8Array, Int16Array, RecordBatch, UInt32Array, UInt64Array,
 };
-use arrow_ipc::{reader::FileReader, writer::FileWriter};
+use arrow_ipc::{
+    CompressionType,
+    reader::FileReader,
+    writer::{FileWriter, IpcWriteOptions},
+};
 use arrow_schema::{DataType, Field, Schema};
 use trace_domain::{CoordinateFrame, Gear, TelemetryFrame, WheelCorner};
 
@@ -20,6 +24,21 @@ const SCHEMA_VERSION: &str = "2";
 
 /// Current full-fidelity telemetry schema version written by TRACE.
 pub const TELEMETRY_SCHEMA_VERSION: u32 = 2;
+
+/// Compression policies supported by the standard Arrow IPC file writer.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum IpcCompression {
+    /// Store record-batch buffers without compression.
+    None,
+    /// Compress record-batch buffers with the LZ4 frame codec.
+    Lz4Frame,
+    /// Compress record-batch buffers with Zstandard's default level.
+    #[default]
+    Zstd,
+}
+
+/// Compression used by TRACE capture writers unless a caller selects another policy.
+pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
 /// Minimal decoded columns used to validate the Arrow storage choice.
 /// This is not yet the final full-resolution persistence schema.
@@ -91,7 +110,12 @@ pub fn encode_frames(frames: &[TelemetryFrame]) -> Result<Vec<u8>, IpcError> {
 
     let mut output = Cursor::new(Vec::new());
     {
-        let mut writer = FileWriter::try_new(&mut output, &schema).map_err(IpcError::from)?;
+        let mut writer = FileWriter::try_new_with_options(
+            &mut output,
+            &schema,
+            ipc_write_options(DEFAULT_IPC_COMPRESSION)?,
+        )
+        .map_err(IpcError::from)?;
         writer.write(&batch).map_err(IpcError::from)?;
         writer.finish().map_err(IpcError::from)?;
     }
@@ -113,12 +137,30 @@ impl<W: Write> TelemetryIpcWriter<W> {
     ///
     /// Returns [`IpcError::InvalidBatchSize`] for zero or an Arrow write error.
     pub fn new(writer: W, batch_size: usize) -> Result<Self, IpcError> {
+        Self::with_compression(writer, batch_size, DEFAULT_IPC_COMPRESSION)
+    }
+
+    /// Starts an Arrow IPC file using an explicit compression policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IpcError::InvalidBatchSize`] for zero or an Arrow write error.
+    pub fn with_compression(
+        writer: W,
+        batch_size: usize,
+        compression: IpcCompression,
+    ) -> Result<Self, IpcError> {
         if batch_size == 0 {
             return Err(IpcError::InvalidBatchSize);
         }
         let schema = Arc::new(schema());
         Ok(Self {
-            writer: FileWriter::try_new(writer, &schema).map_err(IpcError::from)?,
+            writer: FileWriter::try_new_with_options(
+                writer,
+                &schema,
+                ipc_write_options(compression)?,
+            )
+            .map_err(IpcError::from)?,
             pending: Vec::with_capacity(batch_size),
             batch_size,
             sample_count: 0,
@@ -174,6 +216,17 @@ impl<W: Write> TelemetryIpcWriter<W> {
         self.pending.clear();
         Ok(())
     }
+}
+
+fn ipc_write_options(compression: IpcCompression) -> Result<IpcWriteOptions, IpcError> {
+    let compression = match compression {
+        IpcCompression::None => None,
+        IpcCompression::Lz4Frame => Some(CompressionType::LZ4_FRAME),
+        IpcCompression::Zstd => Some(CompressionType::ZSTD),
+    };
+    IpcWriteOptions::default()
+        .try_with_compression(compression)
+        .map_err(IpcError::from)
 }
 
 #[allow(clippy::too_many_lines, clippy::from_iter_instead_of_collect)]
@@ -724,6 +777,39 @@ mod tests {
             decode_columns(&bytes).expect("decoded").sequence,
             vec![0, 1, 2, 3, 4]
         );
+    }
+
+    #[test]
+    fn every_compression_policy_produces_a_readable_arrow_file() {
+        let frames = (0..8)
+            .map(|sequence| TelemetryFrame {
+                sequence: FrameSequence(sequence),
+                elapsed: ElapsedNanoseconds(sequence * 10),
+                vehicle: VehicleState {
+                    speed_mps: Some(42.0),
+                    ..VehicleState::default()
+                },
+                ..TelemetryFrame::default()
+            })
+            .collect::<Vec<_>>();
+
+        for compression in [
+            IpcCompression::None,
+            IpcCompression::Lz4Frame,
+            IpcCompression::Zstd,
+        ] {
+            let mut writer =
+                TelemetryIpcWriter::with_compression(Vec::new(), 3, compression).expect("writer");
+            for frame in &frames {
+                writer.push(frame.clone()).expect("frame");
+            }
+            let (bytes, samples) = writer.finish().expect("finished");
+            assert_eq!(samples, 8);
+            assert_eq!(
+                decode_columns(&bytes).expect("decoded").sequence,
+                (0..8).collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]

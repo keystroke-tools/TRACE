@@ -29,3 +29,7 @@ run = [
   "pnpm --if-present check",
   "pnpm --if-present build",
 ]
+
+[tasks.bench-storage]
+description = "Benchmark Arrow IPC storage codecs at target sample rates"
+run = "cargo run --release -p trace-storage --example arrow_benchmark"
