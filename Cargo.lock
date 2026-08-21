@@ -3817,6 +3817,7 @@ name = "trace-ac"
 version = "0.1.0"
 dependencies = [
  "trace-domain",
+ "trace-windows-shmem",
 ]
 
 [[package]]
@@ -3870,6 +3871,13 @@ dependencies = [
  "serde",
  "sha2",
  "trace-domain",
+]
+
+[[package]]
+name = "trace-windows-shmem"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -8,6 +8,7 @@ members = [
   "crates/trace-domain",
   "crates/trace-protocol",
   "crates/trace-storage",
+  "crates/trace-windows-shmem",
 ]
 
 [workspace.package]

@@ -4,7 +4,10 @@
 //! validated page-prefix readers and deterministic mapping; live Windows mapping is
 //! Phase 2 work.
 
+mod capture;
 mod pages;
+
+pub use capture::{AcAvailability, AcCaptureError, AcSharedMemory, AcSnapshot};
 
 use trace_domain::{
     CoordinateFrame, DriverInputs, ElapsedNanoseconds, EnvironmentState, FrameSequence, Gear,
