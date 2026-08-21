@@ -33,6 +33,27 @@
   * {
     border-radius: 0;
     box-sizing: border-box;
+    scrollbar-color: var(--color-trace-accent-muted) var(--color-trace-deep);
+    scrollbar-width: thin;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--color-trace-deep);
+    border-left: 1px solid var(--color-trace-divider);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-trace-accent-muted);
+    border: 2px solid var(--color-trace-deep);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-trace-accent-dark);
   }
 
   body {

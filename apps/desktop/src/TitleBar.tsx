@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ReactNode } from "react";
+import type { TelemetryStatus } from "./data-source";
 
 const desktopWindow = isTauri() ? getCurrentWindow() : null;
 
@@ -10,22 +11,44 @@ function runWindowCommand(command: () => Promise<void>) {
   });
 }
 
-export function TitleBar() {
+export function TitleBar({ status }: { status: TelemetryStatus | null }) {
+  const state = status?.connection ?? "waiting";
+  const recording = state === "recording";
+  const failed = state === "error";
+
   return (
-    <div className="col-span-full flex select-none items-stretch border-b border-trace-divider bg-trace-black">
+    <div className="col-span-full grid select-none grid-cols-[176px_minmax(0,1fr)_auto_auto] items-stretch border-b border-trace-divider bg-trace-black max-[900px]:grid-cols-[140px_minmax(0,1fr)_auto_auto]">
       <div
-        className="flex min-w-0 flex-1 items-center gap-3 px-3"
+        className="flex items-center border-r border-trace-divider px-5 text-[18px] font-black tracking-[.12em]"
         data-tauri-drag-region
         onDoubleClick={() => {
           if (desktopWindow) runWindowCommand(() => desktopWindow.toggleMaximize());
         }}
       >
-        <span className="font-mono text-[11px] font-black tracking-[.14em] text-trace-accent" data-tauri-drag-region>
-          TRACE //
-        </span>
-        <span className="truncate font-mono text-[10px] tracking-[.1em] text-trace-dim" data-tauri-drag-region>
-          FIND THE TIME
-        </span>
+        <span data-tauri-drag-region>TRACE</span>
+        <span className="text-trace-accent" data-tauri-drag-region>//</span>
+      </div>
+      <div
+        className="flex min-w-0 items-center px-[22px] text-xs tracking-[.1em] text-trace-soft"
+        data-tauri-drag-region
+        onDoubleClick={() => {
+          if (desktopWindow) runWindowCommand(() => desktopWindow.toggleMaximize());
+        }}
+      >
+        <span className="truncate" data-tauri-drag-region>{status?.session ?? "NO ACTIVE SESSION"}</span>
+      </div>
+      <div className="flex items-center gap-2.5 border-l border-trace-divider px-4 font-mono text-[10px] font-bold tracking-[.1em] text-trace-muted">
+        <span
+          className={`size-2 rounded-full ${
+            recording
+              ? "animate-pulse bg-trace-accent shadow-[0_0_10px_var(--color-trace-accent)]"
+              : failed
+                ? "bg-trace-warning shadow-[0_0_8px_var(--color-trace-warning)]"
+                : "bg-trace-dim"
+          }`}
+          aria-hidden="true"
+        />
+        <span>{state.toUpperCase()}</span>
       </div>
       <div className="flex" aria-label="Window controls">
         <WindowButton
@@ -81,7 +104,7 @@ function WindowButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`group grid h-10 w-12 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
+      className={`group grid h-12 w-12 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
         close ? "hover:bg-trace-danger" : "hover:bg-trace-raised"
       }`}
     >

@@ -35,9 +35,8 @@ export function App() {
   }, [section]);
 
   return (
-    <main className="grid h-screen grid-cols-[176px_1fr] grid-rows-[40px_68px_minmax(0,1fr)_38px] bg-trace-base text-trace-text max-[900px]:grid-cols-[140px_1fr]">
-      <TitleBar />
-      <Header status={status} />
+    <main className="grid h-screen grid-cols-[176px_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text max-[900px]:grid-cols-[140px_1fr]">
+      <TitleBar status={status} />
       <Navigation active={section} onChange={setSection} />
       <section className="trace-grid overflow-auto p-7">
         {section === "SESSIONS" ? (
@@ -48,26 +47,6 @@ export function App() {
       </section>
       <Footer />
     </main>
-  );
-}
-
-function Header({ status }: { status: TelemetryStatus | null }) {
-  return (
-    <header className="col-span-full grid grid-cols-[176px_1fr_auto] items-stretch border-b border-trace-divider bg-trace-surface max-[900px]:grid-cols-[140px_1fr_auto]">
-      <div className="flex items-center border-r border-trace-divider px-5 text-[22px] font-black tracking-[.12em]">
-        TRACE<span className="text-trace-accent">//</span>
-      </div>
-      <div className="flex items-center px-[22px] text-xs tracking-[.1em] text-trace-soft">
-        {status?.session ?? "NO ACTIVE SESSION"}
-      </div>
-      <button
-        type="button"
-        className="border-0 border-l border-trace-accent-dark bg-trace-accent px-7 text-xs font-extrabold tracking-[.12em] text-trace-base disabled:bg-trace-accent-muted disabled:text-trace-accent-dark"
-        disabled
-      >
-        GO LIVE
-      </button>
-    </header>
   );
 }
 
@@ -178,8 +157,15 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
           <div className="grid min-h-12 grid-cols-[72px_1fr_80px] items-center px-4 font-mono text-[11px]" key={lap.index}>
             <span className="text-trace-faint">LAP {String(lap.index).padStart(2, "0")}</span>
             <strong className={lap.validity === "valid" ? "text-trace-text" : "text-trace-dim"}>{lap.time}</strong>
-            <span className={`text-right text-[10px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : "text-trace-warning"}`}>
-              {lap.validity.toUpperCase()}
+            <span
+              className={`text-right text-[10px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : "text-trace-warning"}`}
+              title={lap.validityReason ?? undefined}
+            >
+              {lap.validity === "unknown"
+                ? "UNVERIFIED"
+                : lap.validityReason?.includes("partial")
+                  ? "PARTIAL"
+                  : lap.validity.toUpperCase()}
             </span>
           </div>
         ))}
