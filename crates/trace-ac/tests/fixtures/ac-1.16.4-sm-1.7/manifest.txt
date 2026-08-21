@@ -1,0 +1,9 @@
+format=trace.ac.fixture.v1
+privacy=static page rebuilt from non-personal allowlist
+shared_memory_version=1.7
+assetto_corsa_version=1.16.4
+car_model=ks_mazda_mx5_cup
+track=zandvoort2023
+physics_bytes=200
+graphics_bytes=292
+static_bytes=476

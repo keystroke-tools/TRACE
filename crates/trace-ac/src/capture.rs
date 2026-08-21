@@ -44,6 +44,22 @@ pub struct AcSnapshot {
     static_page: Vec<u8>,
 }
 
+/// Packet-stable page prefixes suitable for a checked-in regression fixture.
+///
+/// Physics and graphics contain no player identity fields in TRACE's validated
+/// prefixes. The static page is reconstructed from decoded version, car, track, and
+/// temperature values so player names and unsupported bytes are never exported.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AcRedactedFixture {
+    pub physics: Vec<u8>,
+    pub graphics: Vec<u8>,
+    pub static_page: Vec<u8>,
+    pub shared_memory_version: Option<String>,
+    pub assetto_corsa_version: Option<String>,
+    pub car_model: Option<String>,
+    pub track: Option<String>,
+}
+
 impl AcSnapshot {
     /// Creates an owned snapshot from captured page bytes after validating prefixes.
     ///
@@ -106,6 +122,38 @@ impl AcSnapshot {
             .expect("snapshot pages validated at acquisition")
             .packet_id();
         (physics, graphics)
+    }
+
+    pub(crate) fn versions(&self) -> Result<(Option<String>, Option<String>), AcCaptureError> {
+        let page = pages::StaticPage::parse(&self.static_page)?;
+        Ok((page.shared_memory_version(), page.assetto_corsa_version()))
+    }
+
+    /// Produces page prefixes for regression testing without exporting personal data.
+    ///
+    /// # Errors
+    ///
+    /// Returns a capture error if the validated static prefix can no longer be mapped.
+    pub fn redacted_fixture(&self) -> Result<AcRedactedFixture, AcCaptureError> {
+        let (session, environment) = self.map_session()?;
+        let (shared_memory_version, assetto_corsa_version) = self.versions()?;
+        let static_page = pages::redacted_static_page(
+            shared_memory_version.as_deref(),
+            assetto_corsa_version.as_deref(),
+            session.car_id.as_deref(),
+            session.track_id.as_deref(),
+            environment.and_then(|value| value.ambient_temperature_c),
+            environment.and_then(|value| value.track_temperature_c),
+        );
+        Ok(AcRedactedFixture {
+            physics: self.physics.clone(),
+            graphics: self.graphics.clone(),
+            static_page,
+            shared_memory_version,
+            assetto_corsa_version,
+            car_model: session.car_id,
+            track: session.track_id,
+        })
     }
 }
 
@@ -266,5 +314,18 @@ mod tests {
             AcSharedMemory::detect(),
             Ok(AcAvailability::UnsupportedPlatform)
         );
+    }
+
+    #[test]
+    fn redacted_fixture_zeros_unsupported_static_regions() {
+        let physics = vec![0; pages::PHYSICS_PREFIX_LENGTH];
+        let graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
+        let static_page = vec![0x41; pages::STATIC_PREFIX_LENGTH];
+        let snapshot =
+            AcSnapshot::from_pages(physics, graphics, static_page).expect("valid prefixes");
+
+        let fixture = snapshot.redacted_fixture().expect("redacted fixture");
+        assert!(fixture.static_page[200..456].iter().all(|byte| *byte == 0));
+        assert_eq!(fixture.static_page.len(), pages::STATIC_PREFIX_LENGTH);
     }
 }

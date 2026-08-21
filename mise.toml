@@ -1,4 +1,6 @@
 [tools]
+"cargo:cargo-xwin" = "0.23.1"
+clang = "22.1.8"
 node = "26.5.0"
 pnpm = "11.17.0"
 rust = { version = "1.91.1", profile = "minimal", components = "clippy,rustfmt" }
@@ -33,3 +35,7 @@ run = [
 [tasks.bench-storage]
 description = "Benchmark Arrow IPC storage codecs at target sample rates"
 run = "cargo run --release -p trace-storage --example arrow_benchmark"
+
+[tasks.build-ac-fixture-collector]
+description = "Cross-compile the privacy-redacted AC fixture collector for Windows"
+run = "cargo xwin build --target x86_64-pc-windows-msvc -p trace-ac --example capture_fixture --release"

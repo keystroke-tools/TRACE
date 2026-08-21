@@ -15,6 +15,7 @@ const STATUS_REPLAY: i32 = 1;
 const STATUS_LIVE: i32 = 2;
 const STATUS_PAUSE: i32 = 3;
 const DEFAULT_STALE_PACKET_TIMEOUT: Duration = Duration::from_secs(5);
+const SUPPORTED_SHARED_MEMORY_VERSION: &str = "1.7";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcRuntimeStatus {
@@ -182,6 +183,15 @@ impl<S: AcSource> AcAdapter<S> {
             AcAvailability::Available => {
                 self.source.connect().map_err(adapter_error)?;
                 let snapshot = self.source.snapshot().map_err(adapter_error)?;
+                let (shared_memory_version, assetto_corsa_version) =
+                    snapshot.versions().map_err(adapter_error)?;
+                if shared_memory_version.as_deref() != Some(SUPPORTED_SHARED_MEMORY_VERSION) {
+                    self.source.disconnect();
+                    return Err(AdapterError::InvalidSource(format!(
+                        "unsupported Assetto Corsa shared-memory version {}; expected {SUPPORTED_SHARED_MEMORY_VERSION}",
+                        shared_memory_version.as_deref().unwrap_or("missing")
+                    )));
+                }
                 let (session, environment) = snapshot.map_session().map_err(adapter_error)?;
                 let status = runtime_status(snapshot.status())?;
                 if status == AcRuntimeStatus::Off {
@@ -206,7 +216,7 @@ impl<S: AcSource> AcAdapter<S> {
                 self.next_sequence = 1;
 
                 let mut events = vec![
-                    AdapterEvent::Detected(source_descriptor()),
+                    AdapterEvent::Detected(source_descriptor(assetto_corsa_version)),
                     AdapterEvent::Connected(session),
                     AdapterEvent::CapabilitiesChanged(capabilities()),
                 ];
@@ -297,11 +307,11 @@ impl<S: AcSource> AcAdapter<S> {
     }
 }
 
-fn source_descriptor() -> SourceDescriptor {
+fn source_descriptor(simulator_version: Option<String>) -> SourceDescriptor {
     SourceDescriptor {
         simulator: SimulatorId::parse("assetto-corsa").expect("static simulator identifier"),
         adapter_version: env!("CARGO_PKG_VERSION").into(),
-        simulator_version: None,
+        simulator_version,
     }
 }
 
@@ -412,12 +422,18 @@ mod tests {
     }
 
     fn snapshot(status: i32, car: &str, track: &str) -> AcSnapshot {
+        snapshot_with_version(status, car, track, SUPPORTED_SHARED_MEMORY_VERSION)
+    }
+
+    fn snapshot_with_version(status: i32, car: &str, track: &str, version: &str) -> AcSnapshot {
         let physics = vec![0; pages::PHYSICS_PREFIX_LENGTH];
         let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
         put_i32(&mut graphics, 4, status);
         let mut static_page = vec![0; pages::STATIC_PREFIX_LENGTH];
-        put_utf16(&mut static_page, 72, 33, car);
-        put_utf16(&mut static_page, 140, 33, track);
+        put_utf16(&mut static_page, 0, 15, version);
+        put_utf16(&mut static_page, 30, 15, "fixture");
+        put_utf16(&mut static_page, 68, 33, car);
+        put_utf16(&mut static_page, 134, 33, track);
         AcSnapshot::from_pages(physics, graphics, static_page).expect("valid snapshot")
     }
 
@@ -436,7 +452,10 @@ mod tests {
             AcAdapter::with_source(source([snapshot(STATUS_LIVE, "tatuusfa1", "mugello")]));
         let events = adapter.poll().expect("connect events");
 
-        assert!(matches!(events[0], AdapterEvent::Detected(_)));
+        assert!(matches!(
+            &events[0],
+            AdapterEvent::Detected(source) if source.simulator_version.as_deref() == Some("fixture")
+        ));
         assert!(matches!(events[1], AdapterEvent::Connected(_)));
         assert!(matches!(events[2], AdapterEvent::CapabilitiesChanged(_)));
         assert!(matches!(
@@ -510,6 +529,18 @@ mod tests {
             adapter.poll().expect("recovered frame")[0],
             AdapterEvent::Frame(_)
         ));
+    }
+
+    #[test]
+    fn rejects_an_unverified_shared_memory_version() {
+        let unsupported = snapshot_with_version(STATUS_LIVE, "car-a", "track-a", "9.9");
+        let mut adapter = AcAdapter::with_source(source([unsupported]));
+
+        assert!(matches!(
+            adapter.poll(),
+            Err(AdapterError::InvalidSource(message)) if message.contains("version 9.9")
+        ));
+        assert_eq!(adapter.source.disconnects, 1);
     }
 
     #[test]

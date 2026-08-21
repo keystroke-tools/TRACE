@@ -5,6 +5,14 @@ use crate::AcPageError;
 pub(crate) const PHYSICS_PREFIX_LENGTH: usize = 200;
 pub(crate) const GRAPHICS_PREFIX_LENGTH: usize = 292;
 pub(crate) const STATIC_PREFIX_LENGTH: usize = 476;
+const STATIC_SHARED_MEMORY_VERSION_OFFSET: usize = 0;
+const STATIC_AC_VERSION_OFFSET: usize = 30;
+const STATIC_VERSION_SLOTS: usize = 15;
+const STATIC_CAR_MODEL_OFFSET: usize = 68;
+const STATIC_TRACK_OFFSET: usize = 134;
+const STATIC_ID_SLOTS: usize = 33;
+const STATIC_AIR_TEMPERATURE_OFFSET: usize = 456;
+const STATIC_ROAD_TEMPERATURE_OFFSET: usize = 460;
 
 pub(crate) struct PhysicsPage<'a>(&'a [u8]);
 
@@ -85,17 +93,66 @@ impl<'a> StaticPage<'a> {
     }
 
     pub(crate) fn car_model(&self) -> Option<String> {
-        read_utf16(self.0, 72, 33)
+        read_utf16(self.0, STATIC_CAR_MODEL_OFFSET, STATIC_ID_SLOTS)
     }
     pub(crate) fn track(&self) -> Option<String> {
-        read_utf16(self.0, 140, 33)
+        read_utf16(self.0, STATIC_TRACK_OFFSET, STATIC_ID_SLOTS)
     }
     pub(crate) fn air_temperature(&self) -> f32 {
-        read_f32(self.0, 468)
+        read_f32(self.0, STATIC_AIR_TEMPERATURE_OFFSET)
     }
     pub(crate) fn road_temperature(&self) -> f32 {
-        read_f32(self.0, 472)
+        read_f32(self.0, STATIC_ROAD_TEMPERATURE_OFFSET)
     }
+    pub(crate) fn shared_memory_version(&self) -> Option<String> {
+        read_utf16(
+            self.0,
+            STATIC_SHARED_MEMORY_VERSION_OFFSET,
+            STATIC_VERSION_SLOTS,
+        )
+    }
+    pub(crate) fn assetto_corsa_version(&self) -> Option<String> {
+        read_utf16(self.0, STATIC_AC_VERSION_OFFSET, STATIC_VERSION_SLOTS)
+    }
+}
+
+pub(crate) fn redacted_static_page(
+    shared_memory_version: Option<&str>,
+    assetto_corsa_version: Option<&str>,
+    car_model: Option<&str>,
+    track: Option<&str>,
+    air_temperature: Option<f32>,
+    road_temperature: Option<f32>,
+) -> Vec<u8> {
+    let mut bytes = vec![0; STATIC_PREFIX_LENGTH];
+    write_utf16(
+        &mut bytes,
+        STATIC_SHARED_MEMORY_VERSION_OFFSET,
+        STATIC_VERSION_SLOTS,
+        shared_memory_version,
+    );
+    write_utf16(
+        &mut bytes,
+        STATIC_AC_VERSION_OFFSET,
+        STATIC_VERSION_SLOTS,
+        assetto_corsa_version,
+    );
+    write_utf16(
+        &mut bytes,
+        STATIC_CAR_MODEL_OFFSET,
+        STATIC_ID_SLOTS,
+        car_model,
+    );
+    write_utf16(&mut bytes, STATIC_TRACK_OFFSET, STATIC_ID_SLOTS, track);
+    if let Some(value) = air_temperature {
+        bytes[STATIC_AIR_TEMPERATURE_OFFSET..STATIC_AIR_TEMPERATURE_OFFSET + 4]
+            .copy_from_slice(&value.to_le_bytes());
+    }
+    if let Some(value) = road_temperature {
+        bytes[STATIC_ROAD_TEMPERATURE_OFFSET..STATIC_ROAD_TEMPERATURE_OFFSET + 4]
+            .copy_from_slice(&value.to_le_bytes());
+    }
+    bytes
 }
 
 fn require_length(bytes: &[u8], expected: usize) -> Result<&[u8], AcPageError> {
@@ -147,5 +204,19 @@ fn read_utf16(bytes: &[u8], offset: usize, slots: usize) -> Option<String> {
         String::from_utf16(&units)
             .ok()
             .filter(|value| !value.is_empty())
+    }
+}
+
+fn write_utf16(bytes: &mut [u8], offset: usize, slots: usize, value: Option<&str>) {
+    let Some(value) = value else {
+        return;
+    };
+    for (index, unit) in value
+        .encode_utf16()
+        .take(slots.saturating_sub(1))
+        .enumerate()
+    {
+        let start = offset + index * 2;
+        bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
     }
 }

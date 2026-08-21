@@ -9,7 +9,7 @@ mod capture;
 mod pages;
 
 pub use adapter::{AcAdapter, AcSource, SystemAcSource};
-pub use capture::{AcAvailability, AcCaptureError, AcSharedMemory, AcSnapshot};
+pub use capture::{AcAvailability, AcCaptureError, AcRedactedFixture, AcSharedMemory, AcSnapshot};
 
 use trace_domain::{
     CoordinateFrame, DriverInputs, ElapsedNanoseconds, EnvironmentState, FrameSequence, Gear,
@@ -237,10 +237,10 @@ mod tests {
     #[test]
     fn static_utf16_identity_and_conditions_are_mapped() {
         let mut page = vec![0; pages::STATIC_PREFIX_LENGTH];
-        put_utf16(&mut page, 72, 33, "tatuusfa1");
-        put_utf16(&mut page, 140, 33, "mugello");
-        put_f32(&mut page, 468, 24.0);
-        put_f32(&mut page, 472, 31.0);
+        put_utf16(&mut page, 68, 33, "tatuusfa1");
+        put_utf16(&mut page, 134, 33, "mugello");
+        put_f32(&mut page, 456, 24.0);
+        put_f32(&mut page, 460, 31.0);
 
         let (session, environment) = map_session(&page).expect("valid static page");
         assert_eq!(session.car_id.as_deref(), Some("tatuusfa1"));
