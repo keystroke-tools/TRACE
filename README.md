@@ -46,6 +46,8 @@ Currently implemented:
   disconnect, and reconnect transitions
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
+- Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
+- Typed session-browser route with replay-fixture and empty native data states
 
 The complete product direction and current technical proposal are documented in:
 

@@ -32,11 +32,17 @@ SDK, or an LLM provider. `apps/desktop/src-tauri` is the desktop composition roo
 
 ## Desktop shell
 
-The minimal Tauri 2 and React shell establishes the four top-level sections, hard
-edged TRACE palette/layout, tabular status values, and a `TelemetryDataSource`
-boundary. Browser development uses a replay fixture; the Tauri build obtains the
-same status DTO through a command rather than a local HTTP server. Live capture and
-comparison UI remain intentionally absent.
+The Tauri 2, React, and Tailwind CSS 4 shell establishes the four top-level sections,
+hard-edged TRACE palette/layout, tabular status values, and a `TelemetryDataSource`
+boundary. TRACE colors and typography are CSS-first Tailwind theme variables. Browser
+development uses an explicitly labelled replay fixture; the Tauri build obtains DTOs
+through commands rather than a local HTTP server.
+
+The Sessions route now defines the first typed session/lap summary presentation.
+Browser development displays one replay fixture, while the native command returns an
+empty archive until SQLite recording persistence is connected. The UI therefore does
+not imply that capture data has been stored when it has not. Compare and setup
+workspaces remain intentionally absent.
 
 Frontend typechecking and production builds run through pnpm/Mise. Building the
 native shell on Linux additionally requires Tauri's GTK 3, Pango, and WebKitGTK host

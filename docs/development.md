@@ -4,6 +4,15 @@ TRACE uses Mise as the single toolchain entry point. `mise.toml` pins Rust, Node
 and pnpm; `pnpm-lock.yaml` and `Cargo.lock` pin resolved dependencies. Do not install
 project dependency versions ad hoc when they belong in these files.
 
+The desktop frontend uses Tailwind CSS 4 through the official Vite plugin. TRACE
+tokens are defined with Tailwind's CSS-first `@theme` directive in
+`apps/desktop/src/styles.css`; there is intentionally no legacy JavaScript Tailwind
+configuration file. Prefer named TRACE utilities and restrained arbitrary values over
+reintroducing a parallel component-class styling system.
+
+References: [Tailwind's Vite installation](https://tailwindcss.com/docs/installation/using-vite)
+and [theme-variable documentation](https://tailwindcss.com/docs/theme).
+
 ## Bootstrap
 
 Install [Mise](https://mise.jdx.dev/), then from the repository root run:
@@ -115,6 +124,9 @@ secrets. Check `.gitignore` before introducing a new generator or tool.
 
 - A Tauri build that cannot find GTK, Pango, or WebKitGTK needs native host packages;
   this is not a Rust dependency failure.
+- Cross-checking the complete Windows Tauri shell from Linux additionally requires a
+  Windows resource compiler such as `llvm-rc`; the Windows CI runner performs the
+  authoritative native check.
 - A `mise` trust error is resolved with `mise trust mise.toml` after reviewing the
   file.
 - A frozen pnpm install failure means `package.json` and `pnpm-lock.yaml` disagree.
