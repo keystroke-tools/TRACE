@@ -135,6 +135,29 @@ packet remains a temporary acquisition error and does not split the session. Los
 the underlying mappings is a distinct adapter error that closes the current canonical
 recording, allowing a later simulator detection to begin a fresh session cleanly.
 
+## Recording an Assetto Corsa replay
+
+TRACE can record telemetry while Assetto Corsa plays a replay because AC exposes the
+playback through the same documented shared-memory pages as a live session. This is
+not direct parsing of an `.acreplay` file: AC must be running and playing the replay.
+The stored session is labelled `simulator_replay`, while an on-track session is
+labelled `native_capture`, so downstream comparisons retain their provenance.
+
+For a reliable recording:
+
+1. Start TRACE before starting replay playback.
+2. Play the replay forward at normal speed without seeking, rewinding, or changing
+   playback speed.
+3. Allow at least two complete start/finish crossings to pass. The first observed lap
+   is deliberately excluded from lap metadata because TRACE may have attached partway
+   through it.
+4. Let playback finish or exit the replay normally so AC reports a clean source close
+   and TRACE can finalize the session.
+
+Replay transport controls are not represented by the vanilla shared-memory contract.
+Seeking or reversing can make frame time and lap counters regress, so TRACE rejects
+those ambiguous transitions rather than manufacturing a plausible-looking lap.
+
 ## Remaining Phase 2 acquisition requirements
 
 The privacy-redacted AC 1.16.4/shared-memory 1.7 fixture validates the currently
@@ -143,5 +166,5 @@ track, air temperature, and road temperature. Local recording is already indepen
 from any future live network path.
 
 Phase 2 still needs an observed end-to-end Windows desktop run proving that a driven
-lap appears in the session browser. Every additional shared-memory ABI must add a
-version-labelled capture before TRACE accepts it.
+or normally played replay lap appears in the session browser. Every additional
+shared-memory ABI must add a version-labelled capture before TRACE accepts it.

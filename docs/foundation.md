@@ -296,6 +296,12 @@ error finalizes it conservatively. Persistence failures are surfaced in worker s
 and logged without terminating future capture attempts. The React shell polls worker
 status and refreshes the Sessions archive while it is visible.
 
+The source descriptor follows each recording into session metadata. Live AC sessions
+are stored as `native_capture`; telemetry observed while AC reports replay mode is
+stored as `simulator_replay`; future file adapters use `imported`. Replay capture is
+therefore analyzable through the same canonical pipeline without losing how the data
+entered TRACE.
+
 Live capture uses `SessionRecorder::streaming`, which retains only the previous frame,
 lap boundaries, and sample counters. Each accepted frame moves directly into an Arrow
 IPC encoder. The encoder flushes at 240 frames (approximately four seconds at the

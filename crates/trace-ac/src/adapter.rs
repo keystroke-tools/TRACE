@@ -5,7 +5,7 @@ use trace_adapter::{
 };
 use trace_domain::{
     ChannelAvailability, ChannelCapabilities, ChannelDescriptor, ChannelId, ElapsedNanoseconds,
-    FrameSequence, SessionSeed, SimulatorId, SourceDescriptor, Unit, ValueProvenance,
+    FrameSequence, SessionSeed, SimulatorId, SourceDescriptor, SourceKind, Unit, ValueProvenance,
 };
 
 use crate::{AcAvailability, AcCaptureError, AcSharedMemory, AcSnapshot};
@@ -20,7 +20,8 @@ const SUPPORTED_SHARED_MEMORY_VERSION: &str = "1.7";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcRuntimeStatus {
     Off,
-    Running,
+    Live,
+    Replay,
     Paused,
 }
 
@@ -216,7 +217,10 @@ impl<S: AcSource> AcAdapter<S> {
                 self.next_sequence = 1;
 
                 let mut events = vec![
-                    AdapterEvent::Detected(source_descriptor(assetto_corsa_version)),
+                    AdapterEvent::Detected(source_descriptor(
+                        assetto_corsa_version,
+                        status == AcRuntimeStatus::Replay,
+                    )),
                     AdapterEvent::Connected(session),
                     AdapterEvent::CapabilitiesChanged(capabilities()),
                 ];
@@ -307,18 +311,24 @@ impl<S: AcSource> AcAdapter<S> {
     }
 }
 
-fn source_descriptor(simulator_version: Option<String>) -> SourceDescriptor {
+fn source_descriptor(simulator_version: Option<String>, replay: bool) -> SourceDescriptor {
     SourceDescriptor {
         simulator: SimulatorId::parse("assetto-corsa").expect("static simulator identifier"),
         adapter_version: env!("CARGO_PKG_VERSION").into(),
         simulator_version,
+        kind: if replay {
+            SourceKind::SimulatorReplay
+        } else {
+            SourceKind::NativeCapture
+        },
     }
 }
 
 fn runtime_status(status: i32) -> Result<AcRuntimeStatus, AdapterError> {
     match status {
         STATUS_OFF => Ok(AcRuntimeStatus::Off),
-        STATUS_REPLAY | STATUS_LIVE => Ok(AcRuntimeStatus::Running),
+        STATUS_REPLAY => Ok(AcRuntimeStatus::Replay),
+        STATUS_LIVE => Ok(AcRuntimeStatus::Live),
         STATUS_PAUSE => Ok(AcRuntimeStatus::Paused),
         value => Err(AdapterError::InvalidSource(format!(
             "Assetto Corsa reported unknown graphics status {value}"
@@ -461,6 +471,18 @@ mod tests {
         assert!(matches!(
             &events[3],
             AdapterEvent::Frame(frame) if frame.sequence == FrameSequence(0)
+        ));
+    }
+
+    #[test]
+    fn identifies_replay_as_a_distinct_source_kind() {
+        let mut adapter =
+            AcAdapter::with_source(source([snapshot(STATUS_REPLAY, "car-a", "track-a")]));
+        let events = adapter.poll().expect("replay connect");
+
+        assert!(matches!(
+            &events[0],
+            AdapterEvent::Detected(source) if source.kind == SourceKind::SimulatorReplay
         ));
     }
 

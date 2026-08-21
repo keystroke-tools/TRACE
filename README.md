@@ -48,6 +48,8 @@ Currently implemented:
 - Pause-aware stale-packet detection after abnormal Assetto Corsa exits
 - Assetto Corsa adapter lifecycle with capabilities, pause/resume, session changes,
   disconnect, and reconnect transitions
+- Assetto Corsa replay capture through the running simulator, with replay provenance
+  preserved in the local session archive
 - Simulator-agnostic session recording with conservative lap-boundary detection
 - Transactional SQLite session/lap writes and bounded native archive queries
 - Recovery-aware Arrow blob and SQLite completion orchestration

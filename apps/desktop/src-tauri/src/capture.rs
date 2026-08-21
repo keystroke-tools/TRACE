@@ -8,7 +8,7 @@ use std::{
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use trace_ac::AcAdapter;
 use trace_adapter::{AdapterError, AdapterEvent, DisconnectReason, SimulatorAdapter};
-use trace_domain::SessionSeed;
+use trace_domain::{SessionSeed, SourceDescriptor, SourceKind};
 use trace_recorder::{
     RecorderOutput, SessionRecorder,
     persistence::{CompletionDescriptor, persist_streamed_recording},
@@ -138,10 +138,10 @@ fn handle_output(
     status: &SharedCaptureStatus,
 ) -> Result<(), String> {
     match output {
-        RecorderOutput::SessionStarted(seed) => {
+        RecorderOutput::SessionStarted { source, seed } => {
             let session_id = unique_session_id();
             metadata
-                .create_session(&new_session(&session_id, &seed)?)
+                .create_session(&new_session(&session_id, &source, &seed)?)
                 .map_err(|error| format!("session creation failed: {error:?}"))?;
             let path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
                 .map_err(|error| format!("session blob path failed: {error:?}"))?;
@@ -198,7 +198,11 @@ fn handle_output(
     Ok(())
 }
 
-fn new_session(id: &str, seed: &SessionSeed) -> Result<NewSession, String> {
+fn new_session(
+    id: &str,
+    source: &SourceDescriptor,
+    seed: &SessionSeed,
+) -> Result<NewSession, String> {
     let track = seed.track_id.as_ref().map(|value| {
         (
             format!("track-{}", hex_identity(value)),
@@ -217,7 +221,7 @@ fn new_session(id: &str, seed: &SessionSeed) -> Result<NewSession, String> {
         id: id.into(),
         simulator_id: "sim-assetto-corsa".into(),
         simulator_key: "assetto-corsa".into(),
-        simulator_version: None,
+        simulator_version: source.simulator_version.clone(),
         track_id: track.as_ref().map(|value| value.0.clone()),
         source_track_id: track.as_ref().map(|value| value.1.clone()),
         layout_id: seed.layout_id.clone(),
@@ -227,7 +231,12 @@ fn new_session(id: &str, seed: &SessionSeed) -> Result<NewSession, String> {
         car_display_name: car.map(|value| value.2),
         started_at: now_rfc3339()?,
         session_type: seed.session_type.clone(),
-        source_kind: "native_capture".into(),
+        source_kind: match source.kind {
+            SourceKind::NativeCapture => "native_capture",
+            SourceKind::SimulatorReplay => "simulator_replay",
+            SourceKind::Imported => "imported",
+        }
+        .into(),
     })
 }
 
@@ -273,5 +282,26 @@ fn update_status(
         value.connection = connection.into();
         value.sample_rate_hz = sample_rate_hz;
         value.session = session.into();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use trace_domain::SimulatorId;
+
+    use super::*;
+
+    #[test]
+    fn replay_provenance_and_simulator_version_reach_session_metadata() {
+        let source = SourceDescriptor {
+            simulator: SimulatorId::parse("assetto-corsa").expect("simulator"),
+            adapter_version: "1".into(),
+            simulator_version: Some("1.16.4".into()),
+            kind: SourceKind::SimulatorReplay,
+        };
+        let session = new_session("session-1", &source, &SessionSeed::default()).expect("session");
+
+        assert_eq!(session.simulator_version.as_deref(), Some("1.16.4"));
+        assert_eq!(session.source_kind, "simulator_replay");
     }
 }

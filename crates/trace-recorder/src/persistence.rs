@@ -171,7 +171,8 @@ mod tests {
 
     use trace_adapter::DisconnectReason;
     use trace_domain::{
-        ElapsedNanoseconds, FrameSequence, SimulatorId, SourceDescriptor, TelemetryFrame,
+        ElapsedNanoseconds, FrameSequence, SimulatorId, SourceDescriptor, SourceKind,
+        TelemetryFrame,
     };
     use trace_storage::{
         FileBlobStore, InMemoryBlobStore,
@@ -207,6 +208,7 @@ mod tests {
                 simulator: SimulatorId::parse("fixture").expect("simulator"),
                 adapter_version: "1".into(),
                 simulator_version: None,
+                kind: SourceKind::SimulatorReplay,
             },
             seed: trace_domain::SessionSeed::default(),
             frames: (0..3)

@@ -257,6 +257,16 @@ pub struct SourceDescriptor {
     pub simulator: SimulatorId,
     pub adapter_version: String,
     pub simulator_version: Option<String>,
+    pub kind: SourceKind,
+}
+
+/// How telemetry entered TRACE before canonical mapping.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    NativeCapture,
+    SimulatorReplay,
+    Imported,
 }
 
 /// Metadata known when a source starts or changes session.

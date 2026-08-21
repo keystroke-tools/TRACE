@@ -36,7 +36,10 @@ pub enum RecordingEndReason {
 /// State transition emitted after consuming one adapter event.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RecorderOutput {
-    SessionStarted(SessionSeed),
+    SessionStarted {
+        source: SourceDescriptor,
+        seed: SessionSeed,
+    },
     FrameAccepted(TelemetryFrame),
     SessionCompleted(RecordedSession),
 }
@@ -116,8 +119,12 @@ impl SessionRecorder {
                     .detected_source
                     .clone()
                     .ok_or(RecorderError::ConnectedBeforeDetection)?;
-                self.active = Some(ActiveSession::new(source, seed.clone(), self.retain_frames));
-                Ok(vec![RecorderOutput::SessionStarted(seed)])
+                self.active = Some(ActiveSession::new(
+                    source.clone(),
+                    seed.clone(),
+                    self.retain_frames,
+                ));
+                Ok(vec![RecorderOutput::SessionStarted { source, seed }])
             }
             AdapterEvent::SessionChanged(seed) => {
                 let source = self
@@ -130,8 +137,12 @@ impl SessionRecorder {
                         active.finish(RecordingEndReason::SessionChanged),
                     ));
                 }
-                self.active = Some(ActiveSession::new(source, seed.clone(), self.retain_frames));
-                output.push(RecorderOutput::SessionStarted(seed));
+                self.active = Some(ActiveSession::new(
+                    source.clone(),
+                    seed.clone(),
+                    self.retain_frames,
+                ));
+                output.push(RecorderOutput::SessionStarted { source, seed });
                 Ok(output)
             }
             AdapterEvent::Frame(frame) => {
@@ -245,6 +256,7 @@ mod tests {
     use trace_adapter::AdapterEvent;
     use trace_domain::{
         ElapsedNanoseconds, FrameSequence, LapObservation, SimulatorId, SourceDescriptor,
+        SourceKind,
     };
 
     use super::*;
@@ -254,6 +266,7 @@ mod tests {
             simulator: SimulatorId::parse("fixture").expect("valid simulator"),
             adapter_version: "1".into(),
             simulator_version: None,
+            kind: SourceKind::SimulatorReplay,
         }
     }
 
@@ -333,8 +346,10 @@ mod tests {
             .expect("changed");
         assert!(matches!(
             &output[..],
-            [RecorderOutput::SessionCompleted(_), RecorderOutput::SessionStarted(seed)]
-                if seed == &replacement
+            [
+                RecorderOutput::SessionCompleted(_),
+                RecorderOutput::SessionStarted { seed, .. }
+            ] if seed == &replacement
         ));
     }
 
