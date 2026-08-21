@@ -156,7 +156,8 @@ For a reliable recording:
 
 Replay transport controls are not represented by the vanilla shared-memory contract.
 Seeking or reversing can make frame time and lap counters regress, so TRACE rejects
-those ambiguous transitions rather than manufacturing a plausible-looking lap.
+the ambiguous boundary, closes the partial recording, and resynchronizes into a new
+session rather than manufacturing a plausible-looking lap or stopping acquisition.
 
 ## Remaining Phase 2 acquisition requirements
 

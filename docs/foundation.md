@@ -302,6 +302,11 @@ stored as `simulator_replay`; future file adapters use `imported`. Replay captur
 therefore analyzable through the same canonical pipeline without losing how the data
 entered TRACE.
 
+A completed-lap counter regression or jump indicates a seek, restart, or missed source
+transition. The recorder closes the current partial stream and starts a conservatively
+unbounded replacement at that counter. It never fills in the missing laps, and the
+replacement's first observed lap remains excluded until both boundaries are seen.
+
 Live capture uses `SessionRecorder::streaming`, which retains only the previous frame,
 lap boundaries, and sample counters. Each accepted frame moves directly into an Arrow
 IPC encoder. The encoder flushes at 240 frames (approximately four seconds at the

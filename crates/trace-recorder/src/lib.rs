@@ -30,6 +30,7 @@ pub struct RecordedSession {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RecordingEndReason {
     SessionChanged,
+    CounterDiscontinuity,
     Disconnected(DisconnectReason),
 }
 
@@ -146,11 +147,36 @@ impl SessionRecorder {
                 Ok(output)
             }
             AdapterEvent::Frame(frame) => {
-                self.active
+                let result = self
+                    .active
                     .as_mut()
                     .ok_or(RecorderError::FrameOutsideSession)?
-                    .push_frame(&frame)?;
-                Ok(vec![RecorderOutput::FrameAccepted(frame)])
+                    .push_frame(&frame);
+                match result {
+                    Ok(()) => Ok(vec![RecorderOutput::FrameAccepted(frame)]),
+                    Err(
+                        RecorderError::CompletedLapCounterRegressed
+                        | RecorderError::CompletedLapCounterJumped,
+                    ) => {
+                        let active = self
+                            .active
+                            .take()
+                            .ok_or(RecorderError::FrameOutsideSession)?;
+                        let source = active.source.clone();
+                        let seed = active.seed.clone();
+                        let completed = active.finish(RecordingEndReason::CounterDiscontinuity);
+                        let mut replacement =
+                            ActiveSession::new(source.clone(), seed.clone(), self.retain_frames);
+                        replacement.push_frame(&frame)?;
+                        self.active = Some(replacement);
+                        Ok(vec![
+                            RecorderOutput::SessionCompleted(completed),
+                            RecorderOutput::SessionStarted { source, seed },
+                            RecorderOutput::FrameAccepted(frame),
+                        ])
+                    }
+                    Err(error) => Err(error),
+                }
             }
             AdapterEvent::Disconnected(reason) => Ok(self
                 .active
@@ -354,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_ambiguous_ordering_without_appending_the_frame() {
+    fn rejects_non_increasing_frame_order_without_appending_the_frame() {
         let mut recorder = SessionRecorder::new();
         recorder
             .consume(AdapterEvent::Detected(source()))
@@ -370,10 +396,36 @@ mod tests {
             recorder.consume(AdapterEvent::Frame(frame(1, 300, 0, 200))),
             Err(RecorderError::NonIncreasingSequence)
         );
-        assert_eq!(
-            recorder.consume(AdapterEvent::Frame(frame(3, 300, 2, 200))),
-            Err(RecorderError::CompletedLapCounterJumped)
-        );
+    }
+
+    #[test]
+    fn splits_and_resynchronizes_after_a_lap_counter_discontinuity() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        recorder
+            .consume(AdapterEvent::Frame(frame(1, 100, 0, 100)))
+            .expect("first frame");
+
+        let output = recorder
+            .consume(AdapterEvent::Frame(frame(2, 200, 4, 200)))
+            .expect("counter jump resynchronizes");
+        assert!(matches!(
+            &output[..],
+            [
+                RecorderOutput::SessionCompleted(RecordedSession {
+                    sample_count: 1,
+                    end_reason: RecordingEndReason::CounterDiscontinuity,
+                    ..
+                }),
+                RecorderOutput::SessionStarted { .. },
+                RecorderOutput::FrameAccepted(frame),
+            ] if frame.lap.completed_laps == Some(4)
+        ));
     }
 
     #[test]
