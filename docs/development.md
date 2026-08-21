@@ -108,6 +108,11 @@ application-data directory when the Sessions command is first queried. This loca
 database is runtime data and must never be committed. Browser development does not
 open it and continues to use the explicitly labelled replay fixture.
 
+The desktop capture worker also creates `telemetry/sessions` beneath that directory.
+Interrupted or metadata-unreferenced files are moved to `telemetry/.orphaned` on the
+next startup and retained for diagnosis/recovery. Do not treat `.orphaned` as a cache
+that can be deleted automatically.
+
 ## Tests and fixtures
 
 Tests live beside their owning crate. The replay integration fixture is

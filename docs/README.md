@@ -35,4 +35,5 @@ Phase 1 is accepted and Phase 2 is in progress. Windows Assetto Corsa acquisitio
 adapter lifecycle orchestration, canonical lap segmentation, SQLite session metadata,
 the native session query, recovery-aware completion ordering, and an atomic filesystem
 blob store are implemented. Automated orphan reconciliation and the desktop capture
-worker remain Phase 2 work.
+worker are now wired at Tauri startup. Captured ABI fixtures, stale-process detection,
+and representative real-session validation remain Phase 2 work.

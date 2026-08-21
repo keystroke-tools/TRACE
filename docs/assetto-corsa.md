@@ -119,6 +119,11 @@ Counter regression or a jump larger than one is rejected as ambiguous rather tha
 silently producing incorrect sample ranges. Simulator-specific validity evidence is
 not yet authoritative, so this layer does not claim a lap is valid.
 
+The desktop starts the production adapter on a dedicated polling thread. An unstable
+packet remains a temporary acquisition error and does not split the session. Loss of
+the underlying mappings is a distinct adapter error that closes the current canonical
+recording, allowing a later simulator detection to begin a fresh session cleanly.
+
 ## Remaining Phase 2 acquisition requirements
 
 The Windows reader must:

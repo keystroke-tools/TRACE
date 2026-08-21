@@ -244,7 +244,8 @@ The Phase 1 foundation scope in `SPEC.md` is implemented:
 Phase 1 deliberately does not claim a usable telemetry recorder. Phase 2 now includes
 live Assetto Corsa acquisition, conservative canonical lap segmentation, transactional
 session metadata writes, and the native session archive query. Durable Arrow blob
-orchestration and the continuously running desktop capture worker remain. The Arrow
+orchestration and the continuously running desktop capture worker are now connected.
+The Arrow
 representation is accepted as the current storage baseline, but representative
 60–333 Hz capture benchmarks remain an entry check before the format is final.
 
@@ -254,3 +255,17 @@ blob reference, lap ranges, and session end are then committed in one SQLite
 transaction. Append failures abort staging. If SQLite fails after the blob commit,
 the error carries the committed blob metadata as an explicit reconciliation record;
 the blob is never silently deleted or reported as indexed.
+
+At desktop startup, reconciliation compares committed filesystem paths with the
+SQLite blob index. Unreferenced committed blobs and interrupted staging files are
+hard-linked into `.orphaned` and then removed from their live locations. This is a
+recoverable quarantine, not deletion. Reconciliation runs before capture opens a new
+pending handle.
+
+The Tauri composition root starts a dedicated Assetto Corsa polling thread at roughly
+60 Hz. Canonical adapter events feed `SessionRecorder`; session starts create SQLite
+identity rows, and completion flows through Arrow/blob/metadata persistence. A torn
+packet is retried without closing the recording, while an explicit connection-loss
+error finalizes it conservatively. Persistence failures are surfaced in worker status
+and logged without terminating future capture attempts. The React shell polls worker
+status and refreshes the Sessions archive while it is visible.

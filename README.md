@@ -28,8 +28,9 @@ integrations are explicitly outside the v0.1 product scope.
 
 TRACE has completed **Phase 1: Foundation** and begun **Phase 2: Assetto Corsa
 capture**. The Windows shared-memory detection and packet-stable snapshot boundary
-and canonical recording state machine are implemented, but TRACE is not yet wired
-into a continuously running desktop capture worker.
+and canonical recording state machine are implemented. The desktop now starts a
+local capture worker; real-session validation on supported Assetto Corsa fixtures and
+Windows installations remains before Phase 2 acceptance.
 
 Currently implemented:
 
@@ -49,6 +50,7 @@ Currently implemented:
 - Transactional SQLite session/lap writes and bounded native archive queries
 - Recovery-aware Arrow blob and SQLite completion orchestration
 - Atomic filesystem telemetry blobs with restart-safe checksum indexing
+- Startup orphan quarantine and a continuously polling desktop capture worker
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
