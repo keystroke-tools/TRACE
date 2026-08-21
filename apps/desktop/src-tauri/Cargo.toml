@@ -16,6 +16,7 @@ tauri-build.workspace = true
 [dependencies]
 serde.workspace = true
 tauri.workspace = true
+trace-storage = { path = "../../../crates/trace-storage" }
 
 [lints]
 workspace = true

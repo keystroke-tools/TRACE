@@ -3845,6 +3845,7 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-build",
+ "trace-storage",
 ]
 
 [[package]]
