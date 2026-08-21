@@ -20,10 +20,10 @@ export function TitleBar() {
           if (desktopWindow) runWindowCommand(() => desktopWindow.toggleMaximize());
         }}
       >
-        <span className="font-mono text-[9px] font-black tracking-[.16em] text-trace-accent" data-tauri-drag-region>
+        <span className="font-mono text-[11px] font-black tracking-[.14em] text-trace-accent" data-tauri-drag-region>
           TRACE //
         </span>
-        <span className="truncate font-mono text-[8px] tracking-[.12em] text-trace-dim" data-tauri-drag-region>
+        <span className="truncate font-mono text-[10px] tracking-[.1em] text-trace-dim" data-tauri-drag-region>
           FIND THE TIME
         </span>
       </div>
@@ -81,7 +81,7 @@ function WindowButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className={`group grid h-9 w-11 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
+      className={`group grid h-10 w-12 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
         close ? "hover:bg-trace-danger" : "hover:bg-trace-raised"
       }`}
     >

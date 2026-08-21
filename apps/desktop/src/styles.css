@@ -10,10 +10,10 @@
   --color-trace-accent-muted: #394500;
   --color-trace-accent-wash: #202300;
   --color-trace-text: #e8e8e8;
-  --color-trace-soft: #aaaaaa;
-  --color-trace-muted: #858585;
-  --color-trace-faint: #777777;
-  --color-trace-dim: #555555;
+  --color-trace-soft: #b8b8b8;
+  --color-trace-muted: #969696;
+  --color-trace-faint: #8d8d8d;
+  --color-trace-dim: #686868;
   --color-trace-deep: #151515;
   --color-trace-black: #101010;
   --color-trace-warning: #ff6b35;
@@ -37,8 +37,8 @@
 
   body {
     margin: 0;
-    min-width: 760px;
-    min-height: 100vh;
+    min-width: 960px;
+    min-height: 680px;
     overflow: hidden;
   }
 

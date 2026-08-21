@@ -10,7 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "TRACE — FIND THE TIME", "width": 1280, "height": 800, "minWidth": 760, "minHeight": 600, "decorations": false }],
+    "windows": [{ "label": "main", "title": "TRACE — FIND THE TIME", "width": 1280, "height": 800, "minWidth": 960, "minHeight": 680, "decorations": false }],
     "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
   },
   "bundle": { "active": true, "targets": "all" }
