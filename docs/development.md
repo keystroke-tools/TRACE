@@ -1,0 +1,107 @@
+# Development and verification
+
+TRACE uses Mise as the single toolchain entry point. `mise.toml` pins Rust, Node.js,
+and pnpm; `pnpm-lock.yaml` and `Cargo.lock` pin resolved dependencies. Do not install
+project dependency versions ad hoc when they belong in these files.
+
+## Bootstrap
+
+Install [Mise](https://mise.jdx.dev/), then from the repository root run:
+
+```sh
+mise trust
+mise install
+mise run install
+```
+
+`mise run install` uses pnpm's frozen lockfile mode. A lockfile mismatch is therefore
+an error that should be resolved and reviewed, not bypassed.
+
+## Standard commands
+
+```sh
+mise run format
+mise run check
+```
+
+`mise run check` is the local equivalent of the required CI verification:
+
+1. Rust formatting check
+2. Clippy for every workspace target and feature, with warnings denied
+3. Rust unit, integration, and documentation tests
+4. frontend TypeScript checking
+5. frontend production build
+
+Useful focused commands still run inside the pinned Mise environment:
+
+```sh
+mise exec -- cargo test -p trace-core
+mise exec -- cargo test -p trace-adapter --test replay_pipeline
+mise exec -- cargo clippy -p trace-storage --all-targets -- -D warnings
+mise exec -- pnpm --filter @trace/desktop check
+mise exec -- pnpm --filter @trace/desktop dev
+```
+
+## Native desktop prerequisites
+
+The React frontend can be checked and built anywhere Node.js is supported. Compiling
+or running the native Tauri application also requires platform libraries that Mise
+does not manage.
+
+On Ubuntu/Debian, CI installs:
+
+```sh
+sudo apt-get install --no-install-recommends \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  libwebkit2gtk-4.1-dev
+```
+
+Use Tauri's platform setup documentation for equivalent packages on other systems.
+Windows is the eventual primary capture platform because Assetto Corsa publishes
+telemetry through named shared-memory mappings. Phase 1 does not open those mappings.
+
+## Repository map
+
+```text
+apps/desktop/             React UI and Tauri composition root
+crates/trace-domain/      canonical simulator-independent types
+crates/trace-adapter/     acquisition lifecycle and deterministic replay
+crates/trace-core/        deterministic telemetry mathematics
+crates/trace-ac/          private Assetto Corsa byte decoding and mapping
+crates/trace-storage/     blob lifecycle, SQLite metadata, Arrow IPC spike
+crates/trace-protocol/    bounded live protocol DTOs and validation
+docs/                     architecture, boundaries, and operational guidance
+```
+
+Keep dependencies pointed inward. In particular, `trace-core` must not depend on a
+simulator, Tauri, React, storage, networking, or an LLM provider. Simulator-specific
+values must cross the adapter boundary as canonical domain values before analysis.
+
+## Tests and fixtures
+
+Tests live beside their owning crate. The replay integration fixture is
+`crates/trace-adapter/tests/fixtures/two_laps.json`; it is intentionally small,
+human-readable, deterministic, and free of proprietary telemetry. Assetto Corsa byte
+fixtures must identify the supported ABI/version and must not be fabricated from
+undocumented field assumptions.
+
+When changing a serialized shape, migration, protocol limit, physical unit, or field
+offset, add a regression test that would fail under the previous behavior. Treat all
+imported telemetry and protocol messages as untrusted input.
+
+## Generated files and caches
+
+Commit source lockfiles and reviewed project assets. Do not commit `target/`, pnpm
+stores, frontend build output, Mise caches, local databases, telemetry captures, or
+secrets. Check `.gitignore` before introducing a new generator or tool.
+
+## Troubleshooting
+
+- A Tauri build that cannot find GTK, Pango, or WebKitGTK needs native host packages;
+  this is not a Rust dependency failure.
+- A `mise` trust error is resolved with `mise trust mise.toml` after reviewing the
+  file.
+- A frozen pnpm install failure means `package.json` and `pnpm-lock.yaml` disagree.
+- Run `mise current` to confirm the active versions before diagnosing toolchain-only
+  failures.

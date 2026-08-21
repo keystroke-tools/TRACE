@@ -46,11 +46,14 @@ Currently implemented:
 
 The complete product direction and current technical proposal are documented in:
 
+- [Documentation index](docs/README.md)
 - [Implementation specification](SPEC.md)
 - [Phase 1 architecture review](docs/phase-1-architecture.md)
 - [Implemented foundation](docs/foundation.md)
 - [TRACE live protocol v1](docs/protocol-v1.md)
 - [Assetto Corsa shared-memory boundary](docs/assetto-corsa.md)
+- [Development and verification](docs/development.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Principles
 
@@ -114,8 +117,16 @@ mise exec -- cargo clippy --workspace --all-targets --all-features -- -D warning
 mise exec -- cargo test --workspace --all-features
 ```
 
-The `mise.toml` tasks will become the primary entry points as the frontend workspace
-is introduced.
+The primary project entry points are:
+
+```sh
+mise run install  # install package dependencies from the lockfile
+mise run format   # format Rust and any configured frontend sources
+mise run check    # format check, Clippy, tests, typecheck, and production build
+```
+
+See [the development guide](docs/development.md) for native Tauri prerequisites,
+focused commands, repository layout, and troubleshooting.
 
 ## Development approach
 
