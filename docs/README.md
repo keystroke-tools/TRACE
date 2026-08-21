@@ -21,13 +21,14 @@ defines intended product direction.
 | [Phase 1 architecture review](phase-1-architecture.md) | Decisions, research, risks, dependency rules, and original implementation plan |
 | [Assetto Corsa boundary](assetto-corsa.md) | Implemented vanilla AC byte readers, mappings, omissions, and Phase 2 acquisition requirements |
 | [Live protocol v1](protocol-v1.md) | Implemented bounded DTO/validation model; transport remains future work |
+| [Arrow IPC storage benchmark](storage-benchmark.md) | Reproducible 60–333 Hz codec benchmark and compression decision |
 | [Asset provenance](assets.md) | Origin and processing history for generated project assets |
 
 ## Status vocabulary
 
 - **Current** describes behavior implemented and tested on `master`.
 - **Spike** proves a representation or boundary but is not yet a finalized production
-  implementation. Arrow compression and performance tuning remain in this category.
+  implementation.
 - **Proposed** describes work that has not been implemented.
 - **Deferred** is intentionally outside the current phase.
 
@@ -40,3 +41,5 @@ and representative real-session validation remain Phase 2 work. Capture frames a
 persisted in bounded Arrow record batches rather than retained for an entire session.
 Recorded lap sample intervals can be read across batch boundaries without loading the
 complete session file into memory.
+The 30-minute synthetic storage matrix is complete and Zstandard is now the measured
+default compression policy; representative captured-session validation remains.

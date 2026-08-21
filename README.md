@@ -53,6 +53,7 @@ Currently implemented:
 - Startup orphan quarantine and a continuously polling desktop capture worker
 - Bounded 240-frame Arrow IPC record-batch streaming during capture
 - Full canonical Apache Arrow IPC telemetry schema with v1 read compatibility
+- Measured Zstandard Arrow compression with selectable LZ4/uncompressed policies
 - Bounded lap-range Arrow reads backed by SQLite sample locators
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
@@ -142,6 +143,7 @@ The primary project entry points are:
 mise run install  # install package dependencies from the lockfile
 mise run format   # format Rust and any configured frontend sources
 mise run check    # format check, Clippy, tests, typecheck, and production build
+mise run bench-storage # compare Arrow codecs at 60, 120, and 333 Hz
 ```
 
 See [the development guide](docs/development.md) for native Tauri prerequisites,

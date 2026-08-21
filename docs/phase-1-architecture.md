@@ -239,6 +239,10 @@ they never masquerade as canonical telemetry.
 
 Reference: [Apache Arrow columnar and IPC specification](https://arrow.apache.org/docs/format/Columnar.html).
 
+Implementation result: schema v2 uses 240-frame batches and standard Arrow
+Zstandard compression. The planned 30-minute 60–333 Hz synthetic benchmark is
+complete; see [the recorded storage benchmark](storage-benchmark.md).
+
 Initial SQLite tables:
 
 ```text
@@ -418,4 +422,3 @@ No significant implementation should begin until the owner approves or amends:
 - optional, version-gated CSP treatment;
 - the canonical availability/provenance conventions;
 - the adapter lifecycle and protocol envelopes.
-

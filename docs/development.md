@@ -31,6 +31,7 @@ an error that should be resolved and reviewed, not bypassed.
 ```sh
 mise run format
 mise run check
+mise run bench-storage
 ```
 
 `mise run check` is the local equivalent of the required CI verification:
@@ -50,6 +51,10 @@ mise exec -- cargo clippy -p trace-storage --all-targets -- -D warnings
 mise exec -- pnpm --filter @trace/desktop check
 mise exec -- pnpm --filter @trace/desktop dev
 ```
+
+The storage benchmark uses an optimized build and defaults to a 60-second synthetic
+stream at each target sample rate. Set `TRACE_BENCH_SECONDS=1800` for the 30-minute
+acceptance case. See [the recorded method and baseline](storage-benchmark.md).
 
 ## Native desktop prerequisites
 

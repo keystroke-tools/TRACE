@@ -181,8 +181,13 @@ vectors with coordinate-frame tags, all four wheel states, and environment data.
 Gear kind and raw value are separate so unknown simulator values round-trip without
 colliding with reverse, neutral, or forward gears. The reader continues to accept the
 seven-column schema v1 projection. Round-trip tests preserve missing values and reject
-malformed or foreign schemas. Compression and representative performance benchmarks
-are still pending.
+malformed or foreign schemas. Standard Arrow record-batch metadata declares
+compression without a custom wrapper. Zstandard is the default; LZ4 frame and
+uncompressed policies remain available for comparisons. The checked-in benchmark
+verified 30-minute synthetic streams at 60, 120, and 333 Hz. Zstandard reduced size
+by 32.6–33.5% relative to uncompressed IPC, and the largest case encoded in under one
+second on the reference development system. The complete reproducible method and raw
+measurements are in [the storage benchmark](storage-benchmark.md).
 
 SQLite lap metadata provides a validated blob path, sample start, and sample count.
 The Arrow range reader uses that interval to return the common analysis-entry
@@ -257,9 +262,9 @@ Phase 1 deliberately does not claim a usable telemetry recorder. Phase 2 now inc
 live Assetto Corsa acquisition, conservative canonical lap segmentation, transactional
 session metadata writes, and the native session archive query. Durable Arrow blob
 orchestration and the continuously running desktop capture worker are now connected.
-The Arrow
-representation is accepted as the current storage baseline, but representative
-60–333 Hz capture benchmarks remain an entry check before the format is final.
+The Arrow representation is accepted as the current storage baseline. Synthetic
+30-minute 60–333 Hz benchmarks now confirm Zstandard as its default compression;
+real Assetto Corsa fixtures remain necessary to track production data characteristics.
 
 Completed canonical recordings pass through `trace-recorder::persistence`: frames are
 encoded before staging begins, the immutable Arrow blob is committed first, and the
