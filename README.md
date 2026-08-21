@@ -44,6 +44,7 @@ Currently implemented:
 - Distance-aligned lap-delta calculation
 - Safe vanilla Assetto Corsa page readers and canonical field mapping
 - Windows Assetto Corsa detection and packet-stable owned shared-memory snapshots
+- Privacy-redacted AC 1.16.4/shared-memory 1.7 regression capture
 - Pause-aware stale-packet detection after abnormal Assetto Corsa exits
 - Assetto Corsa adapter lifecycle with capabilities, pause/resume, session changes,
   disconnect, and reconnect transitions

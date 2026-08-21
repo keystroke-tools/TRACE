@@ -114,6 +114,13 @@ identifiers stop advancing for five seconds, it closes the stale connection; exp
 pause state suspends that timer. Recording and persistence are connected through the
 desktop capture worker. See [the AC boundary document](assetto-corsa.md).
 
+A user-authorized hotlap capture now supplies the first real regression fixture for
+AC 1.16.4/shared-memory 1.7. It corrected previously synthetic-only static-page offsets
+for car, track, and ambient/road temperatures. The adapter exposes the observed AC
+version and rejects unverified shared-memory versions. Fixture export reconstructs
+the static page from a non-personal allowlist so player identity fields are zeroed
+before bytes are written.
+
 ## Distance-domain analysis
 
 `trace-core` validates telemetry series before analysis:

@@ -32,6 +32,7 @@ an error that should be resolved and reviewed, not bypassed.
 mise run format
 mise run check
 mise run bench-storage
+mise run build-ac-fixture-collector
 ```
 
 `mise run check` is the local equivalent of the required CI verification:
@@ -55,6 +56,12 @@ mise exec -- pnpm --filter @trace/desktop dev
 The storage benchmark uses an optimized build and defaults to a 60-second synthetic
 stream at each target sample rate. Set `TRACE_BENCH_SECONDS=1800` for the 30-minute
 acceptance case. See [the recorded method and baseline](storage-benchmark.md).
+
+`build-ac-fixture-collector` uses the Mise-pinned Clang/LLVM and cargo-xwin tools to
+produce a Windows executable without requiring a separate Windows Rust installation.
+Run the resulting `capture_fixture.exe <output-directory>` as a Windows process while
+AC is on track. Its static page is reconstructed from a non-personal allowlist before
+being written; never replace this with a raw static-page dump.
 
 ## Native desktop prerequisites
 

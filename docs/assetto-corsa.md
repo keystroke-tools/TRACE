@@ -64,8 +64,11 @@ References used for the implemented prefix are the published
 [AC shared-memory reference](https://assettocorsamods.net/threads/doc-shared-memory-reference.58/)
 and the independently maintained
 [AC Japan shared-memory field reference](https://labs.assettocorsa.jp/documents/reference/shared_memory).
-The installed game SDK header and real captured byte fixtures must be checked before
-Phase 2 declares a supported shared-memory version.
+The installed game's SDK directory does not contain the original shared-memory C
+header. TRACE therefore limits support to the published layout corroborated by a
+redacted live AC 1.16.4/shared-memory 1.7 fixture, and rejects other shared-memory
+versions at connection time. Additional versions require their own captured fixture
+before being accepted.
 
 ## Implemented page prefixes
 
@@ -134,11 +137,11 @@ recording, allowing a later simulator detection to begin a fresh session cleanly
 
 ## Remaining Phase 2 acquisition requirements
 
-The Windows reader must:
+The privacy-redacted AC 1.16.4/shared-memory 1.7 fixture validates the currently
+supported ABI. The capture exposed and corrected four static-page offsets: car model,
+track, air temperature, and road temperature. Local recording is already independent
+from any future live network path.
 
-1. verify the shared-memory version from the static page;
-2. add captured, version-labelled byte fixtures for every supported ABI.
-
-Local recording is already independent from any future live network path. The
-remaining requirements depend on an installed SDK header and captured AC data rather
-than inferred fixture values.
+Phase 2 still needs an observed end-to-end Windows desktop run proving that a driven
+lap appears in the session browser. Every additional shared-memory ABI must add a
+version-labelled capture before TRACE accepts it.
