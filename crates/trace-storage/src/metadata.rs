@@ -54,6 +54,7 @@ pub struct LapSummary {
     pub index: u32,
     pub duration_ns: Option<u64>,
     pub validity: String,
+    pub validity_reason: Option<String>,
     pub is_personal_best: bool,
 }
 
@@ -334,7 +335,7 @@ impl MetadataStore {
         let mut lap_statement = self
             .connection
             .prepare(
-                "SELECT lap_index, duration_ns, validity, is_personal_best
+                "SELECT lap_index, duration_ns, validity, validity_reason, is_personal_best
                  FROM laps WHERE session_id = ?1 ORDER BY lap_index",
             )
             .map_err(MetadataError::from)?;
@@ -347,7 +348,8 @@ impl MetadataStore {
                         index,
                         duration_ns: duration,
                         validity: row.get(2)?,
-                        is_personal_best: row.get(3)?,
+                        validity_reason: row.get(3)?,
+                        is_personal_best: row.get(4)?,
                     })
                 })
                 .map_err(MetadataError::from)?
@@ -626,6 +628,10 @@ mod tests {
         assert_eq!(summaries[0].laps.len(), 2);
         assert_eq!(summaries[0].laps[0].duration_ns, Some(110_906_000_000));
         assert!(summaries[0].laps[0].is_personal_best);
+        assert_eq!(
+            summaries[0].laps[1].validity_reason.as_deref(),
+            Some("session ended")
+        );
         assert_eq!(
             store.referenced_blob_paths().expect("blob paths"),
             BTreeSet::from([blob().path])

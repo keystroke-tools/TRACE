@@ -25,6 +25,7 @@ export interface RecordedLapSummary {
   index: number;
   time: string;
   validity: "valid" | "invalid" | "unknown";
+  validityReason?: string | null;
 }
 
 export interface RecordedSessionSummary {

@@ -30,6 +30,7 @@ struct RecordedLapSummary {
     index: u32,
     time: String,
     validity: String,
+    validity_reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -60,25 +61,29 @@ fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>,
 
     Ok(sessions
         .into_iter()
-        .map(|session| RecordedSessionSummary {
-            id: session.id,
-            track: session.track.unwrap_or_else(|| "UNKNOWN TRACK".into()),
-            car: session.car.unwrap_or_else(|| "UNKNOWN CAR".into()),
-            session_type: session
-                .session_type
-                .unwrap_or_else(|| "UNKNOWN SESSION".into())
-                .to_uppercase(),
-            started_at: session.started_at,
-            source: session.source_kind.replace('_', " ").to_uppercase(),
-            laps: session
-                .laps
-                .into_iter()
-                .map(|lap| RecordedLapSummary {
-                    index: lap.index,
-                    time: lap.duration_ns.map_or_else(|| "—".into(), format_lap_time),
-                    validity: lap.validity,
-                })
-                .collect(),
+        .map(|session| {
+            let replay = session.source_kind == "simulator_replay";
+            RecordedSessionSummary {
+                id: session.id,
+                track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
+                car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
+                session_type: session
+                    .session_type
+                    .unwrap_or_else(|| if replay { "REPLAY" } else { "AC SESSION" }.into())
+                    .to_uppercase(),
+                started_at: session.started_at,
+                source: session.source_kind.replace('_', " ").to_uppercase(),
+                laps: session
+                    .laps
+                    .into_iter()
+                    .map(|lap| RecordedLapSummary {
+                        index: lap.index,
+                        time: lap.duration_ns.map_or_else(|| "—".into(), format_lap_time),
+                        validity: lap.validity,
+                        validity_reason: lap.validity_reason,
+                    })
+                    .collect(),
+            }
         })
         .collect())
 }

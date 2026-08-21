@@ -266,8 +266,8 @@ fn hex_identity(value: &str) -> String {
 fn session_label(seed: &SessionSeed) -> String {
     format!(
         "{} / {}",
-        seed.track_id.as_deref().unwrap_or("UNKNOWN TRACK"),
-        seed.car_id.as_deref().unwrap_or("UNKNOWN CAR")
+        seed.track_id.as_deref().unwrap_or("TRACK NOT REPORTED"),
+        seed.car_id.as_deref().unwrap_or("CAR NOT REPORTED")
     )
     .to_uppercase()
 }

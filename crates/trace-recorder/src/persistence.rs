@@ -145,8 +145,15 @@ fn index_recording(
             lap_index: lap.lap_index,
             started_offset_ns: Some(lap.started_offset_ns),
             duration_ns: lap.duration_ns,
-            validity: "unknown".into(),
-            validity_reason: Some("simulator validity evidence unavailable".into()),
+            validity: if lap.partial { "invalid" } else { "unknown" }.into(),
+            validity_reason: Some(
+                if lap.partial {
+                    "capture began after lap start; partial lap or outlap"
+                } else {
+                    "simulator validity evidence unavailable"
+                }
+                .into(),
+            ),
             sample_start: lap.sample_start,
             sample_count: lap.sample_count,
             is_personal_best: false,
@@ -225,6 +232,7 @@ mod tests {
                 duration_ns: Some(200),
                 sample_start: 0,
                 sample_count: 3,
+                partial: false,
             }],
             end_reason: RecordingEndReason::Disconnected(DisconnectReason::SessionEnded),
         }
@@ -261,6 +269,38 @@ mod tests {
         let summaries = metadata.recent_sessions(10).expect("summaries");
         assert_eq!(summaries[0].laps.len(), 1);
         assert_eq!(summaries[0].laps[0].validity, "unknown");
+        assert_eq!(
+            summaries[0].laps[0].validity_reason.as_deref(),
+            Some("simulator validity evidence unavailable")
+        );
+    }
+
+    #[test]
+    fn persists_the_initial_observation_as_an_invalid_partial_lap() {
+        let mut metadata = MetadataStore::open_in_memory().expect("metadata");
+        metadata
+            .create_session(&session("session-partial"))
+            .expect("session");
+        let mut blobs = InMemoryBlobStore::new(1_000_000).expect("blobs");
+        let mut partial = recording();
+        partial.laps[0].duration_ns = None;
+        partial.laps[0].partial = true;
+
+        persist_recording(
+            &mut blobs,
+            &mut metadata,
+            &partial,
+            &descriptor("session-partial", "sessions/session-partial.arrow"),
+        )
+        .expect("persisted");
+
+        let summaries = metadata.recent_sessions(10).expect("summaries");
+        assert_eq!(summaries[0].laps[0].validity, "invalid");
+        assert_eq!(summaries[0].laps[0].duration_ns, None);
+        assert_eq!(
+            summaries[0].laps[0].validity_reason.as_deref(),
+            Some("capture began after lap start; partial lap or outlap")
+        );
     }
 
     #[test]

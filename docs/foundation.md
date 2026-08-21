@@ -179,6 +179,10 @@ caller supplies one, calculates and persists the authoritative digest, rejects p
 collisions, and then atomically makes metadata and bytes visible. Failed validation
 leaves the blob pending for explicit cleanup or crash reconciliation.
 
+Filesystem publication flushes the staged file through a writable handle before
+creating its immutable link. Windows `FlushFileBuffers` rejects a read-only handle,
+even when that handle can read and hash the complete file.
+
 Blob paths are normalized portable relative paths. Absolute paths, traversal,
 backslashes, empty components, and control characters are rejected. The in-memory
 implementation is a tested fixture.
@@ -305,7 +309,9 @@ entered TRACE.
 A completed-lap counter regression or jump indicates a seek, restart, or missed source
 transition. The recorder closes the current partial stream and starts a conservatively
 unbounded replacement at that counter. It never fills in the missing laps, and the
-replacement's first observed lap remains excluded until both boundaries are seen.
+replacement's first observed lap is persisted as invalid and partial, with no claimed
+duration. Subsequent laps receive complete sample ranges and monotonic boundary-to-
+boundary durations when both boundaries are observed.
 
 Live capture uses `SessionRecorder::streaming`, which retains only the previous frame,
 lap boundaries, and sample counters. Each accepted frame moves directly into an Arrow

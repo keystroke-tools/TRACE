@@ -13,6 +13,7 @@ pub struct RecordedLap {
     pub duration_ns: Option<u64>,
     pub sample_start: u64,
     pub sample_count: u64,
+    pub partial: bool,
 }
 
 /// An immutable in-memory recording ready for encoding and durable persistence.
@@ -231,16 +232,16 @@ impl ActiveSession {
                 }
                 Some(open) if completed_laps == open.index => {}
                 Some(open) if completed_laps == open.index + 1 => {
-                    let previous = self.last_frame.as_ref().expect("open lap has a frame");
-                    if open.started_at_boundary {
-                        self.laps.push(RecordedLap {
-                            lap_index: open.index,
-                            started_offset_ns: open.started_offset_ns,
-                            duration_ns: previous.lap.current_lap_time_ns,
-                            sample_start: open.sample_start,
-                            sample_count: sample_index - open.sample_start,
-                        });
-                    }
+                    self.laps.push(RecordedLap {
+                        lap_index: open.index.saturating_add(1),
+                        started_offset_ns: open.started_offset_ns,
+                        duration_ns: open
+                            .started_at_boundary
+                            .then_some(frame.elapsed.0 - open.started_offset_ns),
+                        sample_start: open.sample_start,
+                        sample_count: sample_index - open.sample_start,
+                        partial: !open.started_at_boundary,
+                    });
                     self.current_lap = Some(OpenLap {
                         index: completed_laps,
                         sample_start: sample_index,
@@ -310,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn records_only_completed_laps_with_exact_sample_ranges() {
+    fn records_partial_and_completed_laps_with_exact_sample_ranges() {
         let mut recorder = SessionRecorder::new();
         recorder
             .consume(AdapterEvent::Detected(source()))
@@ -340,13 +341,24 @@ mod tests {
         assert_eq!(session.sample_count, 7);
         assert_eq!(
             session.laps,
-            vec![RecordedLap {
-                lap_index: 1,
-                started_offset_ns: 400,
-                duration_ns: Some(200),
-                sample_start: 3,
-                sample_count: 3,
-            }]
+            vec![
+                RecordedLap {
+                    lap_index: 1,
+                    started_offset_ns: 100,
+                    duration_ns: None,
+                    sample_start: 0,
+                    sample_count: 3,
+                    partial: true,
+                },
+                RecordedLap {
+                    lap_index: 2,
+                    started_offset_ns: 400,
+                    duration_ns: Some(300),
+                    sample_start: 3,
+                    sample_count: 3,
+                    partial: false,
+                },
+            ]
         );
     }
 

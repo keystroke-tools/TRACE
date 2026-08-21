@@ -75,7 +75,7 @@ before being accepted.
 | Page | Minimum bytes | Last decoded field |
 |---|---:|---|
 | Physics | 200 | `suspensionTravel[4]` |
-| Graphics | 292 | `surfaceGrip` (prefix validated; not yet mapped) |
+| Graphics | 264 | `carCoordinates[3]` |
 | Static | 476 | `roadTemp` |
 
 Later fields can exist in current AC/CSP pages. A longer page is accepted, but bytes
@@ -111,7 +111,8 @@ Short pages return a typed `TooShort` error containing expected and actual lengt
 - wheel pressure, slip, load, wear, and angular speed: require unit/semantic fixture
   validation before analysis use.
 - `distanceTraveled`: not assumed to be lap distance.
-- graphics `surfaceGrip`: source scale and interpretation need fixture validation.
+- graphics `surfaceGrip`: outside the currently validated prefix; its source scale
+  and interpretation also need fixture validation.
 - clutch and later physics-page fields: outside the currently validated prefix.
 - CSP additions: optional future capability provider, never a vanilla requirement.
 
@@ -121,10 +122,12 @@ meaning.
 ## Recording boundary
 
 `trace-recorder` consumes only canonical adapter events. It validates increasing frame
-sequence and elapsed time, closes sessions on source session changes or disconnects,
-and records a lap only after observing both its opening and closing completed-lap
-counter boundaries. The first lap seen after attachment is therefore retained in the
-raw session stream but excluded from lap metadata because it may be partial.
+sequence and elapsed time and closes sessions on source session changes or disconnects.
+The first lap seen after attachment is retained in lap metadata with its sample range,
+but is marked invalid and partial because TRACE did not observe its opening boundary.
+Its duration remains unavailable. Later laps close only after TRACE observes the next
+completed-lap counter boundary, and their durations come from TRACE's monotonic capture
+clock rather than AC's transient current-lap timer.
 
 Counter regression or a jump larger than one is rejected as ambiguous rather than
 silently producing incorrect sample ranges. Simulator-specific validity evidence is
@@ -149,8 +152,8 @@ For a reliable recording:
 2. Play the replay forward at normal speed without seeking, rewinding, or changing
    playback speed.
 3. Allow at least two complete start/finish crossings to pass. The first observed lap
-   is deliberately excluded from lap metadata because TRACE may have attached partway
-   through it.
+   appears as `PARTIAL` because TRACE may have attached partway through it. Each later
+   complete lap needs its following start/finish crossing before TRACE can close it.
 4. Let playback finish or exit the replay normally so AC reports a clean source close
    and TRACE can finalize the session.
 
@@ -163,8 +166,11 @@ session rather than manufacturing a plausible-looking lap or stopping acquisitio
 
 The privacy-redacted AC 1.16.4/shared-memory 1.7 fixture validates the currently
 supported ABI. The capture exposed and corrected four static-page offsets: car model,
-track, air temperature, and road temperature. Local recording is already independent
-from any future live network path.
+track, air temperature, and road temperature. Replay acceptance then exposed and
+corrected four graphics-page offsets: completed laps, current lap time, normalized
+position, and car coordinates. The captured fixture now asserts the real completed-lap
+counter and lap time, preventing a plausible-but-wrong offset from passing regression
+tests. Local recording is already independent from any future live network path.
 
 Phase 2 still needs an observed end-to-end Windows desktop run proving that a driven
 or normally played replay lap appears in the session browser. Every additional
