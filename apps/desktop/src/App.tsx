@@ -4,6 +4,7 @@ import {
   type RecordedSessionSummary,
   type TelemetryStatus,
 } from "./data-source";
+import { TitleBar } from "./TitleBar";
 
 const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS"] as const;
 type Section = (typeof navigation)[number];
@@ -34,7 +35,8 @@ export function App() {
   }, [section]);
 
   return (
-    <main className="grid min-h-screen grid-cols-[164px_1fr] grid-rows-[64px_1fr_34px] bg-trace-base text-trace-text max-[900px]:grid-cols-[124px_1fr]">
+    <main className="grid min-h-screen grid-cols-[164px_1fr] grid-rows-[36px_64px_1fr_34px] bg-trace-base text-trace-text max-[900px]:grid-cols-[124px_1fr]">
+      <TitleBar />
       <Header status={status} />
       <Navigation active={section} onChange={setSection} />
       <section className="trace-grid overflow-auto p-7">
