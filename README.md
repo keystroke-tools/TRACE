@@ -42,6 +42,8 @@ Currently implemented:
 - Distance-aligned lap-delta calculation
 - Safe vanilla Assetto Corsa page readers and canonical field mapping
 - Windows Assetto Corsa detection and packet-stable owned shared-memory snapshots
+- Assetto Corsa adapter lifecycle with capabilities, pause/resume, session changes,
+  disconnect, and reconnect transitions
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 

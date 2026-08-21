@@ -102,8 +102,9 @@ travel, lap observations, world position, car/track identity, and temperatures.
 
 Fields whose units or semantics remain uncertain are intentionally unavailable.
 Windows mapping detection and bounded packet-stable owned snapshots are implemented;
-adapter lifecycle orchestration remains Phase 2 work. See [the AC boundary
-document](assetto-corsa.md).
+the AC adapter now emits canonical detection, connection, capability, session,
+pause/resume, frame, disconnect, and reconnect transitions. Recording orchestration
+remains Phase 2 work. See [the AC boundary document](assetto-corsa.md).
 
 ## Distance-domain analysis
 

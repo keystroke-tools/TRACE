@@ -1,8 +1,8 @@
 # Assetto Corsa shared-memory boundary
 
 Status: Phase 2 in progress. Page readers, canonical mapping, Windows named-mapping
-detection, and packet-stable owned snapshots are implemented. Adapter orchestration
-and recording are not yet implemented.
+detection, packet-stable owned snapshots, and adapter lifecycle orchestration are
+implemented. Recording and persistence are not yet implemented.
 
 Vanilla Assetto Corsa exposes three named Windows mappings:
 
@@ -33,6 +33,24 @@ Physics and graphics pages are accepted only when the `packetId` read before cop
 the identifier embedded in the owned copy, and the identifier read after copying all
 match. A torn page is retried at most three times. The static page has no packet
 identifier and is copied directly.
+
+## Adapter lifecycle
+
+`AcAdapter` implements the common `SimulatorAdapter` contract and emits bounded,
+ordered events. A successful first poll produces detection, connection, canonical
+capabilities, optional pause state, and one frame. Later polls can produce session
+changes, pause/resume transitions, frames, and normal disconnection when AC reports
+the graphics status as off.
+
+Every connection resets the monotonic frame sequence and elapsed clock. Static-page
+car/track changes emit `SessionChanged` before the corresponding frame. An unstable
+packet is a temporary error and retains the connection so the next poll can recover;
+invalid page data is rejected. Unknown graphics-status values are not guessed.
+
+Windows retains a named mapping while TRACE holds an open view. A normal AC shutdown
+reports the off status and is handled, but a hard simulator crash can leave the last
+live packet visible to TRACE. Bounded stale-packet timeout detection is therefore a
+remaining requirement before capture is considered production-ready.
 
 References used for the implemented prefix are the published
 [AC shared-memory reference](https://assettocorsamods.net/threads/doc-shared-memory-reference.58/)
@@ -94,7 +112,7 @@ meaning.
 The Windows reader must:
 
 1. verify the shared-memory version from the static page;
-2. emit lifecycle/capability changes through `trace-adapter`;
-3. tolerate simulator close, pause, session reset, and reconnect;
-4. keep local recording independent from any live network path;
-5. add captured, version-labelled byte fixtures for every supported ABI.
+2. detect stale packets after an abnormal simulator exit without treating a long
+   legitimate pause as a disconnect;
+3. keep local recording independent from any live network path;
+4. add captured, version-labelled byte fixtures for every supported ABI.
