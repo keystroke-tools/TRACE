@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "apps/desktop/src-tauri",
   "crates/trace-adapter",
   "crates/trace-ac",
   "crates/trace-core",
@@ -22,6 +23,8 @@ arrow-schema = "59.1.0"
 serde = { version = "1.0.219", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 sha2 = "0.10.9"
+tauri = "2.11.5"
+tauri-build = "2.6.3"
 trace-domain = { path = "crates/trace-domain" }
 
 [workspace.lints.rust]

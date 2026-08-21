@@ -40,6 +40,7 @@ Currently implemented:
 - Distance-aligned lap-delta calculation
 - Safe vanilla Assetto Corsa page readers and canonical field mapping
 - Versioned Apache Arrow IPC telemetry representation spike
+- Minimal Tauri 2 and React desktop shell with TRACE design tokens
 
 The complete product direction and current technical proposal are documented in:
 

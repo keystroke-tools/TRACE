@@ -25,7 +25,19 @@ The crates intentionally have no circular dependencies:
 - `trace-protocol` owns bounded, versioned network data-transfer objects.
 
 No implemented crate depends on Tauri, React, HTTP, a simulator SDK, or an LLM
-provider.
+provider, except the dedicated `apps/desktop/src-tauri` composition root.
+
+## Desktop shell
+
+The minimal Tauri 2 and React shell establishes the four top-level sections, hard
+edged TRACE palette/layout, tabular status values, and a `TelemetryDataSource`
+boundary. Browser development uses a replay fixture; the Tauri build obtains the
+same status DTO through a command rather than a local HTTP server. Live capture and
+comparison UI remain intentionally absent.
+
+Frontend typechecking and production builds run through pnpm/Mise. Building the
+native shell on Linux additionally requires Tauri's GTK 3, Pango, and WebKitGTK host
+packages; these are system prerequisites and are not installed by this repository.
 
 ## Canonical telemetry
 
