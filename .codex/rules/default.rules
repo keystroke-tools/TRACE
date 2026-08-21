@@ -1,0 +1,211 @@
+# .codex/rules/default.rules
+
+# Git: normal workflow
+prefix_rule(
+    pattern = ["git", [
+        "status",
+        "diff",
+        "log",
+        "show",
+        "rev-parse",
+        "describe",
+        "ls-files",
+        "grep",
+        "blame",
+        "fetch",
+        "add",
+        "commit",
+    ]],
+    decision = "allow",
+    justification = "Routine Git operations for development.",
+)
+
+# Git commands that can overwrite work, rewrite history, delete refs, contact a
+# remote, or hide dangerous flags after positional arguments require approval as
+# complete command families. Prefix rules cannot safely inspect flags in arbitrary
+# positions.
+prefix_rule(
+    pattern = ["git", [
+        "branch",
+        "checkout",
+        "clean",
+        "merge",
+        "pull",
+        "push",
+        "rebase",
+        "reset",
+        "restore",
+        "stash",
+        "switch",
+        "tag",
+    ]],
+    decision = "prompt",
+    justification = "May change worktrees/history/refs or contact a remote; flags can occur in arbitrary positions.",
+)
+
+
+# pnpm
+prefix_rule(
+    pattern = ["pnpm", [
+        "add",
+        "build",
+        "check",
+        "dev",
+        "exec",
+        "install",
+        "lint",
+        "remove",
+        "run",
+        "test",
+    ]],
+    decision = "allow",
+    justification = "Trace uses pnpm for dependencies and development tasks.",
+)
+
+prefix_rule(
+    pattern = ["pnpm", "publish"],
+    decision = "prompt",
+    justification = "Publishing a package should require approval.",
+)
+
+
+# Rust / Cargo
+prefix_rule(
+    pattern = ["cargo", [
+        "bench",
+        "build",
+        "check",
+        "clippy",
+        "doc",
+        "fetch",
+        "fix",
+        "fmt",
+        "metadata",
+        "run",
+        "test",
+        "tree",
+    ]],
+    decision = "allow",
+    justification = "Trace uses Cargo for Rust development.",
+)
+
+prefix_rule(
+    pattern = ["rustc"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["rustfmt"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["cargo", ["publish", "yank"]],
+    decision = "prompt",
+    justification = "Publishing or modifying a published crate requires approval.",
+)
+
+
+# Mise inspection and tool installation are allowed. Commands that execute project
+# tasks or arbitrary wrapped programs remain gated because their nested tokens are
+# opaque to prefix matching.
+prefix_rule(
+    pattern = ["mise", ["current", "doctor", "install", "ls", "list"]],
+    decision = "allow",
+    justification = "Trace uses mise for tools and project tasks.",
+)
+
+prefix_rule(
+    pattern = ["mise", ["exec", "run", "x"]],
+    decision = "prompt",
+    justification = "Mise can execute arbitrary nested commands and project tasks.",
+)
+
+
+# Explicit shell wrappers stay gated because nested commands do not participate in
+# execpolicy prefix matching.
+prefix_rule(
+    pattern = [["bash", "sh", "zsh"]],
+    decision = "prompt",
+    justification = "Shell wrappers can hide destructive nested commands from prefix matching.",
+)
+
+
+# Node
+prefix_rule(
+    pattern = ["node"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["npx"],
+    decision = "allow",
+)
+
+
+# Common read-only / inspection commands
+prefix_rule(
+    pattern = [[
+        "ls",
+        "cat",
+        "head",
+        "tail",
+        "find",
+        "grep",
+        "rg",
+        "sed",
+        "awk",
+        "sort",
+        "uniq",
+        "wc",
+        "pwd",
+        "which",
+        "where",
+        "where.exe",
+    ]],
+    decision = "allow",
+    justification = "Routine source inspection.",
+)
+
+
+# Normal file manipulation
+prefix_rule(
+    pattern = [[
+        "mkdir",
+        "cp",
+        "mv",
+        "touch",
+    ]],
+    decision = "allow",
+    justification = "Routine workspace file operations.",
+)
+
+
+# Deletion stays gated
+prefix_rule(
+    pattern = ["rm"],
+    decision = "prompt",
+    justification = "Deletion can remove project files.",
+)
+
+
+# Network tools stay gated
+prefix_rule(
+    pattern = ["curl"],
+    decision = "prompt",
+    justification = "Arbitrary network access should require approval.",
+)
+
+prefix_rule(
+    pattern = ["wget"],
+    decision = "prompt",
+    justification = "Arbitrary network downloads should require approval.",
+)
+
+
+# Privilege escalation always requires approval
+prefix_rule(
+    pattern = ["sudo"],
+    decision = "prompt",
+    justification = "Machine-level changes require explicit approval.",
+)
