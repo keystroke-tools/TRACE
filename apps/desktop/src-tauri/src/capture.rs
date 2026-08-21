@@ -52,12 +52,12 @@ struct ActivePersistence {
 pub fn spawn(data_directory: PathBuf, status: SharedCaptureStatus) {
     thread::Builder::new()
         .name("trace-ac-capture".into())
-        .spawn(move || run(data_directory, &status))
+        .spawn(move || run(&data_directory, &status))
         .expect("failed to start TRACE capture worker");
 }
 
-fn run(data_directory: PathBuf, status: &SharedCaptureStatus) {
-    let result = run_capture(&data_directory, status);
+fn run(data_directory: &std::path::Path, status: &SharedCaptureStatus) {
+    let result = run_capture(data_directory, status);
     if let Err(error) = result {
         update_status(status, "error", 0, &format!("CAPTURE ERROR: {error}"));
         eprintln!("TRACE capture worker stopped: {error}");
@@ -68,7 +68,7 @@ fn run_capture(
     data_directory: &std::path::Path,
     status: &SharedCaptureStatus,
 ) -> Result<(), String> {
-    std::fs::create_dir_all(&data_directory).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(data_directory).map_err(|error| error.to_string())?;
     let mut metadata = MetadataStore::open(&data_directory.join("trace.sqlite"))
         .map_err(|error| format!("metadata initialization failed: {error:?}"))?;
     let mut blobs = FileBlobStore::open(&data_directory.join("telemetry"), MAX_SESSION_BYTES)
