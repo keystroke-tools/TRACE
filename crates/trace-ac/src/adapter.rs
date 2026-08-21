@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use trace_adapter::{
     AdapterError, AdapterEvent, AdapterIdentity, DisconnectReason, SimulatorAdapter,
@@ -14,12 +14,48 @@ const STATUS_OFF: i32 = 0;
 const STATUS_REPLAY: i32 = 1;
 const STATUS_LIVE: i32 = 2;
 const STATUS_PAUSE: i32 = 3;
+const DEFAULT_STALE_PACKET_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcRuntimeStatus {
     Off,
     Running,
     Paused,
+}
+
+#[derive(Clone, Debug)]
+struct StalePacketTracker {
+    timeout: Duration,
+    observation: Option<((i32, i32), Instant)>,
+}
+
+impl StalePacketTracker {
+    fn new(timeout: Duration) -> Self {
+        Self {
+            timeout,
+            observation: None,
+        }
+    }
+
+    fn observe(&mut self, signature: (i32, i32), paused: bool, now: Instant) -> bool {
+        if paused {
+            self.observation = None;
+            return false;
+        }
+        match self.observation {
+            Some((previous, since)) if previous == signature => {
+                now.saturating_duration_since(since) >= self.timeout
+            }
+            _ => {
+                self.observation = Some((signature, now));
+                false
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        self.observation = None;
+    }
 }
 
 /// Injectable acquisition seam used by the production Windows source and fixtures.
@@ -92,6 +128,7 @@ pub struct AcAdapter<S = SystemAcSource> {
     state: ConnectionState,
     next_sequence: u64,
     stream_started: Option<Instant>,
+    stale_packets: StalePacketTracker,
 }
 
 impl AcAdapter<SystemAcSource> {
@@ -120,6 +157,7 @@ impl<S> AcAdapter<S> {
             state: ConnectionState::Disconnected,
             next_sequence: 0,
             stream_started: None,
+            stale_packets: StalePacketTracker::new(DEFAULT_STALE_PACKET_TIMEOUT),
         }
     }
 }
@@ -152,8 +190,11 @@ impl<S: AcSource> AcAdapter<S> {
                 }
 
                 self.next_sequence = 0;
-                self.stream_started = Some(Instant::now());
+                let now = Instant::now();
+                self.stream_started = Some(now);
                 let paused = status == AcRuntimeStatus::Paused;
+                self.stale_packets
+                    .observe(snapshot.packet_signature(), paused, now);
                 self.state = ConnectionState::Running {
                     session: session.clone(),
                     paused,
@@ -199,6 +240,17 @@ impl<S: AcSource> AcAdapter<S> {
             )]);
         }
 
+        if self.stale_packets.observe(
+            snapshot.packet_signature(),
+            status == AcRuntimeStatus::Paused,
+            Instant::now(),
+        ) {
+            self.disconnect();
+            return Err(AdapterError::ConnectionLost(
+                "Assetto Corsa shared-memory packets stopped advancing".into(),
+            ));
+        }
+
         let (session, environment) = snapshot.map_session().map_err(adapter_error)?;
         let mut events = Vec::new();
         let ConnectionState::Running {
@@ -241,6 +293,7 @@ impl<S: AcSource> AcAdapter<S> {
         self.source.disconnect();
         self.state = ConnectionState::Disconnected;
         self.stream_started = None;
+        self.stale_packets.reset();
     }
 }
 
@@ -457,5 +510,24 @@ mod tests {
             adapter.poll().expect("recovered frame")[0],
             AdapterEvent::Frame(_)
         ));
+    }
+
+    #[test]
+    fn stale_packets_timeout_only_while_the_simulator_is_running() {
+        let started = Instant::now();
+        let timeout = Duration::from_secs(5);
+        let mut tracker = StalePacketTracker::new(timeout);
+
+        assert!(!tracker.observe((10, 20), false, started));
+        assert!(!tracker.observe(
+            (10, 20),
+            false,
+            started + timeout.saturating_sub(Duration::from_millis(1))
+        ));
+        assert!(tracker.observe((10, 20), false, started + timeout));
+
+        assert!(!tracker.observe((11, 20), false, started + timeout));
+        assert!(!tracker.observe((11, 20), true, started + timeout * 10));
+        assert!(!tracker.observe((11, 20), false, started + timeout * 20));
     }
 }

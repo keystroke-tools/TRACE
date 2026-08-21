@@ -97,6 +97,16 @@ impl AcSnapshot {
             .expect("snapshot pages validated at acquisition")
             .status()
     }
+
+    pub(crate) fn packet_signature(&self) -> (i32, i32) {
+        let physics = pages::PhysicsPage::parse(&self.physics)
+            .expect("snapshot pages validated at acquisition")
+            .packet_id();
+        let graphics = pages::GraphicsPage::parse(&self.graphics)
+            .expect("snapshot pages validated at acquisition")
+            .packet_id();
+        (physics, graphics)
+    }
 }
 
 /// Open read-only handles to vanilla Assetto Corsa shared-memory pages.

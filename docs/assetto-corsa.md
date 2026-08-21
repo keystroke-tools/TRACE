@@ -2,7 +2,8 @@
 
 Status: Phase 2 in progress. Page readers, canonical mapping, Windows named-mapping
 detection, packet-stable owned snapshots, and adapter lifecycle orchestration are
-implemented. Recording and persistence are not yet implemented.
+implemented. Bounded capture, recording, persistence, stale-packet detection, and the
+basic session browser are connected through the desktop host.
 
 Vanilla Assetto Corsa exposes three named Windows mappings:
 
@@ -49,8 +50,15 @@ invalid page data is rejected. Unknown graphics-status values are not guessed.
 
 Windows retains a named mapping while TRACE holds an open view. A normal AC shutdown
 reports the off status and is handled, but a hard simulator crash can leave the last
-live packet visible to TRACE. Bounded stale-packet timeout detection is therefore a
-remaining requirement before capture is considered production-ready.
+live packet visible to TRACE. While AC reports live or replay state, the adapter now
+requires at least one of the physics or graphics packet identifiers to advance within
+five seconds. A stale pair closes the canonical connection so the host finalizes the
+recording and returns to detection.
+
+Explicit AC pause state suspends and resets the stale timer, preventing a long
+legitimate pause from being classified as a crash. A crash that occurs while paused
+cannot be distinguished from a real pause using the documented pages alone, so TRACE
+conservatively waits for the mapping or reported status to change in that case.
 
 References used for the implemented prefix are the published
 [AC shared-memory reference](https://assettocorsamods.net/threads/doc-shared-memory-reference.58/)
@@ -129,7 +137,8 @@ recording, allowing a later simulator detection to begin a fresh session cleanly
 The Windows reader must:
 
 1. verify the shared-memory version from the static page;
-2. detect stale packets after an abnormal simulator exit without treating a long
-   legitimate pause as a disconnect;
-3. keep local recording independent from any live network path;
-4. add captured, version-labelled byte fixtures for every supported ABI.
+2. add captured, version-labelled byte fixtures for every supported ABI.
+
+Local recording is already independent from any future live network path. The
+remaining requirements depend on an installed SDK header and captured AC data rather
+than inferred fixture values.

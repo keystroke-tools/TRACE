@@ -109,8 +109,10 @@ travel, lap observations, world position, car/track identity, and temperatures.
 Fields whose units or semantics remain uncertain are intentionally unavailable.
 Windows mapping detection and bounded packet-stable owned snapshots are implemented;
 the AC adapter now emits canonical detection, connection, capability, session,
-pause/resume, frame, disconnect, and reconnect transitions. Recording orchestration
-remains Phase 2 work. See [the AC boundary document](assetto-corsa.md).
+pause/resume, frame, disconnect, and reconnect transitions. When live/replay packet
+identifiers stop advancing for five seconds, it closes the stale connection; explicit
+pause state suspends that timer. Recording and persistence are connected through the
+desktop capture worker. See [the AC boundary document](assetto-corsa.md).
 
 ## Distance-domain analysis
 

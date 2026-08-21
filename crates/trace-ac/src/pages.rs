@@ -16,6 +16,9 @@ impl<'a> PhysicsPage<'a> {
     pub(crate) fn gas(&self) -> f32 {
         read_f32(self.0, 4)
     }
+    pub(crate) fn packet_id(&self) -> i32 {
+        read_i32(self.0, 0)
+    }
     pub(crate) fn brake(&self) -> f32 {
         read_f32(self.0, 8)
     }
@@ -54,6 +57,10 @@ impl<'a> GraphicsPage<'a> {
 
     pub(crate) fn status(&self) -> i32 {
         read_i32(self.0, 4)
+    }
+
+    pub(crate) fn packet_id(&self) -> i32 {
+        read_i32(self.0, 0)
     }
 
     pub(crate) fn completed_laps(&self) -> i32 {
