@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/trace-adapter",
+  "crates/trace-ac",
   "crates/trace-core",
   "crates/trace-domain",
   "crates/trace-protocol",

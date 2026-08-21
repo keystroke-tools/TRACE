@@ -38,6 +38,7 @@ Currently implemented:
 - Gap-aware linear and held interpolation
 - Structured analysis results with evidence, confidence, and uncertainty
 - Distance-aligned lap-delta calculation
+- Safe vanilla Assetto Corsa page readers and canonical field mapping
 
 The complete product direction and current technical proposal are documented in:
 
@@ -45,6 +46,7 @@ The complete product direction and current technical proposal are documented in:
 - [Phase 1 architecture review](docs/phase-1-architecture.md)
 - [Implemented foundation](docs/foundation.md)
 - [TRACE live protocol v1](docs/protocol-v1.md)
+- [Assetto Corsa shared-memory boundary](docs/assetto-corsa.md)
 
 ## Principles
 

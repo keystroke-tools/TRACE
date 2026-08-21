@@ -6,9 +6,10 @@ planned v0.1 features. The broader direction remains in [the specification](../S
 ## Workspace boundaries
 
 ```text
-trace-domain <--- trace-adapter
-      ^
-      +-------- trace-core
+trace-adapter ---> trace-domain <--- trace-ac
+                        ^
+                        |
+                   trace-core
 
 trace-storage     trace-protocol
 ```
@@ -18,6 +19,8 @@ The crates intentionally have no circular dependencies:
 - `trace-domain` owns simulator-independent telemetry and capability types.
 - `trace-adapter` owns acquisition lifecycle events and the replay adapter.
 - `trace-core` owns deterministic distance-domain mathematics and analysis results.
+- `trace-ac` privately reads documented vanilla AC page prefixes and maps them into
+  canonical domain values.
 - `trace-storage` owns immutable telemetry blob and SQLite metadata boundaries.
 - `trace-protocol` owns bounded, versioned network data-transfer objects.
 
@@ -71,6 +74,18 @@ control or stop local capture.
 `ReplayAdapter` emits the same events deterministically with a configured maximum
 batch size. It is the current basis for offline development and later integration
 fixtures.
+
+## Assetto Corsa boundary
+
+`trace-ac` reads owned little-endian byte snapshots rather than casting shared memory
+to packed Rust structs. This keeps the workspace free of unsafe code and makes prefix
+length/offset validation explicit. It currently maps documented driver inputs,
+speed/RPM/gear/fuel, velocity, G acceleration, tyre core temperature, suspension
+travel, lap observations, world position, car/track identity, and temperatures.
+
+Fields whose units or semantics remain uncertain are intentionally unavailable. Live
+Windows shared-memory acquisition and packet-stable copying remain Phase 2 work. See
+[the AC boundary document](assetto-corsa.md).
 
 ## Distance-domain analysis
 
@@ -158,4 +173,3 @@ The workspace currently runs formatting, Clippy with warnings denied, unit tests
 and documentation tests through the Mise-managed Rust toolchain. Tests include
 identifier/capability behavior, replay ordering, interpolation, lap delta, immutable
 blob lifecycle, path security, SQLite migration/foreign keys, and protocol limits.
-

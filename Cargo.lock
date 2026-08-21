@@ -325,6 +325,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trace-ac"
+version = "0.1.0"
+dependencies = [
+ "trace-domain",
+]
+
+[[package]]
 name = "trace-adapter"
 version = "0.1.0"
 dependencies = [
