@@ -14,8 +14,25 @@ export interface TelemetryStatus {
   channels: ChannelCapability[];
 }
 
+export interface RecordedLapSummary {
+  index: number;
+  time: string;
+  valid: boolean;
+}
+
+export interface RecordedSessionSummary {
+  id: string;
+  track: string;
+  car: string;
+  sessionType: string;
+  startedAt: string;
+  source: string;
+  laps: RecordedLapSummary[];
+}
+
 export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
+  getSessions(): Promise<RecordedSessionSummary[]>;
 }
 
 export const fixtureDataSource: TelemetryDataSource = {
@@ -34,11 +51,31 @@ export const fixtureDataSource: TelemetryDataSource = {
       ],
     };
   },
+  async getSessions() {
+    return [
+      {
+        id: "replay-mugello-001",
+        track: "MUGELLO",
+        car: "TATUUS FA01",
+        sessionType: "REPLAY FIXTURE",
+        startedAt: "21 AUG / 14:32",
+        source: "TRACE REPLAY",
+        laps: [
+          { index: 1, time: "1:52.418", valid: true },
+          { index: 2, time: "1:50.906", valid: true },
+          { index: 3, time: "—", valid: false },
+        ],
+      },
+    ];
+  },
 };
 
 export const tauriDataSource: TelemetryDataSource = {
   getStatus() {
     return invoke<TelemetryStatus>("foundation_status");
+  },
+  getSessions() {
+    return invoke<RecordedSessionSummary[]>("recent_sessions");
   },
 };
 

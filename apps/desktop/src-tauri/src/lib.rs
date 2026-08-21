@@ -19,6 +19,11 @@ struct FoundationStatus {
 }
 
 #[tauri::command]
+fn recent_sessions() -> Vec<()> {
+    Vec::new()
+}
+
+#[tauri::command]
 fn foundation_status() -> FoundationStatus {
     FoundationStatus {
         connection: "replay",
@@ -62,7 +67,7 @@ fn foundation_status() -> FoundationStatus {
 /// Panics when Tauri cannot initialize or run the desktop event loop.
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![foundation_status])
+        .invoke_handler(tauri::generate_handler![foundation_status, recent_sessions])
         .run(tauri::generate_context!())
         .expect("TRACE desktop runtime failed");
 }

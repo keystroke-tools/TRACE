@@ -1,74 +1,205 @@
-import { useEffect, useState } from "react";
-import { telemetryDataSource, type TelemetryStatus } from "./data-source";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  telemetryDataSource,
+  type RecordedSessionSummary,
+  type TelemetryStatus,
+} from "./data-source";
 
 const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS"] as const;
+type Section = (typeof navigation)[number];
 
 export function App() {
   const [status, setStatus] = useState<TelemetryStatus | null>(null);
+  const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
+  const [section, setSection] = useState<Section>("LIVE");
 
   useEffect(() => {
-    void telemetryDataSource.getStatus().then(setStatus);
+    void Promise.all([
+      telemetryDataSource.getStatus(),
+      telemetryDataSource.getSessions(),
+    ]).then(([nextStatus, nextSessions]) => {
+      setStatus(nextStatus);
+      setSessions(nextSessions);
+    });
   }, []);
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand">TRACE<span>//</span></div>
-        <div className="context">{status?.session ?? "NO ACTIVE SESSION"}</div>
-        <button type="button" className="primary-action" disabled>GO LIVE</button>
-      </header>
-
-      <aside className="navigation" aria-label="Primary navigation">
-        {navigation.map((item) => (
-          <button key={item} type="button" className={item === "LIVE" ? "active" : ""}>
-            <span className="nav-index">0{navigation.indexOf(item) + 1}</span>{item}
-          </button>
-        ))}
-      </aside>
-
-      <section className="workspace">
-        <div className="section-heading"><span>01</span> SYSTEM STATUS</div>
-        <div className="status-grid">
-          <Metric label="SOURCE" value={status?.source ?? "INITIALISING"} accent />
-          <Metric label="STATE" value={status?.connection.toUpperCase() ?? "WAIT"} />
-          <Metric label="SAMPLE RATE" value={status?.sampleRateHz ? `${status.sampleRateHz} HZ` : "—"} />
-          <Metric label="BACKEND" value="OFFLINE / LOCAL" />
-        </div>
-
-        <div className="panel">
-          <div className="panel-title">CHANNEL CAPABILITIES</div>
-          <div className="channel-table" role="table" aria-label="Telemetry channels">
-            {status?.channels.map((channel) => (
-              <div className="channel-row" role="row" key={channel.id}>
-                <span role="cell">{channel.label}</span>
-                <span role="cell" className={channel.available ? "available" : "unavailable"}>
-                  {channel.available ? "AVAILABLE" : "UNAVAILABLE"}
-                </span>
-                <code role="cell">{channel.id}</code>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="empty-state">
-          <span className="crosshair" aria-hidden="true" />
-          <div>
-            <strong>FOUNDATION MODE</strong>
-            <p>Replay data source connected. Live AC acquisition begins in Phase 2.</p>
-          </div>
-        </div>
+    <main className="grid min-h-screen grid-cols-[164px_1fr] grid-rows-[64px_1fr_34px] bg-trace-base text-trace-text max-[900px]:grid-cols-[124px_1fr]">
+      <Header status={status} />
+      <Navigation active={section} onChange={setSection} />
+      <section className="trace-grid overflow-auto p-7">
+        {section === "SESSIONS" ? (
+          <Sessions sessions={sessions} />
+        ) : (
+          <SystemStatus status={status} section={section} />
+        )}
       </section>
-
-      <footer className="statusbar">
-        <span>TRACE ENGINE <b>READY</b></span>
-        <span>AC MODULE <b>MAPPING</b></span>
-        <span>STORAGE <b>LOCAL</b></span>
-        <span className="build">V0.1.0 / FOUNDATION</span>
-      </footer>
+      <Footer />
     </main>
   );
 }
 
+function Header({ status }: { status: TelemetryStatus | null }) {
+  return (
+    <header className="col-span-full grid grid-cols-[164px_1fr_auto] items-stretch border-b border-trace-divider bg-trace-surface max-[900px]:grid-cols-[124px_1fr_auto]">
+      <div className="flex items-center border-r border-trace-divider px-5 text-[22px] font-black tracking-[.12em]">
+        TRACE<span className="text-trace-accent">//</span>
+      </div>
+      <div className="flex items-center px-[22px] text-xs tracking-[.1em] text-trace-soft">
+        {status?.session ?? "NO ACTIVE SESSION"}
+      </div>
+      <button
+        type="button"
+        className="border-0 border-l border-trace-accent-dark bg-trace-accent px-7 text-[11px] font-extrabold tracking-[.12em] text-trace-base disabled:bg-trace-accent-muted disabled:text-trace-accent-dark"
+        disabled
+      >
+        GO LIVE
+      </button>
+    </header>
+  );
+}
+
+function Navigation({ active, onChange }: { active: Section; onChange: (section: Section) => void }) {
+  return (
+    <aside className="border-r border-trace-divider bg-trace-surface pt-4" aria-label="Primary navigation">
+      {navigation.map((item, index) => (
+        <button
+          key={item}
+          type="button"
+          onClick={() => onChange(item)}
+          className={`flex h-[50px] w-full items-center gap-3 border-0 border-l-[3px] px-4 text-left text-[11px] font-bold tracking-[.1em] transition-colors ${
+            item === active
+              ? "border-trace-accent bg-trace-accent-wash text-white"
+              : "border-transparent bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+          }`}
+        >
+          <span className="font-mono text-[10px] text-trace-dim">0{index + 1}</span>
+          {item}
+        </button>
+      ))}
+    </aside>
+  );
+}
+
+function SystemStatus({ status, section }: { status: TelemetryStatus | null; section: Section }) {
+  return (
+    <>
+      <SectionHeading index="01">{section === "LIVE" ? "SYSTEM STATUS" : `${section} / LOCKED`}</SectionHeading>
+      <div className="my-[14px] mb-6 grid grid-cols-4 border border-trace-divider max-[900px]:grid-cols-2">
+        <Metric label="SOURCE" value={status?.source ?? "INITIALISING"} accent />
+        <Metric label="STATE" value={status?.connection.toUpperCase() ?? "WAIT"} />
+        <Metric label="SAMPLE RATE" value={status?.sampleRateHz ? `${status.sampleRateHz} HZ` : "—"} />
+        <Metric label="BACKEND" value="OFFLINE / LOCAL" />
+      </div>
+
+      <div className="border border-trace-divider bg-trace-surface">
+        <PanelTitle>CHANNEL CAPABILITIES</PanelTitle>
+        <div role="table" aria-label="Telemetry channels">
+          {status?.channels.map((channel) => (
+            <div
+              className="grid min-h-[42px] grid-cols-[1fr_150px_1.4fr] items-center border-b border-trace-divider text-[11px] last:border-b-0 max-[900px]:grid-cols-[1fr_120px]"
+              role="row"
+              key={channel.id}
+            >
+              <span className="px-4" role="cell">{channel.label}</span>
+              <span
+                className={`px-4 font-mono text-[9px] font-bold tracking-[.08em] ${channel.available ? "text-trace-accent" : "text-trace-dim"}`}
+                role="cell"
+              >
+                {channel.available ? "AVAILABLE" : "UNAVAILABLE"}
+              </span>
+              <code className="px-4 text-[10px] text-trace-faint max-[900px]:hidden" role="cell">{channel.id}</code>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex min-h-[190px] items-center justify-center gap-6 border border-t-0 border-trace-divider bg-trace-deep">
+        <span className="trace-crosshair" aria-hidden="true" />
+        <div>
+          <strong className="font-mono text-xs tracking-[.14em]">PHASE 2 / AC CAPTURE</strong>
+          <p className="mt-2 text-xs text-trace-faint">Adapter lifecycle ready. Recording persistence is the next boundary.</p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
+  return (
+    <>
+      <div className="flex items-end justify-between">
+        <div>
+          <SectionHeading index="02">RECORDED SESSIONS</SectionHeading>
+          <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">LOCAL TELEMETRY ARCHIVE</h1>
+        </div>
+        <span className="font-mono text-[10px] tracking-[.12em] text-trace-faint">{sessions.length} SESSION(S)</span>
+      </div>
+
+      <div className="mt-6 border border-trace-divider bg-trace-surface">
+        {sessions.length === 0 ? (
+          <div className="p-12 text-center font-mono text-xs text-trace-faint">NO RECORDED SESSIONS</div>
+        ) : sessions.map((session) => <SessionRow key={session.id} session={session} />)}
+      </div>
+    </>
+  );
+}
+
+function SessionRow({ session }: { session: RecordedSessionSummary }) {
+  return (
+    <article className="grid grid-cols-[1.4fr_1fr] border-b border-trace-divider last:border-b-0 max-[900px]:grid-cols-1">
+      <div className="border-r border-trace-divider p-5 max-[900px]:border-b max-[900px]:border-r-0">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <span className="text-[9px] font-extrabold tracking-[.14em] text-trace-accent">{session.sessionType}</span>
+            <h2 className="mt-2 text-lg font-black tracking-[.04em]">{session.track}</h2>
+            <p className="mt-1 text-xs text-trace-muted">{session.car}</p>
+          </div>
+          <div className="text-right font-mono text-[9px] leading-5 text-trace-faint">
+            <div>{session.startedAt}</div>
+            <div>{session.source}</div>
+          </div>
+        </div>
+      </div>
+      <div className="divide-y divide-trace-divider">
+        {session.laps.map((lap) => (
+          <div className="grid min-h-12 grid-cols-[72px_1fr_80px] items-center px-4 font-mono text-[10px]" key={lap.index}>
+            <span className="text-trace-faint">LAP {String(lap.index).padStart(2, "0")}</span>
+            <strong className={lap.valid ? "text-trace-text" : "text-trace-dim"}>{lap.time}</strong>
+            <span className={`text-right text-[8px] font-bold tracking-[.1em] ${lap.valid ? "text-trace-accent" : "text-trace-warning"}`}>
+              {lap.valid ? "VALID" : "INVALID"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="col-span-full flex items-center gap-6 border-t border-trace-divider bg-trace-black px-[14px] font-mono text-[8px] tracking-[.08em] text-trace-dim">
+      <span>TRACE ENGINE <b className="ml-1 text-trace-accent">READY</b></span>
+      <span>AC MODULE <b className="ml-1 text-trace-accent">LIFECYCLE</b></span>
+      <span>STORAGE <b className="ml-1 text-trace-accent">LOCAL</b></span>
+      <span className="ml-auto">V0.1.0 / PHASE 2</span>
+    </footer>
+  );
+}
+
+function SectionHeading({ index, children }: { index: string; children: ReactNode }) {
+  return <div className="text-[10px] font-extrabold tracking-[.16em] text-trace-soft"><span className="mr-2.5 text-trace-accent">{index}</span>{children}</div>;
+}
+
+function PanelTitle({ children }: { children: ReactNode }) {
+  return <div className="border-b border-trace-divider px-4 py-[14px] text-[10px] font-extrabold tracking-[.16em] text-trace-soft">{children}</div>;
+}
+
 function Metric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return <div className="metric"><span>{label}</span><strong className={accent ? "accent" : ""}>{value}</strong></div>;
+  return (
+    <div className="min-h-[92px] border-r border-trace-divider bg-trace-surface p-[18px] last:border-r-0 max-[900px]:[&:nth-child(-n+2)]:border-b max-[900px]:[&:nth-child(even)]:border-r-0">
+      <span className="block text-[9px] font-extrabold tracking-[.14em] text-trace-muted">{label}</span>
+      <strong className={`mt-[15px] block font-mono text-base font-bold ${accent ? "text-trace-accent" : ""}`}>{value}</strong>
+    </div>
+  );
 }
