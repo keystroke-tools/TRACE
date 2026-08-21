@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev
+
+      - name: Install pinned toolchains
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.7.13
+          cache: true
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Lint Rust workspace
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test Rust workspace
+        run: cargo test --workspace --all-features
+
+      - name: Typecheck frontend
+        run: pnpm check
+
+      - name: Build frontend
+        run: pnpm build

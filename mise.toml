@@ -27,4 +27,5 @@ run = [
   "cargo clippy --workspace --all-targets --all-features -- -D warnings",
   "cargo test --workspace --all-features",
   "pnpm --if-present check",
+  "pnpm --if-present build",
 ]
