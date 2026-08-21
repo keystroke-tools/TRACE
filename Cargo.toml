@@ -4,6 +4,7 @@ members = [
   "crates/trace-adapter",
   "crates/trace-core",
   "crates/trace-domain",
+  "crates/trace-protocol",
   "crates/trace-storage",
 ]
 

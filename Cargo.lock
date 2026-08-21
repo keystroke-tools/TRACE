@@ -347,6 +347,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trace-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "trace-storage"
 version = "0.1.0"
 dependencies = [
