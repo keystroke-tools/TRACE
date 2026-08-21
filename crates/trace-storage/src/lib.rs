@@ -401,6 +401,22 @@ impl FileBlobStore {
         })
     }
 
+    /// Opens a committed relative path for streaming Arrow reads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::BlobNotFound`] when the indexed path is absent, or a
+    /// backend error for other filesystem failures.
+    pub fn open_path(&self, path: &RelativeBlobPath) -> Result<File, StorageError> {
+        match File::open(self.root.join(path.as_str())) {
+            Ok(file) => Ok(file),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Err(StorageError::BlobNotFound)
+            }
+            Err(error) => Err(backend(error)),
+        }
+    }
+
     /// Quarantines files that cannot currently be reached from metadata.
     ///
     /// Both committed-but-unreferenced blobs and interrupted pending files are moved

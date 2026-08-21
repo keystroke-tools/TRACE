@@ -1,6 +1,10 @@
 //! Versioned Apache Arrow IPC telemetry representation spike.
 
-use std::{collections::HashMap, io::Cursor, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::{Cursor, Read, Seek},
+    sync::Arc,
+};
 
 use arrow_array::{
     Array, Float32Array, Float64Array, Int8Array, Int16Array, RecordBatch, UInt32Array, UInt64Array,
@@ -58,6 +62,18 @@ impl TelemetryColumns {
     /// Whether no samples are present.
     pub fn is_empty(&self) -> bool {
         self.sequence.is_empty()
+    }
+
+    fn empty() -> Self {
+        Self {
+            sequence: Vec::new(),
+            elapsed_ns: Vec::new(),
+            throttle: Vec::new(),
+            brake: Vec::new(),
+            speed_mps: Vec::new(),
+            engine_rpm: Vec::new(),
+            lap_position: Vec::new(),
+        }
     }
 }
 
@@ -356,15 +372,7 @@ fn wheel_f32(
 pub fn decode_columns(bytes: &[u8]) -> Result<TelemetryColumns, IpcError> {
     let mut reader = FileReader::try_new(Cursor::new(bytes), None).map_err(IpcError::from)?;
     validate_schema(reader.schema().as_ref())?;
-    let mut decoded = TelemetryColumns {
-        sequence: Vec::new(),
-        elapsed_ns: Vec::new(),
-        throttle: Vec::new(),
-        brake: Vec::new(),
-        speed_mps: Vec::new(),
-        engine_rpm: Vec::new(),
-        lap_position: Vec::new(),
-    };
+    let mut decoded = TelemetryColumns::empty();
     for batch in &mut reader {
         let batch = batch.map_err(IpcError::from)?;
         decoded.sequence.extend(required_u64(&batch, 0)?);
@@ -379,6 +387,86 @@ pub fn decode_columns(bytes: &[u8]) -> Result<TelemetryColumns, IpcError> {
         return Err(IpcError::EmptyBatch);
     }
     Ok(decoded)
+}
+
+/// Reads a bounded sample range while holding at most one Arrow record batch.
+///
+/// The returned projection contains the seven analysis-entry columns common to
+/// schemas v1 and v2. Batches outside the requested range are discarded immediately.
+///
+/// # Errors
+///
+/// Returns [`IpcError::InvalidSampleRange`] for a zero count, overflow, or a range
+/// extending beyond the file, and other IPC errors for malformed data.
+pub fn read_columns_range<R: Read + Seek>(
+    reader: R,
+    sample_start: u64,
+    sample_count: u64,
+) -> Result<TelemetryColumns, IpcError> {
+    if sample_count == 0 {
+        return Err(IpcError::InvalidSampleRange);
+    }
+    let requested_end = sample_start
+        .checked_add(sample_count)
+        .ok_or(IpcError::InvalidSampleRange)?;
+    let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
+    validate_schema(reader.schema().as_ref())?;
+    let mut decoded = TelemetryColumns::empty();
+    let mut batch_start = 0_u64;
+    for batch in &mut reader {
+        let batch = batch.map_err(IpcError::from)?;
+        let rows = u64::try_from(batch.num_rows()).map_err(|_| IpcError::SampleOverflow)?;
+        let batch_end = batch_start
+            .checked_add(rows)
+            .ok_or(IpcError::SampleOverflow)?;
+        let overlap_start = sample_start.max(batch_start);
+        let overlap_end = requested_end.min(batch_end);
+        if overlap_start < overlap_end {
+            let local_start = usize::try_from(overlap_start - batch_start)
+                .map_err(|_| IpcError::SampleOverflow)?;
+            let length = usize::try_from(overlap_end - overlap_start)
+                .map_err(|_| IpcError::SampleOverflow)?;
+            extend_projection(&mut decoded, &batch, local_start, length)?;
+        }
+        batch_start = batch_end;
+        if batch_start >= requested_end {
+            break;
+        }
+    }
+    if u64::try_from(decoded.len()).map_err(|_| IpcError::SampleOverflow)? != sample_count {
+        return Err(IpcError::InvalidSampleRange);
+    }
+    Ok(decoded)
+}
+
+fn extend_projection(
+    decoded: &mut TelemetryColumns,
+    batch: &RecordBatch,
+    start: usize,
+    length: usize,
+) -> Result<(), IpcError> {
+    decoded
+        .sequence
+        .extend(required_u64(batch, 0)?.into_iter().skip(start).take(length));
+    decoded
+        .elapsed_ns
+        .extend(required_u64(batch, 1)?.into_iter().skip(start).take(length));
+    decoded
+        .throttle
+        .extend(nullable_f32(batch, 2)?.into_iter().skip(start).take(length));
+    decoded
+        .brake
+        .extend(nullable_f32(batch, 3)?.into_iter().skip(start).take(length));
+    decoded
+        .speed_mps
+        .extend(nullable_f32(batch, 4)?.into_iter().skip(start).take(length));
+    decoded
+        .engine_rpm
+        .extend(nullable_f32(batch, 5)?.into_iter().skip(start).take(length));
+    decoded
+        .lap_position
+        .extend(nullable_f32(batch, 6)?.into_iter().skip(start).take(length));
+    Ok(())
 }
 
 fn schema() -> Schema {
@@ -548,6 +636,7 @@ pub enum IpcError {
     EmptyBatch,
     InvalidBatchSize,
     SampleOverflow,
+    InvalidSampleRange,
     UnsupportedSchema,
     UnexpectedNull,
     Arrow(String),
@@ -754,5 +843,36 @@ mod tests {
         let decoded = decode_columns(&bytes).expect("v1 projection");
         assert_eq!(decoded.sequence, vec![1]);
         assert_eq!(decoded.speed_mps, vec![Some(40.0)]);
+    }
+
+    #[test]
+    fn range_reader_slices_across_record_batch_boundaries() {
+        let mut writer = TelemetryIpcWriter::new(Vec::new(), 2).expect("writer");
+        for sequence in 0..6 {
+            writer
+                .push(TelemetryFrame {
+                    sequence: FrameSequence(sequence),
+                    elapsed: ElapsedNanoseconds(sequence * 10),
+                    vehicle: VehicleState {
+                        speed_mps: Some(f32::from(
+                            u16::try_from(sequence).expect("bounded sequence"),
+                        )),
+                        ..VehicleState::default()
+                    },
+                    ..TelemetryFrame::default()
+                })
+                .expect("push");
+        }
+        let (bytes, _) = writer.finish().expect("finish");
+        let range = read_columns_range(Cursor::new(bytes.clone()), 1, 4).expect("range");
+        assert_eq!(range.sequence, vec![1, 2, 3, 4]);
+        assert_eq!(
+            range.speed_mps,
+            vec![Some(1.0), Some(2.0), Some(3.0), Some(4.0)]
+        );
+        assert_eq!(
+            read_columns_range(Cursor::new(bytes), 5, 2),
+            Err(IpcError::InvalidSampleRange)
+        );
     }
 }

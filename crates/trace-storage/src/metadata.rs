@@ -69,6 +69,14 @@ pub struct SessionSummary {
     pub laps: Vec<LapSummary>,
 }
 
+/// Filesystem location and sample range needed to read one recorded lap.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LapTelemetryLocator {
+    pub blob_path: RelativeBlobPath,
+    pub sample_start: u64,
+    pub sample_count: u64,
+}
+
 impl MetadataStore {
     /// Opens or creates a metadata database and migrates it to the current schema.
     ///
@@ -375,6 +383,43 @@ impl MetadataStore {
             })
             .collect()
     }
+
+    /// Finds the immutable blob and exact sample range for one lap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError::RecordNotFound`] when the lap has no complete
+    /// telemetry location, or another metadata error for malformed values/query failure.
+    pub fn lap_telemetry(&self, lap_id: &str) -> Result<LapTelemetryLocator, MetadataError> {
+        let result = self.connection.query_row(
+            "SELECT b.relative_path, l.sample_start, l.sample_count
+             FROM laps l
+             JOIN telemetry_blobs b ON b.id = l.telemetry_blob_id
+             WHERE l.id = ?1 AND l.sample_start IS NOT NULL AND l.sample_count IS NOT NULL",
+            [lap_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        );
+        let (path, sample_start, sample_count) = match result {
+            Ok(value) => value,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Err(MetadataError::RecordNotFound),
+            Err(error) => return Err(MetadataError::from(error)),
+        };
+        Ok(LapTelemetryLocator {
+            blob_path: RelativeBlobPath::parse(path).map_err(|error| {
+                MetadataError::InvalidRecord(format!("stored lap blob path is invalid: {error:?}"))
+            })?,
+            sample_start: u64::try_from(sample_start)
+                .map_err(|_| MetadataError::IntegerOverflow)?,
+            sample_count: u64::try_from(sample_count)
+                .map_err(|_| MetadataError::IntegerOverflow)?,
+        })
+    }
 }
 
 /// Metadata database failure.
@@ -385,6 +430,7 @@ pub enum MetadataError {
     InvalidRecord(String),
     IntegerOverflow,
     SessionNotOpen,
+    RecordNotFound,
 }
 
 fn validate_session(session: &NewSession) -> Result<(), MetadataError> {
@@ -583,6 +629,18 @@ mod tests {
         assert_eq!(
             store.referenced_blob_paths().expect("blob paths"),
             BTreeSet::from([blob().path])
+        );
+        assert_eq!(
+            store.lap_telemetry("lap-2").expect("lap telemetry"),
+            LapTelemetryLocator {
+                blob_path: blob().path,
+                sample_start: 100,
+                sample_count: 100,
+            }
+        );
+        assert_eq!(
+            store.lap_telemetry("missing"),
+            Err(MetadataError::RecordNotFound)
         );
     }
 
