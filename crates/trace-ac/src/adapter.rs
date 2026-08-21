@@ -186,7 +186,9 @@ impl<S: AcSource> AcAdapter<S> {
             }
             Err(error) => {
                 self.disconnect();
-                return Err(adapter_error(error));
+                return Err(AdapterError::ConnectionLost(format!(
+                    "Assetto Corsa shared memory connection was lost: {error:?}"
+                )));
             }
         };
         let status = runtime_status(snapshot.status())?;

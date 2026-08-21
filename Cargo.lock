@@ -3845,6 +3845,10 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-build",
+ "time",
+ "trace-ac",
+ "trace-adapter",
+ "trace-recorder",
  "trace-storage",
 ]
 

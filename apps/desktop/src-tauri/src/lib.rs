@@ -2,6 +2,10 @@ use serde::Serialize;
 use tauri::Manager;
 use trace_storage::metadata::MetadataStore;
 
+mod capture;
+
+use capture::{CaptureStatus, SharedCaptureStatus};
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ChannelCapability {
@@ -13,10 +17,10 @@ struct ChannelCapability {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FoundationStatus {
-    connection: &'static str,
-    source: &'static str,
+    connection: String,
+    source: String,
     sample_rate_hz: u16,
-    session: &'static str,
+    session: String,
     channels: Vec<ChannelCapability>,
 }
 
@@ -25,7 +29,7 @@ struct FoundationStatus {
 struct RecordedLapSummary {
     index: u32,
     time: String,
-    valid: bool,
+    validity: String,
 }
 
 #[derive(Serialize)]
@@ -72,7 +76,7 @@ fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>,
                 .map(|lap| RecordedLapSummary {
                     index: lap.index,
                     time: lap.duration_ns.map_or_else(|| "—".into(), format_lap_time),
-                    valid: lap.validity == "valid",
+                    validity: lap.validity,
                 })
                 .collect(),
         })
@@ -88,12 +92,15 @@ fn format_lap_time(duration_ns: u64) -> String {
 }
 
 #[tauri::command]
-fn foundation_status() -> FoundationStatus {
+fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> FoundationStatus {
+    let snapshot = status
+        .lock()
+        .map_or_else(|_| CaptureStatus::default(), |value| value.clone());
     FoundationStatus {
-        connection: "replay",
-        source: "TRACE REPLAY",
-        sample_rate_hz: 100,
-        session: "MUGELLO / TATUUS FA01",
+        connection: snapshot.connection,
+        source: snapshot.source,
+        sample_rate_hz: snapshot.sample_rate_hz,
+        session: snapshot.session,
         channels: vec![
             ChannelCapability {
                 id: "vehicle.speed",
@@ -130,7 +137,15 @@ fn foundation_status() -> FoundationStatus {
 ///
 /// Panics when Tauri cannot initialize or run the desktop event loop.
 pub fn run() {
+    let capture_status = SharedCaptureStatus::default();
     tauri::Builder::default()
+        .manage(capture_status)
+        .setup(|app| {
+            let directory = app.path().app_data_dir()?;
+            let status = app.state::<SharedCaptureStatus>().inner().clone();
+            capture::spawn(directory, status);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![foundation_status, recent_sessions])
         .run(tauri::generate_context!())
         .expect("TRACE desktop runtime failed");

@@ -1,4 +1,11 @@
-export type ConnectionState = "searching" | "connected" | "replay" | "offline";
+export type ConnectionState =
+  | "waiting"
+  | "recording"
+  | "error"
+  | "searching"
+  | "connected"
+  | "replay"
+  | "offline";
 
 export interface ChannelCapability {
   id: string;
@@ -17,7 +24,7 @@ export interface TelemetryStatus {
 export interface RecordedLapSummary {
   index: number;
   time: string;
-  valid: boolean;
+  validity: "valid" | "invalid" | "unknown";
 }
 
 export interface RecordedSessionSummary {
@@ -61,9 +68,9 @@ export const fixtureDataSource: TelemetryDataSource = {
         startedAt: "21 AUG / 14:32",
         source: "TRACE REPLAY",
         laps: [
-          { index: 1, time: "1:52.418", valid: true },
-          { index: 2, time: "1:50.906", valid: true },
-          { index: 3, time: "—", valid: false },
+          { index: 1, time: "1:52.418", validity: "valid" },
+          { index: 2, time: "1:50.906", validity: "valid" },
+          { index: 3, time: "—", validity: "unknown" },
         ],
       },
     ];

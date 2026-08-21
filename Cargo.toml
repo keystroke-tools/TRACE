@@ -27,6 +27,7 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 sha2 = "0.10.9"
 tauri = "2.11.5"
 tauri-build = "2.6.3"
+time = { version = "0.3.55", features = ["formatting"] }
 trace-domain = { path = "crates/trace-domain" }
 
 [workspace.lints.rust]

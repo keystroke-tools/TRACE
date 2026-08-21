@@ -38,6 +38,7 @@ pub enum AdapterEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdapterError {
     TemporarilyUnavailable(String),
+    ConnectionLost(String),
     InvalidSource(String),
     Fatal(String),
 }

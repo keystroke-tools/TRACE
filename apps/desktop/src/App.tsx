@@ -23,6 +23,16 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void telemetryDataSource.getStatus().then(setStatus);
+      if (section === "SESSIONS") {
+        void telemetryDataSource.getSessions().then(setSessions);
+      }
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [section]);
+
   return (
     <main className="grid min-h-screen grid-cols-[164px_1fr] grid-rows-[64px_1fr_34px] bg-trace-base text-trace-text max-[900px]:grid-cols-[124px_1fr]">
       <Header status={status} />
@@ -118,7 +128,7 @@ function SystemStatus({ status, section }: { status: TelemetryStatus | null; sec
         <span className="trace-crosshair" aria-hidden="true" />
         <div>
           <strong className="font-mono text-xs tracking-[.14em]">PHASE 2 / AC CAPTURE</strong>
-          <p className="mt-2 text-xs text-trace-faint">Adapter lifecycle ready. Recording persistence is the next boundary.</p>
+          <p className="mt-2 text-xs text-trace-faint">Local capture worker active. Completed sessions persist without a network dependency.</p>
         </div>
       </div>
     </>
@@ -165,9 +175,9 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
         {session.laps.map((lap) => (
           <div className="grid min-h-12 grid-cols-[72px_1fr_80px] items-center px-4 font-mono text-[10px]" key={lap.index}>
             <span className="text-trace-faint">LAP {String(lap.index).padStart(2, "0")}</span>
-            <strong className={lap.valid ? "text-trace-text" : "text-trace-dim"}>{lap.time}</strong>
-            <span className={`text-right text-[8px] font-bold tracking-[.1em] ${lap.valid ? "text-trace-accent" : "text-trace-warning"}`}>
-              {lap.valid ? "VALID" : "INVALID"}
+            <strong className={lap.validity === "valid" ? "text-trace-text" : "text-trace-dim"}>{lap.time}</strong>
+            <span className={`text-right text-[8px] font-bold tracking-[.1em] ${lap.validity === "valid" ? "text-trace-accent" : "text-trace-warning"}`}>
+              {lap.validity.toUpperCase()}
             </span>
           </div>
         ))}

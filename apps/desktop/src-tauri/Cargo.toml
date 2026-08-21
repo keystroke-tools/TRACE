@@ -16,6 +16,10 @@ tauri-build.workspace = true
 [dependencies]
 serde.workspace = true
 tauri.workspace = true
+time.workspace = true
+trace-ac = { path = "../../../crates/trace-ac" }
+trace-adapter = { path = "../../../crates/trace-adapter" }
+trace-recorder = { path = "../../../crates/trace-recorder" }
 trace-storage = { path = "../../../crates/trace-storage" }
 
 [lints]
