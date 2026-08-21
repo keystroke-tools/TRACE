@@ -69,6 +69,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trace-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "trace-domain",
+]
+
+[[package]]
 name = "trace-domain"
 version = "0.1.0"
 dependencies = [
