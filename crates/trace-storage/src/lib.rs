@@ -292,6 +292,7 @@ impl TelemetryBlobStore for InMemoryBlobStore {
 pub struct FileBlobStore {
     root: PathBuf,
     staging: PathBuf,
+    quarantine: PathBuf,
     max_blob_bytes: u64,
     next_pending: u64,
     pending: BTreeMap<PendingBlobId, PathBuf>,
@@ -311,12 +312,15 @@ impl FileBlobStore {
         }
         fs::create_dir_all(root).map_err(backend)?;
         let staging = root.join(".pending");
+        let quarantine = root.join(".orphaned");
         fs::create_dir_all(&staging).map_err(backend)?;
+        fs::create_dir_all(&quarantine).map_err(backend)?;
         let mut paths = BTreeMap::new();
-        index_committed(root, root, &staging, &mut paths)?;
+        index_committed(root, root, [&staging, &quarantine], &mut paths)?;
         Ok(Self {
             root: root.to_path_buf(),
             staging,
+            quarantine,
             max_blob_bytes,
             next_pending: 1,
             pending: BTreeMap::new(),
@@ -337,6 +341,56 @@ impl FileBlobStore {
         paths.sort();
         Ok(paths)
     }
+
+    /// Quarantines files that cannot currently be reached from metadata.
+    ///
+    /// Both committed-but-unreferenced blobs and interrupted pending files are moved
+    /// beneath `.orphaned` without deleting their bytes. This should run before new
+    /// capture begins, while the store has no active pending handles.
+    ///
+    /// # Errors
+    ///
+    /// Returns a backend or collision error without overwriting quarantine data.
+    pub fn reconcile(
+        &mut self,
+        referenced: &std::collections::BTreeSet<RelativeBlobPath>,
+    ) -> Result<ReconciliationReport, StorageError> {
+        if !self.pending.is_empty() {
+            return Err(StorageError::Backend(
+                "reconciliation requires an idle blob store".into(),
+            ));
+        }
+        let mut report = ReconciliationReport::default();
+        let unreferenced = self
+            .paths
+            .iter()
+            .filter(|(_, path)| !referenced.contains(*path))
+            .map(|(id, path)| (id.clone(), path.clone()))
+            .collect::<Vec<_>>();
+        for (id, relative) in unreferenced {
+            let source = self.root.join(relative.as_str());
+            let destination = self.quarantine.join("committed").join(relative.as_str());
+            quarantine_file(&source, &destination)?;
+            self.paths.remove(&id);
+            report.committed.push(relative);
+        }
+        for path in self.orphaned_pending_files()? {
+            let name = path
+                .file_name()
+                .ok_or_else(|| StorageError::Backend("pending file has no name".into()))?;
+            let destination = self.quarantine.join("pending").join(name);
+            quarantine_file(&path, &destination)?;
+            report.pending.push(destination);
+        }
+        Ok(report)
+    }
+}
+
+/// Recoverable files isolated by a reconciliation pass.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ReconciliationReport {
+    pub committed: Vec<RelativeBlobPath>,
+    pub pending: Vec<PathBuf>,
 }
 
 impl TelemetryBlobStore for FileBlobStore {
@@ -448,13 +502,13 @@ impl TelemetryBlobStore for FileBlobStore {
 fn index_committed(
     root: &Path,
     directory: &Path,
-    staging: &Path,
+    excluded: [&Path; 2],
     paths: &mut BTreeMap<BlobId, RelativeBlobPath>,
 ) -> Result<(), StorageError> {
     for entry in fs::read_dir(directory).map_err(backend)? {
         let entry = entry.map_err(backend)?;
         let path = entry.path();
-        if path == staging {
+        if excluded.contains(&path.as_path()) {
             continue;
         }
         let file_type = entry.file_type().map_err(backend)?;
@@ -462,7 +516,7 @@ fn index_committed(
             continue;
         }
         if file_type.is_dir() {
-            index_committed(root, &path, staging, paths)?;
+            index_committed(root, &path, excluded, paths)?;
         } else if file_type.is_file() {
             let relative = path
                 .strip_prefix(root)
@@ -477,6 +531,20 @@ fn index_committed(
         }
     }
     Ok(())
+}
+
+fn quarantine_file(source: &Path, destination: &Path) -> Result<(), StorageError> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(backend)?;
+    }
+    match fs::hard_link(source, destination) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(StorageError::PathAlreadyExists);
+        }
+        Err(error) => return Err(backend(error)),
+    }
+    fs::remove_file(source).map_err(backend)
 }
 
 fn digest_file(path: &Path) -> Result<(u64, [u8; 32]), StorageError> {
@@ -515,6 +583,7 @@ fn backend(error: std::io::Error) -> StorageError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
@@ -680,5 +749,44 @@ mod tests {
             fs::read(root.0.join("sessions/shared.trace-fixture")).expect("original"),
             b"first"
         );
+    }
+
+    #[test]
+    fn reconciliation_quarantines_unreferenced_and_interrupted_files() {
+        let root = TemporaryRoot::new();
+        let mut store = FileBlobStore::open(&root.0, 1024).expect("file store");
+        let kept = store.begin().expect("kept");
+        store.append(&kept, b"kept").expect("append kept");
+        let kept = store
+            .commit(&kept, commit("sessions/kept.trace-fixture"))
+            .expect("commit kept");
+        let orphan = store.begin().expect("orphan");
+        store.append(&orphan, b"orphan").expect("append orphan");
+        store
+            .commit(&orphan, commit("sessions/orphan.trace-fixture"))
+            .expect("commit orphan");
+        let interrupted = store.begin().expect("interrupted");
+        store
+            .append(&interrupted, b"interrupted")
+            .expect("append interrupted");
+        drop(store);
+
+        let mut reopened = FileBlobStore::open(&root.0, 1024).expect("reopened");
+        let report = reopened
+            .reconcile(&BTreeSet::from([kept.path.clone()]))
+            .expect("reconciled");
+        assert_eq!(
+            report.committed,
+            vec![RelativeBlobPath::parse("sessions/orphan.trace-fixture").expect("path")]
+        );
+        assert_eq!(report.pending.len(), 1);
+        assert!(reopened.read(&kept.id).is_ok());
+        assert!(!root.0.join("sessions/orphan.trace-fixture").exists());
+        assert!(
+            root.0
+                .join(".orphaned/committed/sessions/orphan.trace-fixture")
+                .exists()
+        );
+        assert!(report.pending[0].exists());
     }
 }

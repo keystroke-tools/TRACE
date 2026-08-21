@@ -1,11 +1,11 @@
 //! `SQLite` metadata store and forward-only schema migration.
 
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use rusqlite::{Connection, params, types::Type};
 use serde::{Deserialize, Serialize};
 
-use crate::BlobMetadata;
+use crate::{BlobMetadata, RelativeBlobPath};
 
 const SCHEMA_VERSION: u32 = 1;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
@@ -348,6 +348,33 @@ impl MetadataStore {
         }
         Ok(sessions)
     }
+
+    /// Returns every filesystem blob path referenced by metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] for a malformed stored path or `SQLite` query failure.
+    pub fn referenced_blob_paths(&self) -> Result<BTreeSet<RelativeBlobPath>, MetadataError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT relative_path FROM telemetry_blobs ORDER BY relative_path")
+            .map_err(MetadataError::from)?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(MetadataError::from)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(MetadataError::from)?;
+        paths
+            .into_iter()
+            .map(|path| {
+                RelativeBlobPath::parse(path).map_err(|error| {
+                    MetadataError::InvalidRecord(format!(
+                        "stored telemetry blob path is invalid: {error:?}"
+                    ))
+                })
+            })
+            .collect()
+    }
 }
 
 /// Metadata database failure.
@@ -553,6 +580,10 @@ mod tests {
         assert_eq!(summaries[0].laps.len(), 2);
         assert_eq!(summaries[0].laps[0].duration_ns, Some(110_906_000_000));
         assert!(summaries[0].laps[0].is_personal_best);
+        assert_eq!(
+            store.referenced_blob_paths().expect("blob paths"),
+            BTreeSet::from([blob().path])
+        );
     }
 
     #[test]
