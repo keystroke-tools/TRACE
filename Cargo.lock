@@ -3823,6 +3823,8 @@ dependencies = [
 name = "trace-adapter"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+ "trace-core",
  "trace-domain",
 ]
 

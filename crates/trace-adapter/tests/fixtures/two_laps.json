@@ -1,0 +1,8 @@
+[
+  {"sequence":0,"elapsed":0,"lap":{"completed_laps":0,"normalized_position":0.0,"current_lap_time_ns":0,"simulator_distance_m":0.0},"inputs":{},"vehicle":{},"motion":{},"wheels":{},"environment":null},
+  {"sequence":1,"elapsed":5000000000,"lap":{"completed_laps":0,"normalized_position":0.5,"current_lap_time_ns":5000000000,"simulator_distance_m":50.0},"inputs":{},"vehicle":{},"motion":{},"wheels":{},"environment":null},
+  {"sequence":2,"elapsed":10000000000,"lap":{"completed_laps":0,"normalized_position":1.0,"current_lap_time_ns":10000000000,"simulator_distance_m":100.0},"inputs":{},"vehicle":{},"motion":{},"wheels":{},"environment":null},
+  {"sequence":3,"elapsed":11000000000,"lap":{"completed_laps":1,"normalized_position":0.0,"current_lap_time_ns":0,"simulator_distance_m":0.0},"inputs":{},"vehicle":{},"motion":{},"wheels":{},"environment":null},
+  {"sequence":4,"elapsed":17000000000,"lap":{"completed_laps":1,"normalized_position":0.5,"current_lap_time_ns":6000000000,"simulator_distance_m":50.0},"inputs":{},"vehicle":{},"motion":{},"wheels":{},"environment":null},
+  {"sequence":5,"elapsed":23000000000,"lap":{"completed_laps":1,"normalized_position":1.0,"current_lap_time_ns":12000000000,"simulator_distance_m":100.0},"inputs":{},"vehicle":{},"motion":{},"wheels":{},"environment":null}
+]
