@@ -57,14 +57,17 @@ pub fn spawn(data_directory: PathBuf, status: SharedCaptureStatus) {
 }
 
 fn run(data_directory: PathBuf, status: &SharedCaptureStatus) {
-    let result = run_capture(data_directory, status);
+    let result = run_capture(&data_directory, status);
     if let Err(error) = result {
         update_status(status, "error", 0, &format!("CAPTURE ERROR: {error}"));
         eprintln!("TRACE capture worker stopped: {error}");
     }
 }
 
-fn run_capture(data_directory: PathBuf, status: &SharedCaptureStatus) -> Result<(), String> {
+fn run_capture(
+    data_directory: &std::path::Path,
+    status: &SharedCaptureStatus,
+) -> Result<(), String> {
     std::fs::create_dir_all(&data_directory).map_err(|error| error.to_string())?;
     let mut metadata = MetadataStore::open(&data_directory.join("trace.sqlite"))
         .map_err(|error| format!("metadata initialization failed: {error:?}"))?;
@@ -136,7 +139,7 @@ fn handle_output(
 ) -> Result<(), String> {
     match output {
         RecorderOutput::SessionStarted(seed) => {
-            let session_id = unique_session_id()?;
+            let session_id = unique_session_id();
             metadata
                 .create_session(&new_session(&session_id, &seed)?)
                 .map_err(|error| format!("session creation failed: {error:?}"))?;
@@ -228,9 +231,9 @@ fn new_session(id: &str, seed: &SessionSeed) -> Result<NewSession, String> {
     })
 }
 
-fn unique_session_id() -> Result<String, String> {
+fn unique_session_id() -> String {
     let now = OffsetDateTime::now_utc().unix_timestamp_nanos();
-    Ok(format!("session-{now}"))
+    format!("session-{now}")
 }
 
 fn now_rfc3339() -> Result<String, String> {

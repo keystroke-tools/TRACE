@@ -92,6 +92,7 @@ fn format_lap_time(duration_ns: u64) -> String {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri injects State as a command argument.
 fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> FoundationStatus {
     let snapshot = status
         .lock()
