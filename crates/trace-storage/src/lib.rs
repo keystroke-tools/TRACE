@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod ipc;
 pub mod metadata;
 
 /// Opaque identity of a committed telemetry blob.

@@ -16,6 +16,9 @@ license = "MIT"
 rust-version = "1.91"
 
 [workspace.dependencies]
+arrow-array = "59.1.0"
+arrow-ipc = "59.1.0"
+arrow-schema = "59.1.0"
 serde = { version = "1.0.219", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 sha2 = "0.10.9"

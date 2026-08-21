@@ -39,6 +39,7 @@ Currently implemented:
 - Structured analysis results with evidence, confidence, and uncertainty
 - Distance-aligned lap-delta calculation
 - Safe vanilla Assetto Corsa page readers and canonical field mapping
+- Versioned Apache Arrow IPC telemetry representation spike
 
 The complete product direction and current technical proposal are documented in:
 

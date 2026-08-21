@@ -147,8 +147,14 @@ leaves the blob pending for explicit cleanup or crash reconciliation.
 
 Blob paths are normalized portable relative paths. Absolute paths, traversal,
 backslashes, empty components, and control characters are rejected. The in-memory
-implementation is a tested fixture; a filesystem-backed Arrow IPC implementation is
-still pending.
+implementation is a tested fixture.
+
+An Apache Arrow IPC spike now writes random-access files with TRACE format/schema/SI
+metadata and aligned nullable columns for sequence, monotonic time, inputs, speed,
+RPM, and lap position. Round-trip tests preserve missing values and reject malformed
+or foreign schemas. This validates the representation mechanics, not the final raw
+schema: remaining canonical channels, record-batch sizing, compression benchmarks,
+and filesystem-backed persistence are still pending.
 
 ## SQLite metadata
 
