@@ -211,10 +211,10 @@ mod tests {
         put_f32(&mut physics, 184, 0.04);
 
         let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
-        put_i32(&mut graphics, 140, 2);
-        put_i32(&mut graphics, 148, 12_345);
-        put_f32(&mut graphics, 256, 0.5);
-        put_f32(&mut graphics, 260, 100.0);
+        put_i32(&mut graphics, 132, 2);
+        put_i32(&mut graphics, 140, 12_345);
+        put_f32(&mut graphics, 248, 0.5);
+        put_f32(&mut graphics, 252, 100.0);
 
         let frame = map_frame(
             &physics,
@@ -226,6 +226,8 @@ mod tests {
 
         assert_eq!(frame.vehicle.speed_mps, Some(50.0));
         assert_eq!(frame.vehicle.gear, Some(Gear::Forward(3)));
+        assert_eq!(frame.lap.completed_laps, Some(2));
+        assert_eq!(frame.lap.normalized_position, Some(0.5));
         assert_eq!(frame.lap.current_lap_time_ns, Some(12_345_000_000));
         assert_eq!(frame.motion.position_m.map(|value| value.x), Some(100.0));
         assert_eq!(

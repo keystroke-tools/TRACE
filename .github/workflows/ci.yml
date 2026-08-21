@@ -77,5 +77,8 @@ jobs:
       - name: Check Assetto Corsa acquisition boundary
         run: cargo check -p trace-windows-shmem -p trace-ac
 
+      - name: Test Windows storage and acquisition boundaries
+        run: cargo test -p trace-storage -p trace-recorder -p trace-ac
+
       - name: Check Windows desktop shell
         run: cargo check -p trace-desktop

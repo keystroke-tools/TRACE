@@ -3,7 +3,7 @@
 use crate::AcPageError;
 
 pub(crate) const PHYSICS_PREFIX_LENGTH: usize = 200;
-pub(crate) const GRAPHICS_PREFIX_LENGTH: usize = 292;
+pub(crate) const GRAPHICS_PREFIX_LENGTH: usize = 264;
 pub(crate) const STATIC_PREFIX_LENGTH: usize = 476;
 const STATIC_SHARED_MEMORY_VERSION_OFFSET: usize = 0;
 const STATIC_AC_VERSION_OFFSET: usize = 30;
@@ -72,16 +72,16 @@ impl<'a> GraphicsPage<'a> {
     }
 
     pub(crate) fn completed_laps(&self) -> i32 {
-        read_i32(self.0, 140)
+        read_i32(self.0, 132)
     }
     pub(crate) fn current_time_ms(&self) -> i32 {
-        read_i32(self.0, 148)
+        read_i32(self.0, 140)
     }
     pub(crate) fn normalized_car_position(&self) -> f32 {
-        read_f32(self.0, 256)
+        read_f32(self.0, 248)
     }
     pub(crate) fn car_coordinates(&self) -> [f32; 3] {
-        read_f32_array(self.0, 260)
+        read_f32_array(self.0, 252)
     }
 }
 

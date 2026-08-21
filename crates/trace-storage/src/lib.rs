@@ -529,7 +529,9 @@ impl TelemetryBlobStore for FileBlobStore {
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(backend)?;
         }
-        File::open(staged)
+        OpenOptions::new()
+            .write(true)
+            .open(staged)
             .and_then(|file| file.sync_all())
             .map_err(backend)?;
         match fs::hard_link(staged, &destination) {
