@@ -3,6 +3,8 @@
 use trace_adapter::{AdapterEvent, DisconnectReason};
 use trace_domain::{SessionSeed, SourceDescriptor, TelemetryFrame};
 
+pub mod persistence;
+
 /// A completed lap's location within a recorded canonical frame stream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordedLap {

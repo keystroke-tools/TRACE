@@ -3868,6 +3868,7 @@ version = "0.1.0"
 dependencies = [
  "trace-adapter",
  "trace-domain",
+ "trace-storage",
 ]
 
 [[package]]

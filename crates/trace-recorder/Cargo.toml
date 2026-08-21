@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 trace-adapter = { path = "../trace-adapter" }
 trace-domain.workspace = true
+trace-storage = { path = "../trace-storage" }
 
 [lints]
 workspace = true
