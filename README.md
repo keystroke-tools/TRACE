@@ -51,6 +51,7 @@ Currently implemented:
 - Recovery-aware Arrow blob and SQLite completion orchestration
 - Atomic filesystem telemetry blobs with restart-safe checksum indexing
 - Startup orphan quarantine and a continuously polling desktop capture worker
+- Bounded 240-frame Arrow IPC record-batch streaming during capture
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens

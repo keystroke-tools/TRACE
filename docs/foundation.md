@@ -269,3 +269,12 @@ packet is retried without closing the recording, while an explicit connection-lo
 error finalizes it conservatively. Persistence failures are surfaced in worker status
 and logged without terminating future capture attempts. The React shell polls worker
 status and refreshes the Sessions archive while it is visible.
+
+Live capture uses `SessionRecorder::streaming`, which retains only the previous frame,
+lap boundaries, and sample counters. Each accepted frame moves directly into an Arrow
+IPC encoder. The encoder flushes at 240 frames (approximately four seconds at the
+current 60 Hz polling target) and writes into the bounded filesystem staging handle.
+Session completion writes the standard Arrow footer, verifies the encoder and recorder
+sample counts agree, and then follows the normal blob-before-metadata commit ordering.
+The resulting artifact remains one standard Arrow IPC file; TRACE does not introduce
+a proprietary container for streaming.

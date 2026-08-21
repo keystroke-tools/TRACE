@@ -36,4 +36,5 @@ adapter lifecycle orchestration, canonical lap segmentation, SQLite session meta
 the native session query, recovery-aware completion ordering, and an atomic filesystem
 blob store are implemented. Automated orphan reconciliation and the desktop capture
 worker are now wired at Tauri startup. Captured ABI fixtures, stale-process detection,
-and representative real-session validation remain Phase 2 work.
+and representative real-session validation remain Phase 2 work. Capture frames are
+persisted in bounded Arrow record batches rather than retained for an entire session.
