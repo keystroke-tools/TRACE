@@ -19,6 +19,7 @@ tauri.workspace = true
 time.workspace = true
 trace-ac = { path = "../../../crates/trace-ac" }
 trace-adapter = { path = "../../../crates/trace-adapter" }
+trace-domain.workspace = true
 trace-recorder = { path = "../../../crates/trace-recorder" }
 trace-storage = { path = "../../../crates/trace-storage" }
 

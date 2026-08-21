@@ -11,15 +11,17 @@ use trace_adapter::{AdapterError, AdapterEvent, DisconnectReason, SimulatorAdapt
 use trace_domain::SessionSeed;
 use trace_recorder::{
     RecorderOutput, SessionRecorder,
-    persistence::{CompletionDescriptor, persist_recording},
+    persistence::{CompletionDescriptor, persist_streamed_recording},
 };
 use trace_storage::{
-    FileBlobStore, RelativeBlobPath,
+    FileBlobStore, FileBlobWriter, RelativeBlobPath,
+    ipc::TelemetryIpcWriter,
     metadata::{MetadataStore, NewSession},
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const ARROW_BATCH_FRAMES: usize = 240;
 
 #[derive(Clone, Debug)]
 pub struct CaptureStatus {
@@ -44,6 +46,7 @@ pub type SharedCaptureStatus = Arc<Mutex<CaptureStatus>>;
 
 struct ActivePersistence {
     descriptor: CompletionDescriptor,
+    writer: Option<TelemetryIpcWriter<FileBlobWriter>>,
 }
 
 pub fn spawn(data_directory: PathBuf, status: SharedCaptureStatus) {
@@ -82,7 +85,7 @@ fn run_capture(data_directory: PathBuf, status: &SharedCaptureStatus) -> Result<
     }
 
     let mut adapter = AcAdapter::new();
-    let mut recorder = SessionRecorder::new();
+    let mut recorder = SessionRecorder::streaming();
     let mut active = None;
     loop {
         match adapter.poll() {
@@ -146,16 +149,46 @@ fn handle_output(
                     blob_path: path,
                     lap_id_prefix: format!("{session_id}-lap"),
                 },
+                writer: Some(
+                    TelemetryIpcWriter::new(
+                        blobs
+                            .begin_writer()
+                            .map_err(|error| format!("telemetry staging failed: {error:?}"))?,
+                        ARROW_BATCH_FRAMES,
+                    )
+                    .map_err(|error| format!("Arrow stream start failed: {error:?}"))?,
+                ),
             });
             update_status(status, "recording", 60, &session_label(&seed));
+        }
+        RecorderOutput::FrameAccepted(frame) => {
+            let persistence = active
+                .as_mut()
+                .ok_or_else(|| "accepted frame has no persistence identity".to_owned())?;
+            persistence
+                .writer
+                .as_mut()
+                .ok_or_else(|| "accepted frame has no Arrow writer".to_owned())?
+                .push(frame)
+                .map_err(|error| format!("Arrow batch write failed: {error:?}"))?;
         }
         RecorderOutput::SessionCompleted(recording) => {
             let Some(mut persistence) = active.take() else {
                 return Err("completed recording has no persistence identity".into());
             };
             persistence.descriptor.ended_at = now_rfc3339()?;
-            persist_recording(blobs, metadata, &recording, &persistence.descriptor)
-                .map_err(|error| format!("recording persistence failed: {error:?}"))?;
+            let writer = persistence
+                .writer
+                .take()
+                .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
+            persist_streamed_recording(
+                blobs,
+                metadata,
+                &recording,
+                &persistence.descriptor,
+                writer,
+            )
+            .map_err(|error| format!("recording persistence failed: {error:?}"))?;
             update_status(status, "waiting", 0, "NO ACTIVE SESSION");
         }
     }

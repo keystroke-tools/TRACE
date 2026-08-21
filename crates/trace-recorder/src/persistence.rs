@@ -4,8 +4,9 @@
 //! step returns the committed blob metadata for explicit orphan reconciliation.
 
 use trace_storage::{
-    BlobCommit, BlobFormat, BlobMetadata, RelativeBlobPath, StorageError, TelemetryBlobStore,
-    ipc::{IpcError, encode_frames},
+    BlobCommit, BlobFormat, BlobMetadata, FileBlobStore, FileBlobWriter, RelativeBlobPath,
+    StorageError, TelemetryBlobStore,
+    ipc::{IpcError, TelemetryIpcWriter, encode_frames},
     metadata::{MetadataError, MetadataStore, NewLap},
 };
 
@@ -89,6 +90,53 @@ pub fn persist_recording<S: TelemetryBlobStore>(
         )
         .map_err(PersistenceError::Blob)?;
 
+    index_recording(metadata, recording, descriptor, blob)
+}
+
+/// Finalizes an incremental Arrow encoder and indexes its already-staged recording.
+///
+/// # Errors
+///
+/// Returns a persistence error for Arrow finalization, sample-count disagreement,
+/// blob publication, or metadata completion failure.
+pub fn persist_streamed_recording(
+    blobs: &mut FileBlobStore,
+    metadata: &mut MetadataStore,
+    recording: &RecordedSession,
+    descriptor: &CompletionDescriptor,
+    writer: TelemetryIpcWriter<FileBlobWriter>,
+) -> Result<PersistedRecording, PersistenceError> {
+    if descriptor.session_id.is_empty()
+        || descriptor.ended_at.is_empty()
+        || descriptor.lap_id_prefix.is_empty()
+    {
+        return Err(PersistenceError::InvalidDescriptor);
+    }
+    let (writer, sample_count) = writer.finish().map_err(PersistenceError::Encode)?;
+    if sample_count != recording.sample_count {
+        return Err(PersistenceError::InvalidDescriptor);
+    }
+    let blob = blobs
+        .commit(
+            &writer.into_pending(),
+            BlobCommit {
+                path: descriptor.blob_path.clone(),
+                format: BlobFormat::ArrowIpc,
+                schema_version: 1,
+                sample_count,
+                expected_sha256: None,
+            },
+        )
+        .map_err(PersistenceError::Blob)?;
+    index_recording(metadata, recording, descriptor, blob)
+}
+
+fn index_recording(
+    metadata: &mut MetadataStore,
+    recording: &RecordedSession,
+    descriptor: &CompletionDescriptor,
+    blob: BlobMetadata,
+) -> Result<PersistedRecording, PersistenceError> {
     let laps = recording
         .laps
         .iter()
@@ -119,13 +167,15 @@ pub fn persist_recording<S: TelemetryBlobStore>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use trace_adapter::DisconnectReason;
     use trace_domain::{
         ElapsedNanoseconds, FrameSequence, SimulatorId, SourceDescriptor, TelemetryFrame,
     };
     use trace_storage::{
-        InMemoryBlobStore,
-        ipc::decode_columns,
+        FileBlobStore, InMemoryBlobStore,
+        ipc::{TelemetryIpcWriter, decode_columns},
         metadata::{MetadataStore, NewSession},
     };
 
@@ -166,6 +216,7 @@ mod tests {
                     ..TelemetryFrame::default()
                 })
                 .collect(),
+            sample_count: 3,
             laps: vec![RecordedLap {
                 lap_index: 1,
                 started_offset_ns: 0,
@@ -246,5 +297,47 @@ mod tests {
             Err(PersistenceError::EmptyRecording)
         );
         assert_eq!(blobs.pending_count(), 0);
+    }
+
+    #[test]
+    fn streamed_recording_commits_multiple_bounded_arrow_batches() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "trace-stream-persistence-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).expect("root");
+        let mut metadata = MetadataStore::open_in_memory().expect("metadata");
+        metadata
+            .create_session(&session("session-stream"))
+            .expect("session");
+        let mut blobs = FileBlobStore::open(&root, 1_000_000).expect("blobs");
+        let source = recording();
+        let mut writer =
+            TelemetryIpcWriter::new(blobs.begin_writer().expect("staging"), 2).expect("writer");
+        for frame in source.frames.iter().cloned() {
+            writer.push(frame).expect("push");
+        }
+        let mut streamed = source;
+        streamed.frames.clear();
+        let persisted = persist_streamed_recording(
+            &mut blobs,
+            &mut metadata,
+            &streamed,
+            &descriptor("session-stream", "sessions/stream.arrow"),
+            writer,
+        )
+        .expect("persisted");
+        assert_eq!(
+            decode_columns(&blobs.read(&persisted.blob.id).expect("read"))
+                .expect("decode")
+                .len(),
+            3
+        );
+        drop(blobs);
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

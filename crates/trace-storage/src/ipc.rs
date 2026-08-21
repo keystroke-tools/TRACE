@@ -7,6 +7,8 @@ use arrow_ipc::{reader::FileReader, writer::FileWriter};
 use arrow_schema::{DataType, Field, Schema};
 use trace_domain::TelemetryFrame;
 
+use std::io::Write;
+
 const FORMAT_NAME: &str = "trace.telemetry";
 const SCHEMA_VERSION: &str = "1";
 
@@ -86,6 +88,102 @@ pub fn encode_frames(frames: &[TelemetryFrame]) -> Result<Vec<u8>, IpcError> {
         writer.finish().map_err(IpcError::from)?;
     }
     Ok(output.into_inner())
+}
+
+/// Incremental Arrow IPC file encoder with a fixed maximum in-memory frame batch.
+pub struct TelemetryIpcWriter<W: Write> {
+    writer: FileWriter<W>,
+    pending: Vec<TelemetryFrame>,
+    batch_size: usize,
+    sample_count: u64,
+}
+
+impl<W: Write> TelemetryIpcWriter<W> {
+    /// Starts an Arrow IPC file on `writer`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IpcError::InvalidBatchSize`] for zero or an Arrow write error.
+    pub fn new(writer: W, batch_size: usize) -> Result<Self, IpcError> {
+        if batch_size == 0 {
+            return Err(IpcError::InvalidBatchSize);
+        }
+        let schema = Arc::new(schema());
+        Ok(Self {
+            writer: FileWriter::try_new(writer, &schema).map_err(IpcError::from)?,
+            pending: Vec::with_capacity(batch_size),
+            batch_size,
+            sample_count: 0,
+        })
+    }
+
+    /// Adds one frame and flushes a record batch when the bound is reached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an Arrow or underlying writer error.
+    pub fn push(&mut self, frame: TelemetryFrame) -> Result<(), IpcError> {
+        if self.pending.len() >= self.batch_size {
+            self.flush_batch()?;
+        }
+        self.pending.push(frame);
+        if self.pending.len() == self.batch_size {
+            self.flush_batch()?;
+        }
+        Ok(())
+    }
+
+    /// Finalizes the Arrow footer and returns the underlying writer and sample count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IpcError::EmptyBatch`] when no frames were written, or a write error.
+    pub fn finish(mut self) -> Result<(W, u64), IpcError> {
+        self.flush_batch()?;
+        if self.sample_count == 0 {
+            return Err(IpcError::EmptyBatch);
+        }
+        let writer = self.writer.into_inner().map_err(IpcError::from)?;
+        Ok((writer, self.sample_count))
+    }
+
+    /// Number of frames buffered but not yet written as a record batch.
+    pub fn buffered_frames(&self) -> usize {
+        self.pending.len()
+    }
+
+    fn flush_batch(&mut self) -> Result<(), IpcError> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        let count = u64::try_from(self.pending.len()).map_err(|_| IpcError::SampleOverflow)?;
+        let batch = record_batch(&self.pending)?;
+        self.writer.write(&batch).map_err(IpcError::from)?;
+        self.sample_count = self
+            .sample_count
+            .checked_add(count)
+            .ok_or(IpcError::SampleOverflow)?;
+        self.pending.clear();
+        Ok(())
+    }
+}
+
+fn record_batch(frames: &[TelemetryFrame]) -> Result<RecordBatch, IpcError> {
+    let columns = TelemetryColumns::from_frames(frames);
+    let schema = Arc::new(schema());
+    RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(UInt64Array::from(columns.sequence)),
+            Arc::new(UInt64Array::from(columns.elapsed_ns)),
+            Arc::new(Float32Array::from(columns.throttle)),
+            Arc::new(Float32Array::from(columns.brake)),
+            Arc::new(Float32Array::from(columns.speed_mps)),
+            Arc::new(Float32Array::from(columns.engine_rpm)),
+            Arc::new(Float32Array::from(columns.lap_position)),
+        ],
+    )
+    .map_err(IpcError::from)
 }
 
 /// Decodes and validates an Arrow IPC telemetry spike file.
@@ -180,6 +278,8 @@ fn nullable_f32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<f32>>, I
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IpcError {
     EmptyBatch,
+    InvalidBatchSize,
+    SampleOverflow,
     UnsupportedSchema,
     UnexpectedNull,
     Arrow(String),
@@ -245,5 +345,26 @@ mod tests {
             decode_columns(b"not arrow"),
             Err(IpcError::Arrow(_))
         ));
+    }
+
+    #[test]
+    fn incremental_writer_bounds_batches_and_produces_one_valid_file() {
+        let mut writer = TelemetryIpcWriter::new(Vec::new(), 2).expect("writer");
+        for sequence in 0..5 {
+            writer
+                .push(TelemetryFrame {
+                    sequence: trace_domain::FrameSequence(sequence),
+                    elapsed: trace_domain::ElapsedNanoseconds(sequence * 10),
+                    ..TelemetryFrame::default()
+                })
+                .expect("frame");
+            assert!(writer.buffered_frames() < 2);
+        }
+        let (bytes, samples) = writer.finish().expect("finished");
+        assert_eq!(samples, 5);
+        assert_eq!(
+            decode_columns(&bytes).expect("decoded").sequence,
+            vec![0, 1, 2, 3, 4]
+        );
     }
 }

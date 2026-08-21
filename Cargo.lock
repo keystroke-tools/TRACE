@@ -3848,6 +3848,7 @@ dependencies = [
  "time",
  "trace-ac",
  "trace-adapter",
+ "trace-domain",
  "trace-recorder",
  "trace-storage",
 ]

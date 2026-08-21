@@ -21,6 +21,7 @@ pub struct RecordedSession {
     pub source: SourceDescriptor,
     pub seed: SessionSeed,
     pub frames: Vec<TelemetryFrame>,
+    pub sample_count: u64,
     pub laps: Vec<RecordedLap>,
     pub end_reason: RecordingEndReason,
 }
@@ -36,6 +37,7 @@ pub enum RecordingEndReason {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RecorderOutput {
     SessionStarted(SessionSeed),
+    FrameAccepted(TelemetryFrame),
     SessionCompleted(RecordedSession),
 }
 
@@ -49,6 +51,7 @@ pub enum RecorderError {
     NonIncreasingElapsedTime,
     CompletedLapCounterRegressed,
     CompletedLapCounterJumped,
+    SampleCountOverflow,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +59,9 @@ struct ActiveSession {
     source: SourceDescriptor,
     seed: SessionSeed,
     frames: Vec<TelemetryFrame>,
+    sample_count: u64,
+    last_frame: Option<TelemetryFrame>,
+    retain_frames: bool,
     laps: Vec<RecordedLap>,
     current_lap: Option<OpenLap>,
 }
@@ -63,7 +69,7 @@ struct ActiveSession {
 #[derive(Clone, Copy, Debug)]
 struct OpenLap {
     index: u32,
-    sample_start: usize,
+    sample_start: u64,
     started_offset_ns: u64,
     started_at_boundary: bool,
 }
@@ -73,11 +79,20 @@ struct OpenLap {
 pub struct SessionRecorder {
     detected_source: Option<SourceDescriptor>,
     active: Option<ActiveSession>,
+    retain_frames: bool,
 }
 
 impl SessionRecorder {
     /// Creates an idle recorder.
     pub fn new() -> Self {
+        Self {
+            retain_frames: true,
+            ..Self::default()
+        }
+    }
+
+    /// Creates a recorder that emits accepted frames without retaining session data.
+    pub fn streaming() -> Self {
         Self::default()
     }
 
@@ -101,7 +116,7 @@ impl SessionRecorder {
                     .detected_source
                     .clone()
                     .ok_or(RecorderError::ConnectedBeforeDetection)?;
-                self.active = Some(ActiveSession::new(source, seed.clone()));
+                self.active = Some(ActiveSession::new(source, seed.clone(), self.retain_frames));
                 Ok(vec![RecorderOutput::SessionStarted(seed)])
             }
             AdapterEvent::SessionChanged(seed) => {
@@ -115,7 +130,7 @@ impl SessionRecorder {
                         active.finish(RecordingEndReason::SessionChanged),
                     ));
                 }
-                self.active = Some(ActiveSession::new(source, seed.clone()));
+                self.active = Some(ActiveSession::new(source, seed.clone(), self.retain_frames));
                 output.push(RecorderOutput::SessionStarted(seed));
                 Ok(output)
             }
@@ -123,8 +138,8 @@ impl SessionRecorder {
                 self.active
                     .as_mut()
                     .ok_or(RecorderError::FrameOutsideSession)?
-                    .push_frame(frame)?;
-                Ok(Vec::new())
+                    .push_frame(&frame)?;
+                Ok(vec![RecorderOutput::FrameAccepted(frame)])
             }
             AdapterEvent::Disconnected(reason) => Ok(self
                 .active
@@ -143,18 +158,21 @@ impl SessionRecorder {
 }
 
 impl ActiveSession {
-    fn new(source: SourceDescriptor, seed: SessionSeed) -> Self {
+    fn new(source: SourceDescriptor, seed: SessionSeed, retain_frames: bool) -> Self {
         Self {
             source,
             seed,
             frames: Vec::new(),
+            sample_count: 0,
+            last_frame: None,
+            retain_frames,
             laps: Vec::new(),
             current_lap: None,
         }
     }
 
-    fn push_frame(&mut self, frame: TelemetryFrame) -> Result<(), RecorderError> {
-        if let Some(previous) = self.frames.last() {
+    fn push_frame(&mut self, frame: &TelemetryFrame) -> Result<(), RecorderError> {
+        if let Some(previous) = &self.last_frame {
             if frame.sequence <= previous.sequence {
                 return Err(RecorderError::NonIncreasingSequence);
             }
@@ -163,7 +181,7 @@ impl ActiveSession {
             }
         }
 
-        let sample_index = self.frames.len();
+        let sample_index = self.sample_count;
         if let Some(completed_laps) = frame.lap.completed_laps {
             match self.current_lap {
                 None => {
@@ -176,14 +194,14 @@ impl ActiveSession {
                 }
                 Some(open) if completed_laps == open.index => {}
                 Some(open) if completed_laps == open.index + 1 => {
-                    let previous = self.frames.last().expect("open lap has a frame");
+                    let previous = self.last_frame.as_ref().expect("open lap has a frame");
                     if open.started_at_boundary {
                         self.laps.push(RecordedLap {
                             lap_index: open.index,
                             started_offset_ns: open.started_offset_ns,
                             duration_ns: previous.lap.current_lap_time_ns,
-                            sample_start: open.sample_start as u64,
-                            sample_count: (sample_index - open.sample_start) as u64,
+                            sample_start: open.sample_start,
+                            sample_count: sample_index - open.sample_start,
                         });
                     }
                     self.current_lap = Some(OpenLap {
@@ -199,7 +217,14 @@ impl ActiveSession {
                 Some(_) => return Err(RecorderError::CompletedLapCounterJumped),
             }
         }
-        self.frames.push(frame);
+        self.sample_count = self
+            .sample_count
+            .checked_add(1)
+            .ok_or(RecorderError::SampleCountOverflow)?;
+        self.last_frame = Some(frame.clone());
+        if self.retain_frames {
+            self.frames.push(frame.clone());
+        }
         Ok(())
     }
 
@@ -208,6 +233,7 @@ impl ActiveSession {
             source: self.source,
             seed: self.seed,
             frames: self.frames,
+            sample_count: self.sample_count,
             laps: self.laps,
             end_reason,
         }
@@ -272,6 +298,7 @@ mod tests {
             panic!("expected completed session");
         };
         assert_eq!(session.frames.len(), 7);
+        assert_eq!(session.sample_count, 7);
         assert_eq!(
             session.laps,
             vec![RecordedLap {
@@ -348,5 +375,28 @@ mod tests {
             recorder.consume(AdapterEvent::Connected(SessionSeed::default())),
             Err(RecorderError::SessionAlreadyActive)
         );
+    }
+
+    #[test]
+    fn streaming_recorder_emits_frames_without_retaining_them() {
+        let mut recorder = SessionRecorder::streaming();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        let output = recorder
+            .consume(AdapterEvent::Frame(frame(1, 100, 0, 0)))
+            .expect("frame");
+        assert!(matches!(&output[..], [RecorderOutput::FrameAccepted(_)]));
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnect");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("completed session");
+        };
+        assert!(session.frames.is_empty());
+        assert_eq!(session.sample_count, 1);
     }
 }

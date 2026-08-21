@@ -299,6 +299,42 @@ pub struct FileBlobStore {
     paths: BTreeMap<BlobId, RelativeBlobPath>,
 }
 
+/// Owned bounded writer for one filesystem staging file.
+#[derive(Debug)]
+pub struct FileBlobWriter {
+    file: File,
+    pending: PendingBlobId,
+    length: u64,
+    max_blob_bytes: u64,
+}
+
+impl FileBlobWriter {
+    /// Returns the pending identity after a higher-level encoder is finished.
+    pub fn into_pending(self) -> PendingBlobId {
+        self.pending
+    }
+}
+
+impl Write for FileBlobWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let appended = u64::try_from(bytes.len()).map_err(std::io::Error::other)?;
+        if self.length.saturating_add(appended) > self.max_blob_bytes {
+            return Err(std::io::Error::other(
+                "TRACE telemetry blob size limit exceeded",
+            ));
+        }
+        let written = self.file.write(bytes)?;
+        self.length = self
+            .length
+            .saturating_add(u64::try_from(written).map_err(std::io::Error::other)?);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
+}
+
 impl FileBlobStore {
     /// Opens a dedicated blob root and indexes existing committed files.
     ///
@@ -340,6 +376,29 @@ impl FileBlobStore {
             .collect::<Result<Vec<_>, _>>()?;
         paths.sort();
         Ok(paths)
+    }
+
+    /// Begins an owned staging writer suitable for incremental encoders.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error when staging cannot begin or reopen for append.
+    pub fn begin_writer(&mut self) -> Result<FileBlobWriter, StorageError> {
+        let pending = self.begin()?;
+        let path = self
+            .pending
+            .get(&pending)
+            .ok_or(StorageError::PendingNotFound)?;
+        let file = OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(backend)?;
+        Ok(FileBlobWriter {
+            file,
+            pending,
+            length: 0,
+            max_blob_bytes: self.max_blob_bytes,
+        })
     }
 
     /// Quarantines files that cannot currently be reached from metadata.
