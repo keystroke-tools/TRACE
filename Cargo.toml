@@ -4,6 +4,7 @@ members = [
   "crates/trace-adapter",
   "crates/trace-core",
   "crates/trace-domain",
+  "crates/trace-storage",
 ]
 
 [workspace.package]
@@ -14,6 +15,7 @@ rust-version = "1.91"
 
 [workspace.dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
+sha2 = "0.10.9"
 trace-domain = { path = "crates/trace-domain" }
 
 [workspace.lints.rust]
