@@ -43,6 +43,8 @@ The complete product direction and current technical proposal are documented in:
 
 - [Implementation specification](SPEC.md)
 - [Phase 1 architecture review](docs/phase-1-architecture.md)
+- [Implemented foundation](docs/foundation.md)
+- [TRACE live protocol v1](docs/protocol-v1.md)
 
 ## Principles
 
