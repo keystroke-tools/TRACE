@@ -56,6 +56,10 @@ fn foundation_status() -> FoundationStatus {
 }
 
 /// Starts the TRACE desktop application.
+///
+/// # Panics
+///
+/// Panics when Tauri cannot initialize or run the desktop event loop.
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![foundation_status])
