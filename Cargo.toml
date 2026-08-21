@@ -7,6 +7,7 @@ members = [
   "crates/trace-core",
   "crates/trace-domain",
   "crates/trace-protocol",
+  "crates/trace-recorder",
   "crates/trace-storage",
   "crates/trace-windows-shmem",
 ]

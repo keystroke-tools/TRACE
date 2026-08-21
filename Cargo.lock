@@ -3863,6 +3863,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trace-recorder"
+version = "0.1.0"
+dependencies = [
+ "trace-adapter",
+ "trace-domain",
+]
+
+[[package]]
 name = "trace-storage"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,14 @@
+[package]
+name = "trace-recorder"
+description = "Simulator-agnostic session and lap recording for TRACE"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+trace-adapter = { path = "../trace-adapter" }
+trace-domain.workspace = true
+
+[lints]
+workspace = true
