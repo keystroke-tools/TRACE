@@ -38,3 +38,11 @@ run = "cargo run --release -p trace-storage --example arrow_benchmark"
 description = "Cross-compile the privacy-redacted AC fixture collector for Windows"
 tools = { "cargo:cargo-xwin" = "0.23.1", clang = "22.1.8" }
 run = "cargo xwin build --target x86_64-pc-windows-msvc -p trace-ac --example capture_fixture --release"
+
+[tasks.build-windows-desktop]
+description = "Build a runnable Windows TRACE desktop executable from Linux"
+tools = { "cargo:cargo-xwin" = "0.23.1", "conda:lld" = "22.1.8", "conda:llvm-tools" = "22.1.8", clang = "22.1.8" }
+run = [
+  "pnpm build",
+  "cargo xwin build --target x86_64-pc-windows-msvc -p trace-desktop --bin trace --release",
+]

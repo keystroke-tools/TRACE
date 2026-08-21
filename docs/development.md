@@ -33,6 +33,7 @@ mise run format
 mise run check
 mise run bench-storage
 mise run build-ac-fixture-collector
+mise run build-windows-desktop
 ```
 
 `mise run check` is the local equivalent of the required CI verification:
@@ -62,6 +63,11 @@ produce a Windows executable without requiring a separate Windows Rust installat
 Run the resulting `capture_fixture.exe <output-directory>` as a Windows process while
 AC is on track. Its static page is reconstructed from a non-personal allowlist before
 being written; never replace this with a raw static-page dump.
+
+`build-windows-desktop` uses the same cross environment plus task-scoped LLD and LLVM
+resource/library tools. It builds the frontend first and emits
+`target/x86_64-pc-windows-msvc/release/trace.exe`, which can be launched as a Windows
+process from WSL. This produces an unpackaged acceptance executable, not an installer.
 
 ## Native desktop prerequisites
 

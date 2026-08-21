@@ -10,6 +10,10 @@ rust-version.workspace = true
 name = "trace_desktop"
 crate-type = ["lib", "cdylib", "staticlib"]
 
+[[bin]]
+name = "trace"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build.workspace = true
 
