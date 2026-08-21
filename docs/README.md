@@ -38,3 +38,5 @@ blob store are implemented. Automated orphan reconciliation and the desktop capt
 worker are now wired at Tauri startup. Captured ABI fixtures, stale-process detection,
 and representative real-session validation remain Phase 2 work. Capture frames are
 persisted in bounded Arrow record batches rather than retained for an entire session.
+Recorded lap sample intervals can be read across batch boundaries without loading the
+complete session file into memory.

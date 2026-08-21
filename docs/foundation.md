@@ -184,6 +184,15 @@ seven-column schema v1 projection. Round-trip tests preserve missing values and 
 malformed or foreign schemas. Compression and representative performance benchmarks
 are still pending.
 
+SQLite lap metadata provides a validated blob path, sample start, and sample count.
+The Arrow range reader uses that interval to return the common analysis-entry
+projection (sequence, elapsed time, throttle, brake, speed, RPM, and lap position)
+while retaining at most one record batch. Ranges may cross batch boundaries; zero,
+overflowing, missing, or out-of-file ranges are rejected. Arrow's footer does not
+contain row counts per record batch, so the current reader visits preceding batches
+to establish their sample offsets without retaining them. A persisted batch-row index
+can remove that scan if benchmarks show it matters.
+
 ## SQLite metadata
 
 The initial forward-only migration creates tables for:
