@@ -26,7 +26,9 @@ integrations are explicitly outside the v0.1 product scope.
 
 ## Project status
 
-TRACE is in **Phase 1: Foundation** and is not yet usable for live telemetry capture.
+TRACE has completed **Phase 1: Foundation** and is not yet usable for live telemetry
+capture. Development stops at the Phase 2 boundary until live Assetto Corsa capture
+is explicitly started.
 
 Currently implemented:
 

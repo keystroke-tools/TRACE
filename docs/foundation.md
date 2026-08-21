@@ -191,3 +191,27 @@ The workspace currently runs formatting, Clippy with warnings denied, unit tests
 and documentation tests through the Mise-managed Rust toolchain. Tests include
 identifier/capability behavior, replay ordering, interpolation, lap delta, immutable
 blob lifecycle, path security, SQLite migration/foreign keys, and protocol limits.
+
+The recorded replay integration fixture additionally proves that canonical frames
+can be emitted in bounded adapter batches, separated into laps, normalized onto a
+uniform distance grid, and compared as a deterministic cumulative delta trace.
+
+## Phase 1 acceptance
+
+The Phase 1 foundation scope in `SPEC.md` is implemented:
+
+| Requirement | Acceptance evidence |
+| --- | --- |
+| Workspace and repository | Cargo and pnpm workspaces, Mise-pinned tools, MIT license, and full-workspace CI |
+| Canonical telemetry types | `trace-domain` owns simulator-independent frames, units, identity, availability, and provenance |
+| Simulator adapter interface | `SimulatorAdapter` defines bounded polling and lifecycle events; `ReplayAdapter` is deterministic |
+| Test/replay adapter | Recorded two-lap fixture exercises replay through distance-aligned delta analysis |
+| Local storage abstractions | Immutable content-addressed blobs, SQLite metadata migrations, and Arrow IPC telemetry batches |
+| Minimal desktop shell | Tauri/React shell reports foundation state through a typed command boundary |
+| TRACE design system | Shared dark telemetry workspace tokens, typography, spacing, panels, status, and channel components |
+
+Phase 1 deliberately does not claim a usable telemetry recorder. Live Assetto Corsa
+detection and shared-memory acquisition, session/lap persistence orchestration, and
+the session browser remain Phase 2 work. The Arrow representation is accepted as
+the current storage baseline, but representative 60–333 Hz capture benchmarks remain
+a Phase 2 entry check before the format is treated as final.
