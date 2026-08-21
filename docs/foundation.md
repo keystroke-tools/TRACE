@@ -240,3 +240,10 @@ session metadata writes, and the native session archive query. Durable Arrow blo
 orchestration and the continuously running desktop capture worker remain. The Arrow
 representation is accepted as the current storage baseline, but representative
 60–333 Hz capture benchmarks remain an entry check before the format is final.
+
+Completed canonical recordings pass through `trace-recorder::persistence`: frames are
+encoded before staging begins, the immutable Arrow blob is committed first, and the
+blob reference, lap ranges, and session end are then committed in one SQLite
+transaction. Append failures abort staging. If SQLite fails after the blob commit,
+the error carries the committed blob metadata as an explicit reconciliation record;
+the blob is never silently deleted or reported as indexed.
