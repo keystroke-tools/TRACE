@@ -7,11 +7,11 @@ assets are reviewed and accepted by maintainers under the same standards as code
 
 | Field | Value |
 | --- | --- |
-| Repository path | `apps/desktop/src-tauri/icons/icon.png` |
+| Repository paths | `apps/desktop/src-tauri/icons/icon.png`, `apps/desktop/src-tauri/icons/icon.ico` |
 | Added | 2026-08-21 |
 | Generator | OpenAI built-in image generation through Codex |
 | Use | Tauri default window and application icon |
-| Final format | 512 × 512, 8-bit RGBA PNG |
+| Final formats | 512 × 512, 8-bit RGBA PNG; seven-size Windows ICO |
 | License | Distributed as part of TRACE under the MIT License |
 
 Prompt:
@@ -30,3 +30,7 @@ Avoid: cars, steering wheels, checkered flags, speedometers, photorealism, fine 
 The selected 1254 × 1254 RGB output was converted without visual redesign to a
 512 × 512 RGBA PNG because Tauri requires an RGBA default icon. The conversion used
 Pillow 12.3.0 with Lanczos resampling and optimized PNG output.
+
+The Windows ICO was derived from that accepted RGBA PNG with Pillow 12.3.0. It
+contains 16, 24, 32, 48, 64, 128, and 256 pixel variants and introduces no visual
+redesign.
