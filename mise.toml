@@ -1,0 +1,30 @@
+[tools]
+node = "26.5.0"
+pnpm = "11.17.0"
+rust = { version = "1.91.1", profile = "minimal", components = "clippy,rustfmt" }
+
+[settings]
+experimental = true
+
+[env]
+MISE_CACHE_DIR = "{{config_root}}/.cache/mise"
+
+[tasks.install]
+description = "Install project toolchains and package dependencies"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.format]
+description = "Format the Rust and frontend workspaces"
+run = [
+  "cargo fmt --all",
+  "pnpm --if-present format",
+]
+
+[tasks.check]
+description = "Run project verification"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+  "cargo test --workspace --all-features",
+  "pnpm --if-present check",
+]

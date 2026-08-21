@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/trace-adapter",
+  "crates/trace-domain",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.91"
+
+[workspace.dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
+trace-domain = { path = "crates/trace-domain" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+

@@ -1,0 +1,14 @@
+[package]
+name = "trace-adapter"
+description = "Simulator adapter lifecycle and replay support for TRACE"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+trace-domain.workspace = true
+
+[lints]
+workspace = true
+
