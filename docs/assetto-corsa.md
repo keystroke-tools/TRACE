@@ -1,7 +1,8 @@
 # Assetto Corsa shared-memory boundary
 
-Status: Phase 1 page readers and canonical mapping implemented; live acquisition is
-not implemented.
+Status: Phase 2 in progress. Page readers, canonical mapping, Windows named-mapping
+detection, and packet-stable owned snapshots are implemented. Adapter orchestration
+and recording are not yet implemented.
 
 Vanilla Assetto Corsa exposes three named Windows mappings:
 
@@ -16,6 +17,22 @@ pages to packed Rust structs. `trace-ac` accepts an owned page snapshot, checks 
 minimum documented prefix length, and decodes explicit little-endian offsets. This
 avoids unaligned references, unsafe code, platform `wchar_t` differences, and
 accidental exposure of AC-specific layouts.
+
+`trace-windows-shmem` opens existing mappings read-only, maps only the validated
+prefix size, and volatile-copies every byte into an owned buffer. It is the sole TRACE
+crate permitted to contain unsafe Rust. Handles and views use RAII cleanup, and raw
+pointers or borrowed mapped slices are never exposed. This follows Microsoft's
+[named shared-memory model](https://learn.microsoft.com/en-us/windows/win32/memory/sharing-files-and-memory),
+including opening by name with
+[`OpenFileMappingW`](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-openfilemappingw),
+mapping with
+[`MapViewOfFile`](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-mapviewoffile),
+and releasing the view and handle.
+
+Physics and graphics pages are accepted only when the `packetId` read before copying,
+the identifier embedded in the owned copy, and the identifier read after copying all
+match. A torn page is retried at most three times. The static page has no packet
+identifier and is copied directly.
 
 References used for the implemented prefix are the published
 [AC shared-memory reference](https://assettocorsamods.net/threads/doc-shared-memory-reference.58/)
@@ -72,15 +89,12 @@ Short pages return a typed `TooShort` error containing expected and actual lengt
 Keeping these values unavailable is preferable to silently attaching a false unit or
 meaning.
 
-## Phase 2 acquisition requirements
+## Remaining Phase 2 acquisition requirements
 
 The Windows reader must:
 
-1. detect and open all three named mappings without blocking application startup;
-2. copy changing pages to owned bytes only when `packetId` is stable before/after;
-3. verify the shared-memory version from the static page;
-4. emit lifecycle/capability changes through `trace-adapter`;
-5. tolerate simulator close, pause, session reset, and reconnect;
-6. keep local recording independent from any live network path;
-7. add captured, version-labelled byte fixtures for every supported ABI.
-
+1. verify the shared-memory version from the static page;
+2. emit lifecycle/capability changes through `trace-adapter`;
+3. tolerate simulator close, pause, session reset, and reconnect;
+4. keep local recording independent from any live network path;
+5. add captured, version-labelled byte fixtures for every supported ABI.

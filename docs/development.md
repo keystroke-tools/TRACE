@@ -69,6 +69,7 @@ crates/trace-domain/      canonical simulator-independent types
 crates/trace-adapter/     acquisition lifecycle and deterministic replay
 crates/trace-core/        deterministic telemetry mathematics
 crates/trace-ac/          private Assetto Corsa byte decoding and mapping
+crates/trace-windows-shmem/ audited Win32 mapping and volatile-copy boundary
 crates/trace-storage/     blob lifecycle, SQLite metadata, Arrow IPC spike
 crates/trace-protocol/    bounded live protocol DTOs and validation
 docs/                     architecture, boundaries, and operational guidance
@@ -77,6 +78,20 @@ docs/                     architecture, boundaries, and operational guidance
 Keep dependencies pointed inward. In particular, `trace-core` must not depend on a
 simulator, Tauri, React, storage, networking, or an LLM provider. Simulator-specific
 values must cross the adapter boundary as canonical domain values before analysis.
+
+Workspace crates forbid unsafe Rust except `trace-windows-shmem`. That crate is a
+deliberately small platform boundary: it may own Win32 handles and perform documented
+volatile reads, but it must never expose raw pointers or borrowed mapped memory.
+
+The Windows-specific acquisition crates can be checked from a configured cross-target
+host with:
+
+```sh
+mise exec -- cargo check \
+  -p trace-windows-shmem \
+  -p trace-ac \
+  --target x86_64-pc-windows-msvc
+```
 
 ## Tests and fixtures
 

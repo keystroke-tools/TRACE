@@ -26,9 +26,9 @@ integrations are explicitly outside the v0.1 product scope.
 
 ## Project status
 
-TRACE has completed **Phase 1: Foundation** and is not yet usable for live telemetry
-capture. Development stops at the Phase 2 boundary until live Assetto Corsa capture
-is explicitly started.
+TRACE has completed **Phase 1: Foundation** and begun **Phase 2: Assetto Corsa
+capture**. The Windows shared-memory detection and packet-stable snapshot boundary
+is implemented, but TRACE is not yet a usable live telemetry recorder.
 
 Currently implemented:
 
@@ -41,6 +41,7 @@ Currently implemented:
 - Structured analysis results with evidence, confidence, and uncertainty
 - Distance-aligned lap-delta calculation
 - Safe vanilla Assetto Corsa page readers and canonical field mapping
+- Windows Assetto Corsa detection and packet-stable owned shared-memory snapshots
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 
@@ -97,6 +98,10 @@ The central crates are:
 
 `trace-core` must remain independent of Assetto Corsa, Tauri, storage engines,
 networking, user interfaces, and LLM providers.
+
+The only crate permitted to contain unsafe Rust is the narrow
+`trace-windows-shmem` platform boundary. It owns Win32 handles and volatile copies;
+mapped pointers never cross into simulator, domain, analysis, storage, or UI code.
 
 ## Development setup
 

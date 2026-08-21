@@ -12,6 +12,8 @@ trace-adapter ---> trace-domain <--- trace-ac
                    trace-core
 
 trace-storage     trace-protocol
+
+trace-ac ---> trace-windows-shmem (Windows platform boundary only)
 ```
 
 The crates intentionally have no circular dependencies:
@@ -24,8 +26,9 @@ The crates intentionally have no circular dependencies:
 - `trace-storage` owns immutable telemetry blob and SQLite metadata boundaries.
 - `trace-protocol` owns bounded, versioned network data-transfer objects.
 
-No implemented crate depends on Tauri, React, HTTP, a simulator SDK, or an LLM
-provider, except the dedicated `apps/desktop/src-tauri` composition root.
+No implemented domain or analysis crate depends on Tauri, React, HTTP, a simulator
+SDK, or an LLM provider. `apps/desktop/src-tauri` is the desktop composition root;
+`trace-windows-shmem` is the isolated Win32 acquisition boundary.
 
 ## Desktop shell
 
@@ -90,14 +93,17 @@ fixtures.
 ## Assetto Corsa boundary
 
 `trace-ac` reads owned little-endian byte snapshots rather than casting shared memory
-to packed Rust structs. This keeps the workspace free of unsafe code and makes prefix
-length/offset validation explicit. It currently maps documented driver inputs,
+to packed Rust structs. The unavoidable Win32 handle and volatile-read operations are
+isolated in `trace-windows-shmem`; no mapped pointer or borrowed view escapes that
+crate. This keeps unsafe code out of the telemetry pipeline and makes prefix
+length/offset validation explicit. `trace-ac` currently maps documented driver inputs,
 speed/RPM/gear/fuel, velocity, G acceleration, tyre core temperature, suspension
 travel, lap observations, world position, car/track identity, and temperatures.
 
-Fields whose units or semantics remain uncertain are intentionally unavailable. Live
-Windows shared-memory acquisition and packet-stable copying remain Phase 2 work. See
-[the AC boundary document](assetto-corsa.md).
+Fields whose units or semantics remain uncertain are intentionally unavailable.
+Windows mapping detection and bounded packet-stable owned snapshots are implemented;
+adapter lifecycle orchestration remains Phase 2 work. See [the AC boundary
+document](assetto-corsa.md).
 
 ## Distance-domain analysis
 
