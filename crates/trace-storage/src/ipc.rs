@@ -2,15 +2,20 @@
 
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 
-use arrow_array::{Array, Float32Array, RecordBatch, UInt64Array};
+use arrow_array::{
+    Array, Float32Array, Float64Array, Int8Array, Int16Array, RecordBatch, UInt32Array, UInt64Array,
+};
 use arrow_ipc::{reader::FileReader, writer::FileWriter};
 use arrow_schema::{DataType, Field, Schema};
-use trace_domain::TelemetryFrame;
+use trace_domain::{CoordinateFrame, Gear, TelemetryFrame, WheelCorner};
 
 use std::io::Write;
 
 const FORMAT_NAME: &str = "trace.telemetry";
-const SCHEMA_VERSION: &str = "1";
+const SCHEMA_VERSION: &str = "2";
+
+/// Current full-fidelity telemetry schema version written by TRACE.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 2;
 
 /// Minimal decoded columns used to validate the Arrow storage choice.
 /// This is not yet the final full-resolution persistence schema.
@@ -65,21 +70,8 @@ pub fn encode_frames(frames: &[TelemetryFrame]) -> Result<Vec<u8>, IpcError> {
     if frames.is_empty() {
         return Err(IpcError::EmptyBatch);
     }
-    let columns = TelemetryColumns::from_frames(frames);
     let schema = Arc::new(schema());
-    let batch = RecordBatch::try_new(
-        Arc::clone(&schema),
-        vec![
-            Arc::new(UInt64Array::from(columns.sequence)),
-            Arc::new(UInt64Array::from(columns.elapsed_ns)),
-            Arc::new(Float32Array::from(columns.throttle)),
-            Arc::new(Float32Array::from(columns.brake)),
-            Arc::new(Float32Array::from(columns.speed_mps)),
-            Arc::new(Float32Array::from(columns.engine_rpm)),
-            Arc::new(Float32Array::from(columns.lap_position)),
-        ],
-    )
-    .map_err(IpcError::from)?;
+    let batch = record_batch(frames)?;
 
     let mut output = Cursor::new(Vec::new());
     {
@@ -168,6 +160,7 @@ impl<W: Write> TelemetryIpcWriter<W> {
     }
 }
 
+#[allow(clippy::too_many_lines, clippy::from_iter_instead_of_collect)]
 fn record_batch(frames: &[TelemetryFrame]) -> Result<RecordBatch, IpcError> {
     let columns = TelemetryColumns::from_frames(frames);
     let schema = Arc::new(schema());
@@ -181,9 +174,178 @@ fn record_batch(frames: &[TelemetryFrame]) -> Result<RecordBatch, IpcError> {
             Arc::new(Float32Array::from(columns.speed_mps)),
             Arc::new(Float32Array::from(columns.engine_rpm)),
             Arc::new(Float32Array::from(columns.lap_position)),
+            Arc::new(UInt32Array::from_iter(
+                frames.iter().map(|frame| frame.lap.completed_laps),
+            )),
+            Arc::new(UInt64Array::from_iter(
+                frames.iter().map(|frame| frame.lap.current_lap_time_ns),
+            )),
+            Arc::new(Float64Array::from_iter(
+                frames.iter().map(|frame| frame.lap.simulator_distance_m),
+            )),
+            Arc::new(Float32Array::from_iter(
+                frames.iter().map(|frame| frame.inputs.clutch),
+            )),
+            Arc::new(Float32Array::from_iter(
+                frames.iter().map(|frame| frame.inputs.steering_angle_rad),
+            )),
+            Arc::new(Float32Array::from_iter(
+                frames.iter().map(|frame| frame.vehicle.fuel_litres),
+            )),
+            Arc::new(Int8Array::from_iter(
+                frames.iter().map(|frame| frame.vehicle.gear.map(gear_kind)),
+            )),
+            Arc::new(Int16Array::from_iter(
+                frames
+                    .iter()
+                    .map(|frame| frame.vehicle.gear.map(gear_value)),
+            )),
+            vector_f64(frames, |frame| frame.motion.position_m, |value| value.x),
+            vector_f64(frames, |frame| frame.motion.position_m, |value| value.y),
+            vector_f64(frames, |frame| frame.motion.position_m, |value| value.z),
+            vector_frame(frames, |frame| frame.motion.position_m),
+            vector_f64(frames, |frame| frame.motion.velocity_mps, |value| value.x),
+            vector_f64(frames, |frame| frame.motion.velocity_mps, |value| value.y),
+            vector_f64(frames, |frame| frame.motion.velocity_mps, |value| value.z),
+            vector_frame(frames, |frame| frame.motion.velocity_mps),
+            vector_f64(
+                frames,
+                |frame| frame.motion.acceleration_mps2,
+                |value| value.x,
+            ),
+            vector_f64(
+                frames,
+                |frame| frame.motion.acceleration_mps2,
+                |value| value.y,
+            ),
+            vector_f64(
+                frames,
+                |frame| frame.motion.acceleration_mps2,
+                |value| value.z,
+            ),
+            vector_frame(frames, |frame| frame.motion.acceleration_mps2),
+            Arc::new(Float32Array::from_iter(frames.iter().map(|frame| {
+                frame
+                    .environment
+                    .and_then(|value| value.ambient_temperature_c)
+            }))),
+            Arc::new(Float32Array::from_iter(frames.iter().map(|frame| {
+                frame
+                    .environment
+                    .and_then(|value| value.track_temperature_c)
+            }))),
+            Arc::new(Float32Array::from_iter(frames.iter().map(|frame| {
+                frame.environment.and_then(|value| value.track_grip)
+            }))),
+            wheel_f32(frames, WheelCorner::FrontLeft, |value| {
+                value.angular_speed_rad_s
+            }),
+            wheel_f32(frames, WheelCorner::FrontLeft, |value| {
+                value.tyre_pressure_pa
+            }),
+            wheel_f32(frames, WheelCorner::FrontLeft, |value| {
+                value.tyre_core_temperature_c
+            }),
+            wheel_f32(frames, WheelCorner::FrontLeft, |value| {
+                value.suspension_travel_m
+            }),
+            wheel_f32(frames, WheelCorner::FrontRight, |value| {
+                value.angular_speed_rad_s
+            }),
+            wheel_f32(frames, WheelCorner::FrontRight, |value| {
+                value.tyre_pressure_pa
+            }),
+            wheel_f32(frames, WheelCorner::FrontRight, |value| {
+                value.tyre_core_temperature_c
+            }),
+            wheel_f32(frames, WheelCorner::FrontRight, |value| {
+                value.suspension_travel_m
+            }),
+            wheel_f32(frames, WheelCorner::RearLeft, |value| {
+                value.angular_speed_rad_s
+            }),
+            wheel_f32(frames, WheelCorner::RearLeft, |value| {
+                value.tyre_pressure_pa
+            }),
+            wheel_f32(frames, WheelCorner::RearLeft, |value| {
+                value.tyre_core_temperature_c
+            }),
+            wheel_f32(frames, WheelCorner::RearLeft, |value| {
+                value.suspension_travel_m
+            }),
+            wheel_f32(frames, WheelCorner::RearRight, |value| {
+                value.angular_speed_rad_s
+            }),
+            wheel_f32(frames, WheelCorner::RearRight, |value| {
+                value.tyre_pressure_pa
+            }),
+            wheel_f32(frames, WheelCorner::RearRight, |value| {
+                value.tyre_core_temperature_c
+            }),
+            wheel_f32(frames, WheelCorner::RearRight, |value| {
+                value.suspension_travel_m
+            }),
         ],
     )
     .map_err(IpcError::from)
+}
+
+fn gear_kind(gear: Gear) -> i8 {
+    match gear {
+        Gear::Reverse => -1,
+        Gear::Neutral => 0,
+        Gear::Forward(_) => 1,
+        Gear::Unknown(_) => 2,
+    }
+}
+
+fn gear_value(gear: Gear) -> i16 {
+    match gear {
+        Gear::Reverse => -1,
+        Gear::Neutral => 0,
+        Gear::Forward(value) => i16::from(value),
+        Gear::Unknown(value) => value,
+    }
+}
+
+fn coordinate_frame(frame: CoordinateFrame) -> i8 {
+    match frame {
+        CoordinateFrame::SourceWorld => 0,
+        CoordinateFrame::TraceWorld => 1,
+        CoordinateFrame::Vehicle => 2,
+    }
+}
+
+#[allow(clippy::from_iter_instead_of_collect)]
+fn vector_f64(
+    frames: &[TelemetryFrame],
+    vector: impl Fn(&TelemetryFrame) -> Option<trace_domain::Vector3>,
+    component: impl Fn(trace_domain::Vector3) -> f64,
+) -> Arc<Float64Array> {
+    Arc::new(Float64Array::from_iter(
+        frames.iter().map(|frame| vector(frame).map(&component)),
+    ))
+}
+
+#[allow(clippy::from_iter_instead_of_collect)]
+fn vector_frame(
+    frames: &[TelemetryFrame],
+    vector: impl Fn(&TelemetryFrame) -> Option<trace_domain::Vector3>,
+) -> Arc<Int8Array> {
+    Arc::new(Int8Array::from_iter(frames.iter().map(|frame| {
+        vector(frame).map(|value| coordinate_frame(value.frame))
+    })))
+}
+
+#[allow(clippy::from_iter_instead_of_collect)]
+fn wheel_f32(
+    frames: &[TelemetryFrame],
+    corner: WheelCorner,
+    channel: impl Fn(trace_domain::WheelState) -> Option<f32>,
+) -> Arc<Float32Array> {
+    Arc::new(Float32Array::from_iter(frames.iter().map(|frame| {
+        frame.wheels.get(&corner).copied().and_then(&channel)
+    })))
 }
 
 /// Decodes and validates an Arrow IPC telemetry spike file.
@@ -229,6 +391,45 @@ fn schema() -> Schema {
             Field::new("speed_mps", DataType::Float32, true),
             Field::new("engine_rpm", DataType::Float32, true),
             Field::new("lap_position", DataType::Float32, true),
+            Field::new("lap_completed", DataType::UInt32, true),
+            Field::new("lap_current_time_ns", DataType::UInt64, true),
+            Field::new("lap_simulator_distance_m", DataType::Float64, true),
+            Field::new("clutch", DataType::Float32, true),
+            Field::new("steering_angle_rad", DataType::Float32, true),
+            Field::new("fuel_litres", DataType::Float32, true),
+            Field::new("gear_kind", DataType::Int8, true),
+            Field::new("gear_value", DataType::Int16, true),
+            Field::new("position_x_m", DataType::Float64, true),
+            Field::new("position_y_m", DataType::Float64, true),
+            Field::new("position_z_m", DataType::Float64, true),
+            Field::new("position_frame", DataType::Int8, true),
+            Field::new("velocity_x_mps", DataType::Float64, true),
+            Field::new("velocity_y_mps", DataType::Float64, true),
+            Field::new("velocity_z_mps", DataType::Float64, true),
+            Field::new("velocity_frame", DataType::Int8, true),
+            Field::new("acceleration_x_mps2", DataType::Float64, true),
+            Field::new("acceleration_y_mps2", DataType::Float64, true),
+            Field::new("acceleration_z_mps2", DataType::Float64, true),
+            Field::new("acceleration_frame", DataType::Int8, true),
+            Field::new("ambient_temperature_c", DataType::Float32, true),
+            Field::new("track_temperature_c", DataType::Float32, true),
+            Field::new("track_grip", DataType::Float32, true),
+            wheel_field("front_left", "angular_speed_rad_s"),
+            wheel_field("front_left", "tyre_pressure_pa"),
+            wheel_field("front_left", "tyre_core_temperature_c"),
+            wheel_field("front_left", "suspension_travel_m"),
+            wheel_field("front_right", "angular_speed_rad_s"),
+            wheel_field("front_right", "tyre_pressure_pa"),
+            wheel_field("front_right", "tyre_core_temperature_c"),
+            wheel_field("front_right", "suspension_travel_m"),
+            wheel_field("rear_left", "angular_speed_rad_s"),
+            wheel_field("rear_left", "tyre_pressure_pa"),
+            wheel_field("rear_left", "tyre_core_temperature_c"),
+            wheel_field("rear_left", "suspension_travel_m"),
+            wheel_field("rear_right", "angular_speed_rad_s"),
+            wheel_field("rear_right", "tyre_pressure_pa"),
+            wheel_field("rear_right", "tyre_core_temperature_c"),
+            wheel_field("rear_right", "suspension_travel_m"),
         ],
         HashMap::from([
             ("trace.format".into(), FORMAT_NAME.into()),
@@ -238,14 +439,41 @@ fn schema() -> Schema {
     )
 }
 
+fn schema_v1() -> Schema {
+    Schema::new_with_metadata(
+        vec![
+            Field::new("sequence", DataType::UInt64, false),
+            Field::new("elapsed_ns", DataType::UInt64, false),
+            Field::new("throttle", DataType::Float32, true),
+            Field::new("brake", DataType::Float32, true),
+            Field::new("speed_mps", DataType::Float32, true),
+            Field::new("engine_rpm", DataType::Float32, true),
+            Field::new("lap_position", DataType::Float32, true),
+        ],
+        HashMap::from([
+            ("trace.format".into(), FORMAT_NAME.into()),
+            ("trace.schema_version".into(), "1".into()),
+            ("trace.units".into(), "si".into()),
+        ]),
+    )
+}
+
+fn wheel_field(corner: &str, channel: &str) -> Field {
+    Field::new(format!("wheel_{corner}_{channel}"), DataType::Float32, true)
+}
+
 fn validate_schema(value: &Schema) -> Result<(), IpcError> {
+    let version = value
+        .metadata()
+        .get("trace.schema_version")
+        .map(String::as_str);
+    let fields_match = match version {
+        Some("1") => value.fields() == schema_v1().fields(),
+        Some(SCHEMA_VERSION) => value.fields() == schema().fields(),
+        _ => false,
+    };
     if value.metadata().get("trace.format").map(String::as_str) != Some(FORMAT_NAME)
-        || value
-            .metadata()
-            .get("trace.schema_version")
-            .map(String::as_str)
-            != Some(SCHEMA_VERSION)
-        || value.fields() != schema().fields()
+        || !fields_match
     {
         Err(IpcError::UnsupportedSchema)
     } else {
@@ -274,6 +502,46 @@ fn nullable_f32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<f32>>, I
     Ok(array.iter().collect())
 }
 
+#[cfg(test)]
+fn nullable_f64(batch: &RecordBatch, index: usize) -> Result<Vec<Option<f64>>, IpcError> {
+    let array = batch
+        .column(index)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    Ok(array.iter().collect())
+}
+
+#[cfg(test)]
+fn nullable_u32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u32>>, IpcError> {
+    let array = batch
+        .column(index)
+        .as_any()
+        .downcast_ref::<UInt32Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    Ok(array.iter().collect())
+}
+
+#[cfg(test)]
+fn nullable_i8(batch: &RecordBatch, index: usize) -> Result<Vec<Option<i8>>, IpcError> {
+    let array = batch
+        .column(index)
+        .as_any()
+        .downcast_ref::<Int8Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    Ok(array.iter().collect())
+}
+
+#[cfg(test)]
+fn nullable_i16(batch: &RecordBatch, index: usize) -> Result<Vec<Option<i16>>, IpcError> {
+    let array = batch
+        .column(index)
+        .as_any()
+        .downcast_ref::<Int16Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    Ok(array.iter().collect())
+}
+
 /// Arrow representation failure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IpcError {
@@ -295,7 +563,8 @@ impl From<arrow_schema::ArrowError> for IpcError {
 mod tests {
     use super::*;
     use trace_domain::{
-        DriverInputs, ElapsedNanoseconds, FrameSequence, LapObservation, VehicleState,
+        CoordinateFrame, DriverInputs, ElapsedNanoseconds, EnvironmentState, FrameSequence, Gear,
+        LapObservation, MotionState, Vector3, VehicleState, WheelState,
     };
 
     #[test]
@@ -366,5 +635,124 @@ mod tests {
             decode_columns(&bytes).expect("decoded").sequence,
             vec![0, 1, 2, 3, 4]
         );
+    }
+
+    #[test]
+    fn schema_v2_preserves_full_canonical_channel_families() {
+        let mut wheels = trace_domain::WheelStates::new();
+        wheels.insert(
+            WheelCorner::FrontLeft,
+            WheelState {
+                angular_speed_rad_s: Some(42.0),
+                tyre_pressure_pa: Some(190_000.0),
+                tyre_core_temperature_c: Some(88.0),
+                suspension_travel_m: Some(0.04),
+            },
+        );
+        let frame = TelemetryFrame {
+            sequence: FrameSequence(7),
+            elapsed: ElapsedNanoseconds(8),
+            lap: LapObservation {
+                completed_laps: Some(3),
+                normalized_position: Some(0.4),
+                current_lap_time_ns: Some(9),
+                simulator_distance_m: Some(10.0),
+            },
+            inputs: DriverInputs {
+                clutch: Some(0.2),
+                steering_angle_rad: Some(-0.3),
+                ..DriverInputs::default()
+            },
+            vehicle: VehicleState {
+                gear: Some(Gear::Unknown(12)),
+                fuel_litres: Some(22.0),
+                ..VehicleState::default()
+            },
+            motion: MotionState {
+                position_m: Some(Vector3 {
+                    x: 1.0,
+                    y: 2.0,
+                    z: 3.0,
+                    frame: CoordinateFrame::SourceWorld,
+                }),
+                velocity_mps: Some(Vector3 {
+                    x: 4.0,
+                    y: 5.0,
+                    z: 6.0,
+                    frame: CoordinateFrame::TraceWorld,
+                }),
+                acceleration_mps2: Some(Vector3 {
+                    x: 7.0,
+                    y: 8.0,
+                    z: 9.0,
+                    frame: CoordinateFrame::Vehicle,
+                }),
+            },
+            wheels,
+            environment: Some(EnvironmentState {
+                ambient_temperature_c: Some(21.0),
+                track_temperature_c: Some(34.0),
+                track_grip: Some(0.98),
+            }),
+        };
+        let bytes = encode_frames(&[frame]).expect("encoded");
+        let mut reader = FileReader::try_new(Cursor::new(bytes), None).expect("reader");
+        assert_eq!(
+            reader.schema().metadata().get("trace.schema_version"),
+            Some(&"2".to_owned())
+        );
+        assert_eq!(reader.schema().fields().len(), 46);
+        let batch = reader.next().expect("batch").expect("valid batch");
+        assert_eq!(nullable_u32(&batch, 7).expect("laps"), vec![Some(3)]);
+        assert_eq!(nullable_i8(&batch, 13).expect("gear kind"), vec![Some(2)]);
+        assert_eq!(
+            nullable_i16(&batch, 14).expect("gear value"),
+            vec![Some(12)]
+        );
+        assert_eq!(
+            nullable_f64(&batch, 15).expect("position x"),
+            vec![Some(1.0)]
+        );
+        assert_eq!(
+            nullable_i8(&batch, 22).expect("velocity frame"),
+            vec![Some(1)]
+        );
+        assert_eq!(
+            nullable_i8(&batch, 26).expect("acceleration frame"),
+            vec![Some(2)]
+        );
+        assert_eq!(nullable_f32(&batch, 27).expect("ambient"), vec![Some(21.0)]);
+        assert_eq!(
+            nullable_f32(&batch, 30).expect("wheel speed"),
+            vec![Some(42.0)]
+        );
+        assert_eq!(nullable_f32(&batch, 34).expect("missing wheel"), vec![None]);
+    }
+
+    #[test]
+    fn schema_v1_projection_remains_readable() {
+        let schema = Arc::new(schema_v1());
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(UInt64Array::from(vec![1])),
+                Arc::new(UInt64Array::from(vec![2])),
+                Arc::new(Float32Array::from(vec![Some(0.3)])),
+                Arc::new(Float32Array::from(vec![None])),
+                Arc::new(Float32Array::from(vec![Some(40.0)])),
+                Arc::new(Float32Array::from(vec![Some(7_000.0)])),
+                Arc::new(Float32Array::from(vec![Some(0.5)])),
+            ],
+        )
+        .expect("batch");
+        let mut bytes = Vec::new();
+        {
+            let mut writer = FileWriter::try_new(&mut bytes, &schema).expect("writer");
+            writer.write(&batch).expect("write");
+            writer.finish().expect("finish");
+        }
+        let decoded = decode_columns(&bytes).expect("v1 projection");
+        assert_eq!(decoded.sequence, vec![1]);
+        assert_eq!(decoded.speed_mps, vec![Some(40.0)]);
     }
 }

@@ -6,7 +6,7 @@
 use trace_storage::{
     BlobCommit, BlobFormat, BlobMetadata, FileBlobStore, FileBlobWriter, RelativeBlobPath,
     StorageError, TelemetryBlobStore,
-    ipc::{IpcError, TelemetryIpcWriter, encode_frames},
+    ipc::{IpcError, TELEMETRY_SCHEMA_VERSION, TelemetryIpcWriter, encode_frames},
     metadata::{MetadataError, MetadataStore, NewLap},
 };
 
@@ -83,7 +83,7 @@ pub fn persist_recording<S: TelemetryBlobStore>(
             BlobCommit {
                 path: descriptor.blob_path.clone(),
                 format: BlobFormat::ArrowIpc,
-                schema_version: 1,
+                schema_version: TELEMETRY_SCHEMA_VERSION,
                 sample_count,
                 expected_sha256: None,
             },
@@ -122,7 +122,7 @@ pub fn persist_streamed_recording(
             BlobCommit {
                 path: descriptor.blob_path.clone(),
                 format: BlobFormat::ArrowIpc,
-                schema_version: 1,
+                schema_version: TELEMETRY_SCHEMA_VERSION,
                 sample_count,
                 expected_sha256: None,
             },
