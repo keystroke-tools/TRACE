@@ -45,6 +45,29 @@ pub struct AcSnapshot {
 }
 
 impl AcSnapshot {
+    /// Creates an owned snapshot from captured page bytes after validating prefixes.
+    ///
+    /// This constructor supports version-labelled fixtures and alternate acquisition
+    /// hosts without exposing mapped memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any page lacks the currently validated vanilla prefix.
+    pub fn from_pages(
+        physics: Vec<u8>,
+        graphics: Vec<u8>,
+        static_page: Vec<u8>,
+    ) -> Result<Self, AcCaptureError> {
+        pages::PhysicsPage::parse(&physics)?;
+        pages::GraphicsPage::parse(&graphics)?;
+        pages::StaticPage::parse(&static_page)?;
+        Ok(Self {
+            physics,
+            graphics,
+            static_page,
+        })
+    }
+
     /// Converts changing pages into one canonical telemetry frame.
     ///
     /// # Errors
@@ -67,6 +90,12 @@ impl AcSnapshot {
         &self,
     ) -> Result<(SessionSeed, Option<trace_domain::EnvironmentState>), AcCaptureError> {
         Ok(map_session(&self.static_page)?)
+    }
+
+    pub(crate) fn status(&self) -> i32 {
+        pages::GraphicsPage::parse(&self.graphics)
+            .expect("snapshot pages validated at acquisition")
+            .status()
     }
 }
 
@@ -122,11 +151,7 @@ impl AcSharedMemory {
             self.stability_attempts,
         )?;
         let static_page = self.static_page.copy_owned()?;
-        Ok(AcSnapshot {
-            physics,
-            graphics,
-            static_page,
-        })
+        AcSnapshot::from_pages(physics, graphics, static_page)
     }
 }
 

@@ -4,9 +4,11 @@
 //! validated page-prefix readers and deterministic mapping; live Windows mapping is
 //! Phase 2 work.
 
+mod adapter;
 mod capture;
 mod pages;
 
+pub use adapter::{AcAdapter, AcSource, SystemAcSource};
 pub use capture::{AcAvailability, AcCaptureError, AcSharedMemory, AcSnapshot};
 
 use trace_domain::{

@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+trace-adapter = { path = "../trace-adapter" }
 trace-domain.workspace = true
 trace-windows-shmem = { path = "../trace-windows-shmem" }
 

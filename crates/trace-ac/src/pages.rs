@@ -52,6 +52,10 @@ impl<'a> GraphicsPage<'a> {
         require_length(bytes, GRAPHICS_PREFIX_LENGTH).map(Self)
     }
 
+    pub(crate) fn status(&self) -> i32 {
+        read_i32(self.0, 4)
+    }
+
     pub(crate) fn completed_laps(&self) -> i32 {
         read_i32(self.0, 140)
     }
