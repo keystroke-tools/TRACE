@@ -107,6 +107,18 @@ Short pages return a typed `TooShort` error containing expected and actual lengt
 Keeping these values unavailable is preferable to silently attaching a false unit or
 meaning.
 
+## Recording boundary
+
+`trace-recorder` consumes only canonical adapter events. It validates increasing frame
+sequence and elapsed time, closes sessions on source session changes or disconnects,
+and records a lap only after observing both its opening and closing completed-lap
+counter boundaries. The first lap seen after attachment is therefore retained in the
+raw session stream but excluded from lap metadata because it may be partial.
+
+Counter regression or a jump larger than one is rejected as ambiguous rather than
+silently producing incorrect sample ranges. Simulator-specific validity evidence is
+not yet authoritative, so this layer does not claim a lap is valid.
+
 ## Remaining Phase 2 acquisition requirements
 
 The Windows reader must:

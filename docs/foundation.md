@@ -234,8 +234,9 @@ The Phase 1 foundation scope in `SPEC.md` is implemented:
 | Minimal desktop shell | Tauri/React shell reports foundation state through a typed command boundary |
 | TRACE design system | Shared dark telemetry workspace tokens, typography, spacing, panels, status, and channel components |
 
-Phase 1 deliberately does not claim a usable telemetry recorder. Live Assetto Corsa
-detection and shared-memory acquisition, session/lap persistence orchestration, and
-the session browser remain Phase 2 work. The Arrow representation is accepted as
-the current storage baseline, but representative 60–333 Hz capture benchmarks remain
-a Phase 2 entry check before the format is treated as final.
+Phase 1 deliberately does not claim a usable telemetry recorder. Phase 2 now includes
+live Assetto Corsa acquisition, conservative canonical lap segmentation, transactional
+session metadata writes, and the native session archive query. Durable Arrow blob
+orchestration and the continuously running desktop capture worker remain. The Arrow
+representation is accepted as the current storage baseline, but representative
+60–333 Hz capture benchmarks remain an entry check before the format is final.

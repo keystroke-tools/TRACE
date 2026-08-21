@@ -31,6 +31,7 @@ defines intended product direction.
 - **Proposed** describes work that has not been implemented.
 - **Deferred** is intentionally outside the current phase.
 
-Phase 1 is accepted and Phase 2 is in progress. Windows Assetto Corsa detection and
-packet-stable owned snapshots are implemented; adapter orchestration, recording,
-persistence, and the session browser remain Phase 2 work.
+Phase 1 is accepted and Phase 2 is in progress. Windows Assetto Corsa acquisition,
+adapter lifecycle orchestration, canonical lap segmentation, SQLite session metadata,
+and the native session query are implemented. Durable blob orchestration and the
+desktop capture worker remain Phase 2 work.

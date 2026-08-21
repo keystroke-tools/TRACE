@@ -28,7 +28,8 @@ integrations are explicitly outside the v0.1 product scope.
 
 TRACE has completed **Phase 1: Foundation** and begun **Phase 2: Assetto Corsa
 capture**. The Windows shared-memory detection and packet-stable snapshot boundary
-is implemented, but TRACE is not yet a usable live telemetry recorder.
+and canonical recording state machine are implemented, but TRACE is not yet wired
+into a continuously running desktop capture worker.
 
 Currently implemented:
 
@@ -44,6 +45,8 @@ Currently implemented:
 - Windows Assetto Corsa detection and packet-stable owned shared-memory snapshots
 - Assetto Corsa adapter lifecycle with capabilities, pause/resume, session changes,
   disconnect, and reconnect transitions
+- Simulator-agnostic session recording with conservative lap-boundary detection
+- Transactional SQLite session/lap writes and bounded native archive queries
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
