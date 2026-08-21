@@ -52,7 +52,7 @@ Currently implemented:
 - Atomic filesystem telemetry blobs with restart-safe checksum indexing
 - Startup orphan quarantine and a continuously polling desktop capture worker
 - Bounded 240-frame Arrow IPC record-batch streaming during capture
-- Versioned Apache Arrow IPC telemetry representation spike
+- Full canonical Apache Arrow IPC telemetry schema with v1 read compatibility
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
 - Typed session-browser route with replay-fixture and empty native data states

@@ -174,12 +174,15 @@ Blob paths are normalized portable relative paths. Absolute paths, traversal,
 backslashes, empty components, and control characters are rejected. The in-memory
 implementation is a tested fixture.
 
-An Apache Arrow IPC spike now writes random-access files with TRACE format/schema/SI
-metadata and aligned nullable columns for sequence, monotonic time, inputs, speed,
-RPM, and lap position. Round-trip tests preserve missing values and reject malformed
-or foreign schemas. This validates the representation mechanics, not the final raw
-schema: remaining canonical channels, record-batch sizing, compression benchmarks,
-and compression benchmarks are still pending.
+Apache Arrow IPC schema v2 writes random-access files with TRACE format/schema/SI
+metadata and 46 aligned nullable columns. It preserves sequence and monotonic time,
+lap observations, every driver and vehicle field, explicit gear variants, motion
+vectors with coordinate-frame tags, all four wheel states, and environment data.
+Gear kind and raw value are separate so unknown simulator values round-trip without
+colliding with reverse, neutral, or forward gears. The reader continues to accept the
+seven-column schema v1 projection. Round-trip tests preserve missing values and reject
+malformed or foreign schemas. Compression and representative performance benchmarks
+are still pending.
 
 ## SQLite metadata
 

@@ -27,7 +27,7 @@ defines intended product direction.
 
 - **Current** describes behavior implemented and tested on `master`.
 - **Spike** proves a representation or boundary but is not yet a finalized production
-  implementation. Arrow IPC is currently in this category.
+  implementation. Arrow compression and performance tuning remain in this category.
 - **Proposed** describes work that has not been implemented.
 - **Deferred** is intentionally outside the current phase.
 
