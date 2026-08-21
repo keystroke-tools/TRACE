@@ -41,6 +41,7 @@ struct RecordedSessionSummary {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle as an owned command argument.
 fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>, String> {
     let directory = app
         .path()
