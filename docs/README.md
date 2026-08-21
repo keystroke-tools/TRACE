@@ -33,6 +33,6 @@ defines intended product direction.
 
 Phase 1 is accepted and Phase 2 is in progress. Windows Assetto Corsa acquisition,
 adapter lifecycle orchestration, canonical lap segmentation, SQLite session metadata,
-the native session query, and recovery-aware blob/metadata completion ordering are
-implemented. A filesystem blob-store implementation, orphan reconciliation, and the
-desktop capture worker remain Phase 2 work.
+the native session query, recovery-aware completion ordering, and an atomic filesystem
+blob store are implemented. Automated orphan reconciliation and the desktop capture
+worker remain Phase 2 work.

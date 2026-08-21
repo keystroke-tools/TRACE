@@ -48,6 +48,7 @@ Currently implemented:
 - Simulator-agnostic session recording with conservative lap-boundary detection
 - Transactional SQLite session/lap writes and bounded native archive queries
 - Recovery-aware Arrow blob and SQLite completion orchestration
+- Atomic filesystem telemetry blobs with restart-safe checksum indexing
 - Versioned Apache Arrow IPC telemetry representation spike
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens

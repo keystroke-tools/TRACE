@@ -179,7 +179,7 @@ metadata and aligned nullable columns for sequence, monotonic time, inputs, spee
 RPM, and lap position. Round-trip tests preserve missing values and reject malformed
 or foreign schemas. This validates the representation mechanics, not the final raw
 schema: remaining canonical channels, record-batch sizing, compression benchmarks,
-and filesystem-backed persistence are still pending.
+and compression benchmarks are still pending.
 
 ## SQLite metadata
 
@@ -208,6 +208,13 @@ A bounded recent-session query returns display-safe session and lap summaries. T
 native Tauri command opens `trace.sqlite` in the platform application-data directory
 and maps those summaries into the typed Sessions UI. Lap durations are formatted from
 integer nanoseconds; the command does not read or fabricate telemetry samples.
+
+`FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
+root. Commit syncs the staged file and publishes it with a same-volume hard link, so
+an existing destination is never overwritten. Blob identity is the SHA-256 digest of
+its bytes. Opening the store rebuilds the identifier-to-path index from committed
+files, while interrupted staging files remain isolated and enumerable for recovery.
+Symbolic links are not followed during reconstruction.
 
 ## Verification
 
