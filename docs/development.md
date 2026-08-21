@@ -102,6 +102,11 @@ mise exec -- cargo check \
   --target x86_64-pc-windows-msvc
 ```
 
+The native application creates `trace.sqlite` under Tauri's platform-specific
+application-data directory when the Sessions command is first queried. This local
+database is runtime data and must never be committed. Browser development does not
+open it and continues to use the explicitly labelled replay fixture.
+
 ## Tests and fixtures
 
 Tests live beside their owning crate. The replay integration fixture is

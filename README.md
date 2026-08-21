@@ -48,6 +48,7 @@ Currently implemented:
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
 - Typed session-browser route with replay-fixture and empty native data states
+- Transactional SQLite session/lap writes and bounded native session-browser queries
 
 The complete product direction and current technical proposal are documented in:
 

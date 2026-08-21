@@ -198,6 +198,17 @@ lookup, session laps, and session blob lookup. SQLite's `user_version` records t
 schema version, and databases created by a newer unsupported version are rejected.
 There is deliberately no raw telemetry sample table.
 
+The metadata repository now creates sessions together with normalized simulator,
+track, and car identities. Session completion atomically inserts the committed blob
+index, validates every lap sample range against that blob, inserts laps, and closes
+the session. Invalid ranges or missing/open-state conflicts roll back without partial
+lap metadata.
+
+A bounded recent-session query returns display-safe session and lap summaries. The
+native Tauri command opens `trace.sqlite` in the platform application-data directory
+and maps those summaries into the typed Sessions UI. Lap durations are formatted from
+integer nanoseconds; the command does not read or fabricate telemetry samples.
+
 ## Verification
 
 The workspace currently runs formatting, Clippy with warnings denied, unit tests,
