@@ -134,3 +134,7 @@ live spectating, and unlisted session sharing.
 
 It will not include accounts, social features, payments, chat, a coaching marketplace,
 automatic setup recommendations, or LLM coaching.
+
+## License
+
+TRACE is available under the [MIT License](LICENSE).
