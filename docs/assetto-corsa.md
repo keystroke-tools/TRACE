@@ -1,6 +1,6 @@
 # Assetto Corsa shared-memory boundary
 
-Status: Phase 2 in progress. Page readers, canonical mapping, Windows named-mapping
+Status: Phase 2 accepted. Page readers, canonical mapping, Windows named-mapping
 detection, packet-stable owned snapshots, and adapter lifecycle orchestration are
 implemented. Bounded capture, recording, persistence, stale-packet detection, and the
 basic session browser are connected through the desktop host.
@@ -241,7 +241,7 @@ Seeking or reversing can make frame time and lap counters regress, so TRACE reje
 the ambiguous boundary, closes the partial recording, and resynchronizes into a new
 session rather than manufacturing a plausible-looking lap or stopping acquisition.
 
-## Remaining Phase 2 acquisition requirements
+## Phase 2 validation record
 
 The privacy-redacted AC 1.16.4/shared-memory 1.7 fixture validates the currently
 supported ABI. The capture exposed and corrected four static-page offsets: car model,
@@ -251,6 +251,7 @@ position, and car coordinates. The captured fixture now asserts the real complet
 counter and lap time, preventing a plausible-but-wrong offset from passing regression
 tests. Local recording is already independent from any future live network path.
 
-Phase 2 still needs an observed end-to-end Windows desktop run proving that a driven
-or normally played replay lap appears in the session browser. Every additional
-shared-memory ABI must add a version-labelled capture before TRACE accepts it.
+End-to-end Windows desktop runs have validated both driven sessions and normally
+played replays appearing in the session browser, including lap visualization and
+cross-lap comparison. Every additional shared-memory ABI must still add a
+version-labelled capture before TRACE accepts it.

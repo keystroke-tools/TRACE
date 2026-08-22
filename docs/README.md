@@ -20,6 +20,7 @@ defines intended product direction.
 | --- | --- |
 | [Phase 1 architecture review](phase-1-architecture.md) | Decisions, research, risks, dependency rules, and original implementation plan |
 | [Assetto Corsa boundary](assetto-corsa.md) | Implemented vanilla AC byte readers, mappings, omissions, and Phase 2 acquisition requirements |
+| [Corner analysis](corner-analysis.md) | Implemented deterministic corner detection, phase loss decomposition, opportunity ranking, and current limitations |
 | [Assetto Corsa API reference](ac-shared-memory-reference.md) | Mapping names, page layouts, enums, fields, offsets, units, and TRACE storage keys |
 | [Live protocol v1](protocol-v1.md) | Implemented bounded DTO/validation model; transport remains future work |
 | [Arrow IPC storage benchmark](storage-benchmark.md) | Reproducible 60–333 Hz codec benchmark and compression decision |
@@ -34,12 +35,12 @@ defines intended product direction.
 - **Proposed** describes work that has not been implemented.
 - **Deferred** is intentionally outside the current phase.
 
-Phase 1 is accepted and Phase 2 is in progress. Windows Assetto Corsa acquisition,
+Phases 1–3 are accepted and Phase 4 is in progress. Windows Assetto Corsa acquisition,
 adapter lifecycle orchestration, canonical lap segmentation, SQLite session metadata,
 the native session query, recovery-aware completion ordering, and an atomic filesystem
 blob store are implemented. Automated orphan reconciliation and the desktop capture
 worker are now wired at Tauri startup. Captured ABI fixtures, stale-process detection,
-and representative real-session validation remain Phase 2 work. Capture frames are
+and representative driven/replay validation are complete. Capture frames are
 persisted in bounded Arrow record batches rather than retained for an entire session.
 Recorded lap sample intervals can be read across batch boundaries without loading the
 complete session file into memory.

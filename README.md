@@ -26,11 +26,11 @@ integrations are explicitly outside the v0.1 product scope.
 
 ## Project status
 
-TRACE has completed **Phase 1: Foundation** and begun **Phase 2: Assetto Corsa
-capture**. The Windows shared-memory detection and packet-stable snapshot boundary
-and canonical recording state machine are implemented. The desktop now starts a
-local capture worker; real-session validation on supported Assetto Corsa fixtures and
-Windows installations remains before Phase 2 acceptance.
+TRACE has completed **Phase 1: Foundation**, **Phase 2: Assetto Corsa capture**, and
+the first usable **Phase 3: Core comparison** milestone. Driven and replay sessions
+have been validated end to end on Windows. Phase 4 is now in progress with initial
+deterministic corner detection, phase-level loss decomposition, and track-map braking
+visualisation.
 
 Currently implemented:
 
@@ -42,6 +42,8 @@ Currently implemented:
 - Gap-aware linear and held interpolation
 - Structured analysis results with evidence, confidence, and uncertainty
 - Distance-aligned lap-delta calculation
+- Deterministic corner detection with coherent entry/mid/exit time-loss decomposition
+- Ranked corner opportunities with measured minimum-speed and throttle-point evidence
 - Safe vanilla Assetto Corsa page readers and canonical field mapping
 - Windows Assetto Corsa detection and packet-stable owned shared-memory snapshots
 - Privacy-redacted AC 1.16.4/shared-memory 1.7 regression capture
@@ -73,6 +75,7 @@ Currently implemented:
 - Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
 - Settings page for reviewing auto-detected game folders or saving local overrides
 - AC car and track names read from installed `ui_car.json`/`ui_track.json` metadata, with exact source IDs preserved as the fallback
+- Track-map braking zones rendered as red intensity gradients over recorded driving lines
 - Transactional SQLite session/lap writes and bounded native session-browser queries
 
 The complete product direction and current technical proposal are documented in:
@@ -83,6 +86,7 @@ The complete product direction and current technical proposal are documented in:
 - [Implemented foundation](docs/foundation.md)
 - [TRACE live protocol v1](docs/protocol-v1.md)
 - [Assetto Corsa shared-memory boundary](docs/assetto-corsa.md)
+- [Corner analysis](docs/corner-analysis.md)
 - [Development and verification](docs/development.md)
 - [Contributing](CONTRIBUTING.md)
 
