@@ -220,7 +220,7 @@ fn track_layout_roots(root: &Path, layout_id: Option<&str>) -> Vec<PathBuf> {
 fn normalise_layout(value: &str) -> String {
     value
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .flat_map(char::to_lowercase)
         .collect()
 }
@@ -339,7 +339,11 @@ mod tests {
         let detail_start = AI_HEADER_BYTES + point_count * AI_POINT_BYTES;
         let mut bytes = vec![0; detail_start + point_count * AI_DETAIL_BYTES];
         put_i32(&mut bytes, 0, 7);
-        put_i32(&mut bytes, 4, point_count as i32);
+        put_i32(
+            &mut bytes,
+            4,
+            i32::try_from(point_count).expect("fixture point count fits in i32"),
+        );
         for (index, (x, z)) in [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
             .into_iter()
             .enumerate()
@@ -360,14 +364,9 @@ mod tests {
         assert_eq!(geometry.centre_line.len(), point_count);
         assert_eq!(geometry.left_boundary.len(), point_count);
         assert_eq!(geometry.right_boundary.len(), point_count);
-        assert_ne!(
-            geometry.left_boundary[0].x_m,
-            geometry.right_boundary[0].x_m
-        );
-        assert_ne!(
-            geometry.left_boundary[0].z_m,
-            geometry.right_boundary[0].z_m
-        );
+        let edge_separation = (geometry.left_boundary[0].x_m - geometry.right_boundary[0].x_m)
+            .hypot(geometry.left_boundary[0].z_m - geometry.right_boundary[0].z_m);
+        assert!(edge_separation > f32::EPSILON);
         fs::remove_dir_all(root).expect("fixture cleanup");
     }
 }

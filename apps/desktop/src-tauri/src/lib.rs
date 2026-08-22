@@ -453,7 +453,10 @@ fn session_lap_metrics(
 }
 
 #[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+#[allow(
+    clippy::needless_pass_by_value, // Tauri deserializes command arguments by value.
+    clippy::too_many_lines // The command is linear channel-loading orchestration.
+)]
 fn compare_session_laps(
     app: tauri::AppHandle,
     reference_session_id: String,
@@ -581,9 +584,9 @@ fn compare_session_laps(
             comparison_steering_degrees: comparison_steering[index],
             reference_rpm: reference_rpm[index],
             comparison_rpm: comparison_rpm[index],
-            sector_index: sectors[index].map(|value| value.round() as u32),
-            reference_gear: reference_gear[index].map(|value| value.round() as i16),
-            comparison_gear: comparison_gear[index].map(|value| value.round() as i16),
+            sector_index: sectors[index].and_then(rounded_u32),
+            reference_gear: reference_gear[index].and_then(rounded_i16),
+            comparison_gear: comparison_gear[index].and_then(rounded_i16),
             reference_position_x_m: reference_position_x[index],
             reference_position_z_m: reference_position_z[index],
             comparison_position_x_m: comparison_position_x[index],
@@ -702,13 +705,13 @@ fn visualize_session_lap(
         .enumerate()
         .map(|(index, distance_m)| LapTraceSample {
             distance_m,
-            sector_index: sector[index].map(|value| value.round() as u32),
+            sector_index: sector[index].and_then(rounded_u32),
             speed_kmh: speed[index],
             throttle_percent: throttle[index],
             brake_percent: brake[index],
             steering_degrees: steering[index],
             rpm: rpm[index],
-            gear: gear[index].map(|value| value.round() as i16),
+            gear: gear[index].and_then(rounded_i16),
             position_x_m: position_x[index],
             position_z_m: position_z[index],
             air_temperature_c: air_temperature[index],
@@ -788,7 +791,7 @@ fn shared_track_length(
         .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value));
     match (reference_length, comparison_length) {
         (Some(reference), Some(comparison)) if (reference - comparison).abs() <= 5.0 => {
-            Ok((reference + comparison) / 2.0)
+            Ok(reference.midpoint(comparison))
         }
         (Some(value), None) | (None, Some(value)) => Ok(value),
         (Some(_), Some(_)) => Err("laps report incompatible track lengths".into()),
@@ -928,6 +931,24 @@ fn resolved_gear(kind: Option<i8>, value: Option<i16>) -> Option<i16> {
         1 => value,
         _ => None,
     }
+}
+
+fn rounded_u32(value: f64) -> Option<u32> {
+    let rounded = value.round();
+    if !rounded.is_finite() || !(0.0..=f64::from(u32::MAX)).contains(&rounded) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(rounded as u32)
+}
+
+fn rounded_i16(value: f64) -> Option<i16> {
+    let rounded = value.round();
+    if !rounded.is_finite() || !(f64::from(i16::MIN)..=f64::from(i16::MAX)).contains(&rounded) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    Some(rounded as i16)
 }
 
 fn distance_samples(
