@@ -613,7 +613,8 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
       </div>
       <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
-        const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+        const pointerX = (event.clientX - bounds.left) / bounds.width * width;
+        const ratio = Math.min(1, Math.max(0, (pointerX - plot.left) / (width - plot.left - plot.right)));
         onCursor(Math.round(ratio * (samples.length - 1)));
       }}>
         {[0, 0.5, 1].map((ratio) => <line x1={plot.left} x2={width - plot.right} y1={plot.top + ratio * (height - plot.top - plot.bottom)} y2={plot.top + ratio * (height - plot.top - plot.bottom)} className="stroke-trace-divider" strokeWidth="1" vectorEffect="non-scaling-stroke" key={ratio} />)}
