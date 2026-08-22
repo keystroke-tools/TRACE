@@ -473,6 +473,10 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   <div className="w-full">
                   </div>
                   <div className="min-w-0">
+                    {(sector != null || selectedCorner != null) && <div className="mb-3 flex h-10 items-center justify-between border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono">
+                      <span className="text-[11px] font-black tracking-[.1em] text-trace-accent">VIEWING {selectedCorner ? selectedCorner.label : `SECTOR ${sector}`}</span>
+                      <button type="button" onClick={() => { setSector(null); setCornerIndex(null); setCursorIndex(null); }} className="text-[10px] font-bold tracking-[.08em] text-trace-soft hover:text-trace-text">RETURN TO FULL LAP</button>
+                    </div>}
                     <div className="grid grid-cols-[minmax(480px,1.2fr)_minmax(360px,.8fr)] gap-3">
                       <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} height={512} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} /></div>
                       <div className="grid gap-3">
@@ -824,6 +828,7 @@ function comparisonSectorDeltas(referenceLaps: RecordedSessionSummary["laps"], r
 function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDelta[]; value: number | null; onChange: (value: number | null) => void }) {
   return (
     <div className="flex h-6 min-w-0 items-stretch gap-1.5 overflow-x-auto font-mono" aria-label="Sector comparison and telemetry range">
+      <span className="flex w-28 shrink-0 items-center text-[9px] font-black tracking-[.08em] text-trace-accent">{value == null ? "VIEWING FULL LAP" : `VIEWING SECTOR ${value}`}</span>
       <button type="button" onClick={() => onChange(null)} className={`shrink-0 border px-2 text-[9px] font-black tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
       {sectors.map((sector) => {
         const gaining = sector.seconds != null && sector.seconds < -0.0005;
@@ -833,7 +838,7 @@ function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDe
           : losing
             ? "border-trace-danger/60 bg-trace-danger/25 text-red-200"
             : "border-trace-divider bg-trace-deep text-trace-muted";
-        const selected = value === sector.index ? "outline outline-1 outline-white/60" : "hover:border-trace-soft";
+        const selected = value === sector.index ? "outline outline-2 -outline-offset-2 outline-trace-accent" : "hover:border-trace-soft";
         const explanation = sector.seconds == null
           ? `Sector ${sector.index} timing is unavailable.`
           : Math.abs(sector.seconds) < 0.0005
@@ -1062,12 +1067,16 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
   const referenceColour = !comparison || comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster;
   const comparisonColour = comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)";
+  const selectedSectorIndex = focusSelection && selectedCornerIndex == null ? samples.find((sample) => sample.sectorIndex != null)?.sectorIndex : null;
+  const mapRangeLabel = focusSelection
+    ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : selectedSectorIndex != null ? `SECTOR ${selectedSectorIndex}` : "SELECTED RANGE"
+    : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE";
   const mapControls = <div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text" aria-label="Reset map view">RESET</button>{onDismiss && <button type="button" onClick={onDismiss} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-lg leading-none text-trace-muted hover:border-trace-accent/50 hover:text-trace-text" aria-label="Dismiss floating track map">×</button>}</div>;
   return (
     <div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
       {onDismiss
         ? <div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
-        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />BRAKE</span></div>{mapControls}</div>}
+        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className={`ml-3 font-mono text-[10px] ${focusSelection ? "font-black text-trace-accent" : "text-trace-dim"}`}>{mapRangeLabel}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />BRAKE</span></div>{mapControls}</div>}
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
