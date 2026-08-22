@@ -362,6 +362,14 @@ stores it with the recording. The archive therefore distinguishes practice,
 qualifying, race, hotlap, time attack, drift, and drag sessions instead of reducing
 all native drives to a generic session label.
 
+AC's physics temperature slots are treated as unavailable when the simulator emits
+the all-zero sentinel observed in real recordings. At session start TRACE snapshots
+ambient and road temperature, weather name, and starting dynamic-track grip from AC's
+`Documents/Assetto Corsa/cfg/race.ini`. Session details preserve those values and the
+telemetry HUD uses them only as a session-level fallback. AC's `steerAngle` is retained
+and displayed as signed steering input percentage; it is not mislabeled as wheel
+degrees because actual angle depends on controller range and car steering lock.
+
 The Settings page lists the install directory used by each configurable simulator
 adapter. Assetto Corsa is auto-detected from Steam libraries and can be overridden with
 a validated game-root path stored in SQLite. TRACE uses that root to read AC's own car

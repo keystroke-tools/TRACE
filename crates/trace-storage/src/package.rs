@@ -147,6 +147,7 @@ pub fn imported_records(
         started_at: session.started_at.clone(),
         session_type: session.session_type.clone(),
         source_kind: "imported".into(),
+        conditions: session.conditions.clone(),
     };
     let laps = manifest
         .laps
@@ -311,6 +312,12 @@ mod tests {
                 session_type: Some("practice".into()),
                 started_at: "2026-08-22T12:00:00Z".into(),
                 source_kind: "native_capture".into(),
+                conditions: crate::metadata::SessionConditions {
+                    ambient_temperature_c: Some("15".into()),
+                    road_temperature_c: Some("12".into()),
+                    weather_name: Some("2_light_fog".into()),
+                    track_grip_percent: Some(95),
+                },
                 exportable: true,
                 laps: Vec::new(),
             },

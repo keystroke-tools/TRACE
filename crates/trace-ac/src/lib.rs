@@ -88,7 +88,8 @@ pub fn map_frame(
             throttle: ratio(physics.gas()),
             brake: ratio(physics.brake()),
             clutch: None,
-            steering_angle_rad: finite(physics.steering_angle_rad()),
+            // AC reports a signed steering input ratio here, not a portable angle.
+            steering_angle_rad: None,
         },
         vehicle: VehicleState {
             speed_mps: non_negative(physics.speed_kmh()).map(|speed| speed / 3.6),
@@ -134,13 +135,17 @@ pub fn map_session(
 }
 
 fn map_environment(physics: &PhysicsPage<'_>) -> Option<EnvironmentState> {
-    let ambient_temperature_c = physics.air_temperature_c().and_then(finite);
-    let track_temperature_c = physics.road_temperature_c().and_then(finite);
+    let ambient_temperature_c = physics.air_temperature_c().and_then(temperature_c);
+    let track_temperature_c = physics.road_temperature_c().and_then(temperature_c);
     (ambient_temperature_c.is_some() || track_temperature_c.is_some()).then_some(EnvironmentState {
         ambient_temperature_c,
         track_temperature_c,
         track_grip: None,
     })
+}
+
+fn temperature_c(value: f32) -> Option<f32> {
+    (value.is_finite() && value != 0.0 && (-50.0..=100.0).contains(&value)).then_some(value)
 }
 
 fn finite(value: f32) -> Option<f32> {
@@ -249,7 +254,7 @@ mod tests {
         assert_eq!(frame.lap.current_sector_index, Some(1));
         assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
         assert_eq!(frame.lap.tyres_out, Some(2));
-        assert_eq!(frame.inputs.steering_angle_rad, Some(-0.3));
+        assert_eq!(frame.inputs.steering_angle_rad, None);
         assert_eq!(
             frame
                 .environment
@@ -328,5 +333,6 @@ mod tests {
         .expect("valid page lengths");
         assert_eq!(frame.inputs.throttle, None);
         assert_eq!(frame.vehicle.speed_mps, None);
+        assert_eq!(frame.environment, None);
     }
 }

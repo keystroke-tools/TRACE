@@ -37,6 +37,17 @@ pub struct NewSession {
     pub started_at: String,
     pub session_type: Option<String>,
     pub source_kind: String,
+    pub conditions: SessionConditions,
+}
+
+/// Session-scoped conditions captured from simulator configuration when live
+/// telemetry does not publish reliable values.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionConditions {
+    pub ambient_temperature_c: Option<String>,
+    pub road_temperature_c: Option<String>,
+    pub weather_name: Option<String>,
+    pub track_grip_percent: Option<u8>,
 }
 
 /// One completed lap to commit with a session telemetry blob.
@@ -99,6 +110,7 @@ pub struct SessionSummary {
     pub session_type: Option<String>,
     pub started_at: String,
     pub source_kind: String,
+    pub conditions: SessionConditions,
     pub exportable: bool,
     pub laps: Vec<LapSummary>,
 }
@@ -355,8 +367,9 @@ impl MetadataStore {
         transaction
             .execute(
                 "INSERT INTO sessions
-                 (id, simulator_id, track_id, car_id, started_at, session_type, source_kind)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (id, simulator_id, track_id, car_id, started_at, session_type, source_kind,
+                  conditions_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     session.id,
                     session.simulator_id,
@@ -364,7 +377,10 @@ impl MetadataStore {
                     session.car_id,
                     session.started_at,
                     session.session_type,
-                    session.source_kind
+                    session.source_kind,
+                    serde_json::to_string(&session.conditions).map_err(|error| {
+                        MetadataError::InvalidRecord(format!("invalid session conditions: {error}"))
+                    })?
                 ],
             )
             .map_err(MetadataError::from)?;
@@ -470,7 +486,7 @@ impl MetadataStore {
                 "SELECT s.id, sim.key, s.user_title, s.user_driver, s.ownership,
                         t.display_name, c.display_name, s.session_type, s.started_at, s.source_kind,
                         EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id),
-                        t.source_track_id, t.layout_id, c.source_car_id
+                        t.source_track_id, t.layout_id, c.source_car_id, s.conditions_json
                  FROM sessions s JOIN simulators sim ON sim.id = s.simulator_id
                  LEFT JOIN tracks t ON t.id = s.track_id
                  LEFT JOIN cars c ON c.id = s.car_id
@@ -497,6 +513,15 @@ impl MetadataStore {
                     source_track_id: row.get(11)?,
                     layout_id: row.get(12)?,
                     source_car_id: row.get(13)?,
+                    conditions: serde_json::from_str(&row.get::<_, String>(14)?).map_err(
+                        |error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                14,
+                                Type::Text,
+                                Box::new(error),
+                            )
+                        },
+                    )?,
                     laps: Vec::new(),
                 })
             })
@@ -937,6 +962,7 @@ mod tests {
             started_at: "2026-08-21T14:32:00Z".into(),
             session_type: Some("practice".into()),
             source_kind: "native_capture".into(),
+            conditions: SessionConditions::default(),
         }
     }
 

@@ -143,10 +143,10 @@ impl AcSnapshot {
         let physics = pages::PhysicsPage::parse(&self.physics)?;
         let ambient_temperature_c = physics
             .air_temperature_c()
-            .filter(|value| value.is_finite());
+            .filter(|value| value.is_finite() && *value != 0.0 && (-50.0..=100.0).contains(value));
         let track_temperature_c = physics
             .road_temperature_c()
-            .filter(|value| value.is_finite());
+            .filter(|value| value.is_finite() && *value != 0.0 && (-50.0..=100.0).contains(value));
         let environment = (ambient_temperature_c.is_some() || track_temperature_c.is_some())
             .then_some(trace_domain::EnvironmentState {
                 ambient_temperature_c,

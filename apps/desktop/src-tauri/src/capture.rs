@@ -17,7 +17,7 @@ use trace_recorder::{
 use trace_storage::{
     FileBlobStore, FileBlobWriter, RelativeBlobPath,
     ipc::TelemetryIpcWriter,
-    metadata::{MetadataStore, NewSession},
+    metadata::{MetadataStore, NewSession, SessionConditions},
 };
 
 use crate::ac_content::AcContentNames;
@@ -68,6 +68,7 @@ struct ActivePersistence {
 
 pub fn spawn<A, F>(
     data_directory: PathBuf,
+    ac_race_config: Option<PathBuf>,
     status: SharedCaptureStatus,
     identity: &AdapterIdentity,
     adapter_factory: F,
@@ -80,17 +81,23 @@ pub fn spawn<A, F>(
         .name(worker_name)
         .spawn(move || {
             let mut adapter = adapter_factory();
-            run(&data_directory, &status, &mut adapter);
+            run(
+                &data_directory,
+                ac_race_config.as_deref(),
+                &status,
+                &mut adapter,
+            );
         })
         .expect("failed to start TRACE capture worker");
 }
 
 fn run(
     data_directory: &std::path::Path,
+    ac_race_config: Option<&std::path::Path>,
     status: &SharedCaptureStatus,
     adapter: &mut dyn SimulatorAdapter,
 ) {
-    let result = run_capture(data_directory, status, adapter);
+    let result = run_capture(data_directory, ac_race_config, status, adapter);
     if let Err(error) = result {
         update_status(status, "error", 0, &format!("CAPTURE ERROR: {error}"));
         eprintln!("TRACE capture worker stopped: {error}");
@@ -99,6 +106,7 @@ fn run(
 
 fn run_capture(
     data_directory: &std::path::Path,
+    ac_race_config: Option<&std::path::Path>,
     status: &SharedCaptureStatus,
     adapter: &mut dyn SimulatorAdapter,
 ) -> Result<(), String> {
@@ -131,9 +139,14 @@ fn run_capture(
                         .consume(event)
                         .map_err(|error| format!("recording state failed: {error:?}"))?
                     {
-                        if let Err(error) =
-                            handle_output(output, &mut active, &mut metadata, &mut blobs, status)
-                        {
+                        if let Err(error) = handle_output(
+                            output,
+                            &mut active,
+                            &mut metadata,
+                            &mut blobs,
+                            ac_race_config,
+                            status,
+                        ) {
                             eprintln!("TRACE could not persist capture output: {error}");
                             update_status(status, "error", 0, "PERSISTENCE ERROR");
                         }
@@ -149,9 +162,14 @@ fn run_capture(
                     ))
                     .map_err(|error| format!("disconnect recording failed: {error:?}"))?
                 {
-                    if let Err(error) =
-                        handle_output(output, &mut active, &mut metadata, &mut blobs, status)
-                    {
+                    if let Err(error) = handle_output(
+                        output,
+                        &mut active,
+                        &mut metadata,
+                        &mut blobs,
+                        ac_race_config,
+                        status,
+                    ) {
                         eprintln!("TRACE could not finalize disconnected capture: {error}");
                         update_status(status, "error", 0, "PERSISTENCE ERROR");
                     }
@@ -168,6 +186,7 @@ fn handle_output(
     active: &mut Option<ActivePersistence>,
     metadata: &mut MetadataStore,
     blobs: &mut FileBlobStore,
+    ac_race_config: Option<&std::path::Path>,
     status: &SharedCaptureStatus,
 ) -> Result<(), String> {
     match output {
@@ -183,6 +202,7 @@ fn handle_output(
                     &source,
                     &seed,
                     configured_path.as_deref(),
+                    ac_race_config,
                 )?)
                 .map_err(|error| format!("session creation failed: {error:?}"))?;
             let path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
@@ -247,6 +267,7 @@ fn new_session(
     source: &SourceDescriptor,
     seed: &SessionSeed,
     configured_path: Option<&std::path::Path>,
+    ac_race_config: Option<&std::path::Path>,
 ) -> Result<NewSession, String> {
     let names = AcContentNames::discover(configured_path);
     let track = seed.track_id.as_ref().map(|value| {
@@ -284,7 +305,62 @@ fn new_session(
             SourceKind::Imported => "imported",
         }
         .into(),
+        conditions: if simulator_key == "assetto-corsa" {
+            ac_race_config.map_or_else(SessionConditions::default, read_ac_session_conditions)
+        } else {
+            SessionConditions::default()
+        },
     })
+}
+
+fn read_ac_session_conditions(path: &std::path::Path) -> SessionConditions {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return SessionConditions::default();
+    };
+    SessionConditions {
+        ambient_temperature_c: ini_temperature(&contents, "AMBIENT"),
+        road_temperature_c: ini_temperature(&contents, "ROAD"),
+        weather_name: ini_value(&contents, "WEATHER", "NAME"),
+        track_grip_percent: ini_value(&contents, "DYNAMIC_TRACK", "SESSION_START")
+            .and_then(|value| value.parse().ok())
+            .filter(|value| *value <= 100),
+    }
+}
+
+fn ini_temperature(contents: &str, key: &str) -> Option<String> {
+    ini_value(contents, "TEMPERATURE", key).and_then(|value| {
+        value
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite() && (-50.0..=100.0).contains(value))
+            .map(|_| value)
+    })
+}
+
+fn ini_value(contents: &str, wanted_section: &str, wanted_key: &str) -> Option<String> {
+    let mut section = "";
+    for line in contents.lines().map(str::trim) {
+        if let Some(name) = line
+            .strip_prefix('[')
+            .and_then(|line| line.strip_suffix(']'))
+        {
+            section = name;
+            continue;
+        }
+        if section.eq_ignore_ascii_case(wanted_section)
+            && let Some((key, value)) = line.split_once('=')
+            && key.trim().eq_ignore_ascii_case(wanted_key)
+        {
+            let value = value.trim();
+            if !value.is_empty()
+                && value.chars().count() <= 80
+                && !value.chars().any(char::is_control)
+            {
+                return Some(value.to_owned());
+            }
+        }
+    }
+    None
 }
 
 fn unique_session_id() -> String {
@@ -352,8 +428,8 @@ mod tests {
             simulator_version: Some("1.16.4".into()),
             kind: SourceKind::SimulatorReplay,
         };
-        let session =
-            new_session("session-1", &source, &SessionSeed::default(), None).expect("session");
+        let session = new_session("session-1", &source, &SessionSeed::default(), None, None)
+            .expect("session");
 
         assert_eq!(session.simulator_version.as_deref(), Some("1.16.4"));
         assert_eq!(session.simulator_id, "sim-assetto-corsa");
@@ -370,9 +446,24 @@ mod tests {
             kind: SourceKind::NativeCapture,
         };
 
-        let session =
-            new_session("session-2", &source, &SessionSeed::default(), None).expect("session");
+        let session = new_session("session-2", &source, &SessionSeed::default(), None, None)
+            .expect("session");
         assert_eq!(session.simulator_id, "sim-future-sim");
         assert_eq!(session.simulator_key, "future-sim");
+    }
+
+    #[test]
+    fn parses_assetto_corsa_session_conditions() {
+        let contents = "[TEMPERATURE]\nAMBIENT=15\nROAD=12\n\n[WEATHER]\nNAME=2_light_fog\n\n[DYNAMIC_TRACK]\nSESSION_START=95\n";
+        assert_eq!(ini_temperature(contents, "AMBIENT").as_deref(), Some("15"));
+        assert_eq!(ini_temperature(contents, "ROAD").as_deref(), Some("12"));
+        assert_eq!(
+            ini_value(contents, "WEATHER", "NAME").as_deref(),
+            Some("2_light_fog")
+        );
+        assert_eq!(
+            ini_value(contents, "DYNAMIC_TRACK", "SESSION_START").as_deref(),
+            Some("95")
+        );
     }
 }

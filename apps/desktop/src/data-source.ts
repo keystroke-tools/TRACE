@@ -76,6 +76,10 @@ export interface RecordedSessionSummary {
   sessionType: string;
   startedAt: string;
   source: string;
+  ambientTemperatureC?: string | null;
+  roadTemperatureC?: string | null;
+  weatherName?: string | null;
+  trackGripPercent?: number | null;
   exportable: boolean;
   deletable: boolean;
   laps: RecordedLapSummary[];
@@ -90,8 +94,8 @@ export interface LapComparisonSample {
   comparisonThrottlePercent?: number | null;
   referenceBrakePercent?: number | null;
   comparisonBrakePercent?: number | null;
-  referenceSteeringDegrees?: number | null;
-  comparisonSteeringDegrees?: number | null;
+  referenceSteeringPercent?: number | null;
+  comparisonSteeringPercent?: number | null;
   referenceRpm?: number | null;
   comparisonRpm?: number | null;
   sectorIndex?: number | null;
@@ -113,7 +117,7 @@ export interface LapTraceSample {
   speedKmh?: number | null;
   throttlePercent?: number | null;
   brakePercent?: number | null;
-  steeringDegrees?: number | null;
+  steeringPercent?: number | null;
   rpm?: number | null;
   gear?: number | null;
   positionXM?: number | null;
@@ -320,8 +324,8 @@ export const fixtureDataSource: TelemetryDataSource = {
         comparisonThrottlePercent: Math.sin(phase + 0.1) > -0.3 ? 100 : 12,
         referenceBrakePercent: Math.sin(phase) < -0.55 ? 72 : 0,
         comparisonBrakePercent: Math.sin(phase + 0.1) < -0.5 ? 78 : 0,
-        referenceSteeringDegrees: Math.sin(phase) * 42,
-        comparisonSteeringDegrees: Math.sin(phase + 0.07) * 45,
+        referenceSteeringPercent: Math.sin(phase) * 42,
+        comparisonSteeringPercent: Math.sin(phase + 0.07) * 45,
         referenceRpm: 6_200 + Math.sin(phase * 1.4) * 1_400,
         comparisonRpm: 6_050 + Math.sin(phase * 1.4 + 0.1) * 1_450,
         sectorIndex: Math.min(3, Math.floor(index / 67) + 1),
@@ -343,7 +347,7 @@ export const fixtureDataSource: TelemetryDataSource = {
     const comparison = await this.compareSessionLaps(sessionId, lapIndex, sessionId, lapIndex + 1);
     return {
       sessionId, lapIndex, lapTime: comparison.referenceLapTime, track: comparison.referenceTrack, car: comparison.referenceCar, lapLengthM: comparison.lapLengthM,
-      samples: comparison.samples.map((sample) => ({ distanceM: sample.distanceM, sectorIndex: sample.sectorIndex, speedKmh: sample.referenceSpeedKmh, throttlePercent: sample.referenceThrottlePercent, brakePercent: sample.referenceBrakePercent, steeringDegrees: sample.referenceSteeringDegrees, rpm: sample.referenceRpm, gear: sample.referenceGear, positionXM: sample.referencePositionXM, positionZM: sample.referencePositionZM, airTemperatureC: sample.referenceAirTemperatureC, trackTemperatureC: sample.referenceTrackTemperatureC })),
+      samples: comparison.samples.map((sample) => ({ distanceM: sample.distanceM, sectorIndex: sample.sectorIndex, speedKmh: sample.referenceSpeedKmh, throttlePercent: sample.referenceThrottlePercent, brakePercent: sample.referenceBrakePercent, steeringPercent: sample.referenceSteeringPercent, rpm: sample.referenceRpm, gear: sample.referenceGear, positionXM: sample.referencePositionXM, positionZM: sample.referencePositionZM, airTemperatureC: sample.referenceAirTemperatureC, trackTemperatureC: sample.referenceTrackTemperatureC })),
     };
   },
   async getGameInstallDirectories() {

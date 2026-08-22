@@ -138,8 +138,8 @@ struct LapComparisonSample {
     comparison_throttle_percent: Option<f64>,
     reference_brake_percent: Option<f64>,
     comparison_brake_percent: Option<f64>,
-    reference_steering_degrees: Option<f64>,
-    comparison_steering_degrees: Option<f64>,
+    reference_steering_percent: Option<f64>,
+    comparison_steering_percent: Option<f64>,
     reference_rpm: Option<f64>,
     comparison_rpm: Option<f64>,
     sector_index: Option<u32>,
@@ -176,7 +176,7 @@ struct LapTraceSample {
     speed_kmh: Option<f64>,
     throttle_percent: Option<f64>,
     brake_percent: Option<f64>,
-    steering_degrees: Option<f64>,
+    steering_percent: Option<f64>,
     rpm: Option<f64>,
     gear: Option<i16>,
     position_x_m: Option<f64>,
@@ -200,6 +200,10 @@ struct RecordedSessionSummary {
     session_type: String,
     started_at: String,
     source: String,
+    ambient_temperature_c: Option<String>,
+    road_temperature_c: Option<String>,
+    weather_name: Option<String>,
+    track_grip_percent: Option<u8>,
     exportable: bool,
     deletable: bool,
     laps: Vec<RecordedLapSummary>,
@@ -298,6 +302,10 @@ fn recent_sessions(
                     .to_uppercase(),
                 started_at: session.started_at,
                 source: session.source_kind.replace('_', " ").to_uppercase(),
+                ambient_temperature_c: session.conditions.ambient_temperature_c,
+                road_temperature_c: session.conditions.road_temperature_c,
+                weather_name: session.conditions.weather_name,
+                track_grip_percent: session.conditions.track_grip_percent,
                 exportable: session.exportable,
                 deletable,
                 laps: session
@@ -524,17 +532,10 @@ fn compare_session_laps(
         interpolate_channel(comparison_channels.throttle.as_ref(), &grid, 100.0)?;
     let reference_brake = interpolate_channel(reference_channels.brake.as_ref(), &grid, 100.0)?;
     let comparison_brake = interpolate_channel(comparison_channels.brake.as_ref(), &grid, 100.0)?;
-    let degrees_per_radian = 180.0 / std::f64::consts::PI;
-    let reference_steering = interpolate_channel(
-        reference_channels.steering.as_ref(),
-        &grid,
-        degrees_per_radian,
-    )?;
-    let comparison_steering = interpolate_channel(
-        comparison_channels.steering.as_ref(),
-        &grid,
-        degrees_per_radian,
-    )?;
+    let reference_steering =
+        interpolate_channel(reference_channels.steering.as_ref(), &grid, 100.0)?;
+    let comparison_steering =
+        interpolate_channel(comparison_channels.steering.as_ref(), &grid, 100.0)?;
     let reference_rpm = interpolate_channel(reference_channels.rpm.as_ref(), &grid, 1.0)?;
     let comparison_rpm = interpolate_channel(comparison_channels.rpm.as_ref(), &grid, 1.0)?;
     let sectors = interpolate_discrete(reference_channels.sector.as_ref(), &grid)?;
@@ -569,8 +570,8 @@ fn compare_session_laps(
             comparison_throttle_percent: comparison_throttle[index],
             reference_brake_percent: reference_brake[index],
             comparison_brake_percent: comparison_brake[index],
-            reference_steering_degrees: reference_steering[index],
-            comparison_steering_degrees: comparison_steering[index],
+            reference_steering_percent: reference_steering[index],
+            comparison_steering_percent: comparison_steering[index],
             reference_rpm: reference_rpm[index],
             comparison_rpm: comparison_rpm[index],
             sector_index: sectors[index].map(|value| value.round() as u32),
@@ -677,11 +678,7 @@ fn visualize_session_lap(
     let speed = interpolate_channel(channels.speed.as_ref(), &grid, 3.6)?;
     let throttle = interpolate_channel(channels.throttle.as_ref(), &grid, 100.0)?;
     let brake = interpolate_channel(channels.brake.as_ref(), &grid, 100.0)?;
-    let steering = interpolate_channel(
-        channels.steering.as_ref(),
-        &grid,
-        180.0 / std::f64::consts::PI,
-    )?;
+    let steering = interpolate_channel(channels.steering.as_ref(), &grid, 100.0)?;
     let rpm = interpolate_channel(channels.rpm.as_ref(), &grid, 1.0)?;
     let sector = interpolate_discrete(channels.sector.as_ref(), &grid)?;
     let gear = interpolate_discrete(channels.gear.as_ref(), &grid)?;
@@ -698,7 +695,7 @@ fn visualize_session_lap(
             speed_kmh: speed[index],
             throttle_percent: throttle[index],
             brake_percent: brake[index],
-            steering_degrees: steering[index],
+            steering_percent: steering[index],
             rpm: rpm[index],
             gear: gear[index].map(|value| value.round() as i16),
             position_x_m: position_x[index],
@@ -867,14 +864,20 @@ impl AlignedLapChannels {
                 columns.position_z_m.iter().copied(),
                 lap_length_m,
             ),
-            air_temperature: continuous_series(
+            air_temperature: numeric_series(
                 &columns.lap_position,
-                &columns.ambient_temperature_c,
+                columns
+                    .ambient_temperature_c
+                    .iter()
+                    .map(|value| value.filter(|value| *value != 0.0).map(f64::from)),
                 lap_length_m,
             ),
-            track_temperature: continuous_series(
+            track_temperature: numeric_series(
                 &columns.lap_position,
-                &columns.track_temperature_c,
+                columns
+                    .track_temperature_c
+                    .iter()
+                    .map(|value| value.filter(|value| *value != 0.0).map(f64::from)),
                 lap_length_m,
             ),
         })
@@ -1439,14 +1442,14 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
         "environment.air_temperature",
         "Air temperature",
         "CONDITIONS",
-        "Degrees Celsius",
+        "Physics °C when published; session configuration fallback otherwise",
         true,
     ),
     (
         "environment.track_temperature",
         "Track temperature",
         "CONDITIONS",
-        "Degrees Celsius",
+        "Physics °C when published; session configuration fallback otherwise",
         true,
     ),
     (
@@ -1636,8 +1639,19 @@ pub fn run() {
         .manage(capture_status)
         .setup(move |app| {
             let directory = app.path().app_data_dir()?;
+            let ac_race_config = app
+                .path()
+                .document_dir()
+                .ok()
+                .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
             let status = app.state::<SharedCaptureStatus>().inner().clone();
-            capture::spawn(directory, status, &adapter_identity, AcAdapter::new);
+            capture::spawn(
+                directory,
+                ac_race_config,
+                status,
+                &adapter_identity,
+                AcAdapter::new,
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -90,7 +90,7 @@ length.
 | Source | TRACE value | Treatment |
 |---|---|---|
 | `gas`, `brake` | throttle, brake | accepted only as finite 0–1 ratios |
-| `steerAngle` | steering angle rad | finite signed radians |
+| `steerAngle` | source-native steering input | signed input ratio retained in native fields; shown as percent in AC views |
 | `fuel` | fuel litres | finite and non-negative |
 | `gear` | canonical gear | AC 0 reverse, 1 neutral, 2+ forward conversion |
 | `rpms` | engine RPM | non-negative and bounded by canonical conversion |
@@ -106,10 +106,14 @@ length.
 | `normalizedCarPosition` | normalized position | accepted only as finite 0–1 ratio |
 | `carCoordinates[3]` | position m | AC source-world coordinate frame |
 | `carModel`, `track` | session source IDs | decoded from fixed UTF-16, NUL terminated |
-| physics `airTemp`, `roadTemp` | ambient/track °C | finite values only when the full physics page is present |
+| physics `airTemp`, `roadTemp` | ambient/track °C | finite, plausible, non-zero values only; zero is treated as AC's unavailable sentinel |
 
 Invalid numeric values degrade to missing canonical values rather than panicking.
 Short pages return a typed `TooShort` error containing expected and actual lengths.
+Because AC/CSP can leave both physics temperature slots at zero for an entire session,
+the desktop also snapshots `cfg/race.ini` temperature, weather, and starting dynamic-
+track grip into session metadata. These session-scoped values are shown in session
+details and used as a HUD fallback; they are not fabricated per-sample telemetry.
 
 ## Lossless native capture
 

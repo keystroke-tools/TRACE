@@ -55,7 +55,7 @@ Clean canonical mappings:
 | AC page/field | Canonical channel | Conversion / note |
 |---|---|---|
 | physics `gas`, `brake` | throttle, brake | bounded ratio; retain out-of-range source values diagnostically |
-| physics `steerAngle` | steering angle | radians; sign convention declared by adapter |
+| physics `steerAngle` | steering input | signed source-native ratio; not promoted to a portable angle |
 | physics `gear` | gear | AC encoding normalized to reverse/neutral/forward |
 | physics `rpms` | engine speed | revolutions/minute |
 | physics `speedKmh` | speed | convert to metres/second |

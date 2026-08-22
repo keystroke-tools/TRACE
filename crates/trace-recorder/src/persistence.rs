@@ -234,6 +234,7 @@ mod tests {
             started_at: "2026-08-21T20:00:00Z".into(),
             session_type: Some("practice".into()),
             source_kind: "replay".into(),
+            conditions: trace_storage::metadata::SessionConditions::default(),
         }
     }
 
