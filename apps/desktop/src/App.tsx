@@ -16,6 +16,11 @@ export function App() {
   const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
   const [section, setSection] = useState<Section>("LIVE");
 
+  async function selectSimulator(simulatorId: string) {
+    await telemetryDataSource.selectSimulator(simulatorId);
+    setStatus(await telemetryDataSource.getStatus());
+  }
+
   useEffect(() => {
     void Promise.all([
       telemetryDataSource.getStatus(),
@@ -41,7 +46,7 @@ export function App() {
       <TitleBar status={status} />
       <Navigation active={section} onChange={setSection} />
       <section className="trace-grid overflow-auto p-7">
-        {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} />}
+        {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} onSelectSimulator={selectSimulator} />}
         {section === "SESSIONS" && (
           <Sessions
             sessions={sessions}
@@ -52,7 +57,7 @@ export function App() {
         {section === "COMPARE" && <Compare />}
         {section === "SETUPS" && <Setups />}
       </section>
-      <Footer />
+      <Footer status={status} />
     </main>
   );
 }
@@ -79,8 +84,10 @@ function Navigation({ active, onChange }: { active: Section; onChange: (section:
   );
 }
 
-function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOpenSessions: () => void }) {
+function Live({ status, onOpenSessions, onSelectSimulator }: { status: TelemetryStatus | null; onOpenSessions: () => void; onSelectSimulator: (simulatorId: string) => Promise<void> }) {
   const recording = status?.connection === "recording" || status?.connection === "replay";
+  const simulatorName = status?.simulatorName ?? "YOUR SIMULATOR";
+  const simulatorShortName = status?.simulatorShortName ?? "SIM";
   const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
   const unavailableChannels = status?.channels.filter((channel) => !channel.available) ?? [];
   const categories = Array.from(new Set(availableChannels.map((channel) => channel.category)));
@@ -90,11 +97,12 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
       <PageIntro
         index="01"
         eyebrow="LIVE CAPTURE"
-        title={recording ? "RECORDING ASSETTO CORSA" : "READY WHEN ASSETTO CORSA IS"}
+        title={recording ? `RECORDING ${simulatorName.toUpperCase()}` : `READY WHEN ${simulatorName.toUpperCase()} IS`}
         description={recording
           ? "TRACE is recording the current drive or replay automatically. Keep it running until the session ends."
-          : "Start a drive or play a replay in Assetto Corsa. TRACE detects it and records locally—there is no record button to press."}
+          : `Start a drive or play a replay in ${simulatorName}. TRACE detects it and records locally—there is no record button to press.`}
       />
+      <SimulatorPicker status={status} onSelect={onSelectSimulator} />
       <div className="my-[14px] mb-6 grid grid-cols-4 border border-trace-divider max-[900px]:grid-cols-2">
         <Metric label="SOURCE" value={status?.source ?? "INITIALISING"} accent />
         <Metric label="STATE" value={status?.connection.toUpperCase() ?? "WAIT"} />
@@ -106,12 +114,12 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
         <div className="border-r border-trace-divider max-[1000px]:border-b max-[1000px]:border-r-0">
           <PanelTitle>WHAT TRACE RECORDS</PanelTitle>
           <p className="px-5 pt-4 text-[13px] leading-5 text-trace-faint">
-            TRACE saves both analysis-ready channels and the complete documented AC shared-memory pages. “AC-native” data is preserved in source units for future analysis; this is recording coverage, not a live sensor test.
+            TRACE saves portable analysis-ready channels plus the selected adapter's complete documented native data. {simulatorShortName}-native values remain in source units for future analysis; this is recording coverage, not a live sensor test.
           </p>
           <div className="grid grid-cols-2 gap-px p-4 max-[900px]:grid-cols-1">
             {categories.map((category) => (
               <div className="border border-trace-divider bg-trace-deep p-4" key={category}>
-                <strong className={`font-mono text-[10px] tracking-[.1em] ${category.startsWith("AC-NATIVE") ? "text-trace-purple" : "text-trace-accent"}`}>{category}</strong>
+                <strong className={`font-mono text-[10px] tracking-[.1em] ${category.includes("NATIVE") ? "text-trace-purple" : "text-trace-accent"}`}>{category}</strong>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {availableChannels.filter((channel) => channel.category === category).map((channel) => (
                     <Tooltip className="border border-trace-divider bg-trace-surface px-2.5 py-1.5 text-[12px] text-trace-soft" content={channel.detail} key={channel.id}>
@@ -126,7 +134,7 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
         <div>
           <PanelTitle>HOW CAPTURE WORKS</PanelTitle>
           <ol className="space-y-5 p-5">
-            <WorkflowStep number="1" title="Open Assetto Corsa">Start driving or play a replay at normal speed.</WorkflowStep>
+            <WorkflowStep number="1" title={`Open ${simulatorName}`}>Start driving or play a replay at normal speed.</WorkflowStep>
             <WorkflowStep number="2" title="TRACE records automatically">The status light pulses while samples are being saved.</WorkflowStep>
             <WorkflowStep number="3" title="Review the session">End normally, then open Sessions to inspect laps or export data.</WorkflowStep>
           </ol>
@@ -139,7 +147,7 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
       {unavailableChannels.length > 0 && (
         <details className="border border-t-0 border-trace-divider bg-trace-deep text-[12px]">
           <summary className="cursor-pointer px-5 py-4 font-bold tracking-[.06em] text-trace-muted hover:text-trace-text">
-            WHY SOME AC DATA IS NOT AVAILABLE
+            WHY SOME {simulatorShortName} DATA IS NOT AVAILABLE
           </summary>
           <div className="grid gap-px border-t border-trace-divider bg-trace-divider sm:grid-cols-2">
             {unavailableChannels.map((channel) => (
@@ -152,6 +160,41 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
         </details>
       )}
     </>
+  );
+}
+
+function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null; onSelect: (simulatorId: string) => Promise<void> }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const simulators = status?.simulators ?? [];
+  const selectable = simulators.filter((simulator) => simulator.available);
+
+  async function changeSimulator(simulatorId: string) {
+    setMessage(null);
+    try {
+      await onSelect(simulatorId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  return (
+    <div className="mt-5 flex min-h-14 items-center border border-trace-divider bg-trace-surface">
+      <label className="flex h-14 min-w-64 items-center gap-3 border-r border-trace-divider px-4">
+        <span className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">SIMULATOR</span>
+        <select
+          aria-label="Capture simulator"
+          value={status?.simulatorId ?? ""}
+          disabled={selectable.length <= 1}
+          onChange={(event) => void changeSimulator(event.target.value)}
+          className="min-w-0 flex-1 border-0 bg-transparent text-[12px] font-bold text-trace-text outline-none disabled:cursor-default disabled:opacity-100"
+        >
+          {simulators.map((simulator) => <option value={simulator.id} disabled={!simulator.available} key={simulator.id}>{simulator.name}{simulator.available ? "" : " · unavailable"}</option>)}
+        </select>
+      </label>
+      <span className="px-4 text-[11px] text-trace-dim">
+        {message ?? `${selectable.length} capture adapter${selectable.length === 1 ? "" : "s"} installed`}
+      </span>
+    </div>
   );
 }
 
@@ -229,6 +272,7 @@ function AvailabilityNote({ children }: { children: ReactNode }) {
 function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessionSummary[]; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void }) {
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [simulatorFilter, setSimulatorFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
   const [archiveMessage, setArchiveMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const visibleSessions = useMemo(() => {
@@ -237,18 +281,20 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
       .filter((session) => {
         const source = sessionSourceGroup(session);
         const matchesSource = sourceFilter === "all" || source === sourceFilter;
+        const matchesSimulator = simulatorFilter === "all" || session.simulatorId === simulatorFilter;
         const ownershipLabel = session.ownership === "other" ? "other driver" : session.ownership === "mine" ? "my drive" : "not specified";
-        const searchable = [session.title, session.driver, ownershipLabel, session.track, session.car, session.sessionType, session.source, ...session.tags]
+        const searchable = [session.title, session.driver, ownershipLabel, session.simulatorName, session.track, session.car, session.sessionType, session.source, ...session.tags]
           .join(" ")
           .toLocaleLowerCase();
-        return matchesSource && (!normalizedQuery || searchable.includes(normalizedQuery));
+        return matchesSource && matchesSimulator && (!normalizedQuery || searchable.includes(normalizedQuery));
       })
       .slice()
       .sort((left, right) => {
         const difference = new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime();
         return sortOrder === "newest" ? difference : -difference;
       });
-  }, [query, sessions, sortOrder, sourceFilter]);
+  }, [query, sessions, simulatorFilter, sortOrder, sourceFilter]);
+  const simulators = useMemo(() => Array.from(new Map(sessions.map((session) => [session.simulatorId, session.simulatorName])).entries()), [sessions]);
 
   async function deleteRecordedSession(session: RecordedSessionSummary) {
     setArchiveMessage(null);
@@ -328,6 +374,17 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
           <option value="native">Recorded drives</option>
           <option value="imported">Imports</option>
         </select>
+        {simulators.length > 1 && (
+          <select
+            aria-label="Filter sessions by simulator"
+            value={simulatorFilter}
+            onChange={(event) => setSimulatorFilter(event.target.value)}
+            className="h-12 border-0 border-r border-trace-divider bg-trace-surface px-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+          >
+            <option value="all">All simulators</option>
+            {simulators.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
+          </select>
+        )}
         <select
           aria-label="Sort sessions"
           value={sortOrder}
@@ -341,7 +398,7 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
 
       <div className="mt-3 border border-trace-divider bg-trace-surface">
         {sessions.length === 0 ? (
-          <EmptySessions title="No sessions yet">Start a drive or play a replay in Assetto Corsa. TRACE will save it here automatically.</EmptySessions>
+          <EmptySessions title="No sessions yet">Select an installed simulator, then start a drive or play a replay. TRACE will save it here automatically.</EmptySessions>
         ) : visibleSessions.length === 0 ? (
           <EmptySessions title="Nothing matches">Try a different search or change the source filter.</EmptySessions>
         ) : visibleSessions.map((session) => (
@@ -461,7 +518,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
           </div>
           <div className="min-w-0">
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
-            <span className="mt-1 block truncate text-[11px] text-trace-dim">{sessionSourceLabel(session)}</span>
+            <span className="mt-1 block truncate text-[11px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}</span>
             {(session.driver || session.ownership !== "unknown") && (
               <span className={`mt-1 block truncate font-mono text-[9px] font-bold tracking-[.05em] ${session.ownership === "other" ? "text-trace-purple" : "text-trace-accent"}`}>
                 {session.ownership === "other" ? "OTHER DRIVER" : session.ownership === "mine" ? "MY DRIVE" : "DRIVER"}{session.driver ? ` · ${session.driver}` : ""}
@@ -565,7 +622,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
             </button>
           )}
           <p className="mt-3 text-[11px] leading-5 text-trace-dim">
-            “Recorded” means TRACE captured the complete lap. Track-limit validity is not available from the currently validated AC data.
+            “Recorded” means TRACE captured the complete lap. Track-limit validity is not available from the currently validated {session.simulatorName} adapter data.
           </p>
         </div>
       )}
@@ -711,14 +768,14 @@ function sessionSourceGroup(session: RecordedSessionSummary) {
 
 function sessionSourceLabel(session: RecordedSessionSummary) {
   const source = sessionSourceGroup(session);
-  if (source === "replay") return "Assetto Corsa replay";
+  if (source === "replay") return "Replay capture";
   if (source === "imported") return "Imported telemetry";
   return "Recorded drive";
 }
 
 function friendlySessionType(session: RecordedSessionSummary) {
   const type = session.sessionType.toLocaleLowerCase();
-  if (type === "ac session") return "DRIVE";
+  if (type === "session") return "DRIVE";
   if (type === "qualify") return "QUALIFYING";
   if (type === "time_attack") return "TIME ATTACK";
   if (type.includes("replay")) return "REPLAY";
@@ -745,11 +802,11 @@ function formatSessionDate(value: string) {
   }).format(date);
 }
 
-function Footer() {
+function Footer({ status }: { status: TelemetryStatus | null }) {
   return (
     <footer className="col-span-full flex items-center gap-6 border-t border-trace-divider bg-trace-black px-[14px] font-mono text-[10px] tracking-[.06em] text-trace-dim">
       <span>TRACE ENGINE <b className="ml-1 text-trace-accent">READY</b></span>
-      <span>AC MODULE <b className="ml-1 text-trace-accent">LIFECYCLE</b></span>
+      <span>{status?.simulatorShortName ?? "SIM"} MODULE <b className="ml-1 text-trace-accent">LIFECYCLE</b></span>
       <span>STORAGE <b className="ml-1 text-trace-accent">LOCAL</b></span>
       <span className="ml-auto">V0.1.0 / PHASE 2</span>
     </footer>

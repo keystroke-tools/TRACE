@@ -67,6 +67,7 @@ Currently implemented:
 - Compact searchable/filterable session library with expandable lap details and safe recording deletion
 - User-managed session/replay names, driver attribution, ownership, and searchable tags
 - Assetto Corsa session classification (practice, qualifying, race, hotlap, time attack, drift, and drag)
+- Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
 - Transactional SQLite session/lap writes and bounded native session-browser queries
 
 The complete product direction and current technical proposal are documented in:

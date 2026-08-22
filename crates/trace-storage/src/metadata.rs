@@ -81,6 +81,7 @@ pub struct SectorSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionSummary {
     pub id: String,
+    pub simulator_key: String,
     pub user_title: Option<String>,
     pub user_driver: Option<String>,
     pub ownership: String,
@@ -371,11 +372,10 @@ impl MetadataStore {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT s.id, s.user_title, s.user_driver, s.ownership,
-                        t.display_name, c.display_name, s.session_type,
-                        s.started_at, s.source_kind,
+                "SELECT s.id, sim.key, s.user_title, s.user_driver, s.ownership,
+                        t.display_name, c.display_name, s.session_type, s.started_at, s.source_kind,
                         EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id)
-                 FROM sessions s
+                 FROM sessions s JOIN simulators sim ON sim.id = s.simulator_id
                  LEFT JOIN tracks t ON t.id = s.track_id
                  LEFT JOIN cars c ON c.id = s.car_id
                  ORDER BY s.started_at DESC, s.id
@@ -390,16 +390,17 @@ impl MetadataStore {
                 |row| {
                     Ok(SessionSummary {
                         id: row.get(0)?,
-                        user_title: row.get(1)?,
-                        user_driver: row.get(2)?,
-                        ownership: row.get(3)?,
+                        simulator_key: row.get(1)?,
+                        user_title: row.get(2)?,
+                        user_driver: row.get(3)?,
+                        ownership: row.get(4)?,
                         tags: Vec::new(),
-                        track: row.get(4)?,
-                        car: row.get(5)?,
-                        session_type: row.get(6)?,
-                        started_at: row.get(7)?,
-                        source_kind: row.get(8)?,
-                        exportable: row.get(9)?,
+                        track: row.get(5)?,
+                        car: row.get(6)?,
+                        session_type: row.get(7)?,
+                        started_at: row.get(8)?,
+                        source_kind: row.get(9)?,
+                        exportable: row.get(10)?,
                         laps: Vec::new(),
                     })
                 },

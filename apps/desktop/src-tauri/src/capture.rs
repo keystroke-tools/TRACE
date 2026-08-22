@@ -6,8 +6,9 @@ use std::{
 };
 
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use trace_ac::AcAdapter;
-use trace_adapter::{AdapterError, AdapterEvent, DisconnectReason, SimulatorAdapter};
+use trace_adapter::{
+    AdapterError, AdapterEvent, AdapterIdentity, DisconnectReason, SimulatorAdapter,
+};
 use trace_domain::{SessionSeed, SourceDescriptor, SourceKind};
 use trace_recorder::{
     RecorderOutput, SessionRecorder,
@@ -25,6 +26,7 @@ const ARROW_BATCH_FRAMES: usize = 240;
 
 #[derive(Clone, Debug)]
 pub struct CaptureStatus {
+    pub simulator_id: String,
     pub connection: String,
     pub source: String,
     pub sample_rate_hz: u16,
@@ -34,9 +36,20 @@ pub struct CaptureStatus {
 
 impl Default for CaptureStatus {
     fn default() -> Self {
+        Self::for_adapter(&AdapterIdentity {
+            key: "unconfigured".into(),
+            display_name: "No simulator".into(),
+            version: String::new(),
+        })
+    }
+}
+
+impl CaptureStatus {
+    pub fn for_adapter(adapter: &AdapterIdentity) -> Self {
         Self {
+            simulator_id: adapter.key.clone(),
             connection: "waiting".into(),
-            source: "ASSETTO CORSA".into(),
+            source: adapter.display_name.to_uppercase(),
             sample_rate_hz: 0,
             session: "NO ACTIVE SESSION".into(),
             active_session_id: None,
@@ -51,15 +64,31 @@ struct ActivePersistence {
     writer: Option<TelemetryIpcWriter<FileBlobWriter>>,
 }
 
-pub fn spawn(data_directory: PathBuf, status: SharedCaptureStatus) {
+pub fn spawn<A, F>(
+    data_directory: PathBuf,
+    status: SharedCaptureStatus,
+    identity: &AdapterIdentity,
+    adapter_factory: F,
+) where
+    A: SimulatorAdapter + 'static,
+    F: FnOnce() -> A + Send + 'static,
+{
+    let worker_name = format!("trace-{}-capture", identity.key);
     thread::Builder::new()
-        .name("trace-ac-capture".into())
-        .spawn(move || run(&data_directory, &status))
+        .name(worker_name)
+        .spawn(move || {
+            let mut adapter = adapter_factory();
+            run(&data_directory, &status, &mut adapter);
+        })
         .expect("failed to start TRACE capture worker");
 }
 
-fn run(data_directory: &std::path::Path, status: &SharedCaptureStatus) {
-    let result = run_capture(data_directory, status);
+fn run(
+    data_directory: &std::path::Path,
+    status: &SharedCaptureStatus,
+    adapter: &mut dyn SimulatorAdapter,
+) {
+    let result = run_capture(data_directory, status, adapter);
     if let Err(error) = result {
         update_status(status, "error", 0, &format!("CAPTURE ERROR: {error}"));
         eprintln!("TRACE capture worker stopped: {error}");
@@ -69,6 +98,7 @@ fn run(data_directory: &std::path::Path, status: &SharedCaptureStatus) {
 fn run_capture(
     data_directory: &std::path::Path,
     status: &SharedCaptureStatus,
+    adapter: &mut dyn SimulatorAdapter,
 ) -> Result<(), String> {
     std::fs::create_dir_all(data_directory).map_err(|error| error.to_string())?;
     let mut metadata = MetadataStore::open(&data_directory.join("trace.sqlite"))
@@ -89,7 +119,6 @@ fn run_capture(
         );
     }
 
-    let mut adapter = AcAdapter::new();
     let mut recorder = SessionRecorder::streaming();
     let mut active = None;
     loop {
@@ -221,10 +250,11 @@ fn new_session(
             value.clone(),
         )
     });
+    let simulator_key = source.simulator.as_str();
     Ok(NewSession {
         id: id.into(),
-        simulator_id: "sim-assetto-corsa".into(),
-        simulator_key: "assetto-corsa".into(),
+        simulator_id: format!("sim-{simulator_key}"),
+        simulator_key: simulator_key.into(),
         simulator_version: source.simulator_version.clone(),
         track_id: track.as_ref().map(|value| value.0.clone()),
         source_track_id: track.as_ref().map(|value| value.1.clone()),
@@ -312,6 +342,22 @@ mod tests {
         let session = new_session("session-1", &source, &SessionSeed::default()).expect("session");
 
         assert_eq!(session.simulator_version.as_deref(), Some("1.16.4"));
+        assert_eq!(session.simulator_id, "sim-assetto-corsa");
+        assert_eq!(session.simulator_key, "assetto-corsa");
         assert_eq!(session.source_kind, "simulator_replay");
+    }
+
+    #[test]
+    fn session_identity_comes_from_the_selected_adapter_source() {
+        let source = SourceDescriptor {
+            simulator: SimulatorId::parse("future-sim").expect("simulator"),
+            adapter_version: "1".into(),
+            simulator_version: None,
+            kind: SourceKind::NativeCapture,
+        };
+
+        let session = new_session("session-2", &source, &SessionSeed::default()).expect("session");
+        assert_eq!(session.simulator_id, "sim-future-sim");
+        assert_eq!(session.simulator_key, "future-sim");
     }
 }

@@ -6,6 +6,8 @@ use std::{
 
 use serde::Serialize;
 use tauri::Manager;
+use trace_ac::AcAdapter;
+use trace_adapter::SimulatorAdapter;
 use trace_storage::{ipc::export_core_csv, metadata::MetadataStore};
 
 mod capture;
@@ -25,12 +27,32 @@ struct ChannelCapability {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FoundationStatus {
+    simulator_id: String,
+    simulator_name: String,
+    simulator_short_name: String,
+    simulators: Vec<SimulatorOption>,
     connection: String,
     source: String,
     sample_rate_hz: u16,
     session: String,
     channels: Vec<ChannelCapability>,
 }
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimulatorOption {
+    id: &'static str,
+    name: &'static str,
+    short_name: &'static str,
+    available: bool,
+}
+
+const SIMULATORS: &[SimulatorOption] = &[SimulatorOption {
+    id: "assetto-corsa",
+    name: "Assetto Corsa",
+    short_name: "AC",
+    available: true,
+}];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,6 +78,8 @@ struct RecordedSectorSummary {
 #[serde(rename_all = "camelCase")]
 struct RecordedSessionSummary {
     id: String,
+    simulator_id: String,
+    simulator_name: String,
     title: Option<String>,
     driver: Option<String>,
     ownership: String,
@@ -113,6 +137,8 @@ fn recent_sessions(
             let deletable = active_session_id.as_deref() != Some(session.id.as_str());
             RecordedSessionSummary {
                 id: session.id,
+                simulator_name: simulator_name(&session.simulator_key),
+                simulator_id: session.simulator_key,
                 title: session.user_title,
                 driver: session.user_driver,
                 ownership: session.ownership,
@@ -121,7 +147,7 @@ fn recent_sessions(
                 car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
                 session_type: session
                     .session_type
-                    .unwrap_or_else(|| if replay { "REPLAY" } else { "AC SESSION" }.into())
+                    .unwrap_or_else(|| if replay { "REPLAY" } else { "SESSION" }.into())
                     .to_uppercase(),
                 started_at: session.started_at,
                 source: session.source_kind.replace('_', " ").to_uppercase(),
@@ -358,13 +384,60 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
     let snapshot = status
         .lock()
         .map_or_else(|_| CaptureStatus::default(), |value| value.clone());
+    let simulator = simulator_option(&snapshot.simulator_id);
+    let channels = simulator_channel_capabilities(&snapshot.simulator_id);
     FoundationStatus {
+        simulator_id: snapshot.simulator_id,
+        simulator_name: simulator
+            .map_or_else(|| snapshot.source.clone(), |value| value.name.into()),
+        simulator_short_name: simulator
+            .map_or_else(|| "SIM".into(), |value| value.short_name.into()),
+        simulators: SIMULATORS.to_vec(),
         connection: snapshot.connection,
         source: snapshot.source,
         sample_rate_hz: snapshot.sample_rate_hz,
         session: snapshot.session,
-        channels: ac_channel_capabilities(),
+        channels,
     }
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+fn select_simulator(
+    status: tauri::State<'_, SharedCaptureStatus>,
+    simulator_id: String,
+) -> Result<(), String> {
+    let current = status
+        .lock()
+        .map_err(|_| "capture status is unavailable".to_owned())?;
+    if current.simulator_id == simulator_id {
+        return Ok(());
+    }
+    if simulator_option(&simulator_id).is_none() {
+        return Err("That simulator adapter is not installed.".into());
+    }
+    Err("Close the active adapter before selecting another simulator.".into())
+}
+
+fn simulator_option(id: &str) -> Option<SimulatorOption> {
+    SIMULATORS
+        .iter()
+        .copied()
+        .find(|simulator| simulator.id == id)
+}
+
+fn simulator_name(id: &str) -> String {
+    simulator_option(id).map_or_else(
+        || id.split('-').map(capitalize).collect::<Vec<_>>().join(" "),
+        |simulator| simulator.name.into(),
+    )
+}
+
+fn capitalize(value: &str) -> String {
+    let mut characters = value.chars();
+    characters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(characters).collect()
+    })
 }
 
 type ChannelCapabilityDefinition = (&'static str, &'static str, &'static str, &'static str, bool);
@@ -599,23 +672,34 @@ fn ac_channel_capabilities() -> Vec<ChannelCapability> {
         .collect()
 }
 
+fn simulator_channel_capabilities(simulator_id: &str) -> Vec<ChannelCapability> {
+    match simulator_id {
+        "assetto-corsa" => ac_channel_capabilities(),
+        _ => Vec::new(),
+    }
+}
+
 /// Starts the TRACE desktop application.
 ///
 /// # Panics
 ///
 /// Panics when Tauri cannot initialize or run the desktop event loop.
 pub fn run() {
-    let capture_status = SharedCaptureStatus::default();
+    let adapter_identity = AcAdapter::new().identity().clone();
+    let capture_status = SharedCaptureStatus::new(std::sync::Mutex::new(
+        CaptureStatus::for_adapter(&adapter_identity),
+    ));
     tauri::Builder::default()
         .manage(capture_status)
-        .setup(|app| {
+        .setup(move |app| {
             let directory = app.path().app_data_dir()?;
             let status = app.state::<SharedCaptureStatus>().inner().clone();
-            capture::spawn(directory, status);
+            capture::spawn(directory, status, &adapter_identity, AcAdapter::new);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             foundation_status,
+            select_simulator,
             recent_sessions,
             export_session,
             delete_session,
@@ -639,5 +723,10 @@ mod tests {
     fn export_stems_cannot_escape_the_download_directory() {
         assert_eq!(safe_export_stem("session-123"), "session-123");
         assert_eq!(safe_export_stem("../session\\bad"), "---session-bad");
+    }
+
+    #[test]
+    fn unknown_simulator_keys_have_a_readable_fallback_name() {
+        assert_eq!(simulator_name("example-racing-sim"), "Example Racing Sim");
     }
 }

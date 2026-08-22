@@ -15,7 +15,18 @@ export interface ChannelCapability {
   available: boolean;
 }
 
+export interface SimulatorOption {
+  id: string;
+  name: string;
+  shortName: string;
+  available: boolean;
+}
+
 export interface TelemetryStatus {
+  simulatorId: string;
+  simulatorName: string;
+  simulatorShortName: string;
+  simulators: SimulatorOption[];
   connection: ConnectionState;
   source: string;
   sampleRateHz: number | null;
@@ -41,6 +52,8 @@ export interface RecordedSectorSummary {
 
 export interface RecordedSessionSummary {
   id: string;
+  simulatorId: string;
+  simulatorName: string;
   title?: string | null;
   driver?: string | null;
   ownership: "mine" | "other" | "unknown";
@@ -70,6 +83,7 @@ export interface SessionDeletion {
 
 export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
+  selectSimulator(simulatorId: string): Promise<void>;
   getSessions(): Promise<RecordedSessionSummary[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
@@ -82,6 +96,10 @@ const fixtureSessionDetails = new Map<string, { title: string | null; driver: st
 export const fixtureDataSource: TelemetryDataSource = {
   async getStatus() {
     return {
+      simulatorId: "assetto-corsa",
+      simulatorName: "Assetto Corsa",
+      simulatorShortName: "AC",
+      simulators: [{ id: "assetto-corsa", name: "Assetto Corsa", shortName: "AC", available: true }],
       connection: "replay",
       source: "TRACE REPLAY",
       sampleRateHz: 100,
@@ -121,10 +139,15 @@ export const fixtureDataSource: TelemetryDataSource = {
       ],
     };
   },
+  async selectSimulator(simulatorId) {
+    if (simulatorId !== "assetto-corsa") throw new Error("That simulator adapter is not installed.");
+  },
   async getSessions() {
     const sessions: RecordedSessionSummary[] = [
       {
         id: "replay-mugello-001",
+        simulatorId: "assetto-corsa",
+        simulatorName: "Assetto Corsa",
         title: null,
         driver: null,
         ownership: "unknown",
@@ -174,6 +197,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 export const tauriDataSource: TelemetryDataSource = {
   getStatus() {
     return invoke<TelemetryStatus>("foundation_status");
+  },
+  selectSimulator(simulatorId) {
+    return invoke<void>("select_simulator", { simulatorId });
   },
   getSessions() {
     return invoke<RecordedSessionSummary[]>("recent_sessions");

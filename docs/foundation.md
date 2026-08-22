@@ -38,6 +38,12 @@ boundary. TRACE colors and typography are CSS-first Tailwind theme variables. Br
 development uses an explicitly labelled replay fixture; the Tauri build obtains DTOs
 through commands rather than a local HTTP server.
 
+The desktop contract exposes installed simulator descriptors, the selected adapter,
+and a simulator identity on every archived session. Product copy, source labels,
+filtering, and native-channel presentation derive from those descriptors rather than
+assuming Assetto Corsa. The current registry contains one adapter; adding another
+does not require a simulator-specific session browser.
+
 The Sessions route now defines the first typed session/lap summary presentation.
 Browser development displays one replay fixture, while the native command returns an
 empty archive until SQLite recording persistence is connected. The UI therefore does
@@ -326,8 +332,9 @@ hard-linked into `.orphaned` and then removed from their live locations. This is
 recoverable quarantine, not deletion. Reconciliation runs before capture opens a new
 pending handle.
 
-The Tauri composition root starts a dedicated Assetto Corsa polling thread at roughly
-60 Hz. Canonical adapter events feed `SessionRecorder`; session starts create SQLite
+The Tauri composition root selects an installed adapter and passes it into a generic
+polling worker at roughly 60 Hz. Canonical adapter events feed `SessionRecorder`;
+session starts create SQLite
 identity rows, and completion flows through Arrow/blob/metadata persistence. A torn
 packet is retried without closing the recording, while an explicit connection-loss
 error finalizes it conservatively. Persistence failures are surfaced in worker status
