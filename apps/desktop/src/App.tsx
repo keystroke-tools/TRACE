@@ -467,7 +467,10 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
 function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { session: RecordedSessionSummary; lapIndex: number; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px] grid-rows-[48px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px] grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+      <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
+        <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
+      </div>
       <div className="min-w-0"><span className="block truncate text-[13px] font-black">{session.track} · {session.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {lapIndex} · {friendlySessionType(session)}</span></div>
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
@@ -476,7 +479,6 @@ function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { ses
       <HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
       <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
       <HudConditions air={sample?.referenceAirTemperatureC ?? numericCondition(session.ambientTemperatureC)} track={sample?.referenceTrackTemperatureC ?? numericCondition(session.roadTemperatureC)} />
-      <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
     </div>
   );
 }
@@ -509,7 +511,10 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   const comparisonSession = compatibleSessions.find((session) => session.id === comparisonSessionId);
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[164px] grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px] grid-rows-[45px_44px_35px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px] grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+      <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
+        <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
+      </div>
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
         <div className="flex items-center justify-center"><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
@@ -525,9 +530,8 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
       <HudSteering value={sample?.comparisonSteeringPercent} colour={channelColours.delta} />
       <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
-      <div className="col-span-full grid h-9 min-w-0 grid-cols-[minmax(0,2fr)_minmax(280px,3fr)] items-end gap-5 border-t border-trace-divider pt-2">
+      <div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
         <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} />
-        <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} embedded />
       </div>
     </div>
   );
@@ -592,12 +596,12 @@ function HudLapChoice({ label, colour, sessions, sessionId, onSession, laps, lap
   return <div className="grid min-w-0 grid-cols-[100px_minmax(150px,1fr)_150px] items-center gap-2"><span className={`font-mono text-[10px] font-black tracking-[.1em] ${colour}`}>{label}</span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} session`}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.title ?? `${session.track} · ${formatSessionDate(session.startedAt)}`}</option>)}</select><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} lap`}>{lapIndex == null && <option value="" disabled>No clean lap</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}</select></div>;
 }
 
-function TelemetrySeek({ samples, cursorIndex, onSeek, embedded = false }: { samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void; embedded?: boolean }) {
+function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
   const index = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
   const start = samples[0]?.distanceM ?? 0;
   const end = samples.at(-1)?.distanceM ?? 0;
   return (
-    <label className={`${embedded ? "h-6" : "col-span-full h-7 border-t border-trace-divider pt-2"} grid grid-cols-[72px_1fr_76px] items-end gap-3 font-mono text-[10px] tabular-nums text-trace-dim`}>
+    <label className="grid h-6 grid-cols-[72px_1fr_76px] items-center gap-3 font-mono text-[10px] tabular-nums text-trace-dim">
       <span>{Math.round(start)} M</span>
       <input className="trace-seek w-full" type="range" min="0" max={Math.max(samples.length - 1, 0)} step="1" value={index} disabled={samples.length < 2} onChange={(event) => onSeek(Number(event.target.value))} aria-label="Seek through lap distance" />
       <span className="text-right">{Math.round(end)} M</span>
@@ -612,7 +616,7 @@ function HudValue({ label, value, unit, colour }: { label: string; value: string
 function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
   const percent = value == null || !Number.isFinite(value) ? 0 : Math.min(100, Math.max(-100, value));
   const rotation = percent * 4.5;
-  return <div className="flex h-10 min-w-0 items-center gap-2 font-mono"><svg className="size-9 shrink-0" viewBox="0 0 36 36" role="img" aria-label={value == null ? "Steering unavailable" : `Steering input ${Math.round(value)} percent`}><circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" /><g transform={`rotate(${rotation} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="18" x2="18" y2="5" /><line x1="7" y1="19" x2="29" y2="19" /></g><circle cx="18" cy="18" r="2.5" fill={colour} /></svg><span className="min-w-0"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span><strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>{value == null ? "—" : `${Math.round(value)}%`}</strong></span></div>;
+  return <div className="flex h-10 min-w-0 items-center gap-2 font-mono"><svg className="size-9 shrink-0" viewBox="0 0 36 36" role="img" aria-label={value == null ? "Steering unavailable" : `Steering input ${Math.round(value)} percent`}><circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" /><g transform={`rotate(${rotation} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="18" x2="18" y2="31" /><line x1="7" y1="17" x2="29" y2="17" /></g><circle cx="18" cy="18" r="2.5" fill={colour} /></svg><span className="min-w-0"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span><strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>{value == null ? "—" : `${Math.round(value)}%`}</strong></span></div>;
 }
 
 function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
