@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, path::Path};
 
-use rusqlite::{Connection, params, types::Type};
+use rusqlite::{Connection, OptionalExtension, params, types::Type};
 use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
@@ -465,6 +465,47 @@ impl MetadataStore {
                 .map_err(|_| MetadataError::IntegerOverflow)?,
         })
     }
+
+    /// Deletes one session and all metadata owned by it.
+    ///
+    /// The returned path identifies the immutable telemetry file that the caller
+    /// must remove from blob storage after the transaction commits. Callers are
+    /// responsible for protecting a session that is still actively being written.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError::RecordNotFound`] for an unknown session or a metadata
+    /// error when the stored blob path or transaction is invalid.
+    pub fn delete_session(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Option<RelativeBlobPath>, MetadataError> {
+        let transaction = self.connection.transaction().map_err(MetadataError::from)?;
+        let path = transaction
+            .query_row(
+                "SELECT relative_path FROM telemetry_blobs WHERE session_id = ?1",
+                [session_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(MetadataError::from)?
+            .map(RelativeBlobPath::parse)
+            .transpose()
+            .map_err(|error| {
+                MetadataError::InvalidRecord(format!(
+                    "stored session blob path is invalid: {error:?}"
+                ))
+            })?;
+
+        let changed = transaction
+            .execute("DELETE FROM sessions WHERE id = ?1", [session_id])
+            .map_err(MetadataError::from)?;
+        if changed != 1 {
+            return Err(MetadataError::RecordNotFound);
+        }
+        transaction.commit().map_err(MetadataError::from)?;
+        Ok(path)
+    }
 }
 
 /// Metadata database failure.
@@ -733,5 +774,42 @@ mod tests {
         let sessions = store.recent_sessions(10).expect("sessions");
         assert!(sessions[0].laps.is_empty());
         assert!(!sessions[0].exportable);
+    }
+
+    #[test]
+    fn deleting_a_completed_session_cascades_metadata_and_returns_its_blob() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        store
+            .create_session(&session("session-1"))
+            .expect("session");
+        store
+            .complete_session("session-1", "2026-08-21T15:00:00Z", &blob(), &[])
+            .expect("completed session");
+
+        let deleted = store.delete_session("session-1").expect("delete session");
+
+        assert_eq!(deleted, Some(blob().path));
+        assert!(store.recent_sessions(10).expect("sessions").is_empty());
+        assert!(
+            store
+                .referenced_blob_paths()
+                .expect("blob paths")
+                .is_empty()
+        );
+        assert_eq!(
+            store.delete_session("session-1"),
+            Err(MetadataError::RecordNotFound)
+        );
+    }
+
+    #[test]
+    fn deleting_an_incomplete_session_cleans_up_its_metadata() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        store
+            .create_session(&session("session-1"))
+            .expect("session");
+
+        assert_eq!(store.delete_session("session-1"), Ok(None));
+        assert!(store.recent_sessions(10).expect("sessions").is_empty());
     }
 }

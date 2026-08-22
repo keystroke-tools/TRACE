@@ -310,6 +310,13 @@ error finalizes it conservatively. Persistence failures are surfaced in worker s
 and logged without terminating future capture attempts. The React shell polls worker
 status and refreshes the Sessions archive while it is visible.
 
+Session deletion is explicit and user-confirmed. The capture worker publishes the
+active session identity so the desktop command can reject deletion while its Arrow
+writer or persistence transaction is live. Completed and abandoned inactive sessions
+are removed in a SQLite transaction; foreign-key cascades remove their laps and blob
+metadata, after which the validated relative Arrow path is removed from local storage.
+Filesystem cleanup failures are returned as visible warnings rather than being hidden.
+
 The source descriptor follows each recording into session metadata. Live AC sessions
 are stored as `native_capture`; telemetry observed while AC reports replay mode is
 stored as `simulator_replay`; future file adapters use `imported`. Replay capture is

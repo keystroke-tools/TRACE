@@ -29,6 +29,7 @@ pub struct CaptureStatus {
     pub source: String,
     pub sample_rate_hz: u16,
     pub session: String,
+    pub active_session_id: Option<String>,
 }
 
 impl Default for CaptureStatus {
@@ -38,6 +39,7 @@ impl Default for CaptureStatus {
             source: "ASSETTO CORSA".into(),
             sample_rate_hz: 0,
             session: "NO ACTIVE SESSION".into(),
+            active_session_id: None,
         }
     }
 }
@@ -162,6 +164,7 @@ fn handle_output(
                     .map_err(|error| format!("Arrow stream start failed: {error:?}"))?,
                 ),
             });
+            set_active_session(status, Some(session_id));
             update_status(status, "recording", 60, &session_label(&seed));
         }
         RecorderOutput::FrameAccepted(frame) => {
@@ -184,14 +187,15 @@ fn handle_output(
                 .writer
                 .take()
                 .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
-            persist_streamed_recording(
+            let result = persist_streamed_recording(
                 blobs,
                 metadata,
                 &recording,
                 &persistence.descriptor,
                 writer,
-            )
-            .map_err(|error| format!("recording persistence failed: {error:?}"))?;
+            );
+            set_active_session(status, None);
+            result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
             update_status(status, "waiting", 0, "NO ACTIVE SESSION");
         }
     }
@@ -282,6 +286,12 @@ fn update_status(
         value.connection = connection.into();
         value.sample_rate_hz = sample_rate_hz;
         value.session = session.into();
+    }
+}
+
+fn set_active_session(status: &SharedCaptureStatus, session_id: Option<String>) {
+    if let Ok(mut value) = status.lock() {
+        value.active_session_id = session_id;
     }
 }
 

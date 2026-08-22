@@ -51,6 +51,7 @@ struct RecordedSessionSummary {
     started_at: String,
     source: String,
     exportable: bool,
+    deletable: bool,
     laps: Vec<RecordedLapSummary>,
 }
 
@@ -62,9 +63,19 @@ struct SessionExport {
     sample_count: u64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionDeletion {
+    session_id: String,
+    cleanup_warning: Option<String>,
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle as an owned command argument.
-fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>, String> {
+fn recent_sessions(
+    app: tauri::AppHandle,
+    status: tauri::State<'_, SharedCaptureStatus>,
+) -> Result<Vec<RecordedSessionSummary>, String> {
     let directory = app
         .path()
         .app_data_dir()
@@ -75,11 +86,16 @@ fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>,
     let sessions = store
         .recent_sessions(100)
         .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    let active_session_id = status
+        .lock()
+        .ok()
+        .and_then(|value| value.active_session_id.clone());
 
     Ok(sessions
         .into_iter()
         .map(|session| {
             let replay = session.source_kind == "simulator_replay";
+            let deletable = active_session_id.as_deref() != Some(session.id.as_str());
             RecordedSessionSummary {
                 id: session.id,
                 track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
@@ -91,6 +107,7 @@ fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>,
                 started_at: session.started_at,
                 source: session.source_kind.replace('_', " ").to_uppercase(),
                 exportable: session.exportable,
+                deletable,
                 laps: session
                     .laps
                     .into_iter()
@@ -168,6 +185,53 @@ fn export_session(
         path: destination_path.to_string_lossy().into_owned(),
         format: label.into(),
         sample_count,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+fn delete_session(
+    app: tauri::AppHandle,
+    status: tauri::State<'_, SharedCaptureStatus>,
+    session_id: String,
+) -> Result<SessionDeletion, String> {
+    if status
+        .lock()
+        .ok()
+        .and_then(|value| value.active_session_id.clone())
+        .is_some_and(|active| active == session_id)
+    {
+        return Err("This session is still recording and cannot be deleted yet.".into());
+    }
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let blob_path = store
+        .delete_session(&session_id)
+        .map_err(|error| match error {
+            trace_storage::metadata::MetadataError::RecordNotFound => {
+                "This session no longer exists.".into()
+            }
+            other => format!("failed to delete session metadata: {other:?}"),
+        })?;
+
+    let cleanup_warning = blob_path.and_then(|path| {
+        let file = data_directory.join("telemetry").join(path.as_str());
+        match fs::remove_file(&file) {
+            Ok(()) => None,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => Some(format!(
+                "The session was removed, but its telemetry file could not be cleaned up: {error}"
+            )),
+        }
+    });
+
+    Ok(SessionDeletion {
+        session_id,
+        cleanup_warning,
     })
 }
 
@@ -371,7 +435,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             foundation_status,
             recent_sessions,
-            export_session
+            export_session,
+            delete_session
         ])
         .run(tauri::generate_context!())
         .expect("TRACE desktop runtime failed");

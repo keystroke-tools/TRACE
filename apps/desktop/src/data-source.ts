@@ -38,6 +38,7 @@ export interface RecordedSessionSummary {
   startedAt: string;
   source: string;
   exportable: boolean;
+  deletable: boolean;
   laps: RecordedLapSummary[];
 }
 
@@ -49,11 +50,19 @@ export interface SessionExport {
   sampleCount: number;
 }
 
+export interface SessionDeletion {
+  sessionId: string;
+  cleanupWarning?: string | null;
+}
+
 export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
   getSessions(): Promise<RecordedSessionSummary[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
+  deleteSession(sessionId: string): Promise<SessionDeletion>;
 }
+
+const deletedFixtureSessionIds = new Set<string>();
 
 export const fixtureDataSource: TelemetryDataSource = {
   async getStatus() {
@@ -84,7 +93,7 @@ export const fixtureDataSource: TelemetryDataSource = {
     };
   },
   async getSessions() {
-    return [
+    const sessions: RecordedSessionSummary[] = [
       {
         id: "replay-mugello-001",
         track: "MUGELLO",
@@ -93,6 +102,7 @@ export const fixtureDataSource: TelemetryDataSource = {
         startedAt: "21 AUG / 14:32",
         source: "TRACE REPLAY",
         exportable: true,
+        deletable: true,
         laps: [
           { index: 1, time: "1:52.418", validity: "valid" },
           { index: 2, time: "1:50.906", validity: "valid" },
@@ -100,6 +110,7 @@ export const fixtureDataSource: TelemetryDataSource = {
         ],
       },
     ];
+    return sessions.filter((session) => !deletedFixtureSessionIds.has(session.id));
   },
   async exportSession(_sessionId, format) {
     return {
@@ -107,6 +118,10 @@ export const fixtureDataSource: TelemetryDataSource = {
       format: format === "arrow" ? "Arrow IPC" : "CSV",
       sampleCount: 0,
     };
+  },
+  async deleteSession(sessionId) {
+    deletedFixtureSessionIds.add(sessionId);
+    return { sessionId };
   },
 };
 
@@ -119,6 +134,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   exportSession(sessionId, exportFormat) {
     return invoke<SessionExport>("export_session", { sessionId, exportFormat });
+  },
+  deleteSession(sessionId) {
+    return invoke<SessionDeletion>("delete_session", { sessionId });
   },
 };
 

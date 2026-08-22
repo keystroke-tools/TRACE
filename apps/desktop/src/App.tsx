@@ -41,7 +41,12 @@ export function App() {
       <Navigation active={section} onChange={setSection} />
       <section className="trace-grid overflow-auto p-7">
         {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} />}
-        {section === "SESSIONS" && <Sessions sessions={sessions} />}
+        {section === "SESSIONS" && (
+          <Sessions
+            sessions={sessions}
+            onDeleted={(sessionId) => setSessions((current) => current.filter((session) => session.id !== sessionId))}
+          />
+        )}
         {section === "COMPARE" && <Compare />}
         {section === "SETUPS" && <Setups />}
       </section>
@@ -219,10 +224,11 @@ function AvailabilityNote({ children }: { children: ReactNode }) {
   return <p className="border border-t-0 border-trace-divider bg-trace-deep px-5 py-4 text-[12px] leading-5 text-trace-muted"><strong className="mr-2 text-trace-warning">NOT AVAILABLE YET</strong>{children}</p>;
 }
 
-function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
+function Sessions({ sessions, onDeleted }: { sessions: RecordedSessionSummary[]; onDeleted: (sessionId: string) => void }) {
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
+  const [archiveMessage, setArchiveMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const visibleSessions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return sessions
@@ -241,20 +247,46 @@ function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
       });
   }, [query, sessions, sortOrder, sourceFilter]);
 
+  async function deleteRecordedSession(session: RecordedSessionSummary) {
+    setArchiveMessage(null);
+    try {
+      const result = await telemetryDataSource.deleteSession(session.id);
+      onDeleted(result.sessionId);
+      setArchiveMessage({
+        kind: result.cleanupWarning ? "error" : "success",
+        text: result.cleanupWarning ?? `${session.track} was deleted from your session library.`,
+      });
+      return true;
+    } catch (error) {
+      setArchiveMessage({
+        kind: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
   return (
     <>
       <div className="flex items-end justify-between gap-6">
         <div>
-          <SectionHeading index="02">RECORDED SESSIONS</SectionHeading>
-          <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">LOCAL TELEMETRY ARCHIVE</h1>
-          <p className="mt-2 text-[13px] text-trace-muted">Search recordings, expand a session to inspect its laps, or export telemetry for analysis.</p>
+          <SectionHeading index="02">SESSION LIBRARY</SectionHeading>
+          <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">YOUR RECORDED SESSIONS</h1>
+          <p className="mt-2 text-[13px] text-trace-muted">Find a drive or replay, review its laps, export the telemetry, or remove recordings you no longer need.</p>
         </div>
-        <span className="font-mono text-[11px] tracking-[.1em] text-trace-faint">
-          {visibleSessions.length} / {sessions.length} SESSION(S)
+        <span className="font-mono text-[11px] text-trace-faint">
+          {visibleSessions.length} shown · {sessions.length} total
         </span>
       </div>
 
-      <div className="mt-6 flex flex-wrap border border-trace-divider bg-trace-surface">
+      {archiveMessage && (
+        <div className={`mt-5 flex items-center justify-between border px-4 py-3 text-[12px] ${archiveMessage.kind === "success" ? "border-trace-accent-muted bg-trace-accent-wash text-trace-soft" : "border-trace-warning bg-trace-deep text-trace-soft"}`} role="status">
+          <span>{archiveMessage.text}</span>
+          <button type="button" onClick={() => setArchiveMessage(null)} className="ml-4 border-0 bg-transparent text-trace-muted hover:text-trace-text" aria-label="Dismiss message">×</button>
+        </div>
+      )}
+
+      <div className={`${archiveMessage ? "mt-3" : "mt-6"} flex flex-wrap border border-trace-divider bg-trace-surface`}>
         <label className="flex min-w-[280px] flex-1 items-center gap-3 border-r border-trace-divider px-4 focus-within:bg-trace-raised">
           <svg className="size-3.5 shrink-0 stroke-trace-dim" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="7" cy="7" r="4.5" />
@@ -265,8 +297,8 @@ function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="SEARCH TRACK, CAR, SESSION..."
-            className="h-12 min-w-0 flex-1 border-0 bg-transparent font-mono text-[11px] text-trace-text outline-none placeholder:text-trace-dim"
+            placeholder="Search track, car, or session…"
+            className="h-12 min-w-0 flex-1 border-0 bg-transparent text-[12px] text-trace-text outline-none placeholder:text-trace-dim"
           />
         </label>
         <select
@@ -275,10 +307,10 @@ function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
           onChange={(event) => setSourceFilter(event.target.value)}
           className="h-12 border-0 border-r border-trace-divider bg-trace-surface px-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
         >
-          <option value="all">ALL SOURCES</option>
-          <option value="replay">REPLAYS</option>
-          <option value="native">NATIVE CAPTURE</option>
-          <option value="imported">IMPORTED</option>
+          <option value="all">All sources</option>
+          <option value="replay">Replays</option>
+          <option value="native">Recorded drives</option>
+          <option value="imported">Imports</option>
         </select>
         <select
           aria-label="Sort sessions"
@@ -286,38 +318,48 @@ function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
           onChange={(event) => setSortOrder(event.target.value)}
           className="h-12 border-0 bg-trace-surface px-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
         >
-          <option value="newest">NEWEST FIRST</option>
-          <option value="oldest">OLDEST FIRST</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
         </select>
       </div>
 
       <div className="mt-3 border border-trace-divider bg-trace-surface">
         {sessions.length === 0 ? (
-          <div className="p-12 text-center font-mono text-xs text-trace-faint">NO RECORDED SESSIONS</div>
+          <EmptySessions title="No sessions yet">Start a drive or play a replay in Assetto Corsa. TRACE will save it here automatically.</EmptySessions>
         ) : visibleSessions.length === 0 ? (
-          <div className="p-12 text-center font-mono text-xs text-trace-faint">NO SESSIONS MATCH THESE FILTERS</div>
-        ) : visibleSessions.map((session) => <SessionRow key={session.id} session={session} />)}
+          <EmptySessions title="Nothing matches">Try a different search or change the source filter.</EmptySessions>
+        ) : visibleSessions.map((session) => (
+          <SessionRow key={session.id} session={session} onDelete={deleteRecordedSession} />
+        ))}
       </div>
     </>
   );
 }
 
-function SessionRow({ session }: { session: RecordedSessionSummary }) {
+function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean> }) {
   const [expanded, setExpanded] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const exportMenu = useRef<HTMLDivElement>(null);
+  const [deleting, setDeleting] = useState(false);
+  const actionsMenu = useRef<HTMLDivElement>(null);
   const timedLaps = session.laps.filter((lap) => lap.time !== "—");
   const bestLap = timedLaps.slice().sort((left, right) => lapTimeMs(left.time) - lapTimeMs(right.time))[0];
 
   useEffect(() => {
-    if (!exportOpen) return;
+    if (!actionsOpen) return;
     function dismissOnPointerDown(event: PointerEvent) {
-      if (!exportMenu.current?.contains(event.target as Node)) setExportOpen(false);
+      if (!actionsMenu.current?.contains(event.target as Node)) {
+        setActionsOpen(false);
+        setConfirmingDelete(false);
+      }
     }
     function dismissOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setExportOpen(false);
+      if (event.key === "Escape") {
+        setActionsOpen(false);
+        setConfirmingDelete(false);
+      }
     }
     document.addEventListener("pointerdown", dismissOnPointerDown);
     document.addEventListener("keydown", dismissOnEscape);
@@ -325,7 +367,7 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
       document.removeEventListener("pointerdown", dismissOnPointerDown);
       document.removeEventListener("keydown", dismissOnEscape);
     };
-  }, [exportOpen]);
+  }, [actionsOpen]);
 
   async function exportTelemetry(exportFormat: SessionExportFormat) {
     setExporting(true);
@@ -333,12 +375,19 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
     try {
       const result = await telemetryDataSource.exportSession(session.id, exportFormat);
       setExportMessage(`${result.format} · ${result.sampleCount.toLocaleString()} samples · ${result.path}`);
-      setExportOpen(false);
+      setActionsOpen(false);
     } catch (error) {
       setExportMessage(`EXPORT FAILED · ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setExporting(false);
     }
+  }
+
+  async function deleteRecording() {
+    setDeleting(true);
+    const deleted = await onDelete(session);
+    setDeleting(false);
+    if (deleted) setActionsOpen(false);
   }
 
   return (
@@ -351,13 +400,13 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
           className="grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px]"
         >
           <div className="min-w-0">
-            <span className="block truncate text-[10px] font-extrabold tracking-[.12em] text-trace-accent">{session.sessionType}</span>
+            <span className="block truncate text-[10px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
             <h2 className="mt-1.5 truncate text-base font-black tracking-[.03em]">{session.track}</h2>
             <span className="mt-1 block truncate font-mono text-[9px] text-trace-dim" title={session.startedAt}>{formatSessionDate(session.startedAt)}</span>
           </div>
           <div className="min-w-0">
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
-            <span className="mt-1 block truncate font-mono text-[9px] tracking-[.07em] text-trace-dim">{session.source}</span>
+            <span className="mt-1 block truncate text-[11px] text-trace-dim">{sessionSourceLabel(session)}</span>
           </div>
           <div className="font-mono">
             <span className="block text-[9px] tracking-[.08em] text-trace-dim">LAPS</span>
@@ -369,35 +418,33 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
           </div>
         </button>
         <div className="flex shrink-0 items-stretch border-l border-trace-divider">
-          <div className="relative flex" ref={exportMenu}>
+          <div className="relative flex" ref={actionsMenu}>
             <button
               type="button"
-              aria-label={`Export ${session.track} session`}
-              aria-expanded={exportOpen}
-              disabled={!session.exportable}
-              title={session.exportable ? "Export session" : "Session has not finalized"}
-              onClick={() => setExportOpen((value) => !value)}
-              className="grid w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-accent disabled:text-trace-dim disabled:hover:bg-transparent"
+              aria-label={`Actions for ${session.track} session`}
+              aria-expanded={actionsOpen}
+              title="Session actions"
+              onClick={() => { setActionsOpen((value) => !value); setConfirmingDelete(false); }}
+              className="grid w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
             >
-              <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2v8m0 0 3-3m-3 3L5 7M3 12.5h10" />
+              <svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="3" cy="8" r="1.2" /><circle cx="8" cy="8" r="1.2" /><circle cx="13" cy="8" r="1.2" />
               </svg>
             </button>
-            {exportOpen && (
-              <div className="absolute right-0 top-[calc(100%-10px)] z-20 w-64 border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
-                <span className="block px-2 pb-2 pt-1 font-mono text-[9px] font-bold tracking-[.1em] text-trace-dim">EXPORT TELEMETRY</span>
-                <ExportOption
-                  label="ARROW IPC"
-                  detail="Full-fidelity TRACE recording"
-                  disabled={exporting}
-                  onClick={() => void exportTelemetry("arrow")}
-                />
-                <ExportOption
-                  label="CSV"
-                  detail="Core channels, broad compatibility"
-                  disabled={exporting}
-                  onClick={() => void exportTelemetry("csv")}
-                />
+            {actionsOpen && (
+              <div className="absolute right-0 top-[calc(100%-10px)] z-20 w-72 border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
+                {confirmingDelete ? (
+                  <DeleteConfirmation session={session} deleting={deleting} onCancel={() => setConfirmingDelete(false)} onConfirm={() => void deleteRecording()} />
+                ) : (
+                  <>
+                    <span className="block px-2 pb-2 pt-1 text-[11px] font-bold text-trace-soft">Session actions</span>
+                    <ExportOption label="Export full recording" detail="Arrow IPC · all captured channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("arrow")} />
+                    <ExportOption label="Export spreadsheet" detail="CSV · core channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("csv")} />
+                    {!session.exportable && <p className="px-2 py-2 text-[10px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
+                    <div className="my-1 border-t border-trace-divider" />
+                    <button type="button" disabled={!session.deletable} onClick={() => setConfirmingDelete(true)} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent">{session.deletable ? "Delete recording…" : "Recording in progress"}</button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -456,6 +503,33 @@ function ExportOption({ label, detail, disabled, onClick }: { label: string; det
   );
 }
 
+function DeleteConfirmation({ session, deleting, onCancel, onConfirm }: { session: RecordedSessionSummary; deleting: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="p-2">
+      <strong className="block text-[13px] text-trace-text">Delete this recording?</strong>
+      <p className="mt-2 text-[11px] leading-5 text-trace-faint">
+        {session.track} and its saved telemetry will be permanently removed. This cannot be undone.
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button type="button" disabled={deleting} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
+        <button type="button" disabled={deleting} onClick={onConfirm} className="border border-trace-warning bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-warning hover:bg-trace-warning hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">
+          {deleting ? "Deleting…" : "Delete"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EmptySessions({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="p-12 text-center">
+      <span className="trace-crosshair mx-auto block" aria-hidden="true" />
+      <strong className="mt-5 block text-base">{title}</strong>
+      <p className="mx-auto mt-2 max-w-md text-[12px] leading-5 text-trace-faint">{children}</p>
+    </div>
+  );
+}
+
 function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
   const label = lap.validity === "unknown"
     ? "UNVERIFIED"
@@ -477,6 +551,20 @@ function sessionSourceGroup(session: RecordedSessionSummary) {
   if (source.includes("replay")) return "replay";
   if (source.includes("import")) return "imported";
   return "native";
+}
+
+function sessionSourceLabel(session: RecordedSessionSummary) {
+  const source = sessionSourceGroup(session);
+  if (source === "replay") return "Assetto Corsa replay";
+  if (source === "imported") return "Imported telemetry";
+  return "Recorded drive";
+}
+
+function friendlySessionType(session: RecordedSessionSummary) {
+  const type = session.sessionType.toLocaleLowerCase();
+  if (type === "ac session") return "DRIVE";
+  if (type.includes("replay")) return "REPLAY";
+  return session.sessionType;
 }
 
 function lapTimeMs(value: string) {
