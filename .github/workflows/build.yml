@@ -1,0 +1,51 @@
+name: Build executables
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: executable-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows executables
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install pinned toolchains
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.7.13
+          cache: true
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build release executables
+        run: |
+          cargo build --release -p trace-desktop --bin trace
+          cargo build --release -p trace-ac --example capture_fixture
+
+      - name: Upload Windows executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-windows-x86_64-${{ github.sha }}
+          path: |
+            target/release/trace.exe
+            target/release/examples/capture_fixture.exe
+          if-no-files-found: error
+          retention-days: 14

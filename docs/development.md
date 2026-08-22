@@ -69,6 +69,12 @@ resource/library tools. It builds the frontend first and emits
 `target/x86_64-pc-windows-msvc/release/trace.exe`, which can be launched as a Windows
 process from WSL. This produces an unpackaged acceptance executable, not an installer.
 
+GitHub Actions runs the same checks in `CI` and builds release-mode Windows binaries in
+`Build executables`. Successful runs retain a downloadable artifact containing
+`trace.exe` and the privacy-redacted `capture_fixture.exe` collector for 14 days. The
+workflow deliberately produces unpackaged test binaries; signed installers belong to
+the release pipeline rather than pull-request CI.
+
 ## Native desktop prerequisites
 
 The React frontend can be checked and built anywhere Node.js is supported. Compiling
