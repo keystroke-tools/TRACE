@@ -313,7 +313,12 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const comparisonLaps = useMemo(() => comparisonSession ? validComparisonLaps(comparisonSession) : [], [comparisonSession]);
 
   useEffect(() => {
-    if (!referenceSessionId && eligibleSessions[0]) setReferenceSessionId(eligibleSessions[0].id);
+    if (!referenceSessionId && eligibleSessions[0]) {
+      const seed = eligibleSessions[0];
+      const compatible = eligibleSessions.filter((candidate) => candidate.simulatorId === seed.simulatorId && candidate.track === seed.track);
+      const fastest = compatible.slice().sort((left, right) => lapDuration(validComparisonLaps(left)[0]) - lapDuration(validComparisonLaps(right)[0]))[0] ?? seed;
+      setReferenceSessionId(fastest.id);
+    }
   }, [eligibleSessions, referenceSessionId]);
 
   useEffect(() => {
@@ -368,6 +373,8 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   }, [comparisonLap, comparisonSessionId, referenceLap, referenceSessionId]);
 
   const corners = comparison?.cornerAnalysis.value?.corners ?? [];
+  const finalDelta = comparison?.samples.slice().reverse().find((sample) => sample.deltaSeconds != null)?.deltaSeconds ?? null;
+  const comparisonIsFaster = finalDelta != null && finalDelta < -0.0005;
   const selectedCorner = corners.find((corner) => corner.index === cornerIndex) ?? null;
   const samples = comparison
     ? selectedCorner
@@ -394,26 +401,26 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                 <div className={`grid items-start gap-3 transition-[grid-template-columns] ${opportunitiesCollapsed ? "grid-cols-[minmax(0,1fr)_44px]" : "grid-cols-[minmax(0,1fr)_288px]"}`}>
                   <div className="min-w-0">
                     <div className="grid grid-cols-[minmax(480px,1.2fr)_minmax(360px,.8fr)] gap-3">
-                      <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} /></div>
+                      <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} height={512} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} /></div>
                       <div className="grid gap-3">
-                        <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed)} />
-                        <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear)} />
+                        <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed, comparisonIsFaster)} />
+                        <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear, comparisonIsFaster)} />
                       </div>
                     </div>
                     <div className="mt-3 grid gap-3">
-                      <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle)} />
-                      <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake)} />
-                      <ComparisonChart label="STEERING INPUT" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringInputRange(samples)} zeroLine series={comparisonSeries("referenceSteeringPercent", "comparisonSteeringPercent", channelColours.steering)} />
+                      <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle, comparisonIsFaster)} />
+                      <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake, comparisonIsFaster)} />
+                      <ComparisonChart label="STEERING INPUT" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringInputRange(samples)} zeroLine series={comparisonSeries("referenceSteeringPercent", "comparisonSteeringPercent", channelColours.steering, comparisonIsFaster)} />
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3">
-                      <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm)} />
+                      <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm, comparisonIsFaster)} />
                       <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "COMPARISON VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                     </div>
                   </div>
-                  <CornerOpportunities corners={corners} selectedCornerIndex={cornerIndex} collapsed={opportunitiesCollapsed} onCollapsed={setOpportunitiesCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
+                  <CornerOpportunities corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={opportunitiesCollapsed} onCollapsed={setOpportunitiesCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
                 </div>
               </div>
-              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} onDismiss={mapPip.dismiss} />}
+              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} onDismiss={mapPip.dismiss} />}
             </div>
           )}
           <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
@@ -446,10 +453,10 @@ const channelColours = {
   delta: "var(--color-trace-purple)",
 };
 
-function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey, colour: string): ComparisonChartSeries[] {
+function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey, colour: string, comparisonIsFaster: boolean): ComparisonChartSeries[] {
   return [
-    { label: "REFERENCE", colour, value: (sample) => sample[reference] },
-    { label: "COMPARISON", colour: channelColours.delta, value: (sample) => sample[comparison] },
+    { label: "REFERENCE", colour: comparisonIsFaster ? colour : channelColours.delta, value: (sample) => sample[reference] },
+    { label: "COMPARISON", colour: comparisonIsFaster ? channelColours.delta : colour, value: (sample) => sample[comparison] },
   ];
 }
 
@@ -465,7 +472,7 @@ function filterSamplesByDistance(samples: LapComparisonSample[], startDistanceM:
   return samples.filter((sample) => sample.distanceM >= startDistanceM && sample.distanceM <= endDistanceM);
 }
 
-function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollapsed, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; onSelect: (index: number) => void }) {
+function CornerOpportunities({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; onSelect: (index: number) => void }) {
   const opportunities = corners
     .filter((corner) => corner.totalLossSeconds != null && corner.totalLossSeconds > 0.005)
     .slice()
@@ -474,7 +481,7 @@ function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollap
   return (
     <section className="sticky top-0 max-h-[calc(100vh-190px)] overflow-y-auto border border-trace-divider bg-trace-surface" aria-label="Biggest corner opportunities">
       <div className={`flex border-b border-trace-divider ${collapsed ? "h-11 items-center justify-center" : "min-h-16 items-start justify-between gap-3 p-3"}`}>
-        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">COMPARISON OPPORTUNITIES</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Purple lap measured against Reference</span></div>}
+        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">COMPARISON OPPORTUNITIES</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">{comparisonIsFaster ? "Comparison is faster than Reference" : "Slower Comparison against faster Reference"}</span></div>}
         <button type="button" onClick={() => onCollapsed(!collapsed)} className="grid size-8 shrink-0 place-items-center text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label={collapsed ? "Show corner opportunities" : "Hide corner opportunities"} aria-expanded={!collapsed}>
           <svg className={`size-4 fill-none stroke-current transition-transform ${collapsed ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
         </button>
@@ -600,6 +607,7 @@ type ComparisonHudProps = {
 function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   const finalDelta = comparison?.samples.slice().reverse().find((candidate) => candidate.deltaSeconds != null)?.deltaSeconds;
+  const comparisonIsFaster = finalDelta != null && finalDelta < -0.0005;
   const referenceSession = sessions.find((session) => session.id === referenceSessionId);
   const comparisonSession = compatibleSessions.find((session) => session.id === comparisonSessionId);
   const referenceAirTemperature = sample?.referenceAirTemperatureC ?? numericCondition(referenceSession?.ambientTemperatureC);
@@ -616,12 +624,12 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
       </div>
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
-        <HudLapChoice label="REFERENCE" role="BASELINE LAP" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
+        <HudLapChoice label="REFERENCE" role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER BASELINE"} colour={comparisonIsFaster ? "text-trace-accent" : "text-trace-purple"} sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
         <div className="flex items-center justify-center"><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
-        <HudLapChoice label="COMPARISON" role="LAP BEING REVIEWED" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
+        <HudLapChoice label="COMPARISON" role={comparisonIsFaster ? "FASTER LAP" : "LAP BEING REVIEWED"} colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"} sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
-      <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
-      <HudSteering value={sample?.referenceSteeringPercent} colour="var(--color-trace-accent)" />
+      <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta} />
+      <HudSteering value={sample?.referenceSteeringPercent} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta} />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
       {showConditions && (referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
       <div className="col-span-2 h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
@@ -630,8 +638,8 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       </div>
       {showConditions && (comparisonHasConditions ? <HudConditions air={comparisonAirTemperature} track={comparisonTrackTemperature} /> : <div aria-hidden="true" />)}
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
-      <HudSteering value={sample?.comparisonSteeringPercent} colour={channelColours.delta} />
-      <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
+      <HudSteering value={sample?.comparisonSteeringPercent} colour={comparisonIsFaster ? channelColours.delta : "var(--color-trace-accent)"} />
+      <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={comparisonIsFaster ? channelColours.delta : "var(--color-trace-accent)"} />
       <div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
         <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} />
       </div>
@@ -778,11 +786,11 @@ function useTrackMapPip(active: boolean) {
   return { anchor, visible: visible && !dismissed, dismiss: () => setDismissed(true) };
 }
 
-function FloatingTrackMap({ samples, cursorIndex, comparison = false, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss: () => void }) {
-  return <aside className={`fixed top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)] ${comparison ? "left-[200px]" : "right-6"}`} aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} height={260} trackMap={trackMap} focusSelection={focusSelection} corners={corners} selectedCornerIndex={selectedCornerIndex} onDismiss={onDismiss} /></aside>;
+function FloatingTrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss: () => void }) {
+  return <aside className={`fixed top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)] ${comparison ? "left-[200px]" : "right-6"}`} aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} comparisonIsFaster={comparisonIsFaster} height={260} trackMap={trackMap} focusSelection={focusSelection} corners={corners} selectedCornerIndex={selectedCornerIndex} onDismiss={onDismiss} /></aside>;
 }
 
-function TrackMap({ samples, cursorIndex, comparison = false, height: requestedHeight, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss?: () => void }) {
+function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, height: requestedHeight, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -861,22 +869,22 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const start = samples.find((sample) => sample.referencePositionXM != null && sample.referencePositionZM != null);
   const startPoint = start?.referencePositionXM != null && start.referencePositionZM != null ? project(start.referencePositionXM, start.referencePositionZM) : null;
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
-  const referenceColour = "var(--color-trace-accent)";
-  const comparisonColour = channelColours.delta;
+  const referenceColour = !comparison || comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta;
+  const comparisonColour = comparisonIsFaster ? channelColours.delta : "var(--color-trace-accent)";
   const mapControls = <div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text" aria-label="Reset map view">RESET</button>{onDismiss && <button type="button" onClick={onDismiss} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-lg leading-none text-trace-muted hover:border-trace-accent/50 hover:text-trace-text" aria-label="Dismiss floating track map">×</button>}</div>;
   return (
     <div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
       {onDismiss
         ? <div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
-        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className="block w-6 border-t-2" style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className="block w-6 border-t-2 border-dashed" style={{ borderColor: comparisonColour }} />COMPARISON</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6 bg-[#ff334f]" />BRAKE</span></div>{mapControls}</div>}
+        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />COMPARISON</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6 bg-[#ff334f]" />BRAKE</span></div>{mapControls}</div>}
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
           {trackMap && <path d={geometryPath(trackMap.leftBoundary)} fill="none" stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
           {trackMap && <path d={geometryPath(trackMap.rightBoundary)} fill="none" stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
           {trackMap && <path d={geometryPath(trackMap.centreLine)} fill="none" stroke="var(--color-trace-divider)" strokeWidth="1" strokeDasharray="5 8" vectorEffect="non-scaling-stroke" />}
-          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3" strokeDasharray="9 7" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3" strokeDasharray={comparison && !comparisonIsFaster ? "9 7" : undefined} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3" strokeDasharray={comparisonIsFaster ? "9 7" : undefined} strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
           {brakeSegments("reference-brake", "referencePositionXM", "referencePositionZM", "referenceBrakePercent", 6)}
           {comparison && brakeSegments("comparison-brake", "comparisonPositionXM", "comparisonPositionZM", "comparisonBrakePercent", 3.5)}
           {visibleCornerLabels.map(({ corner, point }) => <g transform={`translate(${point[0]} ${point[1]})`} pointerEvents="none" key={corner.index}><circle r="12" fill={corner.index === selectedCornerIndex ? "var(--color-trace-accent)" : "var(--color-trace-black)"} stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /><text y="3.5" textAnchor="middle" fill={corner.index === selectedCornerIndex ? "var(--color-trace-black)" : "var(--color-trace-text)"} fontFamily="monospace" fontSize="10" fontWeight="900">{corner.label}</text></g>)}
