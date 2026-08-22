@@ -3,6 +3,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   telemetryDataSource,
   type GameInstallDirectory,
+  type LapComparison,
+  type LapComparisonSample,
+  type LapTrace,
   type RecordedLapMetrics,
   type RecordedSessionSummary,
   type SessionExportFormat,
@@ -20,6 +23,7 @@ export function App() {
   const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
   const [section, setSection] = useState<Section>("LIVE");
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
   const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
 
   async function selectSimulator(simulatorId: string) {
@@ -49,23 +53,25 @@ export function App() {
 
   return (
     <main className="grid h-screen grid-cols-[176px_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text max-[900px]:grid-cols-[140px_1fr]">
-      <TitleBar status={status} onBack={openSession ? () => setOpenSessionId(null) : undefined} />
-      <Navigation active={section} onChange={(next) => { setSection(next); if (next !== "SESSIONS") setOpenSessionId(null); }} />
+      <TitleBar status={status} backLabel={openLapIndex == null ? "SESSIONS" : "SESSION"} onBack={openSession ? () => { if (openLapIndex != null) setOpenLapIndex(null); else setOpenSessionId(null); } : undefined} />
+      <Navigation active={section} onChange={(next) => { setSection(next); if (next !== "SESSIONS") { setOpenSessionId(null); setOpenLapIndex(null); } }} />
       <section className="trace-grid overflow-auto p-7">
         {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} onSelectSimulator={selectSimulator} />}
         {section === "SESSIONS" && (
           openSession ? (
-            <SessionDetail session={openSession} />
+            openLapIndex == null
+              ? <SessionDetail session={openSession} onOpenLap={setOpenLapIndex} />
+              : <LapVisualizer session={openSession} lapIndex={openLapIndex} />
           ) : (
             <Sessions
               sessions={sessions}
-              onOpen={(sessionId) => setOpenSessionId(sessionId)}
+              onOpen={(sessionId) => { setOpenSessionId(sessionId); setOpenLapIndex(null); }}
               onDeleted={(sessionId) => setSessions((current) => current.filter((session) => session.id !== sessionId))}
               onUpdated={(updated) => setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))}
             />
           )
         )}
-        {section === "COMPARE" && <Compare />}
+        {section === "COMPARE" && <Compare sessions={sessions} />}
         {section === "SETUPS" && <Setups />}
         {section === "SETTINGS" && <Settings />}
       </section>
@@ -209,20 +215,337 @@ function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null;
   );
 }
 
-function Compare() {
+function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary; lapIndex: number }) {
+  const [trace, setTrace] = useState<LapTrace | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+  const [sector, setSector] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setTrace(null);
+    setError(null);
+    void telemetryDataSource.visualizeSessionLap(session.id, lapIndex).then((value) => {
+      if (active) setTrace(value);
+    }).catch((reason) => {
+      if (active) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => { active = false; };
+  }, [lapIndex, session.id]);
+
+  const chartSamples = useMemo<LapComparisonSample[]>(() => trace?.samples.map((sample) => ({
+    distanceM: sample.distanceM,
+    sectorIndex: sample.sectorIndex,
+    referenceSpeedKmh: sample.speedKmh,
+    referenceThrottlePercent: sample.throttlePercent,
+    referenceBrakePercent: sample.brakePercent,
+    referenceSteeringDegrees: sample.steeringDegrees,
+    referenceRpm: sample.rpm,
+    referenceGear: sample.gear,
+    referencePositionXM: sample.positionXM,
+    referencePositionZM: sample.positionZM,
+  })) ?? [], [trace]);
+  const samples = filterSamplesBySector(chartSamples, sector);
+  const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
+
   return (
     <>
-      <PageIntro index="03" eyebrow="LAP COMPARISON" title="UNDERSTAND WHERE TIME IS WON" description="Compare two recorded laps by distance to see the delta, speed, throttle, and brake traces together." />
-      <FeaturePreview label="PLANNED / PHASE 3" title="Comparison workspace">
-        <div className="grid gap-px bg-trace-divider md:grid-cols-3">
-          <PreviewStep number="01" title="Choose a reference" detail="Pick a clean lap from your session archive." />
-          <PreviewStep number="02" title="Add a comparison" detail="Select another lap from the same track and layout." />
-          <PreviewStep number="03" title="Inspect the difference" detail="TRACE aligns both laps by distance and highlights gains and losses." />
+      <PageIntro index="02" eyebrow="LAP VISUALIZER" title={`LAP ${lapIndex} · ${trace?.lapTime ?? session.laps.find((lap) => lap.index === lapIndex)?.time ?? "—"}`} description={`${session.track} · ${session.car}. Inspect the recorded driving inputs and line on one synchronized distance axis.`} />
+      {!trace && !error && <div className="mt-7 border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">PREPARING LAP TELEMETRY…</div>}
+      {error && <div className="mt-7 border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Lap visualization unavailable.</strong> {error}</div>}
+      {trace && (
+        <div className="mt-7">
+          <div className="flex items-center justify-between border border-trace-divider bg-trace-surface px-5 py-3">
+            <SectorPicker samples={chartSamples} value={sector} onChange={(value) => { setSector(value); setCursorIndex(null); }} />
+            <div className="flex gap-6 font-mono text-[12px] text-trace-muted">
+              <span>{Math.round(cursor?.distanceM ?? trace.lapLengthM).toLocaleString()} M</span>
+              <span>GEAR <strong className="text-trace-text">{formatGear(cursor?.referenceGear)}</strong></span>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-[minmax(360px,.8fr)_minmax(560px,1.2fr)] gap-3">
+            <TrackMap samples={samples} cursorIndex={cursorIndex} />
+            <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh")} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent")} />
+            <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent")} />
+            <ComparisonChart label="STEERING" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSteeringDegrees")} zeroLine />
+            <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceRpm")} />
+            <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear")} />
+          </div>
         </div>
-      </FeaturePreview>
-      <AvailabilityNote>Lap selection and synchronized charts are the next analysis milestone. Your current recordings remain usable when it arrives.</AvailabilityNote>
+      )}
     </>
   );
+}
+
+function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
+  const eligibleSessions = useMemo(() => sessions.filter((session) => session.laps.filter((lap) => !lapIsInvalid(lap) && lap.time !== "—").length >= 2), [sessions]);
+  const [sessionId, setSessionId] = useState("");
+  const [referenceLap, setReferenceLap] = useState<number | null>(null);
+  const [comparisonLap, setComparisonLap] = useState<number | null>(null);
+  const [comparison, setComparison] = useState<LapComparison | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+  const [sector, setSector] = useState<number | null>(null);
+  const session = eligibleSessions.find((candidate) => candidate.id === sessionId) ?? null;
+  const laps = useMemo(() => session?.laps.filter((lap) => !lapIsInvalid(lap) && lap.time !== "—").slice().sort((left, right) => lapDuration(left) - lapDuration(right)) ?? [], [session]);
+
+  useEffect(() => {
+    if (!sessionId && eligibleSessions[0]) setSessionId(eligibleSessions[0].id);
+  }, [eligibleSessions, sessionId]);
+
+  useEffect(() => {
+    setReferenceLap(laps[0]?.index ?? null);
+    setComparisonLap(laps[1]?.index ?? null);
+    setComparison(null);
+    setCursorIndex(null);
+  }, [sessionId, laps]);
+
+  useEffect(() => {
+    if (!sessionId || referenceLap == null || comparisonLap == null || referenceLap === comparisonLap) {
+      setState("idle");
+      return;
+    }
+    let active = true;
+    setState("loading");
+    setError(null);
+    void telemetryDataSource.compareSessionLaps(sessionId, referenceLap, comparisonLap).then((value) => {
+      if (!active) return;
+      setComparison(value);
+      setSector(null);
+      setCursorIndex(null);
+      setState("ready");
+    }).catch((reason) => {
+      if (!active) return;
+      setComparison(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setState("error");
+    });
+    return () => { active = false; };
+  }, [comparisonLap, referenceLap, sessionId]);
+
+  const finalDelta = comparison?.samples.slice().reverse().find((sample) => sample.deltaSeconds != null)?.deltaSeconds;
+  const samples = comparison ? filterSamplesBySector(comparison.samples, sector) : [];
+  const cursorSample = cursorIndex == null ? null : samples[cursorIndex] ?? null;
+
+  return (
+    <>
+      <PageIntro index="03" eyebrow="LAP COMPARISON" title="UNDERSTAND WHERE TIME IS WON" description="Compare two valid laps on a shared distance axis. Move across any chart to inspect the same point everywhere." />
+      {eligibleSessions.length === 0 ? (
+        <div className="mt-7 border border-trace-divider bg-trace-surface p-10 text-center">
+          <strong className="block text-base">Two valid laps are required</strong>
+          <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-trace-muted">Record or import a session containing at least two complete laps, then return here to compare them.</p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-7 grid grid-cols-[minmax(280px,1fr)_220px_44px_220px] border border-trace-divider bg-trace-surface">
+            <ComparisonSelect label="SESSION" value={sessionId} onChange={(value) => setSessionId(value)}>
+              {eligibleSessions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.title ?? candidate.track} · {candidate.car}</option>)}
+            </ComparisonSelect>
+            <ComparisonSelect label="REFERENCE" value={referenceLap?.toString() ?? ""} onChange={(value) => setReferenceLap(Number(value))} colour="text-trace-accent">
+              {laps.map((lap) => <option value={lap.index} disabled={lap.index === comparisonLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}
+            </ComparisonSelect>
+            <button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={() => { setReferenceLap(comparisonLap); setComparisonLap(referenceLap); }} className="grid place-items-center border-0 border-r border-trace-divider bg-trace-deep text-trace-muted hover:bg-trace-raised hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison laps">
+              <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg>
+            </button>
+            <ComparisonSelect label="COMPARISON" value={comparisonLap?.toString() ?? ""} onChange={(value) => setComparisonLap(Number(value))} colour="text-trace-purple" last>
+              {laps.map((lap) => <option value={lap.index} disabled={lap.index === referenceLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}
+            </ComparisonSelect>
+          </div>
+
+          {state === "loading" && <div className="mt-4 border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
+          {state === "error" && <div className="mt-4 border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Comparison unavailable.</strong> {error}</div>}
+          {comparison && state === "ready" && (
+            <div className="mt-4">
+              <div className="grid grid-cols-4 border border-trace-divider bg-trace-surface">
+                <Metric label="REFERENCE" value={`LAP ${comparison.referenceLapIndex} · ${comparison.referenceLapTime}`} accent />
+                <Metric label="COMPARISON" value={`LAP ${comparison.comparisonLapIndex} · ${comparison.comparisonLapTime}`} purple />
+                <Metric label="FINISH DELTA" value={finalDelta == null ? "—" : formatDelta(finalDelta)} purple={finalDelta != null && finalDelta > 0} accent={finalDelta != null && finalDelta <= 0} />
+                <Metric label="COMMON DISTANCE" value={`${Math.round(comparison.samples.at(-1)?.distanceM ?? 0).toLocaleString()} M`} />
+              </div>
+              <div className="mt-3 flex items-center justify-between border border-trace-divider bg-trace-surface px-5 py-3">
+                <SectorPicker samples={comparison.samples} value={sector} onChange={(value) => { setSector(value); setCursorIndex(null); }} />
+                <span className="font-mono text-[12px] text-trace-dim">TRACK LINE AND CHARTS FOLLOW THE SAME SELECTION</span>
+              </div>
+              <div className="mt-3 grid grid-cols-[minmax(360px,.8fr)_minmax(560px,1.2fr)] gap-3">
+                <TrackMap samples={samples} cursorIndex={cursorIndex} comparison />
+                <ComparisonChart label="LAP DELTA" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "DELTA", colour: "var(--color-trace-purple)", value: (sample) => sample.deltaSeconds }]} zeroLine />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh")} />
+                <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent")} />
+                <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent")} />
+                <ComparisonChart label="STEERING" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSteeringDegrees", "comparisonSteeringDegrees")} zeroLine />
+                <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm")} />
+                <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear")} />
+                <div className="flex min-h-56 flex-col justify-between border border-trace-divider bg-trace-deep p-5">
+                  <div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">SHARED CURSOR</span><strong className="mt-3 block font-mono text-2xl text-trace-text">{cursorSample == null ? "MOVE OVER A CHART" : `${Math.round(cursorSample.distanceM)} M`}</strong><span className="mt-2 block font-mono text-[12px] text-trace-muted">REF {formatGear(cursorSample?.referenceGear)} · COMPARE {formatGear(cursorSample?.comparisonGear)}</span></div>
+                  <div className="flex items-center gap-5 font-mono text-[12px]"><span className="text-trace-accent">REFERENCE</span><span className="text-trace-purple">COMPARISON</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function ComparisonSelect({ label, value, onChange, children, colour = "text-trace-text", last = false }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode; colour?: string; last?: boolean }) {
+  return (
+    <label className={`block px-4 py-3 ${last ? "" : "border-r border-trace-divider"}`}>
+      <span className="block font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={`trace-select mt-1 h-8 w-full border-0 bg-transparent pl-0 font-mono text-[12px] font-bold outline-none ${colour}`}>{children}</select>
+    </label>
+  );
+}
+
+type ComparisonValueKey = keyof Pick<LapComparisonSample, "referenceSpeedKmh" | "comparisonSpeedKmh" | "referenceThrottlePercent" | "comparisonThrottlePercent" | "referenceBrakePercent" | "comparisonBrakePercent" | "referenceSteeringDegrees" | "comparisonSteeringDegrees" | "referenceRpm" | "comparisonRpm" | "referenceGear" | "comparisonGear">;
+type ComparisonChartSeries = { label: string; colour: string; value: (sample: LapComparisonSample) => number | null | undefined };
+
+function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey): ComparisonChartSeries[] {
+  return [
+    { label: "REF", colour: "var(--color-trace-accent)", value: (sample) => sample[reference] },
+    { label: "COMPARE", colour: "var(--color-trace-purple)", value: (sample) => sample[comparison] },
+  ];
+}
+
+function singleSeries(key: ComparisonValueKey): ComparisonChartSeries[] {
+  return [{ label: "LAP", colour: "var(--color-trace-accent)", value: (sample) => sample[key] }];
+}
+
+function filterSamplesBySector(samples: LapComparisonSample[], sector: number | null) {
+  return sector == null ? samples : samples.filter((sample) => sample.sectorIndex === sector);
+}
+
+function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSample[]; value: number | null; onChange: (value: number | null) => void }) {
+  const sectors = [...new Set(samples.flatMap((sample) => sample.sectorIndex == null ? [] : [sample.sectorIndex]))].sort((left, right) => left - right);
+  return (
+    <div className="flex items-center gap-2" aria-label="Telemetry range">
+      <span className="mr-2 font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">VIEW</span>
+      <button type="button" onClick={() => onChange(null)} className={`border px-3 py-2 font-mono text-[12px] font-bold ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>FULL LAP</button>
+      {sectors.map((item) => <button type="button" onClick={() => onChange(item)} className={`border px-3 py-2 font-mono text-[12px] font-bold ${value === item ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`} key={item}>SECTOR {item}</button>)}
+    </div>
+  );
+}
+
+function TrackMap({ samples, cursorIndex, comparison = false }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean }) {
+  const width = 620;
+  const height = 340;
+  const padding = 28;
+  const points = samples.flatMap((sample) => [
+    sample.referencePositionXM != null && sample.referencePositionZM != null ? [sample.referencePositionXM, sample.referencePositionZM] as const : null,
+    comparison && sample.comparisonPositionXM != null && sample.comparisonPositionZM != null ? [sample.comparisonPositionXM, sample.comparisonPositionZM] as const : null,
+  ].filter((point): point is readonly [number, number] => point != null && point.every(Number.isFinite)));
+  if (points.length < 2) return <div className="grid min-h-[340px] place-items-center border border-trace-divider bg-trace-surface p-8 text-center text-[12px] leading-5 text-trace-dim">TRACK POSITION WAS NOT RECORDED<br />FOR THIS LAP</div>;
+  const xs = points.map(([x]) => x);
+  const zs = points.map(([, z]) => z);
+  const minX = Math.min(...xs); const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs); const maxZ = Math.max(...zs);
+  const scale = Math.min((width - padding * 2) / Math.max(maxX - minX, 1), (height - padding * 2) / Math.max(maxZ - minZ, 1));
+  const offsetX = (width - (maxX - minX) * scale) / 2;
+  const offsetZ = (height - (maxZ - minZ) * scale) / 2;
+  const project = (x: number, z: number) => [offsetX + (x - minX) * scale, height - offsetZ - (z - minZ) * scale] as const;
+  const path = (xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM") => samples.reduce((result, sample) => {
+    const x = sample[xKey]; const z = sample[zKey];
+    if (x == null || z == null || !Number.isFinite(x) || !Number.isFinite(z)) return result;
+    const [px, py] = project(x, z);
+    return `${result}${result ? "L" : "M"}${px.toFixed(2)},${py.toFixed(2)}`;
+  }, "");
+  const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
+  const referenceCursor = cursor?.referencePositionXM != null && cursor.referencePositionZM != null ? project(cursor.referencePositionXM, cursor.referencePositionZM) : null;
+  const comparisonCursor = cursor?.comparisonPositionXM != null && cursor.comparisonPositionZM != null ? project(cursor.comparisonPositionXM, cursor.comparisonPositionZM) : null;
+  return (
+    <div className="border border-trace-divider bg-trace-surface">
+      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK LINE</span><span className="font-mono text-[12px] text-trace-dim">{comparison ? "REFERENCE / COMPARISON" : "RECORDED PATH"}</span></div>
+      <svg className="block h-[340px] w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track">
+        <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke="var(--color-trace-accent)" strokeWidth="4" vectorEffect="non-scaling-stroke" />
+        {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke="var(--color-trace-purple)" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+        {referenceCursor && <circle cx={referenceCursor[0]} cy={referenceCursor[1]} r="6" fill="var(--color-trace-accent)" />}
+        {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="5" fill="var(--color-trace-purple)" />}
+      </svg>
+    </div>
+  );
+}
+
+function formatGear(gear?: number | null) {
+  if (gear == null) return "—";
+  if (gear < 0) return "R";
+  if (gear === 0) return "N";
+  return String(gear);
+}
+
+function deltaRange(samples: LapComparisonSample[]): [number, number] {
+  const maximum = Math.max(0.1, ...samples.flatMap((sample) => sample.deltaSeconds == null ? [] : [Math.abs(sample.deltaSeconds)]));
+  return [-maximum, maximum];
+}
+
+function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, fixedRange, zeroLine = false }: { label: string; unit: string; samples: LapComparisonSample[]; series: ComparisonChartSeries[]; cursorIndex: number | null; onCursor: (index: number | null) => void; fixedRange?: [number, number]; zeroLine?: boolean }) {
+  const width = 1_000;
+  const height = 220;
+  const plot = { left: 58, right: 18, top: 24, bottom: 30 };
+  const values = series.flatMap((item) => samples.flatMap((sample) => {
+    const value = item.value(sample);
+    return value == null || !Number.isFinite(value) ? [] : [value];
+  }));
+  const automaticMin = values.length ? Math.min(...values) : 0;
+  const automaticMax = values.length ? Math.max(...values) : 1;
+  const padding = Math.max((automaticMax - automaticMin) * 0.08, 0.01);
+  const [minimum, maximum] = fixedRange ?? [automaticMin - padding, automaticMax + padding];
+  const range = Math.max(maximum - minimum, 0.000_001);
+  const firstDistance = samples[0]?.distanceM ?? 0;
+  const lastDistance = samples.at(-1)?.distanceM ?? firstDistance + 1;
+  const distanceRange = Math.max(lastDistance - firstDistance, 1);
+  const x = (distance: number) => plot.left + (distance - firstDistance) / distanceRange * (width - plot.left - plot.right);
+  const y = (value: number) => plot.top + (maximum - value) / range * (height - plot.top - plot.bottom);
+  const cursorSample = cursorIndex == null ? null : samples[cursorIndex] ?? null;
+  return (
+    <div className="border border-trace-divider bg-trace-surface">
+      <div className="flex min-h-12 items-center justify-between border-b border-trace-divider px-4">
+        <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
+        <div className="flex items-center gap-4 font-mono text-[12px]">{series.map((item) => <span style={{ color: item.colour }} key={item.label}>{item.label} {cursorSample && item.value(cursorSample) != null ? `${formatChartValue(item.value(cursorSample) ?? 0)} ${unit}` : "—"}</span>)}</div>
+      </div>
+      <svg className="block h-56 w-full touch-none" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseLeave={() => onCursor(null)} onMouseMove={(event) => {
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+        onCursor(Math.round(ratio * (samples.length - 1)));
+      }}>
+        {[0, 0.5, 1].map((ratio) => <line x1={plot.left} x2={width - plot.right} y1={plot.top + ratio * (height - plot.top - plot.bottom)} y2={plot.top + ratio * (height - plot.top - plot.bottom)} className="stroke-trace-divider" strokeWidth="1" vectorEffect="non-scaling-stroke" key={ratio} />)}
+        {zeroLine && minimum < 0 && maximum > 0 && <line x1={plot.left} x2={width - plot.right} y1={y(0)} y2={y(0)} className="stroke-trace-dim" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
+        {series.map((item) => <path d={comparisonPath(samples, item.value, x, y)} fill="none" stroke={item.colour} strokeWidth="2" vectorEffect="non-scaling-stroke" key={item.label} />)}
+        {cursorSample && <line x1={x(cursorSample.distanceM)} x2={x(cursorSample.distanceM)} y1={plot.top} y2={height - plot.bottom} className="stroke-trace-text" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+        <text x="8" y={plot.top + 4} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(maximum)}</text>
+        <text x="8" y={height - plot.bottom} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(minimum)}</text>
+        <text x={plot.left} y={height - 8} className="fill-trace-dim font-mono text-[12px]">{Math.round(firstDistance)} M</text>
+        <text x={width - plot.right} y={height - 8} textAnchor="end" className="fill-trace-dim font-mono text-[12px]">{Math.round(lastDistance)} M</text>
+      </svg>
+    </div>
+  );
+}
+
+function comparisonPath(samples: LapComparisonSample[], value: (sample: LapComparisonSample) => number | null | undefined, x: (distance: number) => number, y: (value: number) => number) {
+  let drawing = false;
+  return samples.reduce((path, sample) => {
+    const current = value(sample);
+    if (current == null || !Number.isFinite(current)) {
+      drawing = false;
+      return path;
+    }
+    const command = drawing ? "L" : "M";
+    drawing = true;
+    return `${path}${command}${x(sample.distanceM).toFixed(2)},${y(current).toFixed(2)}`;
+  }, "");
+}
+
+function formatChartValue(value: number) {
+  const magnitude = Math.abs(value);
+  return magnitude >= 100 ? value.toFixed(0) : magnitude >= 10 ? value.toFixed(1) : value.toFixed(3);
+}
+
+function formatDelta(value: number) {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(3)} S`;
 }
 
 function Setups() {
@@ -683,7 +1006,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
   );
 }
 
-function SessionDetail({ session }: { session: RecordedSessionSummary }) {
+function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary; onOpenLap: (lapIndex: number) => void }) {
   const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
   const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
   const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
@@ -757,6 +1080,11 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
             <div
               className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_136px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
               key={lap.index}
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenLap(lap.index)}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenLap(lap.index); } }}
+              aria-label={`Visualize lap ${lap.index}`}
             >
               <Tooltip content={invalid ? lapInvalidityDetail(lap) : null}>
                 <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
@@ -765,7 +1093,7 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
               {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
               <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><FuelUsage state={metricsState} metrics={lapMetrics} /></div>
               <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} /></div>
-              <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><TyreWearGrid state={metricsState} metrics={lapMetrics} /></div>
+              <div className="flex min-h-16 items-center justify-between gap-3 border-l border-trace-divider pl-6"><TyreWearGrid state={metricsState} metrics={lapMetrics} /><svg className="size-4 shrink-0 fill-none stroke-current text-trace-dim" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></div>
             </div>
           );
         })}

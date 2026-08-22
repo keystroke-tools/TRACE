@@ -270,6 +270,27 @@ within the lap rather than a misleading start-to-end recovery. These metrics are
 only when the user opens a session, keeping archive polling independent of recording
 length.
 
+## Lap visualization and comparison
+
+Selecting any lap opens a dedicated telemetry workspace. TRACE reads only that lap's
+recorded Arrow sample range and projects lap time, normalized position, controls,
+speed, engine speed, gear, sector index, and world X/Z position. The native command
+turns normalized position into metres using the simulator-reported track length, then
+interpolates continuous channels onto a 5 m grid. Gear and sector use hold-previous
+interpolation so discrete states are not blended into values that never existed.
+
+The visualizer displays speed, throttle, brake, steering, RPM, and gear alongside the
+car's recorded world-space path. Every graph shares a cursor. Full-lap and
+simulator-reported sector controls filter both charts and the path; TRACE does not
+guess sector boundaries when sector telemetry is absent. Invalid and incomplete laps
+remain viewable because their telemetry can still diagnose a mistake.
+
+Comparison uses the same projection for two complete valid laps from one session. It
+calculates `comparison - reference` elapsed-time delta on their common distance domain
+and overlays both channel sets and track lines. Positive delta therefore means the
+comparison lap is behind. Missing values and gaps longer than 30 m remain unavailable
+rather than being extrapolated or connected with false precision.
+
 The Live page's “What TRACE records” inventory separates portable analysis-ready
 channels from the complete AC-native tyre, powertrain, chassis, session, and static
 page groups. Native coverage is shown as recorded source data even when TRACE has not

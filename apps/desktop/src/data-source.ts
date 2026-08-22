@@ -81,6 +81,63 @@ export interface RecordedSessionSummary {
   laps: RecordedLapSummary[];
 }
 
+export interface LapComparisonSample {
+  distanceM: number;
+  deltaSeconds?: number | null;
+  referenceSpeedKmh?: number | null;
+  comparisonSpeedKmh?: number | null;
+  referenceThrottlePercent?: number | null;
+  comparisonThrottlePercent?: number | null;
+  referenceBrakePercent?: number | null;
+  comparisonBrakePercent?: number | null;
+  referenceSteeringDegrees?: number | null;
+  comparisonSteeringDegrees?: number | null;
+  referenceRpm?: number | null;
+  comparisonRpm?: number | null;
+  sectorIndex?: number | null;
+  referenceGear?: number | null;
+  comparisonGear?: number | null;
+  referencePositionXM?: number | null;
+  referencePositionZM?: number | null;
+  comparisonPositionXM?: number | null;
+  comparisonPositionZM?: number | null;
+}
+
+export interface LapTraceSample {
+  distanceM: number;
+  sectorIndex?: number | null;
+  speedKmh?: number | null;
+  throttlePercent?: number | null;
+  brakePercent?: number | null;
+  steeringDegrees?: number | null;
+  rpm?: number | null;
+  gear?: number | null;
+  positionXM?: number | null;
+  positionZM?: number | null;
+}
+
+export interface LapTrace {
+  sessionId: string;
+  lapIndex: number;
+  lapTime: string;
+  track: string;
+  car: string;
+  lapLengthM: number;
+  samples: LapTraceSample[];
+}
+
+export interface LapComparison {
+  sessionId: string;
+  track: string;
+  car: string;
+  referenceLapIndex: number;
+  referenceLapTime: string;
+  comparisonLapIndex: number;
+  comparisonLapTime: string;
+  lapLengthM: number;
+  samples: LapComparisonSample[];
+}
+
 export type SessionExportFormat = "arrow" | "csv";
 
 export interface SessionExport {
@@ -106,6 +163,8 @@ export interface TelemetryDataSource {
   selectSimulator(simulatorId: string): Promise<void>;
   getSessions(): Promise<RecordedSessionSummary[]>;
   getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
+  visualizeSessionLap(sessionId: string, lapIndex: number): Promise<LapTrace>;
+  compareSessionLaps(sessionId: string, referenceLapIndex: number, comparisonLapIndex: number): Promise<LapComparison>;
   getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
   setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
@@ -214,6 +273,41 @@ export const fixtureDataSource: TelemetryDataSource = {
       { lapIndex: 2, fuelStartLitres: 21.2, fuelEndLitres: 20.4, fuelUsedLitres: 0.8, fuelCapacityLitres: 30, maxSpeedKmh: 231.1, tyreWearStart: [99.6, 99.6, 99.8, 99.8], tyreWearEnd: [99.2, 99.2, 99.6, 99.6], tyreWearMinimum: [99.2, 99.2, 99.6, 99.6] },
     ];
   },
+  async compareSessionLaps(sessionId, referenceLapIndex, comparisonLapIndex) {
+    const samples = Array.from({ length: 201 }, (_, index) => {
+      const distanceM = index * 25;
+      const phase = index / 200 * Math.PI * 8;
+      return {
+        distanceM,
+        deltaSeconds: index === 0 ? 0 : Math.sin(phase * 0.35) * 0.18 + index / 200 * 0.42,
+        referenceSpeedKmh: 178 + Math.sin(phase) * 48,
+        comparisonSpeedKmh: 174 + Math.sin(phase + 0.08) * 47,
+        referenceThrottlePercent: Math.sin(phase) > -0.35 ? 100 : 15,
+        comparisonThrottlePercent: Math.sin(phase + 0.1) > -0.3 ? 100 : 12,
+        referenceBrakePercent: Math.sin(phase) < -0.55 ? 72 : 0,
+        comparisonBrakePercent: Math.sin(phase + 0.1) < -0.5 ? 78 : 0,
+        referenceSteeringDegrees: Math.sin(phase) * 42,
+        comparisonSteeringDegrees: Math.sin(phase + 0.07) * 45,
+        referenceRpm: 6_200 + Math.sin(phase * 1.4) * 1_400,
+        comparisonRpm: 6_050 + Math.sin(phase * 1.4 + 0.1) * 1_450,
+        sectorIndex: Math.min(3, Math.floor(index / 67) + 1),
+        referenceGear: Math.max(2, Math.min(6, Math.round(4 + Math.sin(phase) * 2))),
+        comparisonGear: Math.max(2, Math.min(6, Math.round(4 + Math.sin(phase + 0.08) * 2))),
+        referencePositionXM: Math.cos(index / 200 * Math.PI * 2) * (260 + Math.sin(phase) * 60),
+        referencePositionZM: Math.sin(index / 200 * Math.PI * 2) * (180 + Math.cos(phase) * 35),
+        comparisonPositionXM: Math.cos(index / 200 * Math.PI * 2 + 0.004) * (260 + Math.sin(phase) * 60),
+        comparisonPositionZM: Math.sin(index / 200 * Math.PI * 2 + 0.004) * (180 + Math.cos(phase) * 35),
+      };
+    });
+    return { sessionId, track: "MUGELLO", car: "TATUUS FA01", referenceLapIndex, referenceLapTime: "1:50.906", comparisonLapIndex, comparisonLapTime: "1:51.328", lapLengthM: 5_000, samples };
+  },
+  async visualizeSessionLap(sessionId, lapIndex) {
+    const comparison = await this.compareSessionLaps(sessionId, lapIndex, lapIndex + 1);
+    return {
+      sessionId, lapIndex, lapTime: comparison.referenceLapTime, track: comparison.track, car: comparison.car, lapLengthM: comparison.lapLengthM,
+      samples: comparison.samples.map((sample) => ({ distanceM: sample.distanceM, sectorIndex: sample.sectorIndex, speedKmh: sample.referenceSpeedKmh, throttlePercent: sample.referenceThrottlePercent, brakePercent: sample.referenceBrakePercent, steeringDegrees: sample.referenceSteeringDegrees, rpm: sample.referenceRpm, gear: sample.referenceGear, positionXM: sample.referencePositionXM, positionZM: sample.referencePositionZM })),
+    };
+  },
   async getGameInstallDirectories() {
     return [{ simulatorId: "assetto-corsa", simulatorName: "Assetto Corsa", path: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa", source: "detected" }];
   },
@@ -241,6 +335,12 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   getSessionLapMetrics(sessionId) {
     return invoke<RecordedLapMetrics[]>("session_lap_metrics", { sessionId });
+  },
+  visualizeSessionLap(sessionId, lapIndex) {
+    return invoke<LapTrace>("visualize_session_lap", { sessionId, lapIndex });
+  },
+  compareSessionLaps(sessionId, referenceLapIndex, comparisonLapIndex) {
+    return invoke<LapComparison>("compare_session_laps", { sessionId, referenceLapIndex, comparisonLapIndex });
   },
   getGameInstallDirectories() {
     return invoke<GameInstallDirectory[]>("game_install_directories");
