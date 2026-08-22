@@ -692,6 +692,7 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
   const timedLaps = session.laps.filter((lap) => lap.time !== "—" && !lapIsInvalid(lap));
   const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
   const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
+  const theoreticalBest = theoreticalBestLap(session.laps, sectorCount);
 
   useEffect(() => {
     let active = true;
@@ -720,9 +721,10 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-4 border border-trace-divider bg-trace-surface">
+      <div className="mt-6 grid grid-cols-5 border border-trace-divider bg-trace-surface">
         <Metric label="LAPS" value={String(session.laps.length)} accent />
         <Metric label="FASTEST LAP" value={bestLap?.time ?? "—"} />
+        <Metric label="THEORETICAL BEST" value={theoreticalBest ?? "—"} detail="The quickest valid time recorded in each sector, added together." purple />
         <Metric label="SOURCE" value={sessionSourceLabel(session).toUpperCase()} />
         <Metric label="SIMULATOR" value={session.simulatorName.toUpperCase()} />
       </div>
@@ -1028,6 +1030,24 @@ function lapDuration(lap: RecordedSessionSummary["laps"][number]) {
   return lapTimeMs(lap.time) * 1_000_000;
 }
 
+function theoreticalBestLap(laps: RecordedSessionSummary["laps"], sectorCount: number) {
+  const validLaps = laps.filter((lap) => !lapIsInvalid(lap));
+  let totalDurationNs = 0;
+  for (let index = 1; index <= sectorCount; index += 1) {
+    const durations = validLaps
+      .flatMap((lap) => lap.sectors)
+      .filter((sector) => sector.index === index && Number.isFinite(sector.durationNs) && sector.durationNs > 0)
+      .map((sector) => sector.durationNs);
+    if (durations.length === 0) return null;
+    totalDurationNs += Math.min(...durations);
+  }
+  const totalMilliseconds = Math.floor(totalDurationNs / 1_000_000);
+  const minutes = Math.floor(totalMilliseconds / 60_000);
+  const seconds = Math.floor((totalMilliseconds % 60_000) / 1_000);
+  const milliseconds = totalMilliseconds % 1_000;
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
+}
+
 function lapTimeMs(value: string) {
   const match = /^(\d+):(\d{2})\.(\d{3})$/.exec(value);
   if (!match) return Number.POSITIVE_INFINITY;
@@ -1062,11 +1082,11 @@ function PanelTitle({ children }: { children: ReactNode }) {
   return <div className="border-b border-trace-divider px-4 py-[14px] text-[12px] font-extrabold tracking-[.14em] text-trace-soft">{children}</div>;
 }
 
-function Metric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function Metric({ label, value, detail, accent = false, purple = false }: { label: string; value: string; detail?: string; accent?: boolean; purple?: boolean }) {
   return (
     <div className="min-h-[92px] border-r border-trace-divider bg-trace-surface p-[18px] last:border-r-0 max-[900px]:[&:nth-child(-n+2)]:border-b max-[900px]:[&:nth-child(even)]:border-r-0">
-      <span className="block text-[12px] font-extrabold tracking-[.12em] text-trace-muted">{label}</span>
-      <strong className={`mt-[15px] block font-mono text-base font-bold ${accent ? "text-trace-accent" : ""}`}>{value}</strong>
+      <span className="block text-[12px] font-extrabold tracking-[.12em] text-trace-muted">{detail ? <Tooltip content={detail}>{label}</Tooltip> : label}</span>
+      <strong className={`mt-[15px] block font-mono text-base font-bold ${purple ? "text-trace-purple" : accent ? "text-trace-accent" : ""}`}>{value}</strong>
     </div>
   );
 }
