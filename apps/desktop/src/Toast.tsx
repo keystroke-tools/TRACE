@@ -86,7 +86,7 @@ function Toast({ toast, onRemove }: { toast: ToastRecord; onRemove: (id: number)
     >
       <div className="flex gap-3 p-4">
         <div className="min-w-0 flex-1">
-          <strong className="block font-mono text-[10px] tracking-[.1em] text-trace-soft">{label.toUpperCase()}</strong>
+          <strong className="block font-mono text-[12px] tracking-[.1em] text-trace-soft">{label.toUpperCase()}</strong>
           <p className="mt-1.5 break-words text-[12px] leading-5 text-trace-faint">{toast.message}</p>
         </div>
         <button type="button" onClick={dismiss} className="grid size-7 shrink-0 place-items-center border-0 bg-transparent text-base text-trace-muted hover:bg-trace-raised hover:text-trace-text" aria-label="Dismiss notification">×</button>

@@ -38,7 +38,7 @@ export function TitleBar({ status }: { status: TelemetryStatus | null }) {
       >
         <span className="truncate" data-tauri-drag-region>{status?.session ?? "NO ACTIVE SESSION"}</span>
       </div>
-      <div className="flex items-center gap-2.5 border-l border-trace-divider px-4 font-mono text-[10px] font-bold tracking-[.1em] text-trace-muted">
+      <div className="flex items-center gap-2.5 border-l border-trace-divider px-4 font-mono text-[12px] font-bold tracking-[.1em] text-trace-muted">
         <span
           className={`size-2 rounded-full ${
             recording
@@ -55,7 +55,7 @@ export function TitleBar({ status }: { status: TelemetryStatus | null }) {
         <button
           type="button"
           disabled
-          className="h-full w-[88px] border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[10px] font-black tracking-[.1em] text-trace-accent-muted"
+          className="h-full w-[88px] border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[12px] font-black tracking-[.1em] text-trace-accent-muted"
         >
           GO LIVE
         </button>

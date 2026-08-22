@@ -87,7 +87,7 @@ function Navigation({ active, onChange }: { active: Section; onChange: (section:
               : "border-transparent bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
           }`}
         >
-          <span className="font-mono text-[11px] text-trace-dim">0{index + 1}</span>
+          <span className="font-mono text-[12px] text-trace-dim">0{index + 1}</span>
           {item}
         </button>
       ))}
@@ -130,7 +130,7 @@ function Live({ status, onOpenSessions, onSelectSimulator }: { status: Telemetry
           <div className="grid grid-cols-2 gap-px p-4 max-[900px]:grid-cols-1">
             {categories.map((category) => (
               <div className="border border-trace-divider bg-trace-deep p-4" key={category}>
-                <strong className={`font-mono text-[10px] tracking-[.1em] ${category.includes("NATIVE") ? "text-trace-purple" : "text-trace-accent"}`}>{category}</strong>
+                <strong className={`font-mono text-[12px] tracking-[.1em] ${category.includes("NATIVE") ? "text-trace-purple" : "text-trace-accent"}`}>{category}</strong>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {availableChannels.filter((channel) => channel.category === category).map((channel) => (
                     <Tooltip className="border border-trace-divider bg-trace-surface px-2.5 py-1.5 text-[12px] text-trace-soft" content={channel.detail} key={channel.id}>
@@ -149,7 +149,7 @@ function Live({ status, onOpenSessions, onSelectSimulator }: { status: Telemetry
             <WorkflowStep number="2" title="TRACE records automatically">The status light pulses while samples are being saved.</WorkflowStep>
             <WorkflowStep number="3" title="Review the session">End normally, then open Sessions to inspect laps or export data.</WorkflowStep>
           </ol>
-          <button type="button" onClick={onOpenSessions} className="mx-5 mb-5 border border-trace-accent-muted bg-trace-accent-wash px-4 py-3 text-[11px] font-black tracking-[.1em] text-trace-accent hover:border-trace-accent">
+          <button type="button" onClick={onOpenSessions} className="mx-5 mb-5 border border-trace-accent-muted bg-trace-accent-wash px-4 py-3 text-[12px] font-black tracking-[.1em] text-trace-accent hover:border-trace-accent">
             OPEN SESSIONS
           </button>
         </div>
@@ -190,7 +190,7 @@ function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null;
   return (
     <div className="mt-5 flex min-h-14 items-center border border-trace-divider bg-trace-surface">
       <label className="flex h-14 min-w-64 items-center gap-3 border-r border-trace-divider px-4">
-        <span className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">SIMULATOR</span>
+        <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">SIMULATOR</span>
         <select
           aria-label="Capture simulator"
           value={status?.simulatorId ?? ""}
@@ -201,7 +201,7 @@ function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null;
           {simulators.map((simulator) => <option value={simulator.id} disabled={!simulator.available} key={simulator.id}>{simulator.name}{simulator.available ? "" : " · unavailable"}</option>)}
         </select>
       </label>
-      <span className="px-4 text-[11px] text-trace-dim">
+      <span className="px-4 text-[12px] text-trace-dim">
         {selectable.length} capture adapter{selectable.length === 1 ? "" : "s"} installed
       </span>
     </div>
@@ -282,10 +282,10 @@ function Settings() {
       <div className="mt-7 border border-trace-divider bg-trace-surface">
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
-          <p className="mt-1 text-[11px] leading-5 text-trace-dim">Set the main game folder—not its content, cars, or tracks subfolder.</p>
+          <p className="mt-1 text-[12px] leading-5 text-trace-dim">Set the main game folder—not its content, cars, or tracks subfolder.</p>
         </div>
         {loading ? (
-          <div className="p-6 font-mono text-[10px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
+          <div className="p-6 font-mono text-[12px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
         ) : directories.length === 0 ? (
           <div className="p-6 text-[12px] text-trace-dim">No configurable game adapters are installed.</div>
         ) : directories.map((directory) => {
@@ -296,22 +296,22 @@ function Settings() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <strong className="text-[14px] text-trace-text">{directory.simulatorName}</strong>
-                  <span className={`ml-3 inline-flex border px-2 py-1 font-mono text-[8px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-purple/50 text-trace-purple" : "border-trace-accent-muted text-trace-accent"}`}>
+                  <span className={`ml-3 inline-flex border px-2 py-1 font-mono text-[12px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-purple/50 text-trace-purple" : "border-trace-accent-muted text-trace-accent"}`}>
                     {directory.source === "manual" ? "CUSTOM" : directory.source === "detected" ? "AUTO-DETECTED" : "NOT FOUND"}
                   </span>
                 </div>
-                {directory.source === "manual" && <button type="button" disabled={saving === directory.simulatorId} onClick={() => void saveDirectory(directory.simulatorId, null)} className="border-0 bg-transparent text-[10px] font-bold text-trace-muted hover:text-trace-text disabled:text-trace-dim">USE AUTO-DETECTION</button>}
+                {directory.source === "manual" && <button type="button" disabled={saving === directory.simulatorId} onClick={() => void saveDirectory(directory.simulatorId, null)} className="border-0 bg-transparent text-[12px] font-bold text-trace-muted hover:text-trace-text disabled:text-trace-dim">USE AUTO-DETECTION</button>}
               </div>
-              <label className="mt-4 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+              <label className="mt-4 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
                 INSTALL DIRECTORY
                 <div className="mt-1.5 flex">
-                  <input value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))} placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
-                  <button type="submit" disabled={saving === directory.simulatorId || unchanged || !draft.trim()} className="w-24 border border-l-0 border-trace-purple bg-trace-purple-wash text-[10px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">
+                  <input value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))} placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+                  <button type="submit" disabled={saving === directory.simulatorId || unchanged || !draft.trim()} className="w-24 border border-l-0 border-trace-purple bg-trace-purple-wash text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">
                     {saving === directory.simulatorId ? "SAVING…" : "SAVE"}
                   </button>
                 </div>
               </label>
-              <p className="mt-2 text-[10px] leading-5 text-trace-dim">{directory.path ? `Currently using ${directory.source === "manual" ? "your custom path" : "the detected Steam installation"}.` : "TRACE could not locate this game automatically. Paste its installation folder above."}</p>
+              <p className="mt-2 text-[12px] leading-5 text-trace-dim">{directory.path ? `Currently using ${directory.source === "manual" ? "your custom path" : "the detected Steam installation"}.` : "TRACE could not locate this game automatically. Paste its installation folder above."}</p>
             </form>
           );
         })}
@@ -333,7 +333,7 @@ function PageIntro({ index, eyebrow, title, description }: { index: string; eyeb
 function WorkflowStep({ number, title, children }: { number: string; title: string; children: ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="grid size-7 shrink-0 place-items-center border border-trace-accent-muted font-mono text-[10px] text-trace-accent">{number}</span>
+      <span className="grid size-7 shrink-0 place-items-center border border-trace-accent-muted font-mono text-[12px] text-trace-accent">{number}</span>
       <div><strong className="block text-[13px] text-trace-text">{title}</strong><span className="mt-1 block text-[12px] leading-5 text-trace-faint">{children}</span></div>
     </li>
   );
@@ -344,7 +344,7 @@ function FeaturePreview({ label, title, children }: { label: string; title: stri
     <div className="mt-7 border border-trace-divider bg-trace-surface">
       <div className="flex items-center justify-between border-b border-trace-divider px-5 py-4">
         <h2 className="text-[14px] font-black tracking-[.04em]">{title}</h2>
-        <span className="font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent">{label}</span>
+        <span className="font-mono text-[12px] font-bold tracking-[.08em] text-trace-accent">{label}</span>
       </div>
       {children}
     </div>
@@ -352,7 +352,7 @@ function FeaturePreview({ label, title, children }: { label: string; title: stri
 }
 
 function PreviewStep({ number, title, detail }: { number: string; title: string; detail: string }) {
-  return <div className="min-h-44 bg-trace-surface p-6"><span className="font-mono text-[10px] text-trace-accent">{number}</span><h3 className="mt-7 text-base font-black">{title}</h3><p className="mt-2 text-[13px] leading-5 text-trace-faint">{detail}</p></div>;
+  return <div className="min-h-44 bg-trace-surface p-6"><span className="font-mono text-[12px] text-trace-accent">{number}</span><h3 className="mt-7 text-base font-black">{title}</h3><p className="mt-2 text-[13px] leading-5 text-trace-faint">{detail}</p></div>;
 }
 
 function AvailabilityNote({ children }: { children: ReactNode }) {
@@ -420,7 +420,7 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
           <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">SESSIONS</h1>
           <p className="mt-2 text-[13px] text-trace-muted">Browse drives and replays, then open one to review every lap and its telemetry.</p>
         </div>
-        <span className="font-mono text-[11px] text-trace-faint">
+        <span className="font-mono text-[12px] text-trace-faint">
           {visibleSessions.length} shown · {sessions.length} total
         </span>
       </div>
@@ -444,7 +444,7 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
           aria-label="Filter sessions by source"
           value={sourceFilter}
           onChange={(event) => setSourceFilter(event.target.value)}
-          className="trace-select h-12 border-0 border-r border-trace-divider bg-trace-surface pl-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+          className="trace-select h-12 border-0 border-r border-trace-divider bg-trace-surface pl-4 font-mono text-[12px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
         >
           <option value="all">All sources</option>
           <option value="replay">Replays</option>
@@ -456,7 +456,7 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
             aria-label="Filter sessions by simulator"
             value={simulatorFilter}
             onChange={(event) => setSimulatorFilter(event.target.value)}
-            className="trace-select h-12 border-0 border-r border-trace-divider bg-trace-surface pl-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+            className="trace-select h-12 border-0 border-r border-trace-divider bg-trace-surface pl-4 font-mono text-[12px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
           >
             <option value="all">All simulators</option>
             {simulators.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
@@ -466,7 +466,7 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
           aria-label="Sort sessions"
           value={sortOrder}
           onChange={(event) => setSortOrder(event.target.value)}
-          className="trace-select h-12 border-0 bg-trace-surface pl-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+          className="trace-select h-12 border-0 bg-trace-surface pl-4 font-mono text-[12px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
         >
           <option value="newest">Newest first</option>
           <option value="oldest">Oldest first</option>
@@ -579,29 +579,29 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
           className="grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px]"
         >
           <div className="min-w-0">
-            <span className="block truncate text-[10px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
+            <span className="block truncate text-[12px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
             <h2 className="mt-1.5 truncate text-base font-black tracking-[.03em]">{session.title ?? session.track}</h2>
-            <Tooltip className="mt-1 flex min-w-0 font-mono text-[9px] text-trace-dim" content={session.startedAt}>
+            <Tooltip className="mt-1 flex min-w-0 font-mono text-[12px] text-trace-dim" content={session.startedAt}>
               <span className="truncate">{session.title ? `${session.track} · ` : ""}{formatSessionDate(session.startedAt)}</span>
             </Tooltip>
           </div>
           <div className="min-w-0">
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
-            <span className="mt-1 block truncate text-[11px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}</span>
+            <span className="mt-1 block truncate text-[12px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}</span>
             {(session.driver || session.ownership !== "unknown") && (
               <span className="mt-1 flex min-w-0 items-center gap-2">
                 {session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
-                {session.driver && <span className="truncate text-[11px] text-trace-muted">{session.driver}</span>}
+                {session.driver && <span className="truncate text-[12px] text-trace-muted">{session.driver}</span>}
               </span>
             )}
-            {session.tags.length > 0 && <span className="mt-1 block truncate font-mono text-[9px] text-trace-purple">{session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}</span>}
+            {session.tags.length > 0 && <span className="mt-1 block truncate font-mono text-[12px] text-trace-purple">{session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}</span>}
           </div>
           <div className="font-mono">
-            <span className="block text-[9px] tracking-[.08em] text-trace-dim">LAPS</span>
+            <span className="block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
             <strong className="mt-1 block text-[12px] text-trace-soft">{session.laps.length}</strong>
           </div>
           <div className="font-mono max-[1050px]:hidden">
-            <span className="block text-[9px] tracking-[.08em] text-trace-dim">FASTEST LAP</span>
+            <span className="block text-[12px] tracking-[.08em] text-trace-dim">FASTEST LAP</span>
             <strong className="mt-1 block text-[12px] text-trace-soft">{bestLap?.time ?? "—"}</strong>
           </div>
         </button>
@@ -628,7 +628,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
                   <SessionDetailsEditor title={draftTitle} driver={draftDriver} ownership={draftOwnership} tags={draftTags} saving={savingDetails} onTitleChange={setDraftTitle} onDriverChange={setDraftDriver} onOwnershipChange={setDraftOwnership} onTagsChange={setDraftTags} onCancel={() => setEditingDetails(false)} onSave={() => void saveDetails()} />
                 ) : (
                   <>
-                    <span className="block px-2 pb-2 pt-1 text-[11px] font-bold text-trace-soft">Session actions</span>
+                    <span className="block px-2 pb-2 pt-1 text-[12px] font-bold text-trace-soft">Session actions</span>
                     <button type="button" onClick={() => { setDraftTitle(session.title ?? ""); setDraftDriver(session.driver ?? ""); setDraftOwnership(session.ownership); setDraftTags(session.tags.join(", ")); setExportMenuOpen(false); setEditingDetails(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised">Name, driver & tags…</button>
                     <button
                       type="button"
@@ -648,7 +648,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
                         <ExportOption label="Spreadsheet" detail="CSV · core channels" disabled={exporting} onClick={() => void exportTelemetry("csv")} />
                       </div>
                     )}
-                    {!session.exportable && <p className="px-2 py-2 text-[10px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
+                    {!session.exportable && <p className="px-2 py-2 text-[12px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
                     <div className="my-1 border-t border-trace-divider" />
                     <button type="button" disabled={!session.deletable} onClick={() => { setExportMenuOpen(false); setConfirmingDelete(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent">{session.deletable ? "Delete session…" : "Session in progress"}</button>
                   </>
@@ -663,7 +663,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
               onClick={onOpen}
               className="flex h-full w-16 items-center justify-center gap-1.5 border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
             >
-              <span className="font-mono text-[9px] font-bold tracking-[.08em]">VIEW</span>
+              <span className="font-mono text-[12px] font-bold tracking-[.08em]">VIEW</span>
               <svg className="size-3 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m6 4 4 4-4 4" />
               </svg>
@@ -700,7 +700,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
 
   return (
     <>
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 border-0 bg-transparent py-2 text-[11px] font-bold tracking-[.06em] text-trace-muted hover:text-trace-text">
+      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 border-0 bg-transparent py-2 text-[12px] font-bold tracking-[.06em] text-trace-muted hover:text-trace-text">
         <svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
         ALL SESSIONS
       </button>
@@ -737,11 +737,11 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
         <div className="flex items-center justify-between border-b border-trace-divider px-4 py-3">
           <div>
             <h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
-            <p className="mt-1 text-[11px] text-trace-dim">Red rows are incomplete or contain track-limit evidence. Everything else stays visually neutral.</p>
+            <p className="mt-1 text-[12px] text-trace-dim">Red rows are incomplete or contain track-limit evidence. Everything else stays visually neutral.</p>
           </div>
-          <span className="font-mono text-[10px] text-trace-faint">{session.laps.length} TOTAL</span>
+          <span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
         </div>
-        <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim">
+        <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
           <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRE WEAR</span><span className="text-right">RESULT</span>
         </div>
         {session.laps.length === 0 ? (
@@ -752,12 +752,12 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[10px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple" : "border-l-transparent"}`}
+              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple" : "border-l-transparent"}`}
               key={lap.index}
             >
               <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
               <strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
-              {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[9px] text-trace-dim">UNAVAILABLE</span>}
+              {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
               <LapMetricValue state={metricsState} value={formatFuelUsed(lapMetrics)} detail={fuelDetail(lapMetrics)} />
               <LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} />
               <TyreWearGrid state={metricsState} metrics={lapMetrics} />
@@ -766,19 +766,19 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
           );
         })}
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[9px] text-trace-dim">
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[12px] text-trace-dim">
         <SectorLegend colour="bg-trace-purple" label="Session best" />
         <SectorLegend colour="bg-trace-accent" label="Improved" />
         <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
       </div>
-      <p className="mt-3 text-[11px] leading-5 text-trace-dim">Fuel, speed, and tyre use come directly from each lap's recorded telemetry. Tyre circles are front-left, front-right, rear-left, and rear-right; green indicates low wear, progressing through yellow and orange to red.</p>
+      <p className="mt-3 text-[12px] leading-5 text-trace-dim">Fuel, speed, and tyre condition come directly from each lap's recorded telemetry. Tyre circles are front-left, front-right, rear-left, and rear-right; they count down from 100%, shifting from green through yellow and orange to red.</p>
     </>
   );
 }
 
 function LapMetricValue({ state, value, detail }: { state: "loading" | "ready" | "error"; value: string | null; detail?: string | null }) {
   const label = state === "loading" ? "LOADING…" : value ?? "—";
-  const className = `truncate text-[9px] ${value ? "text-trace-soft" : "text-trace-dim"}`;
+  const className = `truncate text-[12px] ${value ? "text-trace-soft" : "text-trace-dim"}`;
   return detail ? <Tooltip className={className} content={detail}>{label}</Tooltip> : <span className={className}>{label}</span>;
 }
 
@@ -793,7 +793,7 @@ function fuelDetail(metrics?: RecordedLapMetrics) {
 }
 
 function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
-  if (state === "loading") return <span className="text-[9px] text-trace-dim">LOADING…</span>;
+  if (state === "loading") return <span className="text-[12px] text-trace-dim">LOADING…</span>;
   const tyres = [
     { short: "FL", name: "Front left", index: 0 },
     { short: "FR", name: "Front right", index: 1 },
@@ -801,29 +801,32 @@ function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | "error"
     { short: "RR", name: "Rear right", index: 3 },
   ];
   return (
-    <div className="grid w-fit grid-cols-2 gap-1" aria-label="Tyre wear used during this lap">
+    <div className="grid w-fit grid-cols-2 gap-1" aria-label="Tyre condition remaining at the end of this lap">
       {tyres.map((tyre) => {
         const start = metrics?.tyreWearStart[tyre.index];
-        const minimum = metrics?.tyreWearMinimum[tyre.index];
-        const used = start != null && minimum != null && Number.isFinite(start) && Number.isFinite(minimum)
-          ? Math.max(0, start - minimum)
+        const end = metrics?.tyreWearEnd[tyre.index];
+        const remaining = end != null && Number.isFinite(end)
+          ? Math.min(100, Math.max(0, end))
           : null;
-        const colour = used == null ? null : tyreWearColour(used);
-        const value = used == null ? "—" : `${used < 10 ? used.toFixed(1) : used.toFixed(0)}%`;
-        const detail = used == null
+        const colour = remaining == null ? null : tyreConditionColour(remaining);
+        const value = remaining == null ? "—" : `${Math.round(remaining)}%`;
+        const used = start != null && end != null && Number.isFinite(start) && Number.isFinite(end)
+          ? Math.max(0, start - end)
+          : null;
+        const detail = remaining == null
           ? `${tyre.name}: wear telemetry unavailable`
-          : `${tyre.name}: ${value} used · ${start?.toFixed(1)}% to ${minimum?.toFixed(1)}% condition`;
+          : `${tyre.name}: ${value} condition remaining${start != null ? ` · ${start.toFixed(2)}% to ${remaining.toFixed(2)}%${used != null ? ` · ${used.toFixed(2)}% used this lap` : ""}` : ""}`;
         return (
           <Tooltip key={tyre.short} content={detail}>
             <span
-              className="flex size-8 items-center justify-center border font-mono text-[8px] font-bold tabular-nums"
+              className="flex size-9 items-center justify-center border font-mono text-[12px] font-bold tabular-nums"
               style={{
                 borderRadius: "9999px",
                 borderColor: colour?.border ?? "var(--color-trace-divider)",
                 backgroundColor: colour?.background ?? "var(--color-trace-deep)",
                 color: colour?.text ?? "var(--color-trace-dim)",
               }}
-              aria-label={`${tyre.name}: ${used == null ? "unavailable" : `${value} used`}`}
+              aria-label={`${tyre.name}: ${remaining == null ? "unavailable" : `${value} condition remaining`}`}
             >
               {value}
             </span>
@@ -834,9 +837,9 @@ function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | "error"
   );
 }
 
-function tyreWearColour(usedPercent: number) {
-  const severity = Math.min(1, Math.max(0, usedPercent / 10));
-  const hue = 110 * (1 - severity);
+function tyreConditionColour(remainingPercent: number) {
+  const condition = Math.min(1, Math.max(0, remainingPercent / 100));
+  const hue = 110 * condition;
   return {
     border: `hsl(${hue} 82% 48%)`,
     background: `hsl(${hue} 82% 48% / 0.16)`,
@@ -856,7 +859,7 @@ function OwnershipBadge({ ownership }: { ownership: Exclude<RecordedSessionSumma
   const mine = ownership === "mine";
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 border px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-[.08em] ${mine ? "border-trace-accent/40 bg-trace-accent/10 text-trace-accent" : "border-trace-purple/40 bg-trace-purple-wash text-trace-purple"}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 border px-1.5 py-0.5 font-mono text-[12px] font-bold tracking-[.08em] ${mine ? "border-trace-accent/40 bg-trace-accent/10 text-trace-accent" : "border-trace-purple/40 bg-trace-purple-wash text-trace-purple"}`}
       aria-label={mine ? "Your recording" : "Another driver's recording"}
     >
       <span className={`size-1.5 rounded-full ${mine ? "bg-trace-accent" : "bg-trace-purple"}`} aria-hidden="true" />
@@ -881,7 +884,7 @@ function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["l
         return (
           <Tooltip className="min-w-0 flex-1 flex-col" content={`Sector ${index}: ${sector?.time ?? "unavailable"}`} key={index}>
             <div className={`h-1.5 ${colour}`} aria-hidden="true" />
-            <span className="mt-1 block truncate text-[9px] text-trace-faint">S{index} {sector?.time ?? "—"}</span>
+            <span className="mt-1 block truncate text-[12px] text-trace-faint">S{index} {sector?.time ?? "—"}</span>
           </Tooltip>
         );
       })}
@@ -912,8 +915,8 @@ function ExportOption({ label, detail, disabled, onClick }: { label: string; det
       onClick={onClick}
       className="block w-full border-0 bg-transparent px-2 py-2 text-left hover:bg-trace-raised disabled:text-trace-dim"
     >
-      <strong className="block font-mono text-[10px] tracking-[.08em] text-trace-text">{label}</strong>
-      <span className="mt-1 block text-[10px] text-trace-dim">{detail}</span>
+      <strong className="block font-mono text-[12px] tracking-[.08em] text-trace-text">{label}</strong>
+      <span className="mt-1 block text-[12px] text-trace-dim">{detail}</span>
     </button>
   );
 }
@@ -922,12 +925,12 @@ function DeleteConfirmation({ session, deleting, onCancel, onConfirm }: { sessio
   return (
     <div className="p-2">
       <strong className="block text-[13px] text-trace-text">Delete this session?</strong>
-      <p className="mt-2 text-[11px] leading-5 text-trace-faint">
+      <p className="mt-2 text-[12px] leading-5 text-trace-faint">
         {session.track} and its saved telemetry will be permanently removed. This cannot be undone.
       </p>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button type="button" disabled={deleting} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
-        <button type="button" disabled={deleting} onClick={onConfirm} className="border border-trace-warning bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-warning hover:bg-trace-warning hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">
+        <button type="button" disabled={deleting} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[12px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
+        <button type="button" disabled={deleting} onClick={onConfirm} className="border border-trace-warning bg-transparent px-3 py-2.5 text-[12px] font-bold text-trace-warning hover:bg-trace-warning hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">
           {deleting ? "Deleting…" : "Delete"}
         </button>
       </div>
@@ -939,15 +942,15 @@ function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleC
   return (
     <form className="p-2" onSubmit={(event) => { event.preventDefault(); onSave(); }}>
       <strong className="block text-[13px] text-trace-text">Session identity</strong>
-      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+      <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         DISPLAY NAME
         <input autoFocus maxLength={80} value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Optional custom name" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
       </label>
-      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+      <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         DRIVER / AUTHOR
         <input maxLength={80} value={driver} onChange={(event) => onDriverChange(event.target.value)} placeholder="Who drove this session?" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
       </label>
-      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+      <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         OWNERSHIP
         <select value={ownership} onChange={(event) => onOwnershipChange(event.target.value as RecordedSessionSummary["ownership"])} className="trace-select mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep pl-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple">
           <option value="unknown">Not specified</option>
@@ -955,14 +958,14 @@ function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleC
           <option value="other">Another driver</option>
         </select>
       </label>
-      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+      <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         TAGS
         <input value={tags} onChange={(event) => onTagsChange(event.target.value)} placeholder="league, wet, reference" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
       </label>
-      <p className="mt-2 text-[9px] leading-4 text-trace-dim">Separate up to 12 tags with commas. Name, driver, ownership, and tags are included in search.</p>
+      <p className="mt-2 text-[12px] leading-4 text-trace-dim">Separate up to 12 tags with commas. Name, driver, ownership, and tags are included in search.</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button type="button" disabled={saving} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
-        <button type="submit" disabled={saving} className="border border-trace-purple bg-trace-purple-wash px-3 py-2.5 text-[11px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">{saving ? "Saving…" : "Save"}</button>
+        <button type="button" disabled={saving} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[12px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
+        <button type="submit" disabled={saving} className="border border-trace-purple bg-trace-purple-wash px-3 py-2.5 text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">{saving ? "Saving…" : "Save"}</button>
       </div>
     </form>
   );
@@ -987,7 +990,7 @@ function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
       ? "Three or more tyres were observed outside the track; this lap is excluded from comparisons."
       : lap.validityReason ?? "The simulator marked this lap invalid.";
   return (
-    <Tooltip className="justify-self-end border border-trace-danger/50 bg-trace-danger/20 px-2 py-1 text-[8px] font-bold tracking-[.08em] text-red-200" content={detail}>
+    <Tooltip className="justify-self-end border border-trace-danger/50 bg-trace-danger/20 px-2 py-1 text-[12px] font-bold tracking-[.08em] text-red-200" content={detail}>
       INVALID
     </Tooltip>
   );
@@ -1038,7 +1041,7 @@ function formatSessionDate(value: string) {
 
 function Footer({ status }: { status: TelemetryStatus | null }) {
   return (
-    <footer className="col-span-full flex items-center gap-6 border-t border-trace-divider bg-trace-black px-[14px] font-mono text-[10px] tracking-[.06em] text-trace-dim">
+    <footer className="col-span-full flex items-center gap-6 border-t border-trace-divider bg-trace-black px-[14px] font-mono text-[12px] tracking-[.06em] text-trace-dim">
       <span>TRACE ENGINE <b className="ml-1 text-trace-accent">READY</b></span>
       <span>{status?.simulatorShortName ?? "SIM"} MODULE <b className="ml-1 text-trace-accent">LIFECYCLE</b></span>
       <span>STORAGE <b className="ml-1 text-trace-accent">LOCAL</b></span>
@@ -1048,17 +1051,17 @@ function Footer({ status }: { status: TelemetryStatus | null }) {
 }
 
 function SectionHeading({ index, children }: { index: string; children: ReactNode }) {
-  return <div className="text-[11px] font-extrabold tracking-[.14em] text-trace-soft"><span className="mr-2.5 text-trace-accent">{index}</span>{children}</div>;
+  return <div className="text-[12px] font-extrabold tracking-[.14em] text-trace-soft"><span className="mr-2.5 text-trace-accent">{index}</span>{children}</div>;
 }
 
 function PanelTitle({ children }: { children: ReactNode }) {
-  return <div className="border-b border-trace-divider px-4 py-[14px] text-[11px] font-extrabold tracking-[.14em] text-trace-soft">{children}</div>;
+  return <div className="border-b border-trace-divider px-4 py-[14px] text-[12px] font-extrabold tracking-[.14em] text-trace-soft">{children}</div>;
 }
 
 function Metric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="min-h-[92px] border-r border-trace-divider bg-trace-surface p-[18px] last:border-r-0 max-[900px]:[&:nth-child(-n+2)]:border-b max-[900px]:[&:nth-child(even)]:border-r-0">
-      <span className="block text-[11px] font-extrabold tracking-[.12em] text-trace-muted">{label}</span>
+      <span className="block text-[12px] font-extrabold tracking-[.12em] text-trace-muted">{label}</span>
       <strong className={`mt-[15px] block font-mono text-base font-bold ${accent ? "text-trace-accent" : ""}`}>{value}</strong>
     </div>
   );
