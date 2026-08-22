@@ -496,8 +496,13 @@ function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollap
                 <span className="flex items-baseline justify-between gap-3 font-mono"><strong className="text-[15px] text-trace-text">{corner.label}</strong><strong className="text-[15px] tabular-nums text-[#ff5263]">+{corner.totalLossSeconds?.toFixed(3)}s</strong></span>
                 <span className="mt-2 block truncate text-[10px] font-black tracking-[.08em] text-trace-dim">MOST LOSS · {dominant}</span>
                 <span className="mt-1 block truncate text-[11px] text-trace-muted">{cornerSummary(corner, dominant)}</span>
-                <span className="mt-3 flex h-1.5 gap-px overflow-hidden bg-trace-divider" aria-label={`${corner.label} phase loss distribution`}>
-                  {corner.phases.map((phase) => <span className="h-full flex-1" style={{ backgroundColor: phase.lossSeconds == null ? "var(--color-trace-divider)" : phase.lossSeconds > 0 ? "#ff5263" : "#42db76", opacity: phase.lossSeconds == null ? 0.4 : Math.min(1, 0.35 + Math.abs(phase.lossSeconds) / Math.max(corner.totalLossSeconds ?? 0.001, 0.001)) }} key={phase.phase} />)}
+                <span className="mt-3 grid grid-cols-3 gap-1 border-t border-trace-divider pt-2" aria-label={`${corner.label} time difference by phase`}>
+                  {corner.phases.map((phase) => (
+                    <span className="min-w-0" key={phase.phase}>
+                      <span className="block truncate font-mono text-[9px] font-bold tracking-[.06em] text-trace-dim">{cornerPhaseLabel(phase.phase)}</span>
+                      <span className={`mt-0.5 block font-mono text-[11px] font-bold tabular-nums ${phase.lossSeconds == null ? "text-trace-dim" : phase.lossSeconds > 0 ? "text-[#ff5263]" : "text-[#42db76]"}`}>{formatPhaseDelta(phase.lossSeconds)}</span>
+                    </span>
+                  ))}
                 </span>
               </button>
             );
@@ -506,6 +511,15 @@ function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollap
       )}
     </section>
   );
+}
+
+function cornerPhaseLabel(phase: CornerAnalysis["phases"][number]["phase"]) {
+  return phase === "entry" ? "ENTRY" : phase === "mid" ? "MIDDLE" : "EXIT";
+}
+
+function formatPhaseDelta(seconds: number | null | undefined) {
+  if (seconds == null) return "—";
+  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(3)}s`;
 }
 
 function dominantCornerPhase(corner: CornerAnalysis) {
