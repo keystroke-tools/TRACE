@@ -746,7 +746,7 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
         <div className="flex items-center justify-between border-b border-trace-divider px-4 py-3">
           <div>
             <h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
-            <p className="mt-1 text-[12px] text-trace-dim">Red rows are incomplete or contain track-limit evidence. Everything else stays visually neutral.</p>
+            <p className="mt-1 text-[12px] text-trace-dim">Timing, sectors, fuel, speed, and tyre condition for every recorded lap.</p>
           </div>
           <span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
         </div>
@@ -761,7 +761,7 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple" : "border-l-transparent"}`}
+              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
               key={lap.index}
             >
               <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
