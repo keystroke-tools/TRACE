@@ -7,6 +7,7 @@ use std::{
 
 use serde::Serialize;
 use tauri::Manager;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use trace_ac::AcAdapter;
 use trace_adapter::SimulatorAdapter;
 use trace_core::{
@@ -21,7 +22,7 @@ use trace_storage::{
         TELEMETRY_SCHEMA_VERSION, TelemetryColumns, export_core_csv, read_columns_range,
         read_lap_metrics, sample_count,
     },
-    metadata::{MetadataStore, SessionSummary},
+    metadata::{MetadataStore, SavedComparison, SessionSummary},
     package::{
         PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest, imported_records, read_package,
         write_compact_package,
@@ -42,6 +43,12 @@ struct ChannelCapability {
     category: &'static str,
     detail: &'static str,
     available: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DriverProfile {
+    name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -262,6 +269,9 @@ fn recent_sessions(
     let sessions = store
         .recent_sessions(100)
         .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    let profile_name = store
+        .driver_profile_name()
+        .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
     let active_session_id = status
         .lock()
         .ok()
@@ -274,7 +284,16 @@ fn recent_sessions(
 
     Ok(sessions
         .into_iter()
-        .map(|session| {
+        .map(|mut session| {
+            if session.user_driver.is_none()
+                && session.source_kind != "imported"
+                && session.ownership != "other"
+            {
+                session.user_driver.clone_from(&profile_name);
+                if profile_name.is_some() {
+                    session.ownership = "mine".into();
+                }
+            }
             let replay = session.source_kind == "simulator_replay";
             let deletable = active_session_id.as_deref() != Some(session.id.as_str());
             let track = session
@@ -405,6 +424,116 @@ fn game_install_directory(store: &MetadataStore) -> Result<GameInstallDirectory,
             "missing"
         },
     })
+}
+
+#[tauri::command]
+fn driver_profile(app: tauri::AppHandle) -> Result<DriverProfile, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    Ok(DriverProfile {
+        name: store
+            .driver_profile_name()
+            .map_err(|error| format!("failed to read driver profile: {error:?}"))?,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_driver_profile(
+    app: tauri::AppHandle,
+    name: Option<String>,
+) -> Result<DriverProfile, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let normalized = name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    store
+        .set_driver_profile_name(normalized)
+        .map_err(|error| format!("failed to save driver profile: {error:?}"))?;
+    Ok(DriverProfile {
+        name: normalized.map(str::to_owned),
+    })
+}
+
+#[tauri::command]
+fn saved_comparisons(app: tauri::AppHandle) -> Result<Vec<SavedComparison>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .saved_comparisons()
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+fn save_comparison(
+    app: tauri::AppHandle,
+    name: String,
+    reference_session_id: String,
+    reference_lap_index: u32,
+    analysed_session_id: String,
+    analysed_lap_index: u32,
+) -> Result<Vec<SavedComparison>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let created_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| error.to_string())?;
+    store
+        .save_comparison(
+            &format!("comparison-{nonce}"),
+            &name,
+            &reference_session_id,
+            reference_lap_index,
+            &analysed_session_id,
+            analysed_lap_index,
+            &created_at,
+        )
+        .map_err(|error| format!("failed to save comparison: {error:?}"))?;
+    store
+        .saved_comparisons()
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn delete_saved_comparison(
+    app: tauri::AppHandle,
+    comparison_id: String,
+) -> Result<Vec<SavedComparison>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .delete_saved_comparison(&comparison_id)
+        .map_err(|error| format!("failed to delete saved comparison: {error:?}"))?;
+    store
+        .saved_comparisons()
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
 }
 
 #[tauri::command]
@@ -1076,12 +1205,20 @@ fn export_session(
         "csv" => ("CSV", "csv"),
         _ => return Err("unsupported export format".into()),
     };
-    let session = store
+    let mut session = store
         .recent_sessions(10_000)
         .map_err(|error| format!("failed to read session metadata: {error:?}"))?
         .into_iter()
         .find(|session| session.id == session_id)
         .ok_or_else(|| "session metadata no longer exists".to_owned())?;
+    if session.user_driver.is_none() && session.ownership != "other" {
+        session.user_driver = store
+            .driver_profile_name()
+            .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
+        if session.user_driver.is_some() {
+            session.ownership = "mine".into();
+        }
+    }
     let stem = session_export_stem(&session);
     let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
     let export_result = if export_format == "trace" {
@@ -1123,12 +1260,20 @@ fn trace_package_manifest(
     session_id: &str,
     sample_count: u64,
 ) -> Result<SessionPackageManifest, String> {
-    let session = store
+    let mut session = store
         .recent_sessions(10_000)
         .map_err(|error| format!("failed to read session metadata: {error:?}"))?
         .into_iter()
         .find(|session| session.id == session_id)
         .ok_or_else(|| "session metadata no longer exists".to_owned())?;
+    if session.user_driver.is_none() && session.ownership != "other" {
+        session.user_driver = store
+            .driver_profile_name()
+            .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
+        if session.user_driver.is_some() {
+            session.ownership = "mine".into();
+        }
+    }
     let laps = session
         .laps
         .iter()
@@ -1767,6 +1912,11 @@ pub fn run() {
             compare_session_laps,
             game_install_directories,
             set_game_install_directory,
+            driver_profile,
+            set_driver_profile,
+            saved_comparisons,
+            save_comparison,
+            delete_saved_comparison,
             export_session,
             import_session,
             delete_session,

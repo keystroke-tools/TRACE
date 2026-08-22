@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
 const MIGRATION_4: &str = include_str!("../migrations/0004_session_attribution.sql");
 const MIGRATION_5: &str = include_str!("../migrations/0005_lap_track_limits.sql");
 const MIGRATION_6: &str = include_str!("../migrations/0006_simulator_install_paths.sql");
+const MIGRATION_7: &str = include_str!("../migrations/0007_profile_and_saved_comparisons.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -131,6 +132,33 @@ pub struct SessionTelemetryLocator {
     pub sample_count: u64,
 }
 
+/// Persisted shortcut to a compatible pair of laps.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedComparison {
+    pub id: String,
+    pub name: String,
+    pub reference_session_id: String,
+    pub reference_lap_index: u32,
+    pub reference_duration_ns: u64,
+    pub analysed_session_id: String,
+    pub analysed_lap_index: u32,
+    pub analysed_duration_ns: u64,
+    pub simulator_key: String,
+    pub track: String,
+    pub car: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SavedLapIdentity {
+    lap_id: String,
+    duration_ns: u64,
+    simulator_key: String,
+    track_id: String,
+    car_id: String,
+}
+
 impl MetadataStore {
     /// Opens or creates a metadata database and migrates it to the current schema.
     ///
@@ -230,6 +258,16 @@ impl MetadataStore {
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
+        if current < 7 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_7)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 7)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
 
         Ok(Self { connection })
     }
@@ -243,6 +281,212 @@ impl MetadataStore {
         self.connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(MetadataError::from)
+    }
+
+    /// Returns the local driver identity attached to self-owned captures and exports.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn driver_profile_name(&self) -> Result<Option<String>, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'driver_profile_name'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(MetadataError::from)
+    }
+
+    /// Sets or clears the local driver identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] for an invalid name or when `SQLite` cannot persist it.
+    pub fn set_driver_profile_name(&mut self, name: Option<&str>) -> Result<(), MetadataError> {
+        match name {
+            Some(value)
+                if !value.trim().is_empty()
+                    && value.chars().count() <= 80
+                    && !value.chars().any(char::is_control) =>
+            {
+                self.connection
+                    .execute(
+                        "INSERT INTO app_settings (key, value) VALUES ('driver_profile_name', ?1)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        [value.trim()],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+            Some(_) => {
+                return Err(MetadataError::InvalidRecord(
+                    "driver name must contain 1–80 printable characters".into(),
+                ));
+            }
+            None => {
+                self.connection
+                    .execute(
+                        "DELETE FROM app_settings WHERE key = 'driver_profile_name'",
+                        [],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Saves a compatible lap pair, normalising the faster lap as Reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when either lap is unavailable or incompatible, the
+    /// record is invalid, or `SQLite` cannot persist it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_comparison(
+        &mut self,
+        id: &str,
+        name: &str,
+        reference_session_id: &str,
+        reference_lap_index: u32,
+        analysed_session_id: &str,
+        analysed_lap_index: u32,
+        created_at: &str,
+    ) -> Result<(), MetadataError> {
+        if id.is_empty()
+            || name.trim().is_empty()
+            || name.chars().count() > 80
+            || name.chars().any(char::is_control)
+            || created_at.is_empty()
+        {
+            return Err(MetadataError::InvalidRecord(
+                "invalid saved comparison".into(),
+            ));
+        }
+        let reference = self.saved_lap_identity(reference_session_id, reference_lap_index)?;
+        let analysed = self.saved_lap_identity(analysed_session_id, analysed_lap_index)?;
+        if reference.lap_id == analysed.lap_id
+            || reference.simulator_key != analysed.simulator_key
+            || reference.track_id != analysed.track_id
+            || reference.car_id != analysed.car_id
+        {
+            return Err(MetadataError::InvalidRecord(
+                "saved comparison laps must use the same simulator, track, and car".into(),
+            ));
+        }
+        let (reference, analysed) = if reference.duration_ns <= analysed.duration_ns {
+            (reference, analysed)
+        } else {
+            (analysed, reference)
+        };
+        self.connection
+            .execute(
+                "INSERT INTO saved_comparisons
+                 (id, name, reference_lap_id, analysed_lap_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    id,
+                    name.trim(),
+                    reference.lap_id,
+                    analysed.lap_id,
+                    created_at
+                ],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
+    /// Lists saved lap pairs newest first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the saved lap pairs.
+    pub fn saved_comparisons(&self) -> Result<Vec<SavedComparison>, MetadataError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT sc.id, sc.name,
+                        rs.id, rl.lap_index, rl.duration_ns,
+                        ass.id, al.lap_index, al.duration_ns,
+                        sim.key, t.display_name, c.display_name, sc.created_at
+                 FROM saved_comparisons sc
+                 JOIN laps rl ON rl.id = sc.reference_lap_id
+                 JOIN sessions rs ON rs.id = rl.session_id
+                 JOIN laps al ON al.id = sc.analysed_lap_id
+                 JOIN sessions ass ON ass.id = al.session_id
+                 JOIN simulators sim ON sim.id = rs.simulator_id
+                 JOIN tracks t ON t.id = rs.track_id
+                 JOIN cars c ON c.id = rs.car_id
+                 ORDER BY sc.created_at DESC, sc.id DESC",
+            )
+            .map_err(MetadataError::from)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(SavedComparison {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    reference_session_id: row.get(2)?,
+                    reference_lap_index: row_u32(row, 3)?,
+                    reference_duration_ns: row_u64(row, 4)?,
+                    analysed_session_id: row.get(5)?,
+                    analysed_lap_index: row_u32(row, 6)?,
+                    analysed_duration_ns: row_u64(row, 7)?,
+                    simulator_key: row.get(8)?,
+                    track: row.get(9)?,
+                    car: row.get(10)?,
+                    created_at: row.get(11)?,
+                })
+            })
+            .map_err(MetadataError::from)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(MetadataError::from)
+    }
+
+    /// Deletes one saved lap pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the record does not exist or `SQLite` cannot delete it.
+    pub fn delete_saved_comparison(&mut self, id: &str) -> Result<(), MetadataError> {
+        let changed = self
+            .connection
+            .execute("DELETE FROM saved_comparisons WHERE id = ?1", [id])
+            .map_err(MetadataError::from)?;
+        if changed == 0 {
+            return Err(MetadataError::RecordNotFound);
+        }
+        Ok(())
+    }
+
+    fn saved_lap_identity(
+        &self,
+        session_id: &str,
+        lap_index: u32,
+    ) -> Result<SavedLapIdentity, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT l.id, l.duration_ns, sim.key, t.id, c.id
+                 FROM laps l
+                 JOIN sessions s ON s.id = l.session_id
+                 JOIN simulators sim ON sim.id = s.simulator_id
+                 JOIN tracks t ON t.id = s.track_id
+                 JOIN cars c ON c.id = s.car_id
+                 WHERE s.id = ?1 AND l.lap_index = ?2
+                   AND l.duration_ns IS NOT NULL AND l.validity != 'invalid'",
+                params![session_id, lap_index],
+                |row| {
+                    Ok(SavedLapIdentity {
+                        lap_id: row.get(0)?,
+                        duration_ns: row_u64(row, 1)?,
+                        simulator_key: row.get(2)?,
+                        track_id: row.get(3)?,
+                        car_id: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(MetadataError::from)?
+            .ok_or(MetadataError::RecordNotFound)
     }
 
     /// Returns the user-configured install root for one simulator.
@@ -936,6 +1180,13 @@ fn row_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
     })
 }
 
+fn row_u32(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u32> {
+    let value: i64 = row.get(index)?;
+    u32::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(index, Type::Integer, Box::new(error))
+    })
+}
+
 impl From<rusqlite::Error> for MetadataError {
     fn from(error: rusqlite::Error) -> Self {
         Self::Sqlite(error.to_string())
@@ -982,7 +1233,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 6);
+        assert_eq!(store.schema_version().expect("schema version"), 7);
 
         let mut statement = store
             .connection
@@ -1000,6 +1251,8 @@ mod tests {
         assert!(tables.contains(&"session_tags".to_owned()));
         assert!(tables.contains(&"telemetry_blobs".to_owned()));
         assert!(tables.contains(&"simulator_install_paths".to_owned()));
+        assert!(tables.contains(&"app_settings".to_owned()));
+        assert!(tables.contains(&"saved_comparisons".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
     }
 
@@ -1046,7 +1299,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 6);
+        assert_eq!(store.schema_version().expect("schema version"), 7);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
@@ -1062,6 +1315,94 @@ mod tests {
             [],
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn driver_profile_can_be_set_and_cleared() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        assert_eq!(store.driver_profile_name().expect("profile"), None);
+
+        store
+            .set_driver_profile_name(Some("  Alex Driver  "))
+            .expect("set profile");
+        assert_eq!(
+            store.driver_profile_name().expect("profile"),
+            Some("Alex Driver".into())
+        );
+
+        store.set_driver_profile_name(None).expect("clear profile");
+        assert_eq!(store.driver_profile_name().expect("profile"), None);
+    }
+
+    #[test]
+    fn saved_comparison_normalises_the_faster_lap_as_reference() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        store
+            .create_session(&session("session-1"))
+            .expect("session");
+        store
+            .complete_session(
+                "session-1",
+                "2026-08-21T15:00:00Z",
+                &blob(),
+                &[
+                    NewLap {
+                        id: "lap-fast".into(),
+                        lap_index: 1,
+                        started_offset_ns: Some(0),
+                        duration_ns: Some(90_000_000_000),
+                        validity: "valid".into(),
+                        validity_reason: None,
+                        max_tyres_out: Some(0),
+                        sample_start: 0,
+                        sample_count: 100,
+                        is_personal_best: true,
+                        sectors: Vec::new(),
+                    },
+                    NewLap {
+                        id: "lap-slow".into(),
+                        lap_index: 2,
+                        started_offset_ns: Some(90_000_000_000),
+                        duration_ns: Some(92_000_000_000),
+                        validity: "valid".into(),
+                        validity_reason: None,
+                        max_tyres_out: Some(0),
+                        sample_start: 100,
+                        sample_count: 100,
+                        is_personal_best: false,
+                        sectors: Vec::new(),
+                    },
+                ],
+            )
+            .expect("completed session");
+
+        store
+            .save_comparison(
+                "saved-1",
+                "Race setup",
+                "session-1",
+                2,
+                "session-1",
+                1,
+                "2026-08-21T16:00:00Z",
+            )
+            .expect("save comparison");
+
+        let saved = store.saved_comparisons().expect("saved comparisons");
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].reference_lap_index, 1);
+        assert_eq!(saved[0].analysed_lap_index, 2);
+        assert_eq!(saved[0].name, "Race setup");
+
+        store
+            .delete_saved_comparison("saved-1")
+            .expect("delete comparison");
+        assert!(
+            store
+                .saved_comparisons()
+                .expect("saved comparisons")
+                .is_empty()
+        );
     }
 
     #[test]

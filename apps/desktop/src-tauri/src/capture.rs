@@ -196,6 +196,9 @@ fn handle_output(
                 .simulator_install_path(source.simulator.as_str())
                 .map_err(|error| format!("simulator settings query failed: {error:?}"))?
                 .map(PathBuf::from);
+            let driver_profile = metadata
+                .driver_profile_name()
+                .map_err(|error| format!("driver profile query failed: {error:?}"))?;
             metadata
                 .create_session(&new_session(
                     &session_id,
@@ -205,6 +208,11 @@ fn handle_output(
                     ac_race_config,
                 )?)
                 .map_err(|error| format!("session creation failed: {error:?}"))?;
+            if let Some(driver) = driver_profile.as_deref() {
+                metadata
+                    .update_session_details(&session_id, None, Some(driver), "mine", &[])
+                    .map_err(|error| format!("driver attribution failed: {error:?}"))?;
+            }
             let path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
                 .map_err(|error| format!("session blob path failed: {error:?}"))?;
             *active = Some(ActivePersistence {
