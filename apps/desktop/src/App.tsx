@@ -415,6 +415,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
   const timedLaps = session.laps.filter((lap) => lap.time !== "—" && lap.validity !== "invalid");
   const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
   const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
+  const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
   const sectorCount = Math.max(3, ...session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)));
   const visibleLaps = showAllLaps ? session.laps : session.laps.slice(0, 3);
   const hiddenLapCount = session.laps.length - visibleLaps.length;
@@ -596,12 +597,21 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
             <span>{visibleLaps.length} of {session.laps.length} laps shown</span>
             <Tooltip content={session.startedAt}>{formatSessionDate(session.startedAt)}</Tooltip>
           </div>
-          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px] text-trace-dim" aria-label="Sector colour legend">
-            <SectorLegend colour="bg-trace-purple" label="Session best" />
-            <SectorLegend colour="bg-trace-accent" label="Improved" />
-            <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
-            <SectorLegend colour="bg-trace-dim" label="Unavailable" />
-          </div>
+          {hasSectorTiming ? (
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px] text-trace-dim" aria-label="Sector colour legend">
+              <SectorLegend colour="bg-trace-purple" label="Session best" />
+              <SectorLegend colour="bg-trace-accent" label="Improved" />
+              <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
+              <SectorLegend colour="bg-trace-dim" label="Unavailable" />
+            </div>
+          ) : (
+            <div className="mb-3 border border-trace-divider bg-trace-surface px-3 py-2.5 text-[11px] leading-5 text-trace-muted">
+              <strong className="text-trace-soft">Sector timing was not emitted by the simulator.</strong>{" "}
+              {sessionSourceLabel(session) === "Replay capture"
+                ? "Assetto Corsa replay shared memory can leave both the sector index and last-sector time empty; the recorded lap and telemetry remain usable."
+                : "TRACE retained the lap and telemetry without inventing sector splits."}
+            </div>
+          )}
           <div className="max-h-64 overflow-y-auto border border-trace-divider bg-trace-surface">
             {session.laps.length === 0 ? (
               <div className="p-5 text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
@@ -611,7 +621,11 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
               <div className={`grid min-h-16 grid-cols-[72px_92px_minmax(190px,1fr)_92px] items-center gap-3 border-b px-4 font-mono text-[10px] last:border-b-0 ${fastest ? "border-l-2 border-l-trace-purple border-b-trace-divider bg-trace-purple-wash" : "border-b-trace-divider"}`} key={lap.index}>
                 <span className={fastest ? "text-trace-purple" : "text-trace-faint"}>LAP {String(lap.index).padStart(2, "0")}</span>
                 <strong className={fastest ? "text-trace-purple" : lap.validity === "valid" ? "text-trace-text" : "text-trace-soft"}>{lap.time}</strong>
-                <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} />
+                {hasSectorTiming ? (
+                  <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} />
+                ) : (
+                  <span className="text-[9px] tracking-[.04em] text-trace-dim">NO SECTOR TELEMETRY</span>
+                )}
                 <LapValidity lap={lap} />
               </div>
               );

@@ -51,7 +51,7 @@ Currently implemented:
 - Assetto Corsa replay capture through the running simulator, with replay provenance
   preserved in the local session archive
 - Simulator-agnostic session recording with conservative lap-boundary detection
-- Genuine AC sector-boundary recording with fastest-lap and sector-performance colours
+- Genuine AC sector-boundary recording when supplied by the simulator, with explicit replay-unavailable states instead of synthetic splits
 - Transactional SQLite session/lap writes and bounded native archive queries
 - Recovery-aware Arrow blob and SQLite completion orchestration
 - Atomic filesystem telemetry blobs with restart-safe checksum indexing

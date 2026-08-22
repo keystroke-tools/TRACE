@@ -182,9 +182,11 @@ The desktop labels a complete lap with unknown validity as `Recorded`, not
 Partial/outlaps remain invalid and visibly marked. Lap detail panels render
 only the first three entries until the user explicitly asks to show the remainder,
 keeping long race sessions bounded by default.
-The quickest non-invalid lap is highlighted in purple. Sector bars use purple for the
-best sector in the session, green for an improvement over earlier laps, yellow for a
-slower recorded sector, and grey for unavailable, partial, or invalid sector data.
+The quickest non-invalid lap is highlighted in purple. When AC supplies sector timing,
+sector bars use purple for the best sector in the session, green for an improvement
+over earlier laps, yellow for a slower recorded sector, and grey for partial or invalid
+sector data. If an entire session has no sector observations, the desktop shows an
+explicit unavailable notice instead of presenting three unexplained grey placeholders.
 
 The desktop starts the production adapter on a dedicated polling thread. An unstable
 packet remains a temporary acquisition error and does not split the session. Loss of
@@ -198,6 +200,14 @@ playback through the same documented shared-memory pages as a live session. This
 not direct parsing of an `.acreplay` file: AC must be running and playing the replay.
 The stored session is labelled `simulator_replay`, while an on-track session is
 labelled `native_capture`, so downstream comparisons retain their provenance.
+
+Replay playback does not guarantee that every documented timing field is populated.
+In a captured AC 1.16.4 replay, `currentSectorIndex` remained zero and
+`lastSectorTime` remained zero for every sample even though lap counters and lap times
+advanced. TRACE therefore cannot reconstruct genuine sector times from vanilla shared
+memory for that recording. It deliberately keeps the sector list empty rather than
+inventing equal-distance thirds. A companion AC app using the Python Apps timing API
+(`getLastSplits`) is the planned replay timing fallback.
 
 For a reliable recording:
 
