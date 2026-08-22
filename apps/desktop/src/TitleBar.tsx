@@ -17,7 +17,7 @@ export function TitleBar({ status }: { status: TelemetryStatus | null }) {
   const failed = state === "error";
 
   return (
-    <div className="col-span-full grid select-none grid-cols-[176px_minmax(0,1fr)_auto_auto] items-stretch border-b border-trace-divider bg-trace-black max-[900px]:grid-cols-[140px_minmax(0,1fr)_auto_auto]">
+    <div className="col-span-full grid select-none grid-cols-[176px_minmax(0,1fr)_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black max-[900px]:grid-cols-[140px_minmax(0,1fr)_auto_88px_auto]">
       <div
         className="flex items-center border-r border-trace-divider px-5 text-[18px] font-black tracking-[.12em]"
         data-tauri-drag-region
@@ -50,6 +50,14 @@ export function TitleBar({ status }: { status: TelemetryStatus | null }) {
         />
         <span>{state.toUpperCase()}</span>
       </div>
+      <button
+        type="button"
+        disabled
+        title="Remote spectating requires the Phase 7 TRACE backend, which is not configured yet"
+        className="border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[10px] font-black tracking-[.1em] text-trace-accent-muted"
+      >
+        GO LIVE
+      </button>
       <div className="flex" aria-label="Window controls">
         <WindowButton
           label="Minimize"

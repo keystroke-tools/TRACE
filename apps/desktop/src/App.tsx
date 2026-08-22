@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   telemetryDataSource,
   type RecordedSessionSummary,
+  type SessionExportFormat,
   type TelemetryStatus,
 } from "./data-source";
 import { TitleBar } from "./TitleBar";
@@ -110,6 +111,9 @@ function SystemStatus({ status, section }: { status: TelemetryStatus | null; sec
         <div>
           <strong className="font-mono text-xs tracking-[.14em]">PHASE 2 / AC CAPTURE</strong>
           <p className="mt-2 text-[13px] text-trace-faint">Local capture worker active. Completed sessions persist without a network dependency.</p>
+          {section === "LIVE" && (
+            <p className="mt-1 text-[12px] text-trace-dim">Remote spectating remains offline until the Phase 7 backend is configured.</p>
+          )}
         </div>
       </div>
     </>
@@ -137,6 +141,23 @@ function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
 }
 
 function SessionRow({ session }: { session: RecordedSessionSummary }) {
+  const [exportFormat, setExportFormat] = useState<SessionExportFormat>("arrow");
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  async function exportTelemetry() {
+    setExporting(true);
+    setExportMessage(null);
+    try {
+      const result = await telemetryDataSource.exportSession(session.id, exportFormat);
+      setExportMessage(`${result.format} · ${result.sampleCount.toLocaleString()} samples · ${result.path}`);
+    } catch (error) {
+      setExportMessage(`EXPORT FAILED · ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <article className="grid grid-cols-[1.4fr_1fr] border-b border-trace-divider last:border-b-0 max-[900px]:grid-cols-1">
       <div className="border-r border-trace-divider p-5 max-[900px]:border-b max-[900px]:border-r-0">
@@ -147,10 +168,34 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
             <p className="mt-1 text-[13px] text-trace-muted">{session.car}</p>
           </div>
           <div className="text-right font-mono text-[11px] leading-5 text-trace-faint">
-            <div>{session.startedAt}</div>
+            <div title={session.startedAt}>{formatSessionDate(session.startedAt)}</div>
             <div>{session.source}</div>
           </div>
         </div>
+        <div className="mt-5 flex items-stretch">
+          <select
+            aria-label={`Export format for ${session.track}`}
+            value={exportFormat}
+            onChange={(event) => setExportFormat(event.target.value as SessionExportFormat)}
+            className="min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold tracking-[.06em] text-trace-soft outline-none focus:border-trace-accent"
+          >
+            <option value="arrow">ARROW IPC · FULL FIDELITY</option>
+            <option value="csv">CSV · CORE CHANNELS</option>
+          </select>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => void exportTelemetry()}
+            className="border border-l-0 border-trace-accent-dark bg-trace-accent px-4 py-2.5 text-[10px] font-black tracking-[.1em] text-trace-base disabled:bg-trace-accent-muted disabled:text-trace-dim"
+          >
+            {exporting ? "EXPORTING" : "EXPORT"}
+          </button>
+        </div>
+        {exportMessage && (
+          <p className="mt-2 break-all font-mono text-[10px] leading-4 text-trace-faint" role="status">
+            {exportMessage}
+          </p>
+        )}
       </div>
       <div className="divide-y divide-trace-divider">
         {session.laps.map((lap) => (
@@ -172,6 +217,15 @@ function SessionRow({ session }: { session: RecordedSessionSummary }) {
       </div>
     </article>
   );
+}
+
+function formatSessionDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function Footer() {

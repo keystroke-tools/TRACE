@@ -59,6 +59,7 @@ Currently implemented:
 - Full canonical Apache Arrow IPC telemetry schema with v1 read compatibility
 - Measured Zstandard Arrow compression with selectable LZ4/uncompressed policies
 - Bounded lap-range Arrow reads backed by SQLite sample locators
+- Per-session full-fidelity Arrow and streaming core-channel CSV exports
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
 - Typed session-browser route with replay-fixture and empty native data states

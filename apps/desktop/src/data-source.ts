@@ -38,9 +38,18 @@ export interface RecordedSessionSummary {
   laps: RecordedLapSummary[];
 }
 
+export type SessionExportFormat = "arrow" | "csv";
+
+export interface SessionExport {
+  path: string;
+  format: string;
+  sampleCount: number;
+}
+
 export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
   getSessions(): Promise<RecordedSessionSummary[]>;
+  exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
 }
 
 export const fixtureDataSource: TelemetryDataSource = {
@@ -76,6 +85,13 @@ export const fixtureDataSource: TelemetryDataSource = {
       },
     ];
   },
+  async exportSession(_sessionId, format) {
+    return {
+      path: `Browser preview (${format.toUpperCase()})`,
+      format: format === "arrow" ? "Arrow IPC" : "CSV",
+      sampleCount: 0,
+    };
+  },
 };
 
 export const tauriDataSource: TelemetryDataSource = {
@@ -84,6 +100,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   getSessions() {
     return invoke<RecordedSessionSummary[]>("recent_sessions");
+  },
+  exportSession(sessionId, exportFormat) {
+    return invoke<SessionExport>("export_session", { sessionId, exportFormat });
   },
 };
 
