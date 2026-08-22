@@ -36,6 +36,11 @@ jobs:
           version: 2026.7.13
           cache: true
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-ci
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -67,6 +72,11 @@ jobs:
         with:
           version: 2026.7.13
           cache: true
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-ci
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
