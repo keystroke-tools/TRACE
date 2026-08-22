@@ -25,6 +25,7 @@ tauri-build.workspace = true
 serde.workspace = true
 serde_json = "1.0.145"
 tauri.workspace = true
+tauri-plugin-dialog = "2.7.2"
 time.workspace = true
 trace-ac = { path = "../../../crates/trace-ac" }
 trace-adapter = { path = "../../../crates/trace-adapter" }

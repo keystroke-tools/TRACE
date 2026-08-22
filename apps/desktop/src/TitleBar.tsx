@@ -12,7 +12,7 @@ function runWindowCommand(command: () => Promise<void>) {
   });
 }
 
-export function TitleBar({ status }: { status: TelemetryStatus | null }) {
+export function TitleBar({ status, onBack }: { status: TelemetryStatus | null; onBack?: () => void }) {
   const state = status?.connection ?? "waiting";
   const recording = state === "recording";
   const failed = state === "error";
@@ -30,13 +30,19 @@ export function TitleBar({ status }: { status: TelemetryStatus | null }) {
         <span className="text-trace-accent" data-tauri-drag-region>//</span>
       </div>
       <div
-        className="flex min-w-0 items-center px-[22px] text-xs tracking-[.1em] text-trace-soft"
+        className="flex min-w-0 items-center text-xs tracking-[.1em] text-trace-soft"
         data-tauri-drag-region
         onDoubleClick={() => {
           if (desktopWindow) runWindowCommand(() => desktopWindow.toggleMaximize());
         }}
       >
-        <span className="truncate" data-tauri-drag-region>{status?.session ?? "NO ACTIVE SESSION"}</span>
+        {onBack && (
+          <button type="button" onClick={onBack} className="flex h-full shrink-0 items-center gap-2 border-0 border-r border-trace-divider bg-transparent px-4 font-bold text-trace-muted hover:bg-trace-raised hover:text-trace-text" aria-label="Back to sessions">
+            <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
+            SESSIONS
+          </button>
+        )}
+        <span className="truncate px-[22px]" data-tauri-drag-region>{status?.session ?? "NO ACTIVE SESSION"}</span>
       </div>
       <div className="flex items-center gap-2.5 border-l border-trace-divider px-4 font-mono text-[12px] font-bold tracking-[.1em] text-trace-muted">
         <span

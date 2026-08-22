@@ -852,6 +852,7 @@ pub fn run() {
         CaptureStatus::for_adapter(&adapter_identity),
     ));
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(capture_status)
         .setup(move |app| {
             let directory = app.path().app_data_dir()?;

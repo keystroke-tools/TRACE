@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   telemetryDataSource,
   type GameInstallDirectory,
@@ -48,13 +49,13 @@ export function App() {
 
   return (
     <main className="grid h-screen grid-cols-[176px_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text max-[900px]:grid-cols-[140px_1fr]">
-      <TitleBar status={status} />
+      <TitleBar status={status} onBack={openSession ? () => setOpenSessionId(null) : undefined} />
       <Navigation active={section} onChange={(next) => { setSection(next); if (next !== "SESSIONS") setOpenSessionId(null); }} />
       <section className="trace-grid overflow-auto p-7">
         {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} onSelectSimulator={selectSimulator} />}
         {section === "SESSIONS" && (
           openSession ? (
-            <SessionDetail session={openSession} onBack={() => setOpenSessionId(null)} />
+            <SessionDetail session={openSession} />
           ) : (
             <Sessions
               sessions={sessions}
@@ -276,13 +277,30 @@ function Settings() {
     }
   }
 
+  async function chooseDirectory(directory: GameInstallDirectory) {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: drafts[directory.simulatorId]?.trim() || directory.path || undefined,
+        title: `Choose ${directory.simulatorName} folder`,
+      });
+      if (typeof selected === "string") {
+        setDrafts((current) => ({ ...current, [directory.simulatorId]: selected }));
+        await saveDirectory(directory.simulatorId, selected);
+      }
+    } catch (error) {
+      showToast({ kind: "error", title: "Folder picker unavailable", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    }
+  }
+
   return (
     <>
-      <PageIntro index="05" eyebrow="SETTINGS" title="GAME INSTALLATIONS" description="TRACE uses each game's installation folder to read its own car and track display names. Automatically detected paths can be reviewed or replaced here." />
+      <PageIntro index="05" eyebrow="PREFERENCES" title="SETTINGS" description="Control how TRACE connects to your simulators and works with their data. Recording, storage, analysis, and appearance preferences will also live here as those features become configurable." />
       <div className="mt-7 border border-trace-divider bg-trace-surface">
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
-          <p className="mt-1 text-[12px] leading-5 text-trace-dim">Set the main game folder—not its content, cars, or tracks subfolder.</p>
+          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Game roots give each simulator adapter access to the files and metadata needed for content identification, replay and setup workflows, and future integrations. Choose the main game folder—not one of its subfolders.</p>
         </div>
         {loading ? (
           <div className="p-6 font-mono text-[12px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
@@ -306,6 +324,10 @@ function Settings() {
                 INSTALL DIRECTORY
                 <div className="mt-1.5 flex">
                   <input value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))} placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+                  <button type="button" disabled={saving === directory.simulatorId} onClick={() => void chooseDirectory(directory)} className="flex h-11 w-28 items-center justify-center gap-2 border border-l-0 border-trace-divider bg-trace-surface text-[12px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:text-trace-dim">
+                    <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5h5l1.2 1.5h6.8v7.5h-13zM1.5 4.5V2.8h4.2l1.2 1.7" /></svg>
+                    BROWSE
+                  </button>
                   <button type="submit" disabled={saving === directory.simulatorId || unchanged || !draft.trim()} className="w-24 border border-l-0 border-trace-purple bg-trace-purple-wash text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">
                     {saving === directory.simulatorId ? "SAVING…" : "SAVE"}
                   </button>
@@ -571,7 +593,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
 
   return (
     <article className="relative border-b border-trace-divider last:border-b-0">
-      <div className="flex min-h-[82px] items-stretch">
+      <div className="flex min-h-[76px] items-stretch">
         <button
           type="button"
           aria-label={`View ${session.track} session`}
@@ -587,14 +609,15 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
           </div>
           <div className="min-w-0">
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
-            <span className="mt-1 block truncate text-[12px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}</span>
-            {(session.driver || session.ownership !== "unknown") && (
-              <span className="mt-1 flex min-w-0 items-center gap-2">
-                {session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
-                {session.driver && <span className="truncate text-[12px] text-trace-muted">{session.driver}</span>}
-              </span>
-            )}
-            {session.tags.length > 0 && <span className="mt-1 block truncate font-mono text-[12px] text-trace-purple">{session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}</span>}
+            <span className="mt-1 flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate text-[12px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}{session.driver ? ` · ${session.driver}` : ""}</span>
+              {session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
+              {session.tags.length > 0 && (
+                <Tooltip className="min-w-0 truncate font-mono text-[12px] text-trace-purple" content={session.tags.map((tag) => `#${tag}`).join("  ")}>
+                  {session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}
+                </Tooltip>
+              )}
+            </span>
           </div>
           <div className="font-mono">
             <span className="block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
@@ -665,7 +688,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
   );
 }
 
-function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; onBack: () => void }) {
+function SessionDetail({ session }: { session: RecordedSessionSummary }) {
   const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
   const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
   const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
@@ -690,11 +713,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
 
   return (
     <>
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 border-0 bg-transparent py-2 text-[12px] font-bold tracking-[.06em] text-trace-muted hover:text-trace-text">
-        <svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
-        ALL SESSIONS
-      </button>
-      <div className="mt-3 flex items-end justify-between gap-6">
+      <div className="flex items-end justify-between gap-6">
         <div className="min-w-0">
           <SectionHeading index="02">SESSION OVERVIEW</SectionHeading>
           <h1 className="mt-3 truncate text-2xl font-black tracking-[-.02em]">{session.title ?? session.track}</h1>
