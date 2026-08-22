@@ -61,6 +61,7 @@ pub struct TelemetryColumns {
     pub gear_value: Vec<Option<i16>>,
     pub sector_index: Vec<Option<u32>>,
     pub track_length_m: Option<f64>,
+    pub track_configuration: Option<String>,
 }
 
 /// Bounded summary derived from one lap's immutable telemetry sample range.
@@ -144,6 +145,14 @@ impl TelemetryColumns {
                     .copied()
                     .filter(|value| value.is_finite() && *value > 0.0)
             }),
+            track_configuration: frames.iter().find_map(|frame| {
+                frame
+                    .native
+                    .as_deref()
+                    .and_then(|native| native.text_fields.get("static.track_configuration"))
+                    .filter(|value| !value.is_empty())
+                    .cloned()
+            }),
         }
     }
 
@@ -176,6 +185,7 @@ impl TelemetryColumns {
             gear_value: Vec::new(),
             sector_index: Vec::new(),
             track_length_m: None,
+            track_configuration: None,
         }
     }
 }
@@ -835,6 +845,20 @@ fn native_float_value(map: &MapArray, row: usize, key: &str) -> Option<f64> {
         .and_then(|index| (!values.is_null(index)).then(|| values.value(index)))
 }
 
+fn native_text_value(map: &MapArray, row: usize, key: &str) -> Option<String> {
+    if map.is_null(row) {
+        return None;
+    }
+    let entries = map.value(row);
+    let entries = entries.as_any().downcast_ref::<StructArray>()?;
+    let keys = entries.column(0).as_any().downcast_ref::<StringArray>()?;
+    let values = entries.column(1).as_any().downcast_ref::<StringArray>()?;
+    (0..entries.len())
+        .find(|index| !keys.is_null(*index) && keys.value(*index) == key)
+        .and_then(|index| (!values.is_null(index)).then(|| values.value(index).to_owned()))
+        .filter(|value| !value.is_empty())
+}
+
 #[allow(clippy::cast_possible_truncation)]
 fn narrow_native_float(value: f64) -> f32 {
     value as f32
@@ -929,6 +953,13 @@ fn extend_projection(
             native_float_value(native, row, "static.track_spline_length_m")
                 .filter(|value| value.is_finite() && *value > 0.0)
         });
+    }
+    if decoded.track_configuration.is_none()
+        && let Ok(index) = batch.schema().index_of("native_text_fields")
+        && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
+    {
+        decoded.track_configuration = (start..start + length)
+            .find_map(|row| native_text_value(native, row, "static.track_configuration"));
     }
     Ok(())
 }
@@ -1294,6 +1325,13 @@ mod tests {
                     normalized_position: Some(0.25),
                     ..LapObservation::default()
                 },
+                native: Some(Box::new(NativeTelemetrySample {
+                    text_fields: BTreeMap::from([(
+                        "static.track_configuration".into(),
+                        "layout_gp".into(),
+                    )]),
+                    ..NativeTelemetrySample::default()
+                })),
                 ..TelemetryFrame::default()
             },
             TelemetryFrame {
@@ -1313,6 +1351,8 @@ mod tests {
         assert_eq!(decoded.throttle, vec![Some(0.5), None]);
         assert_eq!(decoded.brake, vec![None, Some(0.8)]);
         assert_eq!(decoded.speed_mps, vec![Some(30.0), None]);
+        let projected = read_columns_range(Cursor::new(bytes), 0, 2).expect("full projection");
+        assert_eq!(projected.track_configuration.as_deref(), Some("layout_gp"));
     }
 
     #[test]

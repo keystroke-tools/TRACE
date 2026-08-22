@@ -292,7 +292,10 @@ remain viewable because their telemetry can still diagnose a mistake.
 The map supports zooming and panning and marks the start and current cursor position.
 For Assetto Corsa, TRACE loads the installed circuit `map.png` and its `data/map.ini`
 coordinate transform when both are present, then overlays recorded world positions on
-the game's road outline. Missing, oversized, malformed, or unsafe asset paths fall
+the game's road outline. The recorder stores AC's track configuration for new sessions;
+for older sessions whose metadata predates that field, the visualizer recovers the
+configuration from the immutable native telemetry before resolving layout-specific
+maps. Missing, oversized, malformed, or unsafe asset paths fall
 back to the driven line and are labelled as lacking road edges; TRACE does not invent
 track limits.
 

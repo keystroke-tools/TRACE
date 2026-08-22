@@ -128,7 +128,7 @@ pub fn map_session(
         source_session_id: None,
         car_id: page.car_model(),
         track_id: page.track(),
-        layout_id: None,
+        layout_id: page.track_configuration(),
         session_type: None,
     };
     let ambient_temperature_c = finite(page.air_temperature());
@@ -255,15 +255,17 @@ mod tests {
 
     #[test]
     fn static_utf16_identity_and_conditions_are_mapped() {
-        let mut page = vec![0; pages::STATIC_PREFIX_LENGTH];
+        let mut page = vec![0; pages::STATIC_PAGE_LENGTH];
         put_utf16(&mut page, 68, 33, "tatuusfa1");
         put_utf16(&mut page, 134, 33, "mugello");
+        put_utf16(&mut page, 524, 33, "layout_gp");
         put_f32(&mut page, 456, 24.0);
         put_f32(&mut page, 460, 31.0);
 
         let (session, environment) = map_session(&page).expect("valid static page");
         assert_eq!(session.car_id.as_deref(), Some("tatuusfa1"));
         assert_eq!(session.track_id.as_deref(), Some("mugello"));
+        assert_eq!(session.layout_id.as_deref(), Some("layout_gp"));
         assert_eq!(
             environment.and_then(|value| value.track_temperature_c),
             Some(31.0)

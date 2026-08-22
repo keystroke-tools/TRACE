@@ -15,6 +15,7 @@ const STATIC_AC_VERSION_OFFSET: usize = 30;
 const STATIC_VERSION_SLOTS: usize = 15;
 const STATIC_CAR_MODEL_OFFSET: usize = 68;
 const STATIC_TRACK_OFFSET: usize = 134;
+const STATIC_TRACK_CONFIGURATION_OFFSET: usize = 524;
 const STATIC_ID_SLOTS: usize = 33;
 const STATIC_AIR_TEMPERATURE_OFFSET: usize = 456;
 const STATIC_ROAD_TEMPERATURE_OFFSET: usize = 460;
@@ -118,6 +119,12 @@ impl<'a> StaticPage<'a> {
     }
     pub(crate) fn track(&self) -> Option<String> {
         read_utf16(self.0, STATIC_TRACK_OFFSET, STATIC_ID_SLOTS)
+    }
+    pub(crate) fn track_configuration(&self) -> Option<String> {
+        if self.0.len() < STATIC_TRACK_CONFIGURATION_OFFSET + STATIC_ID_SLOTS * 2 {
+            return None;
+        }
+        read_utf16(self.0, STATIC_TRACK_CONFIGURATION_OFFSET, STATIC_ID_SLOTS)
     }
     pub(crate) fn air_temperature(&self) -> f32 {
         read_f32(self.0, STATIC_AIR_TEMPERATURE_OFFSET)

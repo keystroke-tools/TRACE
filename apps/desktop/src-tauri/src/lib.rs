@@ -570,7 +570,11 @@ fn compare_session_laps(
 
     let reference_lap_time = format_optional_lap_time(reference.duration_ns);
     let comparison_lap_time = format_optional_lap_time(comparison.duration_ns);
-    let track_map = track_map_for_session(&store, &reference_session)?;
+    let track_map = track_map_for_session(
+        &store,
+        &reference_session,
+        reference_columns.track_configuration.as_deref(),
+    )?;
     Ok(LapComparison {
         reference_session_id,
         reference_session_title: reference_session.user_title,
@@ -685,7 +689,8 @@ fn visualize_session_lap(
         })
         .collect();
     let lap_time = format_optional_lap_time(lap.duration_ns);
-    let track_map = track_map_for_session(&store, &session)?;
+    let track_map =
+        track_map_for_session(&store, &session, columns.track_configuration.as_deref())?;
     Ok(LapTrace {
         session_id,
         lap_index,
@@ -701,6 +706,7 @@ fn visualize_session_lap(
 fn track_map_for_session(
     store: &MetadataStore,
     session: &SessionSummary,
+    recorded_layout: Option<&str>,
 ) -> Result<Option<AcTrackMap>, String> {
     if session.simulator_key != "assetto-corsa" {
         return Ok(None);
@@ -712,8 +718,12 @@ fn track_map_for_session(
         .simulator_install_path("assetto-corsa")
         .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
         .map(PathBuf::from);
-    Ok(AcContentNames::discover(configured_path.as_deref())
-        .track_map(source_track_id, session.layout_id.as_deref()))
+    Ok(
+        AcContentNames::discover(configured_path.as_deref()).track_map(
+            source_track_id,
+            recorded_layout.or(session.layout_id.as_deref()),
+        ),
+    )
 }
 
 fn lap_is_invalid_for_comparison(validity: &str, max_tyres_out: Option<u8>) -> bool {
