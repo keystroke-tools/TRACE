@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
+const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -46,6 +47,14 @@ pub struct NewLap {
     pub sample_start: u64,
     pub sample_count: u64,
     pub is_personal_best: bool,
+    pub sectors: Vec<NewSector>,
+}
+
+/// One sector time to commit with a completed lap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NewSector {
+    pub index: u32,
+    pub duration_ns: u64,
 }
 
 /// Display-safe lap metadata returned to the desktop application.
@@ -56,6 +65,14 @@ pub struct LapSummary {
     pub validity: String,
     pub validity_reason: Option<String>,
     pub is_personal_best: bool,
+    pub sectors: Vec<SectorSummary>,
+}
+
+/// Display-safe sector timing returned to the desktop application.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SectorSummary {
+    pub index: u32,
+    pub duration_ns: u64,
 }
 
 /// Display-safe locally persisted session metadata.
@@ -125,13 +142,23 @@ impl MetadataStore {
                 supported: SCHEMA_VERSION,
             });
         }
-        if current == 0 {
+        if current < 1 {
             let transaction = connection.transaction().map_err(MetadataError::from)?;
             transaction
                 .execute_batch(MIGRATION_1)
                 .map_err(MetadataError::from)?;
             transaction
-                .pragma_update(None, "user_version", SCHEMA_VERSION)
+                .pragma_update(None, "user_version", 1)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
+        if current < 2 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_2)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 2)
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
@@ -281,6 +308,15 @@ impl MetadataStore {
                     ],
                 )
                 .map_err(MetadataError::from)?;
+            for sector in &lap.sectors {
+                transaction
+                    .execute(
+                        "INSERT INTO lap_sectors (lap_id, sector_index, duration_ns)
+                         VALUES (?1, ?2, ?3)",
+                        params![lap.id, i64::from(sector.index), to_i64(sector.duration_ns)?],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
         }
         let changed = transaction
             .execute(
@@ -345,26 +381,54 @@ impl MetadataStore {
         let mut lap_statement = self
             .connection
             .prepare(
-                "SELECT lap_index, duration_ns, validity, validity_reason, is_personal_best
+                "SELECT id, lap_index, duration_ns, validity, validity_reason, is_personal_best
                  FROM laps WHERE session_id = ?1 ORDER BY lap_index",
             )
             .map_err(MetadataError::from)?;
         for session in &mut sessions {
-            session.laps = lap_statement
+            let laps: Vec<(String, LapSummary)> = lap_statement
                 .query_map([&session.id], |row| {
-                    let index: u32 = row.get(0)?;
-                    let duration = optional_row_u64(row, 1)?;
-                    Ok(LapSummary {
-                        index,
-                        duration_ns: duration,
-                        validity: row.get(2)?,
-                        validity_reason: row.get(3)?,
-                        is_personal_best: row.get(4)?,
-                    })
+                    let id: String = row.get(0)?;
+                    let index: u32 = row.get(1)?;
+                    let duration = optional_row_u64(row, 2)?;
+                    Ok((
+                        id,
+                        LapSummary {
+                            index,
+                            duration_ns: duration,
+                            validity: row.get(3)?,
+                            validity_reason: row.get(4)?,
+                            is_personal_best: row.get(5)?,
+                            sectors: Vec::new(),
+                        },
+                    ))
                 })
                 .map_err(MetadataError::from)?
                 .collect::<Result<_, _>>()
                 .map_err(MetadataError::from)?;
+            let mut sector_statement = self
+                .connection
+                .prepare(
+                    "SELECT sector_index, duration_ns FROM lap_sectors
+                     WHERE lap_id = ?1 ORDER BY sector_index",
+                )
+                .map_err(MetadataError::from)?;
+            session.laps = laps
+                .into_iter()
+                .map(|(lap_id, mut lap)| {
+                    lap.sectors = sector_statement
+                        .query_map([lap_id], |row| {
+                            Ok(SectorSummary {
+                                index: row.get(0)?,
+                                duration_ns: row_u64(row, 1)?,
+                            })
+                        })
+                        .map_err(MetadataError::from)?
+                        .collect::<Result<_, _>>()
+                        .map_err(MetadataError::from)?;
+                    Ok(lap)
+                })
+                .collect::<Result<_, MetadataError>>()?;
         }
         Ok(sessions)
     }
@@ -566,6 +630,15 @@ fn validate_laps(laps: &[NewLap], samples: u64) -> Result<(), MetadataError> {
                 "lap sample range exceeds telemetry blob".into(),
             ));
         }
+        if lap
+            .sectors
+            .iter()
+            .any(|sector| sector.index == 0 || sector.duration_ns == 0)
+        {
+            return Err(MetadataError::InvalidRecord(
+                "sector index and duration must be greater than zero".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -593,6 +666,13 @@ fn optional_row_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<O
             })
         })
         .transpose()
+}
+
+fn row_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
+    let value: i64 = row.get(index)?;
+    u64::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(index, Type::Integer, Box::new(error))
+    })
 }
 
 impl From<rusqlite::Error> for MetadataError {
@@ -640,7 +720,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 1);
+        assert_eq!(store.schema_version().expect("schema version"), 2);
 
         let mut statement = store
             .connection
@@ -654,8 +734,35 @@ mod tests {
 
         assert!(tables.contains(&"sessions".to_owned()));
         assert!(tables.contains(&"laps".to_owned()));
+        assert!(tables.contains(&"lap_sectors".to_owned()));
         assert!(tables.contains(&"telemetry_blobs".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
+    }
+
+    #[test]
+    fn version_one_database_migrates_without_losing_existing_rows() {
+        let connection = Connection::open_in_memory().expect("database");
+        connection
+            .execute_batch(MIGRATION_1)
+            .expect("version one schema");
+        connection
+            .pragma_update(None, "user_version", 1)
+            .expect("version one marker");
+        connection
+            .execute(
+                "INSERT INTO simulators (id, key) VALUES ('sim-ac', 'assetto-corsa')",
+                [],
+            )
+            .expect("existing row");
+
+        let store = MetadataStore::configure_and_migrate(connection).expect("migration");
+
+        assert_eq!(store.schema_version().expect("schema version"), 2);
+        let simulator_count: u32 = store
+            .connection
+            .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
+            .expect("simulator count");
+        assert_eq!(simulator_count, 1);
     }
 
     #[test]
@@ -690,6 +797,16 @@ mod tests {
                         sample_start: 0,
                         sample_count: 100,
                         is_personal_best: true,
+                        sectors: vec![
+                            NewSector {
+                                index: 1,
+                                duration_ns: 36_370_000_000,
+                            },
+                            NewSector {
+                                index: 2,
+                                duration_ns: 37_201_000_000,
+                            },
+                        ],
                     },
                     NewLap {
                         id: "lap-2".into(),
@@ -701,6 +818,7 @@ mod tests {
                         sample_start: 100,
                         sample_count: 100,
                         is_personal_best: false,
+                        sectors: Vec::new(),
                     },
                 ],
             )
@@ -713,6 +831,19 @@ mod tests {
         assert_eq!(summaries[0].laps.len(), 2);
         assert_eq!(summaries[0].laps[0].duration_ns, Some(110_906_000_000));
         assert!(summaries[0].laps[0].is_personal_best);
+        assert_eq!(
+            summaries[0].laps[0].sectors,
+            vec![
+                SectorSummary {
+                    index: 1,
+                    duration_ns: 36_370_000_000,
+                },
+                SectorSummary {
+                    index: 2,
+                    duration_ns: 37_201_000_000,
+                },
+            ]
+        );
         assert_eq!(
             summaries[0].laps[1].validity_reason.as_deref(),
             Some("session ended")
@@ -768,6 +899,7 @@ mod tests {
                 sample_start: 150,
                 sample_count: 100,
                 is_personal_best: false,
+                sectors: Vec::new(),
             }],
         );
         assert!(matches!(error, Err(MetadataError::InvalidRecord(_))));

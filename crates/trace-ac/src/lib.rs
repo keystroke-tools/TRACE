@@ -73,6 +73,8 @@ pub fn map_frame(
             current_lap_time_ns: milliseconds_to_nanoseconds(graphics.current_time_ms()),
             // AC's distanceTraveled semantics are not treated as lap distance.
             simulator_distance_m: None,
+            current_sector_index: non_negative_i32(graphics.current_sector_index()),
+            last_sector_time_ns: milliseconds_to_nanoseconds(graphics.last_sector_time_ms()),
         },
         inputs: DriverInputs {
             throttle: ratio(physics.gas()),
@@ -213,6 +215,8 @@ mod tests {
         let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
         put_i32(&mut graphics, 132, 2);
         put_i32(&mut graphics, 140, 12_345);
+        put_i32(&mut graphics, 164, 1);
+        put_i32(&mut graphics, 168, 36_370);
         put_f32(&mut graphics, 248, 0.5);
         put_f32(&mut graphics, 252, 100.0);
 
@@ -229,6 +233,8 @@ mod tests {
         assert_eq!(frame.lap.completed_laps, Some(2));
         assert_eq!(frame.lap.normalized_position, Some(0.5));
         assert_eq!(frame.lap.current_lap_time_ns, Some(12_345_000_000));
+        assert_eq!(frame.lap.current_sector_index, Some(1));
+        assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
         assert_eq!(frame.motion.position_m.map(|value| value.x), Some(100.0));
         assert_eq!(
             frame.wheels[&WheelCorner::FrontLeft].tyre_core_temperature_c,

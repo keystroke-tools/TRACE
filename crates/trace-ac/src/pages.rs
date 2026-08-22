@@ -77,6 +77,12 @@ impl<'a> GraphicsPage<'a> {
     pub(crate) fn current_time_ms(&self) -> i32 {
         read_i32(self.0, 140)
     }
+    pub(crate) fn current_sector_index(&self) -> i32 {
+        read_i32(self.0, 164)
+    }
+    pub(crate) fn last_sector_time_ms(&self) -> i32 {
+        read_i32(self.0, 168)
+    }
     pub(crate) fn normalized_car_position(&self) -> f32 {
         read_f32(self.0, 248)
     }

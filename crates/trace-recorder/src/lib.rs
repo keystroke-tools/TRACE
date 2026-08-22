@@ -14,6 +14,14 @@ pub struct RecordedLap {
     pub sample_start: u64,
     pub sample_count: u64,
     pub partial: bool,
+    pub sectors: Vec<RecordedSector>,
+}
+
+/// One simulator-observed sector completed within a recorded lap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecordedSector {
+    pub index: u32,
+    pub duration_ns: u64,
 }
 
 /// An immutable in-memory recording ready for encoding and durable persistence.
@@ -71,12 +79,14 @@ struct ActiveSession {
     current_lap: Option<OpenLap>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct OpenLap {
     index: u32,
     sample_start: u64,
     started_offset_ns: u64,
     started_at_boundary: bool,
+    current_sector_index: Option<u32>,
+    sectors: Vec<RecordedSector>,
 }
 
 /// Converts adapter lifecycle events into bounded session recordings.
@@ -220,18 +230,22 @@ impl ActiveSession {
         }
 
         let sample_index = self.sample_count;
+        self.observe_sector(frame);
         if let Some(completed_laps) = frame.lap.completed_laps {
-            match self.current_lap {
+            match self.current_lap.as_ref() {
                 None => {
                     self.current_lap = Some(OpenLap {
                         index: completed_laps,
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: false,
+                        current_sector_index: frame.lap.current_sector_index,
+                        sectors: Vec::new(),
                     });
                 }
                 Some(open) if completed_laps == open.index => {}
                 Some(open) if completed_laps == open.index + 1 => {
+                    let open = self.current_lap.take().expect("open lap exists");
                     self.laps.push(RecordedLap {
                         lap_index: open.index.saturating_add(1),
                         started_offset_ns: open.started_offset_ns,
@@ -241,12 +255,15 @@ impl ActiveSession {
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
                         partial: !open.started_at_boundary,
+                        sectors: open.sectors,
                     });
                     self.current_lap = Some(OpenLap {
                         index: completed_laps,
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: true,
+                        current_sector_index: frame.lap.current_sector_index,
+                        sectors: Vec::new(),
                     });
                 }
                 Some(open) if completed_laps < open.index => {
@@ -264,6 +281,27 @@ impl ActiveSession {
             self.frames.push(frame.clone());
         }
         Ok(())
+    }
+
+    fn observe_sector(&mut self, frame: &TelemetryFrame) {
+        let Some(open) = self.current_lap.as_mut() else {
+            return;
+        };
+        let Some(current) = frame.lap.current_sector_index else {
+            return;
+        };
+        let Some(previous) = open.current_sector_index.replace(current) else {
+            return;
+        };
+        if current == previous {
+            return;
+        }
+        if let Some(duration_ns) = frame.lap.last_sector_time_ns.filter(|value| *value > 0) {
+            open.sectors.push(RecordedSector {
+                index: previous.saturating_add(1),
+                duration_ns,
+            });
+        }
     }
 
     fn finish(self, end_reason: RecordingEndReason) -> RecordedSession {
@@ -349,6 +387,7 @@ mod tests {
                     sample_start: 0,
                     sample_count: 3,
                     partial: true,
+                    sectors: Vec::new(),
                 },
                 RecordedLap {
                     lap_index: 2,
@@ -357,6 +396,56 @@ mod tests {
                     sample_start: 3,
                     sample_count: 3,
                     partial: false,
+                    sectors: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn records_real_sector_crossings_with_the_completed_lap() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for (sequence, elapsed, completed, sector, last_sector_time) in [
+            (1, 100, 0, 0, None),
+            (2, 200, 0, 1, Some(30)),
+            (3, 300, 0, 2, Some(40)),
+            (4, 400, 1, 0, Some(50)),
+            (5, 500, 1, 1, Some(29)),
+            (6, 600, 1, 2, Some(39)),
+            (7, 700, 2, 0, Some(49)),
+        ] {
+            let mut value = frame(sequence, elapsed, completed, 0);
+            value.lap.current_sector_index = Some(sector);
+            value.lap.last_sector_time_ns = last_sector_time;
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(
+            session.laps[1].sectors,
+            vec![
+                RecordedSector {
+                    index: 1,
+                    duration_ns: 29
+                },
+                RecordedSector {
+                    index: 2,
+                    duration_ns: 39
+                },
+                RecordedSector {
+                    index: 3,
+                    duration_ns: 49
                 },
             ]
         );

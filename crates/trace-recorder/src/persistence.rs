@@ -137,6 +137,12 @@ fn index_recording(
     descriptor: &CompletionDescriptor,
     blob: BlobMetadata,
 ) -> Result<PersistedRecording, PersistenceError> {
+    let fastest_lap = recording
+        .laps
+        .iter()
+        .filter(|lap| !lap.partial)
+        .filter_map(|lap| lap.duration_ns)
+        .min();
     let laps = recording
         .laps
         .iter()
@@ -156,7 +162,17 @@ fn index_recording(
             ),
             sample_start: lap.sample_start,
             sample_count: lap.sample_count,
-            is_personal_best: false,
+            is_personal_best: lap
+                .duration_ns
+                .is_some_and(|time| Some(time) == fastest_lap),
+            sectors: lap
+                .sectors
+                .iter()
+                .map(|sector| trace_storage::metadata::NewSector {
+                    index: sector.index,
+                    duration_ns: sector.duration_ns,
+                })
+                .collect(),
         })
         .collect::<Vec<_>>();
 
@@ -233,6 +249,16 @@ mod tests {
                 sample_start: 0,
                 sample_count: 3,
                 partial: false,
+                sectors: vec![
+                    crate::RecordedSector {
+                        index: 1,
+                        duration_ns: 70,
+                    },
+                    crate::RecordedSector {
+                        index: 2,
+                        duration_ns: 65,
+                    },
+                ],
             }],
             end_reason: RecordingEndReason::Disconnected(DisconnectReason::SessionEnded),
         }
@@ -269,6 +295,9 @@ mod tests {
         let summaries = metadata.recent_sessions(10).expect("summaries");
         assert_eq!(summaries[0].laps.len(), 1);
         assert_eq!(summaries[0].laps[0].validity, "unknown");
+        assert!(summaries[0].laps[0].is_personal_best);
+        assert_eq!(summaries[0].laps[0].sectors.len(), 2);
+        assert_eq!(summaries[0].laps[0].sectors[1].duration_ns, 65);
         assert_eq!(
             summaries[0].laps[0].validity_reason.as_deref(),
             Some("simulator validity evidence unavailable")

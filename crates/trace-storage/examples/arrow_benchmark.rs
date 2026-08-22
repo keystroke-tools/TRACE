@@ -114,6 +114,8 @@ fn synthetic_frame(sequence: u64, rate_hz: u32) -> TelemetryFrame {
             simulator_distance_m: Some(
                 f64::from(lap_position) * 5_400.0 / f64::from(lap_denominator),
             ),
+            current_sector_index: None,
+            last_sector_time_ns: None,
         },
         inputs: DriverInputs {
             throttle: Some((0.65 + wave * 0.3).clamp(0.0, 1.0) as f32),

@@ -18,10 +18,10 @@ use arrow_schema::{DataType, Field, Schema};
 use trace_domain::{CoordinateFrame, Gear, TelemetryFrame, WheelCorner};
 
 const FORMAT_NAME: &str = "trace.telemetry";
-const SCHEMA_VERSION: &str = "2";
+const SCHEMA_VERSION: &str = "3";
 
 /// Current full-fidelity telemetry schema version written by TRACE.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 2;
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 3;
 
 /// Compression policies supported by the standard Arrow IPC file writer.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -352,6 +352,12 @@ fn record_batch(frames: &[TelemetryFrame]) -> Result<RecordBatch, IpcError> {
             wheel_f32(frames, WheelCorner::RearRight, |value| {
                 value.suspension_travel_m
             }),
+            Arc::new(UInt32Array::from_iter(
+                frames.iter().map(|frame| frame.lap.current_sector_index),
+            )),
+            Arc::new(UInt64Array::from_iter(
+                frames.iter().map(|frame| frame.lap.last_sector_time_ns),
+            )),
         ],
     )
     .map_err(IpcError::from)
@@ -582,7 +588,7 @@ fn extend_projection(
     Ok(())
 }
 
-fn schema() -> Schema {
+fn schema_v2() -> Schema {
     Schema::new_with_metadata(
         vec![
             Field::new("sequence", DataType::UInt64, false),
@@ -634,6 +640,32 @@ fn schema() -> Schema {
         ],
         HashMap::from([
             ("trace.format".into(), FORMAT_NAME.into()),
+            ("trace.schema_version".into(), "2".into()),
+            ("trace.units".into(), "si".into()),
+        ]),
+    )
+}
+
+fn schema() -> Schema {
+    let mut fields = schema_v2()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    fields.push(Field::new(
+        "lap_current_sector_index",
+        DataType::UInt32,
+        true,
+    ));
+    fields.push(Field::new(
+        "lap_last_sector_time_ns",
+        DataType::UInt64,
+        true,
+    ));
+    Schema::new_with_metadata(
+        fields,
+        HashMap::from([
+            ("trace.format".into(), FORMAT_NAME.into()),
             ("trace.schema_version".into(), SCHEMA_VERSION.into()),
             ("trace.units".into(), "si".into()),
         ]),
@@ -670,6 +702,7 @@ fn validate_schema(value: &Schema) -> Result<(), IpcError> {
         .map(String::as_str);
     let fields_match = match version {
         Some("1") => value.fields() == schema_v1().fields(),
+        Some("2") => value.fields() == schema_v2().fields(),
         Some(SCHEMA_VERSION) => value.fields() == schema().fields(),
         _ => false,
     };
@@ -719,6 +752,16 @@ fn nullable_u32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u32>>, I
         .column(index)
         .as_any()
         .downcast_ref::<UInt32Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    Ok(array.iter().collect())
+}
+
+#[cfg(test)]
+fn nullable_u64(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u64>>, IpcError> {
+    let array = batch
+        .column(index)
+        .as_any()
+        .downcast_ref::<UInt64Array>()
         .ok_or(IpcError::UnsupportedSchema)?;
     Ok(array.iter().collect())
 }
@@ -909,7 +952,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_v2_preserves_full_canonical_channel_families() {
+    fn schema_v3_preserves_full_canonical_channel_families() {
         let mut wheels = trace_domain::WheelStates::new();
         wheels.insert(
             WheelCorner::FrontLeft,
@@ -928,6 +971,8 @@ mod tests {
                 normalized_position: Some(0.4),
                 current_lap_time_ns: Some(9),
                 simulator_distance_m: Some(10.0),
+                current_sector_index: Some(1),
+                last_sector_time_ns: Some(11),
             },
             inputs: DriverInputs {
                 clutch: Some(0.2),
@@ -970,9 +1015,9 @@ mod tests {
         let mut reader = FileReader::try_new(Cursor::new(bytes), None).expect("reader");
         assert_eq!(
             reader.schema().metadata().get("trace.schema_version"),
-            Some(&"2".to_owned())
+            Some(&"3".to_owned())
         );
-        assert_eq!(reader.schema().fields().len(), 46);
+        assert_eq!(reader.schema().fields().len(), 48);
         let batch = reader.next().expect("batch").expect("valid batch");
         assert_eq!(nullable_u32(&batch, 7).expect("laps"), vec![Some(3)]);
         assert_eq!(nullable_i8(&batch, 13).expect("gear kind"), vec![Some(2)]);
@@ -998,6 +1043,11 @@ mod tests {
             vec![Some(42.0)]
         );
         assert_eq!(nullable_f32(&batch, 34).expect("missing wheel"), vec![None]);
+        assert_eq!(nullable_u32(&batch, 46).expect("sector"), vec![Some(1)]);
+        assert_eq!(
+            nullable_u64(&batch, 47).expect("sector time"),
+            vec![Some(11)]
+        );
     }
 
     #[test]
@@ -1025,6 +1075,11 @@ mod tests {
         let decoded = decode_columns(&bytes).expect("v1 projection");
         assert_eq!(decoded.sequence, vec![1]);
         assert_eq!(decoded.speed_mps, vec![Some(40.0)]);
+    }
+
+    #[test]
+    fn schema_v2_remains_supported_after_sector_fields_are_added() {
+        assert_eq!(validate_schema(&schema_v2()), Ok(()));
     }
 
     #[test]

@@ -25,5 +25,7 @@ fn captured_ac_1_16_4_fixture_maps_through_the_canonical_boundary() {
     assert_eq!(frame.lap.completed_laps, Some(23));
     assert_eq!(frame.lap.current_lap_time_ns, Some(243_430_000_000));
     assert_eq!(frame.lap.normalized_position, Some(0.028_426_468));
+    assert_eq!(frame.lap.current_sector_index, Some(0));
+    assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
     assert_eq!(frame.wheels.len(), 4);
 }
