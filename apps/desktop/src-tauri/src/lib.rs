@@ -293,128 +293,141 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
         source: snapshot.source,
         sample_rate_hz: snapshot.sample_rate_hz,
         session: snapshot.session,
-        channels: vec![
-            ChannelCapability {
-                id: "inputs.throttle",
-                label: "Throttle",
-                category: "DRIVER INPUTS",
-                detail: "Pedal position",
-                available: true,
-            },
-            ChannelCapability {
-                id: "inputs.brake",
-                label: "Brake",
-                category: "DRIVER INPUTS",
-                detail: "Pedal position",
-                available: true,
-            },
-            ChannelCapability {
-                id: "vehicle.speed",
-                label: "Speed",
-                category: "VEHICLE",
-                detail: "Metres per second",
-                available: true,
-            },
-            ChannelCapability {
-                id: "vehicle.engine_rpm",
-                label: "Engine RPM",
-                category: "VEHICLE",
-                detail: "Revolutions per minute",
-                available: true,
-            },
-            ChannelCapability {
-                id: "vehicle.gear",
-                label: "Gear",
-                category: "VEHICLE",
-                detail: "Reverse, neutral, or forward gear",
-                available: true,
-            },
-            ChannelCapability {
-                id: "vehicle.fuel",
-                label: "Fuel",
-                category: "VEHICLE",
-                detail: "Litres remaining",
-                available: true,
-            },
-            ChannelCapability {
-                id: "lap.position",
-                label: "Lap position",
-                category: "LAP PROGRESS",
-                detail: "Normalized track position",
-                available: true,
-            },
-            ChannelCapability {
-                id: "lap.current_time",
-                label: "Current lap time",
-                category: "LAP PROGRESS",
-                detail: "Simulator timer",
-                available: true,
-            },
-            ChannelCapability {
-                id: "environment.air_temperature",
-                label: "Air temperature",
-                category: "CONDITIONS",
-                detail: "Degrees Celsius",
-                available: true,
-            },
-            ChannelCapability {
-                id: "environment.track_temperature",
-                label: "Track temperature",
-                category: "CONDITIONS",
-                detail: "Degrees Celsius",
-                available: true,
-            },
-            ChannelCapability {
-                id: "motion.position",
-                label: "World position",
-                category: "MOTION",
-                detail: "Three-axis source-world coordinates",
-                available: true,
-            },
-            ChannelCapability {
-                id: "motion.velocity",
-                label: "Velocity",
-                category: "MOTION",
-                detail: "Three-axis metres per second",
-                available: true,
-            },
-            ChannelCapability {
-                id: "motion.acceleration",
-                label: "Acceleration",
-                category: "MOTION",
-                detail: "Three-axis metres per second squared",
-                available: true,
-            },
-            ChannelCapability {
-                id: "wheels.tyre_core_temperature",
-                label: "Tyre core temperature",
-                category: "WHEELS",
-                detail: "Degrees Celsius at all four corners",
-                available: true,
-            },
-            ChannelCapability {
-                id: "wheels.suspension_travel",
-                label: "Suspension travel",
-                category: "WHEELS",
-                detail: "Metres at all four corners",
-                available: true,
-            },
-            ChannelCapability {
-                id: "inputs.steering",
-                label: "Steering angle",
-                category: "NEEDS VALIDATION",
-                detail: "AC does not document a reliable unit or sign",
-                available: false,
-            },
-            ChannelCapability {
-                id: "tyres.extended",
-                label: "Extended tyre data",
-                category: "NEEDS VALIDATION",
-                detail: "Pressure, slip, load, and wear need fixture validation",
-                available: false,
-            },
-        ],
+        channels: ac_channel_capabilities(),
     }
+}
+
+type ChannelCapabilityDefinition = (&'static str, &'static str, &'static str, &'static str, bool);
+
+const AC_CHANNEL_CAPABILITY_DEFINITIONS: [ChannelCapabilityDefinition; 17] = [
+    (
+        "inputs.throttle",
+        "Throttle",
+        "DRIVER INPUTS",
+        "Pedal position",
+        true,
+    ),
+    (
+        "inputs.brake",
+        "Brake",
+        "DRIVER INPUTS",
+        "Pedal position",
+        true,
+    ),
+    (
+        "vehicle.speed",
+        "Speed",
+        "VEHICLE",
+        "Metres per second",
+        true,
+    ),
+    (
+        "vehicle.engine_rpm",
+        "Engine RPM",
+        "VEHICLE",
+        "Revolutions per minute",
+        true,
+    ),
+    (
+        "vehicle.gear",
+        "Gear",
+        "VEHICLE",
+        "Reverse, neutral, or forward gear",
+        true,
+    ),
+    ("vehicle.fuel", "Fuel", "VEHICLE", "Litres remaining", true),
+    (
+        "lap.position",
+        "Lap position",
+        "LAP PROGRESS",
+        "Normalized track position",
+        true,
+    ),
+    (
+        "lap.current_time",
+        "Current lap time",
+        "LAP PROGRESS",
+        "Simulator timer",
+        true,
+    ),
+    (
+        "environment.air_temperature",
+        "Air temperature",
+        "CONDITIONS",
+        "Degrees Celsius",
+        true,
+    ),
+    (
+        "environment.track_temperature",
+        "Track temperature",
+        "CONDITIONS",
+        "Degrees Celsius",
+        true,
+    ),
+    (
+        "motion.position",
+        "World position",
+        "MOTION",
+        "Three-axis source-world coordinates",
+        true,
+    ),
+    (
+        "motion.velocity",
+        "Velocity",
+        "MOTION",
+        "Three-axis metres per second",
+        true,
+    ),
+    (
+        "motion.acceleration",
+        "Acceleration",
+        "MOTION",
+        "Three-axis metres per second squared",
+        true,
+    ),
+    (
+        "wheels.tyre_core_temperature",
+        "Tyre core temperature",
+        "WHEELS",
+        "Degrees Celsius at all four corners",
+        true,
+    ),
+    (
+        "wheels.suspension_travel",
+        "Suspension travel",
+        "WHEELS",
+        "Metres at all four corners",
+        true,
+    ),
+    (
+        "inputs.steering",
+        "Steering angle",
+        "NEEDS VALIDATION",
+        "AC does not document a reliable unit or sign",
+        false,
+    ),
+    (
+        "tyres.extended",
+        "Extended tyre data",
+        "NEEDS VALIDATION",
+        "Pressure, slip, load, and wear need fixture validation",
+        false,
+    ),
+];
+
+fn ac_channel_capabilities() -> Vec<ChannelCapability> {
+    AC_CHANNEL_CAPABILITY_DEFINITIONS
+        .into_iter()
+        .map(
+            |(id, label, category, detail, available)| ChannelCapability {
+                id,
+                label,
+                category,
+                detail,
+                available,
+            },
+        )
+        .collect()
 }
 
 /// Starts the TRACE desktop application.
