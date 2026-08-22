@@ -5,7 +5,7 @@ on:
     types: [published]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: executable-builds-${{ github.event.release.tag_name }}
@@ -36,6 +36,15 @@ jobs:
         run: |
           cargo build --release -p trace-desktop --bin trace
           cargo build --release -p trace-ac --example capture_fixture
+
+      - name: Attach Windows executables to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          target/release/trace.exe
+          target/release/examples/capture_fixture.exe
+          --clobber
 
       - name: Upload Windows executables
         uses: actions/upload-artifact@v4

@@ -72,8 +72,9 @@ process from WSL. This produces an unpackaged acceptance executable, not an inst
 GitHub Actions runs the same checks in `CI`. Publishing a GitHub release triggers the
 separate `Build executables` workflow; pushes and pull requests never build release
 binaries. Successful release runs retain a downloadable artifact containing `trace.exe`
-and the privacy-redacted `capture_fixture.exe` collector for 14 days. The workflow
-currently produces unpackaged binaries rather than signed installers.
+and the privacy-redacted `capture_fixture.exe` collector for 14 days, and attach both
+executables directly to the corresponding GitHub release. The workflow currently
+produces unpackaged binaries rather than signed installers.
 
 ## Native desktop prerequisites
 
