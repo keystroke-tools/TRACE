@@ -70,6 +70,8 @@ Currently implemented:
 - Assetto Corsa session classification (practice, qualifying, race, hotlap, time attack, drift, and drag)
 - Red invalid/track-limit lap treatment backed by persisted validity or three-plus-tyres-out evidence
 - Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
+- Settings page for reviewing auto-detected game folders or saving local overrides
+- AC car and track names read from installed `ui_car.json`/`ui_track.json` metadata, with exact source IDs preserved as the fallback
 - Transactional SQLite session/lap writes and bounded native session-browser queries
 
 The complete product direction and current technical proposal are documented in:

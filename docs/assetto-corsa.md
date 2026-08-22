@@ -154,6 +154,17 @@ their published deprecated names; no meaning is invented for them.
 Keeping these values unavailable is preferable to silently attaching a false unit or
 meaning.
 
+## Installed content names
+
+AC shared memory identifies cars and tracks with internal folder names such as
+`ks_mazda_mx5_cup` and `zandvoort2023`. TRACE locates the AC installation through
+Steam or the user override on the Settings page, then reads the content's own
+`ui_car.json` or `ui_track.json` `name` value. Track-layout metadata is preferred when
+the simulator reports a layout; otherwise TRACE uses the track's default or sole UI
+metadata file. This works for installed mods as well as official content. TRACE has no
+manually maintained alias table and does not guess names: missing or malformed UI
+metadata leaves the exact source identifier visible.
+
 ## Recording boundary
 
 `trace-recorder` consumes only canonical adapter events. It validates increasing frame
@@ -179,11 +190,10 @@ whether penalties are enabled; all remain in the native telemetry maps. Vanilla
 shared memory does not expose a final lap-valid boolean or a documented invalidation
 threshold, so TRACE deliberately does not turn this evidence into a false verdict.
 
-The desktop labels a complete lap with unknown validity as `Recorded`, not
-`Unverified`: this means the full lap was captured, not that AC declared it valid.
-Partial/outlaps remain invalid and visibly marked. Lap detail panels render
-only the first three entries until the user explicitly asks to show the remainder,
-keeping long race sessions bounded by default.
+The desktop leaves ordinary complete laps visually neutral. Partial/outlaps and laps
+with three-plus-tyres-out evidence use a red background and a single `Invalid` marker;
+the detailed reason remains available in a tooltip. Opening a session uses a dedicated
+detail page so long races are not squeezed into the archive list.
 The quickest non-invalid lap is highlighted in purple. When AC supplies sector timing,
 sector bars use purple for the best sector in the session, green for an improvement
 over earlier laps, yellow for a slower recorded sector, and grey for partial or invalid

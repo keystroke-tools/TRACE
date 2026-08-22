@@ -298,6 +298,12 @@ stores it with the recording. The archive therefore distinguishes practice,
 qualifying, race, hotlap, time attack, drift, and drag sessions instead of reducing
 all native drives to a generic session label.
 
+The Settings page lists the install directory used by each configurable simulator
+adapter. Assetto Corsa is auto-detected from Steam libraries and can be overridden with
+a validated game-root path stored in SQLite. TRACE uses that root to read AC's own car
+and track UI metadata. It deliberately preserves raw source identifiers when metadata
+is unavailable instead of accumulating an incomplete alias list.
+
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so
 an existing destination is never overwritten. Blob identity is the SHA-256 digest of
