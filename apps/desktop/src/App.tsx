@@ -1282,8 +1282,8 @@ function Settings() {
         <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
           DISPLAY NAME
           <div className="mt-1.5 flex max-w-2xl">
-            <input value={profileName} maxLength={80} onChange={(event) => setProfileName(event.target.value)} placeholder="Nickname or full name" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 text-[13px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
-            <button type="submit" disabled={savingProfile || profileName.trim() === savedProfileName} className="w-28 border border-l-0 border-trace-purple bg-trace-purple-wash text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingProfile ? "SAVING…" : "SAVE"}</button>
+            <input value={profileName} maxLength={80} onChange={(event) => setProfileName(event.target.value)} placeholder="Nickname or full name" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 text-[13px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
+            <button type="submit" disabled={savingProfile || profileName.trim() === savedProfileName} className="w-28 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingProfile ? "SAVING…" : "SAVE"}</button>
           </div>
         </label>
       </form>
@@ -1304,7 +1304,7 @@ function Settings() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <strong className="text-[14px] text-trace-text">{directory.simulatorName}</strong>
-                  <span className={`ml-3 inline-flex border px-2 py-1 font-mono text-[12px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-purple/50 text-trace-purple" : "border-trace-accent-muted text-trace-accent"}`}>
+                  <span className={`ml-3 inline-flex border px-2 py-1 font-mono text-[12px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-soft/50 text-trace-soft" : "border-trace-accent-muted text-trace-accent"}`}>
                     {directory.source === "manual" ? "CUSTOM" : directory.source === "detected" ? "AUTO-DETECTED" : "NOT FOUND"}
                   </span>
                 </div>
@@ -1313,12 +1313,12 @@ function Settings() {
               <label className="mt-4 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
                 INSTALL DIRECTORY
                 <div className="mt-1.5 flex">
-                  <input value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))} placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+                  <input value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))} placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
                   <button type="button" disabled={saving === directory.simulatorId} onClick={() => void chooseDirectory(directory)} className="flex h-11 w-28 items-center justify-center gap-2 border border-l-0 border-trace-divider bg-trace-surface text-[12px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:text-trace-dim">
                     <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5h5l1.2 1.5h6.8v7.5h-13zM1.5 4.5V2.8h4.2l1.2 1.7" /></svg>
                     BROWSE
                   </button>
-                  <button type="submit" disabled={saving === directory.simulatorId || unchanged || !draft.trim()} className="w-24 border border-l-0 border-trace-purple bg-trace-purple-wash text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">
+                  <button type="submit" disabled={saving === directory.simulatorId || unchanged || !draft.trim()} className="w-24 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">
                     {saving === directory.simulatorId ? "SAVING…" : "SAVE"}
                   </button>
                 </div>
@@ -2001,15 +2001,15 @@ function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleC
       <strong className="block text-[13px] text-trace-text">Session identity</strong>
       <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         DISPLAY NAME
-        <input autoFocus maxLength={80} value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Optional custom name" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+        <input autoFocus maxLength={80} value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Optional custom name" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
       </label>
       <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         DRIVER / AUTHOR
-        <input maxLength={80} value={driver} onChange={(event) => onDriverChange(event.target.value)} placeholder="Who drove this session?" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+        <input maxLength={80} value={driver} onChange={(event) => onDriverChange(event.target.value)} placeholder="Who drove this session?" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
       </label>
       <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         OWNERSHIP
-        <select value={ownership} onChange={(event) => onOwnershipChange(event.target.value as RecordedSessionSummary["ownership"])} className="trace-select mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep pl-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple">
+        <select value={ownership} onChange={(event) => onOwnershipChange(event.target.value as RecordedSessionSummary["ownership"])} className="trace-select mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep pl-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent">
           <option value="unknown">Not specified</option>
           <option value="mine">My driving</option>
           <option value="other">Another driver</option>
@@ -2017,12 +2017,12 @@ function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleC
       </label>
       <label className="mt-3 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
         TAGS
-        <input value={tags} onChange={(event) => onTagsChange(event.target.value)} placeholder="league, wet, reference" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+        <input value={tags} onChange={(event) => onTagsChange(event.target.value)} placeholder="league, wet, reference" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
       </label>
       <p className="mt-2 text-[12px] leading-4 text-trace-dim">Separate up to 12 tags with commas. Name, driver, ownership, and tags are included in search.</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button type="button" disabled={saving} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[12px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
-        <button type="submit" disabled={saving} className="border border-trace-purple bg-trace-purple-wash px-3 py-2.5 text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">{saving ? "Saving…" : "Save"}</button>
+        <button type="submit" disabled={saving} className="border border-trace-accent bg-trace-accent-wash px-3 py-2.5 text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">{saving ? "Saving…" : "Save"}</button>
       </div>
     </form>
   );
