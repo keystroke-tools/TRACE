@@ -101,9 +101,14 @@ struct RecordedLapMetrics {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LapComparison {
-    session_id: String,
-    track: String,
-    car: String,
+    reference_session_id: String,
+    reference_session_title: Option<String>,
+    reference_track: String,
+    reference_car: String,
+    comparison_session_id: String,
+    comparison_session_title: Option<String>,
+    comparison_track: String,
+    comparison_car: String,
     reference_lap_index: u32,
     reference_lap_time: String,
     comparison_lap_index: u32,
@@ -422,11 +427,13 @@ fn session_lap_metrics(
 #[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
 fn compare_session_laps(
     app: tauri::AppHandle,
-    session_id: String,
+    reference_session_id: String,
     reference_lap_index: u32,
+    comparison_session_id: String,
     comparison_lap_index: u32,
 ) -> Result<LapComparison, String> {
-    if reference_lap_index == comparison_lap_index {
+    if reference_session_id == comparison_session_id && reference_lap_index == comparison_lap_index
+    {
         return Err("choose two different laps to compare".into());
     }
     let directory = app
@@ -435,18 +442,27 @@ fn compare_session_laps(
         .map_err(|error| error.to_string())?;
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let session = store
+    let sessions = store
         .recent_sessions(1_000)
-        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    let reference_session = sessions
+        .iter()
+        .find(|session| session.id == reference_session_id)
+        .cloned()
+        .ok_or_else(|| "reference session was not found".to_owned())?;
+    let comparison_session = sessions
         .into_iter()
-        .find(|session| session.id == session_id)
-        .ok_or_else(|| "recorded session was not found".to_owned())?;
-    let reference = session
+        .find(|session| session.id == comparison_session_id)
+        .ok_or_else(|| "comparison session was not found".to_owned())?;
+    if !sessions_share_track(&reference_session, &comparison_session) {
+        return Err("laps must be recorded on the same simulator, track, and layout".into());
+    }
+    let reference = reference_session
         .laps
         .iter()
         .find(|lap| lap.index == reference_lap_index)
         .ok_or_else(|| "reference lap was not found".to_owned())?;
-    let comparison = session
+    let comparison = comparison_session
         .laps
         .iter()
         .find(|lap| lap.index == comparison_lap_index)
@@ -551,9 +567,22 @@ fn compare_session_laps(
         .collect();
 
     Ok(LapComparison {
-        session_id,
-        track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
-        car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        reference_session_id,
+        reference_session_title: reference_session.user_title,
+        reference_track: reference_session
+            .track
+            .unwrap_or_else(|| "TRACK NOT REPORTED".into()),
+        reference_car: reference_session
+            .car
+            .unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        comparison_session_id,
+        comparison_session_title: comparison_session.user_title,
+        comparison_track: comparison_session
+            .track
+            .unwrap_or_else(|| "TRACK NOT REPORTED".into()),
+        comparison_car: comparison_session
+            .car
+            .unwrap_or_else(|| "CAR NOT REPORTED".into()),
         reference_lap_index,
         reference_lap_time: format_optional_lap_time(reference.duration_ns),
         comparison_lap_index,
@@ -561,6 +590,21 @@ fn compare_session_laps(
         lap_length_m,
         samples,
     })
+}
+
+fn sessions_share_track(
+    reference: &trace_storage::metadata::SessionSummary,
+    comparison: &trace_storage::metadata::SessionSummary,
+) -> bool {
+    if reference.simulator_key != comparison.simulator_key {
+        return false;
+    }
+    match (&reference.source_track_id, &comparison.source_track_id) {
+        (Some(reference_track), Some(comparison_track)) => {
+            reference_track == comparison_track && reference.layout_id == comparison.layout_id
+        }
+        _ => reference.track == comparison.track && reference.layout_id == comparison.layout_id,
+    }
 }
 
 #[tauri::command]

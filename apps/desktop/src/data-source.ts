@@ -133,9 +133,14 @@ export interface LapTrace {
 }
 
 export interface LapComparison {
-  sessionId: string;
-  track: string;
-  car: string;
+  referenceSessionId: string;
+  referenceSessionTitle?: string | null;
+  referenceTrack: string;
+  referenceCar: string;
+  comparisonSessionId: string;
+  comparisonSessionTitle?: string | null;
+  comparisonTrack: string;
+  comparisonCar: string;
   referenceLapIndex: number;
   referenceLapTime: string;
   comparisonLapIndex: number;
@@ -170,7 +175,7 @@ export interface TelemetryDataSource {
   getSessions(): Promise<RecordedSessionSummary[]>;
   getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
   visualizeSessionLap(sessionId: string, lapIndex: number): Promise<LapTrace>;
-  compareSessionLaps(sessionId: string, referenceLapIndex: number, comparisonLapIndex: number): Promise<LapComparison>;
+  compareSessionLaps(referenceSessionId: string, referenceLapIndex: number, comparisonSessionId: string, comparisonLapIndex: number): Promise<LapComparison>;
   getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
   setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
@@ -279,7 +284,7 @@ export const fixtureDataSource: TelemetryDataSource = {
       { lapIndex: 2, fuelStartLitres: 21.2, fuelEndLitres: 20.4, fuelUsedLitres: 0.8, fuelCapacityLitres: 30, maxSpeedKmh: 231.1, tyreWearStart: [99.6, 99.6, 99.8, 99.8], tyreWearEnd: [99.2, 99.2, 99.6, 99.6], tyreWearMinimum: [99.2, 99.2, 99.6, 99.6] },
     ];
   },
-  async compareSessionLaps(sessionId, referenceLapIndex, comparisonLapIndex) {
+  async compareSessionLaps(referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex) {
     const samples = Array.from({ length: 201 }, (_, index) => {
       const distanceM = index * 25;
       const phase = index / 200 * Math.PI * 8;
@@ -309,12 +314,12 @@ export const fixtureDataSource: TelemetryDataSource = {
         comparisonTrackTemperatureC: 31.5,
       };
     });
-    return { sessionId, track: "MUGELLO", car: "TATUUS FA01", referenceLapIndex, referenceLapTime: "1:50.906", comparisonLapIndex, comparisonLapTime: "1:51.328", lapLengthM: 5_000, samples };
+    return { referenceSessionId, referenceSessionTitle: "Sunday practice", referenceTrack: "MUGELLO", referenceCar: "TATUUS FA01", comparisonSessionId, comparisonSessionTitle: "Evening run", comparisonTrack: "MUGELLO", comparisonCar: "TATUUS FA01", referenceLapIndex, referenceLapTime: "1:50.906", comparisonLapIndex, comparisonLapTime: "1:51.328", lapLengthM: 5_000, samples };
   },
   async visualizeSessionLap(sessionId, lapIndex) {
-    const comparison = await this.compareSessionLaps(sessionId, lapIndex, lapIndex + 1);
+    const comparison = await this.compareSessionLaps(sessionId, lapIndex, sessionId, lapIndex + 1);
     return {
-      sessionId, lapIndex, lapTime: comparison.referenceLapTime, track: comparison.track, car: comparison.car, lapLengthM: comparison.lapLengthM,
+      sessionId, lapIndex, lapTime: comparison.referenceLapTime, track: comparison.referenceTrack, car: comparison.referenceCar, lapLengthM: comparison.lapLengthM,
       samples: comparison.samples.map((sample) => ({ distanceM: sample.distanceM, sectorIndex: sample.sectorIndex, speedKmh: sample.referenceSpeedKmh, throttlePercent: sample.referenceThrottlePercent, brakePercent: sample.referenceBrakePercent, steeringDegrees: sample.referenceSteeringDegrees, rpm: sample.referenceRpm, gear: sample.referenceGear, positionXM: sample.referencePositionXM, positionZM: sample.referencePositionZM, airTemperatureC: sample.referenceAirTemperatureC, trackTemperatureC: sample.referenceTrackTemperatureC })),
     };
   },
@@ -349,8 +354,8 @@ export const tauriDataSource: TelemetryDataSource = {
   visualizeSessionLap(sessionId, lapIndex) {
     return invoke<LapTrace>("visualize_session_lap", { sessionId, lapIndex });
   },
-  compareSessionLaps(sessionId, referenceLapIndex, comparisonLapIndex) {
-    return invoke<LapComparison>("compare_session_laps", { sessionId, referenceLapIndex, comparisonLapIndex });
+  compareSessionLaps(referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex) {
+    return invoke<LapComparison>("compare_session_laps", { referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex });
   },
   getGameInstallDirectories() {
     return invoke<GameInstallDirectory[]>("game_install_directories");
