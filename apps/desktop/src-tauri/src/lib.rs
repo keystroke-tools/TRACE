@@ -138,8 +138,8 @@ struct LapComparisonSample {
     comparison_throttle_percent: Option<f64>,
     reference_brake_percent: Option<f64>,
     comparison_brake_percent: Option<f64>,
-    reference_steering_percent: Option<f64>,
-    comparison_steering_percent: Option<f64>,
+    reference_steering_degrees: Option<f64>,
+    comparison_steering_degrees: Option<f64>,
     reference_rpm: Option<f64>,
     comparison_rpm: Option<f64>,
     sector_index: Option<u32>,
@@ -176,7 +176,7 @@ struct LapTraceSample {
     speed_kmh: Option<f64>,
     throttle_percent: Option<f64>,
     brake_percent: Option<f64>,
-    steering_percent: Option<f64>,
+    steering_degrees: Option<f64>,
     rpm: Option<f64>,
     gear: Option<i16>,
     position_x_m: Option<f64>,
@@ -532,10 +532,17 @@ fn compare_session_laps(
         interpolate_channel(comparison_channels.throttle.as_ref(), &grid, 100.0)?;
     let reference_brake = interpolate_channel(reference_channels.brake.as_ref(), &grid, 100.0)?;
     let comparison_brake = interpolate_channel(comparison_channels.brake.as_ref(), &grid, 100.0)?;
-    let reference_steering =
-        interpolate_channel(reference_channels.steering.as_ref(), &grid, 100.0)?;
-    let comparison_steering =
-        interpolate_channel(comparison_channels.steering.as_ref(), &grid, 100.0)?;
+    let degrees_per_radian = 180.0 / std::f64::consts::PI;
+    let reference_steering = interpolate_channel(
+        reference_channels.steering.as_ref(),
+        &grid,
+        degrees_per_radian,
+    )?;
+    let comparison_steering = interpolate_channel(
+        comparison_channels.steering.as_ref(),
+        &grid,
+        degrees_per_radian,
+    )?;
     let reference_rpm = interpolate_channel(reference_channels.rpm.as_ref(), &grid, 1.0)?;
     let comparison_rpm = interpolate_channel(comparison_channels.rpm.as_ref(), &grid, 1.0)?;
     let sectors = interpolate_discrete(reference_channels.sector.as_ref(), &grid)?;
@@ -570,8 +577,8 @@ fn compare_session_laps(
             comparison_throttle_percent: comparison_throttle[index],
             reference_brake_percent: reference_brake[index],
             comparison_brake_percent: comparison_brake[index],
-            reference_steering_percent: reference_steering[index],
-            comparison_steering_percent: comparison_steering[index],
+            reference_steering_degrees: reference_steering[index],
+            comparison_steering_degrees: comparison_steering[index],
             reference_rpm: reference_rpm[index],
             comparison_rpm: comparison_rpm[index],
             sector_index: sectors[index].map(|value| value.round() as u32),
@@ -678,7 +685,11 @@ fn visualize_session_lap(
     let speed = interpolate_channel(channels.speed.as_ref(), &grid, 3.6)?;
     let throttle = interpolate_channel(channels.throttle.as_ref(), &grid, 100.0)?;
     let brake = interpolate_channel(channels.brake.as_ref(), &grid, 100.0)?;
-    let steering = interpolate_channel(channels.steering.as_ref(), &grid, 100.0)?;
+    let steering = interpolate_channel(
+        channels.steering.as_ref(),
+        &grid,
+        180.0 / std::f64::consts::PI,
+    )?;
     let rpm = interpolate_channel(channels.rpm.as_ref(), &grid, 1.0)?;
     let sector = interpolate_discrete(channels.sector.as_ref(), &grid)?;
     let gear = interpolate_discrete(channels.gear.as_ref(), &grid)?;
@@ -695,7 +706,7 @@ fn visualize_session_lap(
             speed_kmh: speed[index],
             throttle_percent: throttle[index],
             brake_percent: brake[index],
-            steering_percent: steering[index],
+            steering_degrees: steering[index],
             rpm: rpm[index],
             gear: gear[index].map(|value| value.round() as i16),
             position_x_m: position_x[index],
@@ -1491,7 +1502,7 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
         "native.inputs",
         "Clutch & steering source values",
         "AC-NATIVE · INPUTS",
-        "Exact AC clutch and steering fields; steering interpretation remains source-native",
+        "Exact AC clutch value and signed steering angle in radians",
         true,
     ),
     (

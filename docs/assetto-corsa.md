@@ -90,7 +90,7 @@ length.
 | Source | TRACE value | Treatment |
 |---|---|---|
 | `gas`, `brake` | throttle, brake | accepted only as finite 0–1 ratios |
-| `steerAngle` | source-native steering input | signed input ratio retained in native fields; shown as percent in AC views |
+| `steerAngle` | steering angle | signed radians in storage; converted to degrees for display |
 | `fuel` | fuel litres | finite and non-negative |
 | `gear` | canonical gear | AC 0 reverse, 1 neutral, 2+ forward conversion |
 | `rpms` | engine RPM | non-negative and bounded by canonical conversion |

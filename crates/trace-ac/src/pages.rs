@@ -43,6 +43,9 @@ impl<'a> PhysicsPage<'a> {
     pub(crate) fn rpm(&self) -> i32 {
         read_i32(self.0, 20)
     }
+    pub(crate) fn steering_angle_rad(&self) -> f32 {
+        read_f32(self.0, 24)
+    }
     pub(crate) fn speed_kmh(&self) -> f32 {
         read_f32(self.0, 28)
     }

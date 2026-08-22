@@ -38,7 +38,7 @@ no packet counter and is copied with the changing pages.
 | 12 | `fuel` | `float` | litres |
 | 16 | `gear` | `int` | 0 reverse, 1 neutral, 2+ forward |
 | 20 | `rpms` | `int` | RPM |
-| 24 | `steerAngle` | `float` | signed steering input ratio; actual wheel/road-wheel angle requires car and controller configuration |
+| 24 | `steerAngle` | `float` | signed steering angle in radians |
 | 28 | `speedKmh` | `float` | km/h |
 | 32 | `velocity[3]` | `float[3]` | world velocity |
 | 44 | `accG[3]` | `float[3]` | local acceleration in g |

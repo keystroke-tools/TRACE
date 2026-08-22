@@ -40,9 +40,10 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 6] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 7] = [
     "static.max_fuel_litres",
     "static.track_spline_length_m",
+    "physics.steer_angle",
     "physics.tyre_wear.0",
     "physics.tyre_wear.1",
     "physics.tyre_wear.2",
@@ -1549,6 +1550,7 @@ mod tests {
                     schema: "fixture.native/1".into(),
                     payload: vec![u8::try_from(sequence).expect("byte"); 1_500],
                     float_fields: BTreeMap::from([
+                        ("physics.steer_angle".into(), 0.4),
                         ("physics.tyre_wear.0".into(), 98.0),
                         ("static.max_fuel_litres".into(), 60.0),
                         ("physics.unused".into(), 123.0),
@@ -1572,6 +1574,7 @@ mod tests {
 
         let projected = read_columns_range(Cursor::new(&compact), 0, 8).expect("projection");
         assert_eq!(projected.throttle, vec![Some(0.75); 8]);
+        assert_eq!(projected.steering_angle_rad, vec![Some(0.4); 8]);
         assert_eq!(projected.track_configuration.as_deref(), Some("gp"));
         let metrics = read_lap_metrics(Cursor::new(&compact), 0, 8).expect("metrics");
         assert_eq!(metrics.fuel_capacity_litres, Some(60.0));
