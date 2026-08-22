@@ -269,7 +269,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
           </div>
           <div className="mt-3 pb-32">
             <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
-              <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} height={556} /></div>
+              <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} height={556} focusSelection={sector != null} /></div>
               <div className="grid gap-3">
                 <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh", channelColours.speed)} />
                 <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear", channelColours.gear)} />
@@ -281,7 +281,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
               <ComparisonChart label="STEERING ANGLE" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringRange(samples)} zeroLine series={singleSeries("referenceSteeringDegrees", channelColours.steering)} />
             </div>
           </div>
-          {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} onDismiss={mapPip.dismiss} />}
+          {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} focusSelection={sector != null} onDismiss={mapPip.dismiss} />}
           <TelemetryHud session={session} lapIndex={lapIndex} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </div>
       )}
@@ -392,7 +392,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
               </div>
               <div className="mt-3 pb-48">
                 <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
-                  <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} /></div>
+                  <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} focusSelection={sector != null} /></div>
                   <div className="grid gap-3">
                     <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed)} />
                     <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear)} />
@@ -408,7 +408,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "COMPARISON VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                 </div>
               </div>
-              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison trackMap={comparison.trackMap} onDismiss={mapPip.dismiss} />}
+              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison trackMap={comparison.trackMap} focusSelection={sector != null} onDismiss={mapPip.dismiss} />}
             </div>
           )}
           <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
@@ -590,11 +590,11 @@ function useTrackMapPip(active: boolean) {
   return { anchor, visible: visible && !dismissed, dismiss: () => setDismissed(true) };
 }
 
-function FloatingTrackMap({ samples, cursorIndex, comparison = false, trackMap, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; trackMap?: TrackMapAsset | null; onDismiss: () => void }) {
-  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} height={260} trackMap={trackMap} onDismiss={onDismiss} /></aside>;
+function FloatingTrackMap({ samples, cursorIndex, comparison = false, trackMap, focusSelection = false, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; onDismiss: () => void }) {
+  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} height={260} trackMap={trackMap} focusSelection={focusSelection} onDismiss={onDismiss} /></aside>;
 }
 
-function TrackMap({ samples, cursorIndex, comparison = false, height: requestedHeight, trackMap, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; height?: number; trackMap?: TrackMapAsset | null; onDismiss?: () => void }) {
+function TrackMap({ samples, cursorIndex, comparison = false, height: requestedHeight, trackMap, focusSelection = false, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; onDismiss?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -610,17 +610,21 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
     element.addEventListener("wheel", handleWheel, { passive: false });
     return () => element.removeEventListener("wheel", handleWheel);
   }, []);
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [focusSelection]);
   const displayHeight = requestedHeight ?? (comparison ? 720 : 600);
   const width = 1_000;
   const height = 700;
-  const padding = 42;
+  const padding = focusSelection ? 90 : 42;
   const drivenPoints = samples.flatMap((sample) => [
     sample.referencePositionXM != null && sample.referencePositionZM != null ? [sample.referencePositionXM, sample.referencePositionZM] as const : null,
     comparison && sample.comparisonPositionXM != null && sample.comparisonPositionZM != null ? [sample.comparisonPositionXM, sample.comparisonPositionZM] as const : null,
   ].filter((point): point is readonly [number, number] => point != null && point.every(Number.isFinite)));
   if (drivenPoints.length < 2) return <div className="grid min-h-[340px] place-items-center border border-trace-divider bg-trace-surface p-8 text-center text-[12px] leading-5 text-trace-dim">TRACK POSITION WAS NOT RECORDED<br />FOR THIS LAP</div>;
   const geometryPoints = trackMap ? [...trackMap.leftBoundary, ...trackMap.rightBoundary].map((point) => [point.xM, point.zM] as const) : [];
-  const points = geometryPoints.length > 3 ? geometryPoints : drivenPoints;
+  const points = focusSelection && drivenPoints.length > 1 ? drivenPoints : geometryPoints.length > 3 ? geometryPoints : drivenPoints;
   const xs = points.map(([x]) => x);
   const zs = points.map(([, z]) => z);
   const minX = Math.min(...xs); const maxX = Math.max(...xs);
@@ -657,7 +661,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const comparisonColour = channelColours.delta;
   return (
     <div ref={mapViewport} className="border border-trace-divider bg-trace-surface">
-      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div>{comparison && <div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted"><span className="flex items-center gap-2"><span className="block w-6 border-t-2" style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className="block w-6 border-t-2 border-dashed" style={{ borderColor: comparisonColour }} />COMPARISON</span></div>}<div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button>{onDismiss && <button type="button" onClick={onDismiss} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-lg leading-none text-trace-muted hover:border-trace-accent/50 hover:text-trace-text" aria-label="Dismiss floating track map">×</button>}</div></div>
+      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div>{comparison && <div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted"><span className="flex items-center gap-2"><span className="block w-6 border-t-2" style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className="block w-6 border-t-2 border-dashed" style={{ borderColor: comparisonColour }} />COMPARISON</span></div>}<div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button>{onDismiss && <button type="button" onClick={onDismiss} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-lg leading-none text-trace-muted hover:border-trace-accent/50 hover:text-trace-text" aria-label="Dismiss floating track map">×</button>}</div></div>
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
