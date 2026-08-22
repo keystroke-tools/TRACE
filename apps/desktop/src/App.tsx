@@ -708,9 +708,15 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
     const value = item.value(cursorSample);
     return value == null || !Number.isFinite(value) ? [] : [{ item, value, chartY: y(value) }];
   }) : [];
-  const tooltipOffsets = tooltipValues.length === 2 && Math.abs(tooltipValues[0].chartY - tooltipValues[1].chartY) < 26 ? [-14, 14] : tooltipValues.map(() => 0);
   const chartPixelHeight = compact ? 82 : 224;
   const headerPixelHeight = compact ? 36 : 48;
+  const tooltipTops = tooltipValues.map(({ chartY }) => headerPixelHeight + chartY / height * chartPixelHeight);
+  if (tooltipTops.length === 2 && Math.abs(tooltipTops[0] - tooltipTops[1]) < 32) {
+    const midpoint = (tooltipTops[0] + tooltipTops[1]) / 2;
+    const firstIsHigher = tooltipTops[0] <= tooltipTops[1];
+    tooltipTops[0] = midpoint + (firstIsHigher ? -16 : 16);
+    tooltipTops[1] = midpoint + (firstIsHigher ? 16 : -16);
+  }
   return (
     <div className="relative overflow-hidden border border-trace-divider bg-trace-surface">
       <div className={`flex items-center justify-between border-b border-trace-divider px-4 ${compact ? "h-9" : "min-h-12"}`}>
@@ -732,8 +738,8 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
         <text x={plot.left} y={height - 8} className="fill-trace-dim font-mono text-[12px]">{Math.round(firstDistance)} M</text>
         <text x={width - plot.right} y={height - 8} textAnchor="end" className="fill-trace-dim font-mono text-[12px]">{Math.round(lastDistance)} M</text>
       </svg>
-      {cursorX != null && tooltipValues.map(({ item, value, chartY }, index) => (
-        <span className="pointer-events-none absolute z-20 whitespace-nowrap rounded-sm px-2 py-1 font-mono text-[11px] font-black tabular-nums shadow-[0_5px_14px_rgba(0,0,0,.5)]" style={{ left: `${cursorX / width * 100}%`, top: `${headerPixelHeight + chartY / height * chartPixelHeight + tooltipOffsets[index]}px`, transform: `${tooltipTransform} translateY(-50%)`, backgroundColor: item.colour, color: chartTooltipTextColour(item.colour) }} role="status" aria-label={`${item.label}: ${formatChartValue(value, unit)}${unit ? ` ${unit}` : ""}`} key={item.label}>{formatChartValue(value, unit)}{unit ? ` ${unit}` : ""}</span>
+      {cursorX != null && tooltipValues.map(({ item, value }, index) => (
+        <span className="pointer-events-none absolute z-20 whitespace-nowrap rounded-sm px-2 py-1 font-mono text-[11px] font-black tabular-nums shadow-[0_5px_14px_rgba(0,0,0,.5)]" style={{ left: `${cursorX / width * 100}%`, top: `${tooltipTops[index]}px`, transform: `${tooltipTransform} translateY(-50%)`, backgroundColor: item.colour, color: chartTooltipTextColour(item.colour) }} role="status" aria-label={`${item.label}: ${formatChartValue(value, unit)}${unit ? ` ${unit}` : ""}`} key={item.label}>{formatChartValue(value, unit)}{unit ? ` ${unit}` : ""}</span>
       ))}
     </div>
   );
