@@ -1,17 +1,14 @@
 name: Build executables
 
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 concurrency:
-  group: executable-builds-${{ github.ref }}
+  group: executable-builds-${{ github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
