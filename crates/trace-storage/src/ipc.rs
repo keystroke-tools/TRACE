@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    io::{Cursor, Read, Seek},
+    io::{Cursor, Read, Seek, Write},
     sync::Arc,
 };
 
@@ -16,8 +16,6 @@ use arrow_ipc::{
 };
 use arrow_schema::{DataType, Field, Schema};
 use trace_domain::{CoordinateFrame, Gear, TelemetryFrame, WheelCorner};
-
-use std::io::Write;
 
 const FORMAT_NAME: &str = "trace.telemetry";
 const SCHEMA_VERSION: &str = "2";
@@ -442,6 +440,68 @@ pub fn decode_columns(bytes: &[u8]) -> Result<TelemetryColumns, IpcError> {
     Ok(decoded)
 }
 
+/// Streams the stable core telemetry projection as numeric CSV.
+///
+/// The export deliberately includes only the seven channels shared by every supported
+/// TRACE telemetry schema. Missing optional values are emitted as empty fields, and SI
+/// units remain explicit in the column names.
+///
+/// # Errors
+///
+/// Rejects malformed or unsupported Arrow input, an empty recording, or an output
+/// write failure.
+pub fn export_core_csv<R: Read + Seek, W: Write>(
+    reader: R,
+    mut writer: W,
+) -> Result<u64, IpcError> {
+    let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
+    validate_schema(reader.schema().as_ref())?;
+    writeln!(
+        writer,
+        "sequence,elapsed_ns,throttle,brake,speed_mps,engine_rpm,lap_position"
+    )
+    .map_err(IpcError::from)?;
+
+    let mut sample_count = 0_u64;
+    for batch in &mut reader {
+        let batch = batch.map_err(IpcError::from)?;
+        let sequence = required_u64(&batch, 0)?;
+        let elapsed_ns = required_u64(&batch, 1)?;
+        let throttle = nullable_f32(&batch, 2)?;
+        let brake = nullable_f32(&batch, 3)?;
+        let speed_mps = nullable_f32(&batch, 4)?;
+        let engine_rpm = nullable_f32(&batch, 5)?;
+        let lap_position = nullable_f32(&batch, 6)?;
+
+        for index in 0..batch.num_rows() {
+            writeln!(
+                writer,
+                "{},{},{},{},{},{},{}",
+                sequence[index],
+                elapsed_ns[index],
+                csv_optional(throttle[index]),
+                csv_optional(brake[index]),
+                csv_optional(speed_mps[index]),
+                csv_optional(engine_rpm[index]),
+                csv_optional(lap_position[index]),
+            )
+            .map_err(IpcError::from)?;
+        }
+        sample_count = sample_count
+            .checked_add(u64::try_from(batch.num_rows()).map_err(|_| IpcError::SampleOverflow)?)
+            .ok_or(IpcError::SampleOverflow)?;
+    }
+    if sample_count == 0 {
+        return Err(IpcError::EmptyBatch);
+    }
+    writer.flush().map_err(IpcError::from)?;
+    Ok(sample_count)
+}
+
+fn csv_optional(value: Option<f32>) -> String {
+    value.map_or_else(String::new, |value| value.to_string())
+}
+
 /// Reads a bounded sample range while holding at most one Arrow record batch.
 ///
 /// The returned projection contains the seven analysis-entry columns common to
@@ -693,11 +753,18 @@ pub enum IpcError {
     UnsupportedSchema,
     UnexpectedNull,
     Arrow(String),
+    Io(String),
 }
 
 impl From<arrow_schema::ArrowError> for IpcError {
     fn from(error: arrow_schema::ArrowError) -> Self {
         Self::Arrow(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for IpcError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error.to_string())
     }
 }
 
@@ -708,6 +775,35 @@ mod tests {
         CoordinateFrame, DriverInputs, ElapsedNanoseconds, EnvironmentState, FrameSequence, Gear,
         LapObservation, MotionState, Vector3, VehicleState, WheelState,
     };
+
+    #[test]
+    fn csv_export_streams_the_stable_projection_with_explicit_units() {
+        let frames = vec![TelemetryFrame {
+            sequence: FrameSequence(7),
+            elapsed: ElapsedNanoseconds(42),
+            inputs: DriverInputs {
+                throttle: Some(0.75),
+                ..DriverInputs::default()
+            },
+            vehicle: VehicleState {
+                speed_mps: Some(31.5),
+                ..VehicleState::default()
+            },
+            ..TelemetryFrame::default()
+        }];
+        let bytes = encode_frames(&frames).expect("encoded");
+        let mut csv = Vec::new();
+
+        assert_eq!(
+            export_core_csv(Cursor::new(bytes), &mut csv).expect("exported"),
+            1
+        );
+        assert_eq!(
+            String::from_utf8(csv).expect("UTF-8"),
+            "sequence,elapsed_ns,throttle,brake,speed_mps,engine_rpm,lap_position\n\
+             7,42,0.75,,31.5,,\n"
+        );
+    }
 
     #[test]
     fn round_trip_preserves_alignment_units_and_missing_channels() {

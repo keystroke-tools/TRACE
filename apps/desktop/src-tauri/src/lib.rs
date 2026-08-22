@@ -1,6 +1,12 @@
+use std::{
+    fs::{self, File, OpenOptions},
+    io,
+    path::{Path, PathBuf},
+};
+
 use serde::Serialize;
 use tauri::Manager;
-use trace_storage::metadata::MetadataStore;
+use trace_storage::{ipc::export_core_csv, metadata::MetadataStore};
 
 mod capture;
 
@@ -45,6 +51,14 @@ struct RecordedSessionSummary {
     laps: Vec<RecordedLapSummary>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionExport {
+    path: String,
+    format: String,
+    sample_count: u64,
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle as an owned command argument.
 fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>, String> {
@@ -86,6 +100,110 @@ fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>,
             }
         })
         .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+fn export_session(
+    app: tauri::AppHandle,
+    session_id: String,
+    export_format: String,
+) -> Result<SessionExport, String> {
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let locator = store
+        .session_telemetry(&session_id)
+        .map_err(|error| format!("session is not ready for export or does not exist: {error:?}"))?;
+    let source_path = data_directory
+        .join("telemetry")
+        .join(locator.blob_path.as_str());
+    let source = File::open(&source_path)
+        .map_err(|error| format!("failed to open session telemetry: {error}"))?;
+    let downloads = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&downloads)
+        .map_err(|error| format!("failed to create exports directory: {error}"))?;
+
+    let (label, extension) = match export_format.as_str() {
+        "arrow" => ("Arrow IPC", "arrow"),
+        "csv" => ("CSV", "csv"),
+        _ => return Err("unsupported export format".into()),
+    };
+    let stem = format!("trace-{}", safe_export_stem(&session_id));
+    let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
+    let export_result = if export_format == "arrow" {
+        let mut source = source;
+        io::copy(&mut source, &mut destination)
+            .map(|_| locator.sample_count)
+            .map_err(|error| format!("failed to export Arrow telemetry: {error}"))
+    } else {
+        export_core_csv(source, &mut destination)
+            .map_err(|error| format!("failed to export CSV telemetry: {error:?}"))
+    };
+    let sample_count = match export_result.and_then(|sample_count| {
+        destination
+            .sync_all()
+            .map_err(|error| format!("failed to flush exported telemetry: {error}"))?;
+        Ok(sample_count)
+    }) {
+        Ok(sample_count) => sample_count,
+        Err(error) => {
+            drop(destination);
+            let _ = fs::remove_file(&destination_path);
+            return Err(error);
+        }
+    };
+
+    Ok(SessionExport {
+        path: destination_path.to_string_lossy().into_owned(),
+        format: label.into(),
+        sample_count,
+    })
+}
+
+fn safe_export_stem(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "session".into()
+    } else {
+        sanitized
+    }
+}
+
+fn create_export_file(
+    directory: &Path,
+    stem: &str,
+    extension: &str,
+) -> Result<(PathBuf, File), String> {
+    for suffix in 0..1_000_u16 {
+        let filename = if suffix == 0 {
+            format!("{stem}.{extension}")
+        } else {
+            format!("{stem}-{suffix}.{extension}")
+        };
+        let path = directory.join(filename);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(format!("failed to create export file: {error}")),
+        }
+    }
+    Err("too many exports already use this session name".into())
 }
 
 fn format_lap_time(duration_ns: u64) -> String {
@@ -152,7 +270,11 @@ pub fn run() {
             capture::spawn(directory, status);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![foundation_status, recent_sessions])
+        .invoke_handler(tauri::generate_handler![
+            foundation_status,
+            recent_sessions,
+            export_session
+        ])
         .run(tauri::generate_context!())
         .expect("TRACE desktop runtime failed");
 }
@@ -165,5 +287,11 @@ mod tests {
     fn lap_times_are_formatted_with_tabular_precision() {
         assert_eq!(format_lap_time(110_906_999_999), "1:50.906");
         assert_eq!(format_lap_time(59_042_000_000), "0:59.042");
+    }
+
+    #[test]
+    fn export_stems_cannot_escape_the_download_directory() {
+        assert_eq!(safe_export_stem("session-123"), "session-123");
+        assert_eq!(safe_export_stem("../session\\bad"), "---session-bad");
     }
 }

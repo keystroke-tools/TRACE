@@ -78,6 +78,13 @@ pub struct LapTelemetryLocator {
     pub sample_count: u64,
 }
 
+/// Filesystem location and sample count needed to export one recorded session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionTelemetryLocator {
+    pub blob_path: RelativeBlobPath,
+    pub sample_count: u64,
+}
+
 impl MetadataStore {
     /// Opens or creates a metadata database and migrates it to the current schema.
     ///
@@ -422,6 +429,39 @@ impl MetadataStore {
                 .map_err(|_| MetadataError::IntegerOverflow)?,
         })
     }
+
+    /// Finds the immutable telemetry blob for one completed session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError::RecordNotFound`] when the session is unknown or has
+    /// not completed, and another metadata error for malformed values/query failure.
+    pub fn session_telemetry(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionTelemetryLocator, MetadataError> {
+        let result = self.connection.query_row(
+            "SELECT b.relative_path, b.sample_count
+             FROM telemetry_blobs b
+             WHERE b.session_id = ?1",
+            [session_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        );
+        let (path, sample_count) = match result {
+            Ok(value) => value,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Err(MetadataError::RecordNotFound),
+            Err(error) => return Err(MetadataError::from(error)),
+        };
+        Ok(SessionTelemetryLocator {
+            blob_path: RelativeBlobPath::parse(path).map_err(|error| {
+                MetadataError::InvalidRecord(format!(
+                    "stored session blob path is invalid: {error:?}"
+                ))
+            })?,
+            sample_count: u64::try_from(sample_count)
+                .map_err(|_| MetadataError::IntegerOverflow)?,
+        })
+    }
 }
 
 /// Metadata database failure.
@@ -645,7 +685,20 @@ mod tests {
             }
         );
         assert_eq!(
+            store
+                .session_telemetry("session-1")
+                .expect("session telemetry"),
+            SessionTelemetryLocator {
+                blob_path: blob().path,
+                sample_count: 200,
+            }
+        );
+        assert_eq!(
             store.lap_telemetry("missing"),
+            Err(MetadataError::RecordNotFound)
+        );
+        assert_eq!(
+            store.session_telemetry("missing"),
             Err(MetadataError::RecordNotFound)
         );
     }

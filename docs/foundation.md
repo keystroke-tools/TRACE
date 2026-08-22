@@ -239,6 +239,13 @@ native Tauri command opens `trace.sqlite` in the platform application-data direc
 and maps those summaries into the typed Sessions UI. Lap durations are formatted from
 integer nanoseconds; the command does not read or fabricate telemetry samples.
 
+Completed sessions can be exported from the Sessions UI into the user's Downloads
+directory. Arrow IPC export preserves the immutable full-fidelity recording. CSV
+export streams the stable seven-column core projection (`sequence`, elapsed time,
+inputs, speed, RPM, and normalized lap position) one bounded Arrow batch at a time;
+missing optional values remain empty and units are named explicitly. TRACE does not
+yet claim a portable `.trace` bundle or proprietary MoTeC writer.
+
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so
 an existing destination is never overwritten. Blob identity is the SHA-256 digest of
