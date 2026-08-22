@@ -70,7 +70,7 @@ Clean canonical mappings:
 | graphics `carCoordinates` | world position | metres, AC coordinate frame metadata |
 | graphics `surfaceGrip` | track grip | dimensionless source value; semantics preserved |
 | static car/track/version | session identity | source IDs preserved separately from display names |
-| static `airTemp`, `roadTemp` | conditions | degrees Celsius |
+| physics `airTemp`, `roadTemp` | conditions | degrees Celsius |
 
 Available but semantically qualified: wheel slip, wheel load, tyre wear/dirty
 level, camber, damage, DRS, ABS/TC activity, KERS, ride height, turbo boost,

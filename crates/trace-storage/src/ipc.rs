@@ -870,6 +870,7 @@ fn extend_projection(
     start: usize,
     length: usize,
 ) -> Result<(), IpcError> {
+    let projection_start = decoded.steering_angle_rad.len();
     decoded
         .sequence
         .extend(required_u64(batch, 0)?.into_iter().skip(start).take(length));
@@ -945,6 +946,32 @@ fn extend_projection(
             .skip(start)
             .take(length),
     );
+    if let Ok(index) = batch.schema().index_of("native_float_fields")
+        && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
+    {
+        for offset in 0..length {
+            let source_row = start + offset;
+            let projected_row = projection_start + offset;
+            backfill_native_float(
+                &mut decoded.steering_angle_rad[projected_row],
+                native,
+                source_row,
+                "physics.steer_angle",
+            );
+            backfill_native_float(
+                &mut decoded.ambient_temperature_c[projected_row],
+                native,
+                source_row,
+                "physics.air_temperature_c",
+            );
+            backfill_native_float(
+                &mut decoded.track_temperature_c[projected_row],
+                native,
+                source_row,
+                "physics.road_temperature_c",
+            );
+        }
+    }
     if decoded.track_length_m.is_none()
         && let Ok(index) = batch.schema().index_of("native_float_fields")
         && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
@@ -962,6 +989,14 @@ fn extend_projection(
             .find_map(|row| native_text_value(native, row, "static.track_configuration"));
     }
     Ok(())
+}
+
+fn backfill_native_float(destination: &mut Option<f32>, native: &MapArray, row: usize, key: &str) {
+    if destination.is_none() {
+        *destination = native_float_value(native, row, key)
+            .filter(|value| value.is_finite())
+            .map(narrow_native_float);
+    }
 }
 
 fn optional_f32(batch: &RecordBatch, name: &str) -> Result<Vec<Option<f32>>, IpcError> {
@@ -1544,6 +1579,29 @@ mod tests {
                 .expect("native field map");
             assert_eq!(fields.value_length(0), 1);
         }
+    }
+
+    #[test]
+    fn projection_recovers_ac_channels_recorded_before_canonical_mapping() {
+        let frame = TelemetryFrame {
+            native: Some(Box::new(NativeTelemetrySample {
+                schema: "assetto-corsa.shared-memory/1".into(),
+                float_fields: BTreeMap::from([
+                    ("physics.steer_angle".into(), -0.42),
+                    ("physics.air_temperature_c".into(), 19.0),
+                    ("physics.road_temperature_c".into(), 27.0),
+                ]),
+                ..NativeTelemetrySample::default()
+            })),
+            ..TelemetryFrame::default()
+        };
+
+        let bytes = encode_frames(&[frame]).expect("encoded");
+        let decoded = read_columns_range(Cursor::new(bytes), 0, 1).expect("decoded");
+
+        assert_eq!(decoded.steering_angle_rad, vec![Some(-0.42)]);
+        assert_eq!(decoded.ambient_temperature_c, vec![Some(19.0)]);
+        assert_eq!(decoded.track_temperature_c, vec![Some(27.0)]);
     }
 
     #[test]

@@ -77,9 +77,9 @@ before being accepted.
 
 | Page | Minimum bytes | Last decoded field |
 |---|---:|---|
-| Physics | 200 | `suspensionTravel[4]` |
+| Physics | 200 | `suspensionTravel[4]`; later fields are read when present |
 | Graphics | 264 | `carCoordinates[3]` |
-| Static | 476 | `roadTemp` |
+| Static | 476 | deprecated slots at offsets 456/460 |
 
 Later fields can exist in current AC/CSP pages. A longer page is accepted, but bytes
 beyond the validated prefix are ignored. CSP extensions are not inferred from page
@@ -90,6 +90,7 @@ length.
 | Source | TRACE value | Treatment |
 |---|---|---|
 | `gas`, `brake` | throttle, brake | accepted only as finite 0–1 ratios |
+| `steerAngle` | steering angle rad | finite signed radians |
 | `fuel` | fuel litres | finite and non-negative |
 | `gear` | canonical gear | AC 0 reverse, 1 neutral, 2+ forward conversion |
 | `rpms` | engine RPM | non-negative and bounded by canonical conversion |
@@ -105,7 +106,7 @@ length.
 | `normalizedCarPosition` | normalized position | accepted only as finite 0–1 ratio |
 | `carCoordinates[3]` | position m | AC source-world coordinate frame |
 | `carModel`, `track` | session source IDs | decoded from fixed UTF-16, NUL terminated |
-| `airTemp`, `roadTemp` | ambient/track °C | finite values only |
+| physics `airTemp`, `roadTemp` | ambient/track °C | finite values only when the full physics page is present |
 
 Invalid numeric values degrade to missing canonical values rather than panicking.
 Short pages return a typed `TooShort` error containing expected and actual lengths.
@@ -142,7 +143,6 @@ their published deprecated names; no meaning is invented for them.
 
 ## Intentionally not mapped yet
 
-- `steerAngle`: published field name does not establish the unit/sign convention.
 - wheel pressure, slip, load, wear, and angular speed: require unit/semantic fixture
   validation before analysis use.
 - `distanceTraveled`: not assumed to be lap distance.
@@ -151,8 +151,8 @@ their published deprecated names; no meaning is invented for them.
 - clutch and later physics-page fields: outside the currently validated prefix.
 - CSP additions: optional future capability provider, never a vanilla requirement.
 
-Keeping these values unavailable is preferable to silently attaching a false unit or
-meaning.
+Keeping unvalidated values unavailable is preferable to silently attaching a false
+unit or meaning.
 
 ## Installed content names
 

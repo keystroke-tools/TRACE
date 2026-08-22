@@ -138,8 +138,21 @@ impl AcSnapshot {
     pub fn map_session(
         &self,
     ) -> Result<(SessionSeed, Option<trace_domain::EnvironmentState>), AcCaptureError> {
-        let (mut session, environment) = map_session(&self.static_page)?;
+        let (mut session, _) = map_session(&self.static_page)?;
         let graphics = pages::GraphicsPage::parse(&self.graphics)?;
+        let physics = pages::PhysicsPage::parse(&self.physics)?;
+        let ambient_temperature_c = physics
+            .air_temperature_c()
+            .filter(|value| value.is_finite());
+        let track_temperature_c = physics
+            .road_temperature_c()
+            .filter(|value| value.is_finite());
+        let environment = (ambient_temperature_c.is_some() || track_temperature_c.is_some())
+            .then_some(trace_domain::EnvironmentState {
+                ambient_temperature_c,
+                track_temperature_c,
+                track_grip: None,
+            });
         session.session_type = ac_session_type(graphics.session_type()).map(str::to_owned);
         Ok((session, environment))
     }
@@ -194,15 +207,13 @@ impl AcSnapshot {
     ///
     /// Returns a capture error if the validated static prefix can no longer be mapped.
     pub fn redacted_fixture(&self) -> Result<AcRedactedFixture, AcCaptureError> {
-        let (session, environment) = self.map_session()?;
+        let (session, _) = self.map_session()?;
         let (shared_memory_version, assetto_corsa_version) = self.versions()?;
         let static_page = pages::redacted_static_page(
             shared_memory_version.as_deref(),
             assetto_corsa_version.as_deref(),
             session.car_id.as_deref(),
             session.track_id.as_deref(),
-            environment.and_then(|value| value.ambient_temperature_c),
-            environment.and_then(|value| value.track_temperature_c),
         );
         Ok(AcRedactedFixture {
             physics: self.physics.clone(),

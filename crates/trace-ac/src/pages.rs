@@ -17,8 +17,6 @@ const STATIC_CAR_MODEL_OFFSET: usize = 68;
 const STATIC_TRACK_OFFSET: usize = 134;
 const STATIC_TRACK_CONFIGURATION_OFFSET: usize = 524;
 const STATIC_ID_SLOTS: usize = 33;
-const STATIC_AIR_TEMPERATURE_OFFSET: usize = 456;
-const STATIC_ROAD_TEMPERATURE_OFFSET: usize = 460;
 
 pub(crate) struct PhysicsPage<'a>(&'a [u8]);
 
@@ -45,6 +43,9 @@ impl<'a> PhysicsPage<'a> {
     pub(crate) fn rpm(&self) -> i32 {
         read_i32(self.0, 20)
     }
+    pub(crate) fn steering_angle_rad(&self) -> f32 {
+        read_f32(self.0, 24)
+    }
     pub(crate) fn speed_kmh(&self) -> f32 {
         read_f32(self.0, 28)
     }
@@ -65,6 +66,12 @@ impl<'a> PhysicsPage<'a> {
             .get(244..248)
             .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
             .map(i32::from_le_bytes)
+    }
+    pub(crate) fn air_temperature_c(&self) -> Option<f32> {
+        read_optional_f32(self.0, 288)
+    }
+    pub(crate) fn road_temperature_c(&self) -> Option<f32> {
+        read_optional_f32(self.0, 292)
     }
 }
 
@@ -125,12 +132,6 @@ impl<'a> StaticPage<'a> {
             return None;
         }
         read_utf16(self.0, STATIC_TRACK_CONFIGURATION_OFFSET, STATIC_ID_SLOTS)
-    }
-    pub(crate) fn air_temperature(&self) -> f32 {
-        read_f32(self.0, STATIC_AIR_TEMPERATURE_OFFSET)
-    }
-    pub(crate) fn road_temperature(&self) -> f32 {
-        read_f32(self.0, STATIC_ROAD_TEMPERATURE_OFFSET)
     }
     pub(crate) fn shared_memory_version(&self) -> Option<String> {
         read_utf16(
@@ -419,8 +420,6 @@ pub(crate) fn redacted_static_page(
     assetto_corsa_version: Option<&str>,
     car_model: Option<&str>,
     track: Option<&str>,
-    air_temperature: Option<f32>,
-    road_temperature: Option<f32>,
 ) -> Vec<u8> {
     let mut bytes = vec![0; STATIC_PREFIX_LENGTH];
     write_utf16(
@@ -442,14 +441,6 @@ pub(crate) fn redacted_static_page(
         car_model,
     );
     write_utf16(&mut bytes, STATIC_TRACK_OFFSET, STATIC_ID_SLOTS, track);
-    if let Some(value) = air_temperature {
-        bytes[STATIC_AIR_TEMPERATURE_OFFSET..STATIC_AIR_TEMPERATURE_OFFSET + 4]
-            .copy_from_slice(&value.to_le_bytes());
-    }
-    if let Some(value) = road_temperature {
-        bytes[STATIC_ROAD_TEMPERATURE_OFFSET..STATIC_ROAD_TEMPERATURE_OFFSET + 4]
-            .copy_from_slice(&value.to_le_bytes());
-    }
     bytes
 }
 
@@ -470,6 +461,13 @@ fn read_i32(bytes: &[u8], offset: usize) -> i32 {
             .try_into()
             .expect("validated page prefix"),
     )
+}
+
+fn read_optional_f32(bytes: &[u8], offset: usize) -> Option<f32> {
+    bytes
+        .get(offset..offset + 4)
+        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+        .map(f32::from_le_bytes)
 }
 
 fn read_f32(bytes: &[u8], offset: usize) -> f32 {

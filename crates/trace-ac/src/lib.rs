@@ -88,8 +88,7 @@ pub fn map_frame(
             throttle: ratio(physics.gas()),
             brake: ratio(physics.brake()),
             clutch: None,
-            // Published AC material does not define a reliable unit here.
-            steering_angle_rad: None,
+            steering_angle_rad: finite(physics.steering_angle_rad()),
         },
         vehicle: VehicleState {
             speed_mps: non_negative(physics.speed_kmh()).map(|speed| speed / 3.6),
@@ -110,12 +109,12 @@ pub fn map_frame(
             ),
         },
         wheels,
-        environment: None,
+        environment: map_environment(&physics),
         native: None,
     })
 }
 
-/// Extracts session identity and environment from the static AC page.
+/// Extracts session identity from the static AC page.
 ///
 /// # Errors
 ///
@@ -131,16 +130,17 @@ pub fn map_session(
         layout_id: page.track_configuration(),
         session_type: None,
     };
-    let ambient_temperature_c = finite(page.air_temperature());
-    let track_temperature_c = finite(page.road_temperature());
-    let environment = (ambient_temperature_c.is_some() || track_temperature_c.is_some()).then_some(
-        EnvironmentState {
-            ambient_temperature_c,
-            track_temperature_c,
-            track_grip: None,
-        },
-    );
-    Ok((session, environment))
+    Ok((session, None))
+}
+
+fn map_environment(physics: &PhysicsPage<'_>) -> Option<EnvironmentState> {
+    let ambient_temperature_c = physics.air_temperature_c().and_then(finite);
+    let track_temperature_c = physics.road_temperature_c().and_then(finite);
+    (ambient_temperature_c.is_some() || track_temperature_c.is_some()).then_some(EnvironmentState {
+        ambient_temperature_c,
+        track_temperature_c,
+        track_grip: None,
+    })
 }
 
 fn finite(value: f32) -> Option<f32> {
@@ -215,12 +215,15 @@ mod tests {
         put_f32(&mut physics, 12, 20.0);
         put_i32(&mut physics, 16, 4); // third gear in AC encoding
         put_i32(&mut physics, 20, 6_000);
+        put_f32(&mut physics, 24, -0.3);
         put_f32(&mut physics, 28, 180.0);
         put_f32(&mut physics, 32, 50.0);
         put_f32(&mut physics, 44, 1.0);
         put_f32(&mut physics, 152, 90.0);
         put_f32(&mut physics, 184, 0.04);
         put_i32(&mut physics, 244, 2);
+        put_f32(&mut physics, 288, 24.0);
+        put_f32(&mut physics, 292, 31.0);
 
         let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
         put_i32(&mut graphics, 132, 2);
@@ -246,6 +249,13 @@ mod tests {
         assert_eq!(frame.lap.current_sector_index, Some(1));
         assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
         assert_eq!(frame.lap.tyres_out, Some(2));
+        assert_eq!(frame.inputs.steering_angle_rad, Some(-0.3));
+        assert_eq!(
+            frame
+                .environment
+                .and_then(|value| value.track_temperature_c),
+            Some(31.0)
+        );
         assert_eq!(frame.motion.position_m.map(|value| value.x), Some(100.0));
         assert_eq!(
             frame.wheels[&WheelCorner::FrontLeft].tyre_core_temperature_c,
@@ -254,22 +264,17 @@ mod tests {
     }
 
     #[test]
-    fn static_utf16_identity_and_conditions_are_mapped() {
+    fn static_utf16_identity_is_mapped_without_deprecated_conditions() {
         let mut page = vec![0; pages::STATIC_PAGE_LENGTH];
         put_utf16(&mut page, 68, 33, "tatuusfa1");
         put_utf16(&mut page, 134, 33, "mugello");
         put_utf16(&mut page, 524, 33, "layout_gp");
-        put_f32(&mut page, 456, 24.0);
-        put_f32(&mut page, 460, 31.0);
 
         let (session, environment) = map_session(&page).expect("valid static page");
         assert_eq!(session.car_id.as_deref(), Some("tatuusfa1"));
         assert_eq!(session.track_id.as_deref(), Some("mugello"));
         assert_eq!(session.layout_id.as_deref(), Some("layout_gp"));
-        assert_eq!(
-            environment.and_then(|value| value.track_temperature_c),
-            Some(31.0)
-        );
+        assert_eq!(environment, None);
     }
 
     #[test]
