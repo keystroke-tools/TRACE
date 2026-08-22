@@ -493,7 +493,7 @@ function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollap
             const dominant = dominantCornerPhase(corner);
             return (
               <button type="button" onClick={() => onSelect(corner.index)} className={`block w-full min-w-0 px-4 py-3 text-left transition-colors ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : "hover:bg-trace-deep"}`} aria-pressed={selected} key={corner.index}>
-                <span className="flex items-baseline justify-between gap-3 font-mono"><strong className="text-[15px] text-trace-text">{corner.label}</strong><strong className="text-[12px] tabular-nums text-[#ff5263]">LOSES {corner.totalLossSeconds?.toFixed(3)}s</strong></span>
+                <span className="flex items-baseline justify-between gap-3 font-mono"><strong className="text-[15px] text-trace-text">{corner.label}</strong><strong className="text-[15px] tabular-nums text-[#ff5263]">+{corner.totalLossSeconds?.toFixed(3)}s</strong></span>
                 <span className="mt-2 block truncate text-[10px] font-black tracking-[.08em] text-trace-dim">MOST LOSS · {dominant}</span>
                 <span className="mt-1 block truncate text-[11px] text-trace-muted">{cornerSummary(corner, dominant)}</span>
                 <span className="mt-3 grid grid-cols-3 gap-1 border-t border-trace-divider pt-2" aria-label={`${corner.label} time difference by phase`}>
@@ -519,8 +519,8 @@ function cornerPhaseLabel(phase: CornerAnalysis["phases"][number]["phase"]) {
 
 function formatPhaseDelta(seconds: number | null | undefined) {
   if (seconds == null) return "—";
-  if (Math.abs(seconds) < 0.0005) return "EVEN";
-  return `${seconds > 0 ? "LOSES" : "GAINS"} ${Math.abs(seconds).toFixed(3)}s`;
+  if (Math.abs(seconds) < 0.0005) return "±0.000s";
+  return `${seconds > 0 ? "+" : "−"}${Math.abs(seconds).toFixed(3)}s`;
 }
 
 function dominantCornerPhase(corner: CornerAnalysis) {
