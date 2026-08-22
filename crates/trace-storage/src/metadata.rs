@@ -7,12 +7,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
 const MIGRATION_4: &str = include_str!("../migrations/0004_session_attribution.sql");
 const MIGRATION_5: &str = include_str!("../migrations/0005_lap_track_limits.sql");
+const MIGRATION_6: &str = include_str!("../migrations/0006_simulator_install_paths.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -86,6 +87,9 @@ pub struct SectorSummary {
 pub struct SessionSummary {
     pub id: String,
     pub simulator_key: String,
+    pub source_track_id: Option<String>,
+    pub layout_id: Option<String>,
+    pub source_car_id: Option<String>,
     pub user_title: Option<String>,
     pub user_driver: Option<String>,
     pub ownership: String,
@@ -203,6 +207,16 @@ impl MetadataStore {
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
+        if current < 6 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_6)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 6)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
 
         Ok(Self { connection })
     }
@@ -216,6 +230,71 @@ impl MetadataStore {
         self.connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(MetadataError::from)
+    }
+
+    /// Returns the user-configured install root for one simulator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn simulator_install_path(
+        &self,
+        simulator_key: &str,
+    ) -> Result<Option<String>, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT custom_path FROM simulator_install_paths WHERE simulator_key = ?1",
+                [simulator_key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(MetadataError::from)
+    }
+
+    /// Sets or clears a simulator install-root override.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] for an invalid key/path or `SQLite` write failure.
+    pub fn set_simulator_install_path(
+        &mut self,
+        simulator_key: &str,
+        custom_path: Option<&str>,
+    ) -> Result<(), MetadataError> {
+        if simulator_key.is_empty()
+            || simulator_key.len() > 80
+            || !simulator_key.chars().all(|character| {
+                character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+            })
+        {
+            return Err(MetadataError::InvalidRecord("invalid simulator key".into()));
+        }
+        match custom_path {
+            Some(path) if !path.is_empty() && path.chars().count() <= 1_024 => {
+                self.connection
+                    .execute(
+                        "INSERT INTO simulator_install_paths (simulator_key, custom_path)
+                         VALUES (?1, ?2)
+                         ON CONFLICT(simulator_key) DO UPDATE SET custom_path = excluded.custom_path",
+                        params![simulator_key, path],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+            Some(_) => {
+                return Err(MetadataError::InvalidRecord(
+                    "invalid simulator install path".into(),
+                ));
+            }
+            None => {
+                self.connection
+                    .execute(
+                        "DELETE FROM simulator_install_paths WHERE simulator_key = ?1",
+                        [simulator_key],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+        }
+        Ok(())
     }
 
     /// Creates a session and its simulator/track/car identities atomically.
@@ -378,6 +457,7 @@ impl MetadataStore {
     ///
     /// Returns [`MetadataError`] when `limit` is zero, values cannot be represented,
     /// or `SQLite` cannot execute the bounded query.
+    #[allow(clippy::too_many_lines)]
     pub fn recent_sessions(&self, limit: usize) -> Result<Vec<SessionSummary>, MetadataError> {
         if limit == 0 {
             return Err(MetadataError::InvalidRecord(
@@ -389,7 +469,8 @@ impl MetadataStore {
             .prepare(
                 "SELECT s.id, sim.key, s.user_title, s.user_driver, s.ownership,
                         t.display_name, c.display_name, s.session_type, s.started_at, s.source_kind,
-                        EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id)
+                        EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id),
+                        t.source_track_id, t.layout_id, c.source_car_id
                  FROM sessions s JOIN simulators sim ON sim.id = s.simulator_id
                  LEFT JOIN tracks t ON t.id = s.track_id
                  LEFT JOIN cars c ON c.id = s.car_id
@@ -413,6 +494,9 @@ impl MetadataStore {
                     started_at: row.get(8)?,
                     source_kind: row.get(9)?,
                     exportable: row.get(10)?,
+                    source_track_id: row.get(11)?,
+                    layout_id: row.get(12)?,
+                    source_car_id: row.get(13)?,
                     laps: Vec::new(),
                 })
             })
@@ -871,7 +955,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 5);
+        assert_eq!(store.schema_version().expect("schema version"), 6);
 
         let mut statement = store
             .connection
@@ -888,7 +972,33 @@ mod tests {
         assert!(tables.contains(&"lap_sectors".to_owned()));
         assert!(tables.contains(&"session_tags".to_owned()));
         assert!(tables.contains(&"telemetry_blobs".to_owned()));
+        assert!(tables.contains(&"simulator_install_paths".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
+    }
+
+    #[test]
+    fn simulator_install_path_can_be_set_replaced_and_cleared() {
+        let mut store = MetadataStore::open_in_memory().expect("metadata");
+        assert_eq!(
+            store.simulator_install_path("assetto-corsa").expect("path"),
+            None
+        );
+
+        store
+            .set_simulator_install_path("assetto-corsa", Some("C:\\Games\\assettocorsa"))
+            .expect("set path");
+        assert_eq!(
+            store.simulator_install_path("assetto-corsa").expect("path"),
+            Some("C:\\Games\\assettocorsa".into())
+        );
+
+        store
+            .set_simulator_install_path("assetto-corsa", None)
+            .expect("clear path");
+        assert_eq!(
+            store.simulator_install_path("assetto-corsa").expect("path"),
+            None
+        );
     }
 
     #[test]
@@ -909,7 +1019,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 5);
+        assert_eq!(store.schema_version().expect("schema version"), 6);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))

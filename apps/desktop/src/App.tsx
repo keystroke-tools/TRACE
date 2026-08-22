@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   telemetryDataSource,
+  type GameInstallDirectory,
   type RecordedLapMetrics,
   type RecordedSessionSummary,
   type SessionExportFormat,
@@ -10,7 +11,7 @@ import { TitleBar } from "./TitleBar";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 
-const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS"] as const;
+const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS", "SETTINGS"] as const;
 type Section = (typeof navigation)[number];
 
 export function App() {
@@ -65,6 +66,7 @@ export function App() {
         )}
         {section === "COMPARE" && <Compare />}
         {section === "SETUPS" && <Setups />}
+        {section === "SETTINGS" && <Settings />}
       </section>
       <Footer status={status} />
     </main>
@@ -234,6 +236,86 @@ function Setups() {
         </div>
       </FeaturePreview>
       <AvailabilityNote>Setup capture and imports are not implemented yet. This page describes the intended workflow without pretending the controls are active.</AvailabilityNote>
+    </>
+  );
+}
+
+function Settings() {
+  const showToast = useToast();
+  const [directories, setDirectories] = useState<GameInstallDirectory[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void telemetryDataSource.getGameInstallDirectories().then((values) => {
+      if (!active) return;
+      setDirectories(values);
+      setDrafts(Object.fromEntries(values.map((value) => [value.simulatorId, value.path ?? ""])));
+      setLoading(false);
+    }).catch((error) => {
+      if (!active) return;
+      setLoading(false);
+      showToast({ kind: "error", title: "Settings unavailable", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    });
+    return () => { active = false; };
+  }, [showToast]);
+
+  async function saveDirectory(simulatorId: string, customPath: string | null) {
+    setSaving(simulatorId);
+    try {
+      const updated = await telemetryDataSource.setGameInstallDirectory(simulatorId, customPath);
+      setDirectories((current) => current.map((value) => value.simulatorId === simulatorId ? updated : value));
+      setDrafts((current) => ({ ...current, [simulatorId]: updated.path ?? "" }));
+      showToast({ kind: "success", title: customPath ? "Game folder saved" : "Automatic detection restored", message: updated.path ?? `${updated.simulatorName} was not detected.`, timeoutMs: 4_500 });
+    } catch (error) {
+      showToast({ kind: "error", title: "Could not save game folder", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <>
+      <PageIntro index="05" eyebrow="SETTINGS" title="GAME INSTALLATIONS" description="TRACE uses each game's installation folder to read its own car and track display names. Automatically detected paths can be reviewed or replaced here." />
+      <div className="mt-7 border border-trace-divider bg-trace-surface">
+        <div className="border-b border-trace-divider px-5 py-4">
+          <h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
+          <p className="mt-1 text-[11px] leading-5 text-trace-dim">Set the main game folder—not its content, cars, or tracks subfolder.</p>
+        </div>
+        {loading ? (
+          <div className="p-6 font-mono text-[10px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
+        ) : directories.length === 0 ? (
+          <div className="p-6 text-[12px] text-trace-dim">No configurable game adapters are installed.</div>
+        ) : directories.map((directory) => {
+          const draft = drafts[directory.simulatorId] ?? "";
+          const unchanged = draft.trim() === (directory.path ?? "");
+          return (
+            <form className="p-5" key={directory.simulatorId} onSubmit={(event) => { event.preventDefault(); void saveDirectory(directory.simulatorId, draft.trim() || null); }}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <strong className="text-[14px] text-trace-text">{directory.simulatorName}</strong>
+                  <span className={`ml-3 inline-flex border px-2 py-1 font-mono text-[8px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-purple/50 text-trace-purple" : "border-trace-accent-muted text-trace-accent"}`}>
+                    {directory.source === "manual" ? "CUSTOM" : directory.source === "detected" ? "AUTO-DETECTED" : "NOT FOUND"}
+                  </span>
+                </div>
+                {directory.source === "manual" && <button type="button" disabled={saving === directory.simulatorId} onClick={() => void saveDirectory(directory.simulatorId, null)} className="border-0 bg-transparent text-[10px] font-bold text-trace-muted hover:text-trace-text disabled:text-trace-dim">USE AUTO-DETECTION</button>}
+              </div>
+              <label className="mt-4 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+                INSTALL DIRECTORY
+                <div className="mt-1.5 flex">
+                  <input value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))} placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+                  <button type="submit" disabled={saving === directory.simulatorId || unchanged || !draft.trim()} className="w-24 border border-l-0 border-trace-purple bg-trace-purple-wash text-[10px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">
+                    {saving === directory.simulatorId ? "SAVING…" : "SAVE"}
+                  </button>
+                </div>
+              </label>
+              <p className="mt-2 text-[10px] leading-5 text-trace-dim">{directory.path ? `Currently using ${directory.source === "manual" ? "your custom path" : "the detected Steam installation"}.` : "TRACE could not locate this game automatically. Paste its installation folder above."}</p>
+            </form>
+          );
+        })}
+      </div>
     </>
   );
 }

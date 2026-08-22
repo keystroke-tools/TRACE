@@ -93,11 +93,20 @@ export interface SessionDeletion {
   cleanupWarning?: string | null;
 }
 
+export interface GameInstallDirectory {
+  simulatorId: string;
+  simulatorName: string;
+  path?: string | null;
+  source: "manual" | "detected" | "missing";
+}
+
 export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
   selectSimulator(simulatorId: string): Promise<void>;
   getSessions(): Promise<RecordedSessionSummary[]>;
   getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
+  getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
+  setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
   updateSessionDetails(sessionId: string, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]): Promise<void>;
@@ -204,6 +213,12 @@ export const fixtureDataSource: TelemetryDataSource = {
       { lapIndex: 2, fuelStartLitres: 21.2, fuelEndLitres: 20.4, fuelUsedLitres: 0.8, maxSpeedKmh: 231.1, tyreWearStart: [99.6, 99.6, 99.8, 99.8], tyreWearEnd: [99.2, 99.2, 99.6, 99.6], tyreWearMinimum: [99.2, 99.2, 99.6, 99.6] },
     ];
   },
+  async getGameInstallDirectories() {
+    return [{ simulatorId: "assetto-corsa", simulatorName: "Assetto Corsa", path: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa", source: "detected" }];
+  },
+  async setGameInstallDirectory(simulatorId, customPath) {
+    return { simulatorId, simulatorName: "Assetto Corsa", path: customPath, source: customPath ? "manual" : "detected" };
+  },
   async deleteSession(sessionId) {
     deletedFixtureSessionIds.add(sessionId);
     return { sessionId };
@@ -225,6 +240,12 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   getSessionLapMetrics(sessionId) {
     return invoke<RecordedLapMetrics[]>("session_lap_metrics", { sessionId });
+  },
+  getGameInstallDirectories() {
+    return invoke<GameInstallDirectory[]>("game_install_directories");
+  },
+  setGameInstallDirectory(simulatorId, customPath) {
+    return invoke<GameInstallDirectory>("set_game_install_directory", { simulatorId, customPath });
   },
   exportSession(sessionId, exportFormat) {
     return invoke<SessionExport>("export_session", { sessionId, exportFormat });

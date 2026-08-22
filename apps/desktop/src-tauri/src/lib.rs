@@ -13,8 +13,10 @@ use trace_storage::{
     metadata::MetadataStore,
 };
 
+mod ac_content;
 mod capture;
 
+use ac_content::AcContentNames;
 use capture::{CaptureStatus, SharedCaptureStatus};
 
 #[derive(Serialize)]
@@ -126,6 +128,15 @@ struct SessionDeletion {
     cleanup_warning: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GameInstallDirectory {
+    simulator_id: &'static str,
+    simulator_name: &'static str,
+    path: Option<String>,
+    source: &'static str,
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle as an owned command argument.
 fn recent_sessions(
@@ -146,12 +157,29 @@ fn recent_sessions(
         .lock()
         .ok()
         .and_then(|value| value.active_session_id.clone());
+    let configured_ac_path = store
+        .simulator_install_path("assetto-corsa")
+        .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
+        .map(PathBuf::from);
+    let content_names = AcContentNames::discover(configured_ac_path.as_deref());
 
     Ok(sessions
         .into_iter()
         .map(|session| {
             let replay = session.source_kind == "simulator_replay";
             let deletable = active_session_id.as_deref() != Some(session.id.as_str());
+            let track = session
+                .source_track_id
+                .as_deref()
+                .map(|source_id| content_names.track(source_id, session.layout_id.as_deref()))
+                .or(session.track)
+                .unwrap_or_else(|| "TRACK NOT REPORTED".into());
+            let car = session
+                .source_car_id
+                .as_deref()
+                .map(|source_id| content_names.car(source_id))
+                .or(session.car)
+                .unwrap_or_else(|| "CAR NOT REPORTED".into());
             RecordedSessionSummary {
                 id: session.id,
                 simulator_name: simulator_name(&session.simulator_key),
@@ -160,8 +188,8 @@ fn recent_sessions(
                 driver: session.user_driver,
                 ownership: session.ownership,
                 tags: session.tags,
-                track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
-                car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
+                track,
+                car,
                 session_type: session
                     .session_type
                     .unwrap_or_else(|| if replay { "REPLAY" } else { "SESSION" }.into())
@@ -195,6 +223,75 @@ fn recent_sessions(
             }
         })
         .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle by value.
+fn game_install_directories(app: tauri::AppHandle) -> Result<Vec<GameInstallDirectory>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    Ok(vec![game_install_directory(&store)?])
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+fn set_game_install_directory(
+    app: tauri::AppHandle,
+    simulator_id: String,
+    custom_path: Option<String>,
+) -> Result<GameInstallDirectory, String> {
+    if simulator_id != "assetto-corsa" {
+        return Err("that simulator does not have configurable install metadata yet".into());
+    }
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let normalized = custom_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(path) = normalized {
+        let path = Path::new(path);
+        if !path.join("content/cars").is_dir() || !path.join("content/tracks").is_dir() {
+            return Err(
+                "choose the Assetto Corsa folder that contains content/cars and content/tracks"
+                    .into(),
+            );
+        }
+    }
+    store
+        .set_simulator_install_path(&simulator_id, normalized)
+        .map_err(|error| format!("failed to save simulator settings: {error:?}"))?;
+    game_install_directory(&store)
+}
+
+fn game_install_directory(store: &MetadataStore) -> Result<GameInstallDirectory, String> {
+    let configured = store
+        .simulator_install_path("assetto-corsa")
+        .map_err(|error| format!("failed to read simulator settings: {error:?}"))?;
+    let configured_path = configured.as_deref().map(Path::new);
+    let detected = AcContentNames::discover(configured_path);
+    Ok(GameInstallDirectory {
+        simulator_id: "assetto-corsa",
+        simulator_name: "Assetto Corsa",
+        path: detected
+            .root()
+            .map(|path| path.to_string_lossy().into_owned()),
+        source: if configured.is_some() {
+            "manual"
+        } else if detected.root().is_some() {
+            "detected"
+        } else {
+            "missing"
+        },
+    })
 }
 
 #[tauri::command]
@@ -767,6 +864,8 @@ pub fn run() {
             select_simulator,
             recent_sessions,
             session_lap_metrics,
+            game_install_directories,
+            set_game_install_directory,
             export_session,
             delete_session,
             update_session_details

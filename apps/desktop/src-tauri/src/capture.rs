@@ -20,6 +20,8 @@ use trace_storage::{
     metadata::{MetadataStore, NewSession},
 };
 
+use crate::ac_content::AcContentNames;
+
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const ARROW_BATCH_FRAMES: usize = 240;
@@ -171,8 +173,17 @@ fn handle_output(
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
             let session_id = unique_session_id();
+            let configured_path = metadata
+                .simulator_install_path(source.simulator.as_str())
+                .map_err(|error| format!("simulator settings query failed: {error:?}"))?
+                .map(PathBuf::from);
             metadata
-                .create_session(&new_session(&session_id, &source, &seed)?)
+                .create_session(&new_session(
+                    &session_id,
+                    &source,
+                    &seed,
+                    configured_path.as_deref(),
+                )?)
                 .map_err(|error| format!("session creation failed: {error:?}"))?;
             let path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
                 .map_err(|error| format!("session blob path failed: {error:?}"))?;
@@ -235,19 +246,21 @@ fn new_session(
     id: &str,
     source: &SourceDescriptor,
     seed: &SessionSeed,
+    configured_path: Option<&std::path::Path>,
 ) -> Result<NewSession, String> {
+    let names = AcContentNames::discover(configured_path);
     let track = seed.track_id.as_ref().map(|value| {
         (
             format!("track-{}", hex_identity(value)),
             value.clone(),
-            value.clone(),
+            names.track(value, seed.layout_id.as_deref()),
         )
     });
     let car = seed.car_id.as_ref().map(|value| {
         (
             format!("car-{}", hex_identity(value)),
             value.clone(),
-            value.clone(),
+            names.car(value),
         )
     });
     let simulator_key = source.simulator.as_str();
@@ -339,7 +352,8 @@ mod tests {
             simulator_version: Some("1.16.4".into()),
             kind: SourceKind::SimulatorReplay,
         };
-        let session = new_session("session-1", &source, &SessionSeed::default()).expect("session");
+        let session =
+            new_session("session-1", &source, &SessionSeed::default(), None).expect("session");
 
         assert_eq!(session.simulator_version.as_deref(), Some("1.16.4"));
         assert_eq!(session.simulator_id, "sim-assetto-corsa");
@@ -356,7 +370,8 @@ mod tests {
             kind: SourceKind::NativeCapture,
         };
 
-        let session = new_session("session-2", &source, &SessionSeed::default()).expect("session");
+        let session =
+            new_session("session-2", &source, &SessionSeed::default(), None).expect("session");
         assert_eq!(session.simulator_id, "sim-future-sim");
         assert_eq!(session.simulator_key, "future-sim");
     }
