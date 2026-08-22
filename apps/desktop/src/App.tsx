@@ -327,6 +327,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const comparisonSession = compatibleSessions.find((candidate) => candidate.id === comparisonSessionId) ?? null;
   const referenceLaps = useMemo(() => referenceSession ? validComparisonLaps(referenceSession) : [], [referenceSession]);
   const comparisonLaps = useMemo(() => comparisonSession ? validComparisonLaps(comparisonSession) : [], [comparisonSession]);
+  const referenceSuggestions = fasterReferenceSuggestions(eligibleSessions, comparisonSession ?? undefined, comparisonLaps.find((lap) => lap.index === comparisonLap) ?? null, comparisonSessionId, comparisonLap);
 
   useEffect(() => {
     void telemetryDataSource.getSavedComparisons().then(setSavedComparisons).catch((reason) => {
@@ -506,7 +507,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
         </div>
       ) : (
         <>
-          <SavedComparisonsDock savedComparisons={savedComparisons} sessions={sessions} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} currentReferenceSessionId={referenceSessionId} currentReferenceLap={referenceLap} currentAnalysedSessionId={comparisonSessionId} currentAnalysedLap={comparisonLap} onOpen={openSavedComparison} onSave={saveCurrentComparison} onDelete={deleteSavedComparison} onRename={renameSavedComparison} />
+          <SavedComparisonsDock savedComparisons={savedComparisons} suggestions={referenceSuggestions} sessions={sessions} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} currentReferenceSessionId={referenceSessionId} currentReferenceLap={referenceLap} currentAnalysedSessionId={comparisonSessionId} currentAnalysedLap={comparisonLap} onOpen={openSavedComparison} onSelectSuggestion={(suggestion) => selectSuggestedReference(suggestion.session.id, suggestion.lap.index)} onSave={saveCurrentComparison} onDelete={deleteSavedComparison} onRename={renameSavedComparison} />
           <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setTelemetryWindow(null); setCursorIndex(null); }} />
           <div className={analysisCollapsed ? "ml-14" : "ml-[300px]"}>
             {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
@@ -546,7 +547,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
               {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null || telemetryWindow != null} rangeLabel={selectedCorner?.label ?? (sector != null ? `SECTOR ${sector}` : telemetryWindow ? `${Math.round(telemetryWindow.startM)}–${Math.round(telemetryWindow.endM)} M` : undefined)} corners={corners} selectedCornerIndex={cornerIndex} onRangeZoom={zoomTelemetry} rangeZoomLinked={mapZoomLinked} onRangeZoomLinked={setMapZoomLinked} onDismiss={mapPip.dismiss} />}
             </div>
           )}
-          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} onReferenceSuggestion={selectSuggestedReference} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setTelemetryWindow(null); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
+          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setTelemetryWindow(null); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </>
       )}
     </>
@@ -624,8 +625,9 @@ function nextTelemetryWindow(samples: LapComparisonSample[], current: TelemetryW
   return { startM: nextStart, endM: nextEnd };
 }
 
-function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave, currentReferenceSessionId, currentReferenceLap, currentAnalysedSessionId, currentAnalysedLap, onOpen, onSave, onDelete, onRename }: { savedComparisons: SavedComparison[]; sessions: RecordedSessionSummary[]; defaultName: string; canSave: boolean; currentReferenceSessionId: string; currentReferenceLap: number | null; currentAnalysedSessionId: string; currentAnalysedLap: number | null; onOpen: (comparison: SavedComparison) => void; onSave: (name: string) => Promise<boolean>; onDelete: (id: string) => Promise<void>; onRename: (id: string, name: string) => Promise<boolean> }) {
+function SavedComparisonsDock({ savedComparisons, suggestions, sessions, defaultName, canSave, currentReferenceSessionId, currentReferenceLap, currentAnalysedSessionId, currentAnalysedLap, onOpen, onSelectSuggestion, onSave, onDelete, onRename }: { savedComparisons: SavedComparison[]; suggestions: ReferenceSuggestion[]; sessions: RecordedSessionSummary[]; defaultName: string; canSave: boolean; currentReferenceSessionId: string; currentReferenceLap: number | null; currentAnalysedSessionId: string; currentAnalysedLap: number | null; onOpen: (comparison: SavedComparison) => void; onSelectSuggestion: (suggestion: ReferenceSuggestion) => void; onSave: (name: string) => Promise<boolean>; onDelete: (id: string) => Promise<void>; onRename: (id: string, name: string) => Promise<boolean> }) {
   const [dockCollapsed, setDockCollapsed] = useState(true);
+  const [activeTab, setActiveTab] = useState<"saved" | "suggested">("suggested");
   const [saveOpen, setSaveOpen] = useState(false);
   const [draftName, setDraftName] = useState(defaultName);
   const [saving, setSaving] = useState(false);
@@ -650,12 +652,14 @@ function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave
         <button type="button" onClick={() => setSaveOpen(false)} className="h-9 px-2 font-mono text-[10px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button>
         <button type="submit" disabled={saving || !draftName.trim()} className="h-9 bg-trace-accent px-4 font-mono text-[10px] font-black text-trace-black disabled:opacity-40">{saving ? "SAVING…" : "SAVE"}</button>
       </form>}
-      <aside className="fixed bottom-[239px] right-[656px] z-[31] w-72 border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur" aria-label="Saved comparisons">
-        <button type="button" onClick={() => { setDockCollapsed(!dockCollapsed); setMenuId(null); }} className="flex h-10 w-full items-center justify-between gap-3 px-4 text-left hover:bg-trace-deep" aria-label={dockCollapsed ? "Show favourite comparisons" : "Hide favourite comparisons"} aria-expanded={!dockCollapsed}>
-          <span className="flex min-w-0 items-center gap-1.5 font-mono"><strong className="truncate text-[10px] tracking-[.1em] text-trace-soft">SAVED COMPARISONS</strong><span className="shrink-0 text-[10px] font-black text-trace-accent">[{savedComparisons.length}]</span></span>
-          <svg className={`size-3 shrink-0 fill-none stroke-trace-dim transition-transform ${dockCollapsed ? "" : "rotate-180"}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg>
-        </button>
-        {!dockCollapsed && <div className="max-h-72 overflow-y-auto border-t border-trace-divider">
+      <aside className="fixed bottom-[239px] right-6 z-[31] w-[620px] max-w-[calc(100vw-248px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur" aria-label="Comparison lap dock">
+        <div className="flex h-10 items-stretch">
+          <button type="button" onClick={() => { setActiveTab("saved"); setDockCollapsed(false); setMenuId(null); }} className={`flex min-w-0 flex-1 items-center gap-1.5 border-r border-trace-divider px-4 text-left font-mono hover:bg-trace-deep ${!dockCollapsed && activeTab === "saved" ? "bg-trace-deep text-trace-text" : "text-trace-soft"}`} aria-selected={!dockCollapsed && activeTab === "saved"} role="tab"><strong className="truncate text-[10px] tracking-[.1em]">SAVED COMPARISONS</strong><span className="shrink-0 text-[10px] font-black text-trace-accent">[{savedComparisons.length}]</span></button>
+          <button type="button" onClick={() => { setActiveTab("suggested"); setDockCollapsed(false); setMenuId(null); }} className={`flex min-w-0 flex-1 items-center gap-1.5 px-4 text-left font-mono hover:bg-trace-deep ${!dockCollapsed && activeTab === "suggested" ? "bg-trace-deep text-trace-text" : "text-trace-soft"}`} aria-selected={!dockCollapsed && activeTab === "suggested"} role="tab"><strong className="truncate text-[10px] tracking-[.1em]">SUGGESTED REFERENCES</strong><span className={`shrink-0 text-[10px] font-black ${suggestions.length > 0 ? "text-trace-purple" : "text-trace-dim"}`}>[{suggestions.length}]</span></button>
+          <button type="button" onClick={() => { setDockCollapsed(!dockCollapsed); setMenuId(null); }} className="grid w-10 shrink-0 place-items-center border-l border-trace-divider text-trace-dim hover:bg-trace-deep hover:text-trace-text" aria-label={dockCollapsed ? "Open comparison lap dock" : "Collapse comparison lap dock"} aria-expanded={!dockCollapsed}><svg className={`size-3 fill-none stroke-current transition-transform ${dockCollapsed ? "" : "rotate-180"}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg></button>
+        </div>
+        {!dockCollapsed && <div className="max-h-72 overflow-x-hidden overflow-y-auto border-t border-trace-divider">
+        {activeTab === "saved" ? <>
         {savedComparisons.length === 0 ? <div className="px-5 py-8 text-center"><strong className="block text-[13px] text-trace-soft">No favourite comparisons yet</strong><p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-trace-dim">Choose a useful Reference and Analysed Lap, then use the title-bar star to save it here.</p></div> : <div className="grid gap-2 p-2">
           {savedComparisons.map((saved) => {
             const referenceSession = sessions.find((session) => session.id === saved.referenceSessionId);
@@ -678,6 +682,7 @@ function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave
             </article>;
           })}
         </div>}
+        </> : <SuggestedReferencesList suggestions={suggestions} currentSessionId={currentReferenceSessionId} currentLapIndex={currentReferenceLap} onSelect={(suggestion) => { onSelectSuggestion(suggestion); setDockCollapsed(true); }} />}
         </div>}
       </aside>
     </>
@@ -814,7 +819,6 @@ type ComparisonHudProps = {
   referenceLaps: RecordedSessionSummary["laps"];
   referenceLap: number | null;
   onReferenceLap: (value: number) => void;
-  onReferenceSuggestion: (sessionId: string, lapIndex: number) => void;
   comparisonSessionId: string;
   onComparisonSession: (value: string) => void;
   comparisonLaps: RecordedSessionSummary["laps"];
@@ -828,8 +832,7 @@ type ComparisonHudProps = {
   onSeek: (index: number) => void;
 };
 
-function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, onReferenceSuggestion, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   const finalDelta = comparison?.samples.slice().reverse().find((candidate) => candidate.deltaSeconds != null)?.deltaSeconds;
   const comparisonIsFaster = finalDelta != null && finalDelta < -0.0005;
@@ -843,15 +846,12 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   const comparisonHasConditions = hasHudConditions(comparisonAirTemperature, comparisonTrackTemperature);
   const showConditions = referenceHasConditions || comparisonHasConditions;
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
-  const referenceSuggestions = fasterReferenceSuggestions(sessions, comparisonSession, comparisonLaps.find((lap) => lap.index === comparisonLap) ?? null, comparisonSessionId, comparisonLap);
   const gapTone = sample?.deltaSeconds == null || Math.abs(sample.deltaSeconds) < 0.0005 ? "text-trace-text" : sample.deltaSeconds > 0 ? "text-[#ff5263]" : "text-[#42db76]";
   const referenceLabel = referenceSession?.driver?.trim() || "REFERENCE";
   const comparisonLabel = comparisonSession?.driver?.trim() || "ANALYSED LAP";
   const trackCarLabel = referenceSession ? `${referenceSession.track} · ${referenceSession.car}` : "TRACK · CAR";
-  useEffect(() => setSuggestionsOpen(false), [comparisonLap, comparisonSessionId]);
   return (
     <>
-      <SuggestedReferencesAttachment suggestions={referenceSuggestions} open={suggestionsOpen} currentSessionId={referenceSessionId} currentLapIndex={referenceLap} onOpen={setSuggestionsOpen} onSelect={(suggestion) => { onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); setSuggestionsOpen(false); }} />
       <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
@@ -902,14 +902,9 @@ function fasterReferenceSuggestions(sessions: RecordedSessionSummary[], targetSe
     .slice(0, 10);
 }
 
-function SuggestedReferencesAttachment({ suggestions, open, currentSessionId, currentLapIndex, onOpen, onSelect }: { suggestions: ReferenceSuggestion[]; open: boolean; currentSessionId: string; currentLapIndex: number | null; onOpen: (open: boolean) => void; onSelect: (suggestion: ReferenceSuggestion) => void }) {
+function SuggestedReferencesList({ suggestions, currentSessionId, currentLapIndex, onSelect }: { suggestions: ReferenceSuggestion[]; currentSessionId: string; currentLapIndex: number | null; onSelect: (suggestion: ReferenceSuggestion) => void }) {
   return (
-    <aside className="fixed bottom-[239px] right-6 z-[31] w-[620px] max-w-[calc(100vw-248px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur" aria-label="Suggested faster references">
-      <button type="button" onClick={() => onOpen(!open)} className="flex h-10 w-full items-center justify-between gap-3 px-4 text-left hover:bg-trace-deep" aria-expanded={open}>
-        <span className="flex min-w-0 items-center gap-2 font-mono"><strong className="truncate text-[10px] tracking-[.1em] text-trace-soft">SUGGESTED REFERENCES</strong><span className={`shrink-0 border px-1.5 py-0.5 text-[9px] font-black ${suggestions.length > 0 ? "border-trace-purple/50 text-trace-purple" : "border-trace-divider text-trace-dim"}`}>{suggestions.length}</span></span>
-        <span className="flex shrink-0 items-center gap-2 font-mono text-[9px] font-bold text-trace-dim"><span>{suggestions.length > 0 ? "FASTER CLEAN LAPS" : "NONE AVAILABLE"}</span><svg className={`size-3 fill-none stroke-current transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg></span>
-      </button>
-      {open && <div className="max-h-72 overflow-y-auto border-t border-trace-divider">
+    <>
         <p className="border-b border-trace-divider px-4 py-2 text-[11px] leading-4 text-trace-dim">Clean laps that are faster than the Analysed Lap. Imported references are listed first.</p>
         {suggestions.length === 0 ? <p className="px-4 py-4 text-[12px] text-trace-muted">No faster lap with the same simulator, car, track, and layout has been recorded or imported.</p> : suggestions.map((suggestion) => {
           const identity = suggestion.session.driver ?? suggestion.session.title ?? formatSessionDate(suggestion.session.startedAt);
@@ -920,8 +915,7 @@ function SuggestedReferencesAttachment({ suggestions, open, currentSessionId, cu
             <strong className="font-mono text-right text-[12px] tabular-nums text-trace-purple">−{suggestion.gainSeconds.toFixed(3)}s</strong>
           </button>;
         })}
-      </div>}
-    </aside>
+    </>
   );
 }
 
@@ -1252,7 +1246,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
     <div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
       {onDismiss
         ? <div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
-        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span>{mapRangeLabel && <span className="ml-3 font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />BRAKE</span></div>{mapControls}</div>}
+        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div>{mapRangeLabel && <span className="font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}{zoom > 1 && followedTarget && <span className={`${mapRangeLabel ? "ml-3 " : ""}font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent`}>FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />BRAKE</span></div>{mapControls}</div>}
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
