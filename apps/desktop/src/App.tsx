@@ -104,12 +104,12 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
         <div className="border-r border-trace-divider max-[1000px]:border-b max-[1000px]:border-r-0">
           <PanelTitle>WHAT TRACE RECORDS</PanelTitle>
           <p className="px-5 pt-4 text-[13px] leading-5 text-trace-faint">
-            These are the verified Assetto Corsa channels TRACE exposes for analysis. This is adapter coverage, not a live sensor test.
+            TRACE saves both analysis-ready channels and the complete documented AC shared-memory pages. “AC-native” data is preserved in source units for future analysis; this is recording coverage, not a live sensor test.
           </p>
           <div className="grid grid-cols-2 gap-px p-4 max-[900px]:grid-cols-1">
             {categories.map((category) => (
               <div className="border border-trace-divider bg-trace-deep p-4" key={category}>
-                <strong className="font-mono text-[10px] tracking-[.1em] text-trace-accent">{category}</strong>
+                <strong className={`font-mono text-[10px] tracking-[.1em] ${category.startsWith("AC-NATIVE") ? "text-trace-purple" : "text-trace-accent"}`}>{category}</strong>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {availableChannels.filter((channel) => channel.category === category).map((channel) => (
                     <span className="border border-trace-divider bg-trace-surface px-2.5 py-1.5 text-[12px] text-trace-soft" title={channel.detail} key={channel.id}>

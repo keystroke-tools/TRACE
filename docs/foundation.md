@@ -249,6 +249,11 @@ archive. Fastest laps and sectors are purple; green/yellow/grey sector bars dist
 improvements, slower splits, and unavailable data. Export formats remain behind a
 per-session action popover.
 
+The Live page's “What TRACE records” inventory separates portable analysis-ready
+channels from the complete AC-native tyre, powertrain, chassis, session, and static
+page groups. Native coverage is shown as recorded source data even when TRACE has not
+yet promoted a field into a cross-simulator analytic meaning.
+
 Completed sessions can be exported from the Sessions UI into the user's Downloads
 directory. Arrow IPC export preserves the immutable full-fidelity recording. CSV
 export streams the stable seven-column core projection (`sequence`, elapsed time,

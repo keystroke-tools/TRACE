@@ -321,7 +321,7 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
 
 type ChannelCapabilityDefinition = (&'static str, &'static str, &'static str, &'static str, bool);
 
-const AC_CHANNEL_CAPABILITY_DEFINITIONS: [ChannelCapabilityDefinition; 17] = [
+const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
     (
         "inputs.throttle",
         "Throttle",
@@ -422,24 +422,123 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: [ChannelCapabilityDefinition; 17] = [
         true,
     ),
     (
-        "inputs.steering",
-        "Steering angle",
-        "NEEDS VALIDATION",
-        "AC does not document a reliable unit or sign",
-        false,
+        "native.inputs",
+        "Clutch & steering source values",
+        "AC-NATIVE · INPUTS",
+        "Exact AC clutch and steering fields; steering interpretation remains source-native",
+        true,
     ),
     (
-        "tyres.extended",
-        "Extended tyre data",
-        "NEEDS VALIDATION",
-        "Pressure, slip, load, and wear need fixture validation",
-        false,
+        "native.tyres.dynamics",
+        "Slip, load, pressure & angular speed",
+        "AC-NATIVE · TYRES & WHEELS",
+        "All four corners in AC's native units and ordering",
+        true,
+    ),
+    (
+        "native.tyres.condition",
+        "Wear, dirt, camber & core temperature",
+        "AC-NATIVE · TYRES & WHEELS",
+        "All four corners, including documented camber radians and core temperature",
+        true,
+    ),
+    (
+        "native.tyres.temperatures",
+        "Inner, middle & outer temperatures",
+        "AC-NATIVE · TYRES & WHEELS",
+        "Three carcass temperature bands and brake temperature at every corner",
+        true,
+    ),
+    (
+        "native.tyres.contact",
+        "Contact points, normals & headings",
+        "AC-NATIVE · TYRES & WHEELS",
+        "Twelve values per contact-vector family",
+        true,
+    ),
+    (
+        "native.powertrain.electronics",
+        "TC, ABS, DRS, KERS & ERS",
+        "AC-NATIVE · POWERTRAIN",
+        "States, charge, energy use, recovery, and power settings",
+        true,
+    ),
+    (
+        "native.powertrain.engine",
+        "Turbo, engine brake & air density",
+        "AC-NATIVE · POWERTRAIN",
+        "Dynamic source values plus static limits and controller counts",
+        true,
+    ),
+    (
+        "native.chassis.orientation",
+        "Heading, pitch, roll & angular velocity",
+        "AC-NATIVE · CHASSIS",
+        "World orientation and vehicle-local angular motion",
+        true,
+    ),
+    (
+        "native.chassis.state",
+        "Ride height, damage, ballast & brake bias",
+        "AC-NATIVE · CHASSIS",
+        "Front/rear ride height, five damage channels, ballast, CG height, and bias",
+        true,
+    ),
+    (
+        "native.chassis.controls",
+        "Pit limiter, tyres out, auto shift & FFB",
+        "AC-NATIVE · CHASSIS",
+        "Driver-assistance and control state including the final force-feedback value",
+        true,
+    ),
+    (
+        "native.session.timing",
+        "Last/best laps, splits & session time",
+        "AC-NATIVE · SESSION",
+        "Formatted and integer timing, configured laps, position, and distance travelled",
+        true,
+    ),
+    (
+        "native.session.race_control",
+        "Flags, pits, penalties & mandatory stop",
+        "AC-NATIVE · SESSION",
+        "Race-control, ideal-line, pit-lane, and mandatory-stop state",
+        true,
+    ),
+    (
+        "native.session.conditions",
+        "Grip, wind & replay speed",
+        "AC-NATIVE · SESSION",
+        "Surface grip, wind speed/direction, replay multiplier, and tyre compound",
+        true,
+    ),
+    (
+        "native.static.identities",
+        "Car, track, layout & skin IDs",
+        "AC-NATIVE · CAR & TRACK",
+        "Complete static identity fields; exported Arrow also contains AC player-name fields",
+        true,
+    ),
+    (
+        "native.static.limits",
+        "Car limits & track length",
+        "AC-NATIVE · CAR & TRACK",
+        "RPM, fuel, torque, power, boost, suspension, tyre radius, and spline length",
+        true,
+    ),
+    (
+        "native.static.configuration",
+        "Assists, rates & pit window",
+        "AC-NATIVE · CAR & TRACK",
+        "Penalty, fuel, tyre, damage, blanket, clutch, blip, grid, and timed-race settings",
+        true,
     ),
 ];
 
 fn ac_channel_capabilities() -> Vec<ChannelCapability> {
     AC_CHANNEL_CAPABILITY_DEFINITIONS
-        .into_iter()
+        .iter()
+        .copied()
         .map(
             |(id, label, category, detail, available)| ChannelCapability {
                 id,
