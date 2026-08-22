@@ -40,11 +40,10 @@ export function App() {
       <TitleBar status={status} />
       <Navigation active={section} onChange={setSection} />
       <section className="trace-grid overflow-auto p-7">
-        {section === "SESSIONS" ? (
-          <Sessions sessions={sessions} />
-        ) : (
-          <SystemStatus status={status} section={section} />
-        )}
+        {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} />}
+        {section === "SESSIONS" && <Sessions sessions={sessions} />}
+        {section === "COMPARE" && <Compare />}
+        {section === "SETUPS" && <Setups />}
       </section>
       <Footer />
     </main>
@@ -73,51 +72,151 @@ function Navigation({ active, onChange }: { active: Section; onChange: (section:
   );
 }
 
-function SystemStatus({ status, section }: { status: TelemetryStatus | null; section: Section }) {
+function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOpenSessions: () => void }) {
+  const recording = status?.connection === "recording" || status?.connection === "replay";
+  const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
+  const unavailableChannels = status?.channels.filter((channel) => !channel.available) ?? [];
+  const categories = Array.from(new Set(availableChannels.map((channel) => channel.category)));
+
   return (
     <>
-      <SectionHeading index="01">{section === "LIVE" ? "SYSTEM STATUS" : `${section} / LOCKED`}</SectionHeading>
+      <PageIntro
+        index="01"
+        eyebrow="LIVE CAPTURE"
+        title={recording ? "RECORDING ASSETTO CORSA" : "READY WHEN ASSETTO CORSA IS"}
+        description={recording
+          ? "TRACE is recording the current drive or replay automatically. Keep it running until the session ends."
+          : "Start a drive or play a replay in Assetto Corsa. TRACE detects it and records locally—there is no record button to press."}
+      />
       <div className="my-[14px] mb-6 grid grid-cols-4 border border-trace-divider max-[900px]:grid-cols-2">
         <Metric label="SOURCE" value={status?.source ?? "INITIALISING"} accent />
         <Metric label="STATE" value={status?.connection.toUpperCase() ?? "WAIT"} />
         <Metric label="SAMPLE RATE" value={status?.sampleRateHz ? `${status.sampleRateHz} HZ` : "—"} />
-        <Metric label="BACKEND" value="OFFLINE / LOCAL" />
+        <Metric label="STORAGE" value="LOCAL" />
       </div>
 
-      <div className="border border-trace-divider bg-trace-surface">
-        <PanelTitle>CHANNEL CAPABILITIES</PanelTitle>
-        <div role="table" aria-label="Telemetry channels">
-          {status?.channels.map((channel) => (
-            <div
-              className="grid min-h-[46px] grid-cols-[1fr_150px_1.4fr] items-center border-b border-trace-divider text-xs last:border-b-0 max-[900px]:grid-cols-[1fr_120px]"
-              role="row"
-              key={channel.id}
-            >
-              <span className="px-4" role="cell">{channel.label}</span>
-              <span
-                className={`px-4 font-mono text-[11px] font-bold tracking-[.06em] ${channel.available ? "text-trace-accent" : "text-trace-dim"}`}
-                role="cell"
-              >
-                {channel.available ? "AVAILABLE" : "UNAVAILABLE"}
-              </span>
-              <code className="px-4 text-[11px] text-trace-faint max-[900px]:hidden" role="cell">{channel.id}</code>
-            </div>
-          ))}
+      <div className="grid grid-cols-[1.4fr_1fr] border border-trace-divider bg-trace-surface max-[1000px]:grid-cols-1">
+        <div className="border-r border-trace-divider max-[1000px]:border-b max-[1000px]:border-r-0">
+          <PanelTitle>WHAT TRACE RECORDS</PanelTitle>
+          <p className="px-5 pt-4 text-[13px] leading-5 text-trace-faint">
+            These are the verified Assetto Corsa channels TRACE exposes for analysis. This is adapter coverage, not a live sensor test.
+          </p>
+          <div className="grid grid-cols-2 gap-px p-4 max-[900px]:grid-cols-1">
+            {categories.map((category) => (
+              <div className="border border-trace-divider bg-trace-deep p-4" key={category}>
+                <strong className="font-mono text-[10px] tracking-[.1em] text-trace-accent">{category}</strong>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {availableChannels.filter((channel) => channel.category === category).map((channel) => (
+                    <span className="border border-trace-divider bg-trace-surface px-2.5 py-1.5 text-[12px] text-trace-soft" title={channel.detail} key={channel.id}>
+                      {channel.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-
-      <div className="flex min-h-[190px] items-center justify-center gap-6 border border-t-0 border-trace-divider bg-trace-deep">
-        <span className="trace-crosshair" aria-hidden="true" />
         <div>
-          <strong className="font-mono text-xs tracking-[.14em]">PHASE 2 / AC CAPTURE</strong>
-          <p className="mt-2 text-[13px] text-trace-faint">Local capture worker active. Completed sessions persist without a network dependency.</p>
-          {section === "LIVE" && (
-            <p className="mt-1 text-[12px] text-trace-dim">Remote spectating remains offline until the Phase 7 backend is configured.</p>
-          )}
+          <PanelTitle>HOW CAPTURE WORKS</PanelTitle>
+          <ol className="space-y-5 p-5">
+            <WorkflowStep number="1" title="Open Assetto Corsa">Start driving or play a replay at normal speed.</WorkflowStep>
+            <WorkflowStep number="2" title="TRACE records automatically">The status light pulses while samples are being saved.</WorkflowStep>
+            <WorkflowStep number="3" title="Review the session">End normally, then open Sessions to inspect laps or export data.</WorkflowStep>
+          </ol>
+          <button type="button" onClick={onOpenSessions} className="mx-5 mb-5 border border-trace-accent-muted bg-trace-accent-wash px-4 py-3 text-[11px] font-black tracking-[.1em] text-trace-accent hover:border-trace-accent">
+            OPEN SESSIONS
+          </button>
         </div>
       </div>
+
+      {unavailableChannels.length > 0 && (
+        <details className="border border-t-0 border-trace-divider bg-trace-deep text-[12px]">
+          <summary className="cursor-pointer px-5 py-4 font-bold tracking-[.06em] text-trace-muted hover:text-trace-text">
+            WHY SOME AC DATA IS NOT AVAILABLE
+          </summary>
+          <div className="grid gap-px border-t border-trace-divider bg-trace-divider sm:grid-cols-2">
+            {unavailableChannels.map((channel) => (
+              <div className="bg-trace-deep px-5 py-4" key={channel.id}>
+                <strong className="text-trace-soft">{channel.label}</strong>
+                <p className="mt-1 leading-5 text-trace-dim">{channel.detail}. TRACE leaves uncertain data out instead of assigning it a misleading meaning.</p>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </>
   );
+}
+
+function Compare() {
+  return (
+    <>
+      <PageIntro index="03" eyebrow="LAP COMPARISON" title="UNDERSTAND WHERE TIME IS WON" description="Compare two recorded laps by distance to see the delta, speed, throttle, and brake traces together." />
+      <FeaturePreview label="PLANNED / PHASE 3" title="Comparison workspace">
+        <div className="grid gap-px bg-trace-divider md:grid-cols-3">
+          <PreviewStep number="01" title="Choose a reference" detail="Pick a clean lap from your session archive." />
+          <PreviewStep number="02" title="Add a comparison" detail="Select another lap from the same track and layout." />
+          <PreviewStep number="03" title="Inspect the difference" detail="TRACE aligns both laps by distance and highlights gains and losses." />
+        </div>
+      </FeaturePreview>
+      <AvailabilityNote>Lap selection and synchronized charts are the next analysis milestone. Your current recordings remain usable when it arrives.</AvailabilityNote>
+    </>
+  );
+}
+
+function Setups() {
+  return (
+    <>
+      <PageIntro index="04" eyebrow="CAR SETUPS" title="CONNECT CHANGES TO LAP PERFORMANCE" description="Store setup snapshots beside sessions so a faster lap can be traced back to the car configuration that produced it." />
+      <FeaturePreview label="PLANNED / PHASE 5" title="Setup workspace">
+        <div className="grid gap-px bg-trace-divider md:grid-cols-3">
+          <PreviewStep number="01" title="Save a snapshot" detail="Capture or import the setup used for a session." />
+          <PreviewStep number="02" title="See what changed" detail="Compare values without hunting through setup screens." />
+          <PreviewStep number="03" title="Link the result" detail="Associate a setup with laps, notes, and conditions." />
+        </div>
+      </FeaturePreview>
+      <AvailabilityNote>Setup capture and imports are not implemented yet. This page describes the intended workflow without pretending the controls are active.</AvailabilityNote>
+    </>
+  );
+}
+
+function PageIntro({ index, eyebrow, title, description }: { index: string; eyebrow: string; title: string; description: string }) {
+  return (
+    <div className="max-w-3xl">
+      <SectionHeading index={index}>{eyebrow}</SectionHeading>
+      <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">{title}</h1>
+      <p className="mt-2 max-w-2xl text-[14px] leading-6 text-trace-muted">{description}</p>
+    </div>
+  );
+}
+
+function WorkflowStep({ number, title, children }: { number: string; title: string; children: ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="grid size-7 shrink-0 place-items-center border border-trace-accent-muted font-mono text-[10px] text-trace-accent">{number}</span>
+      <div><strong className="block text-[13px] text-trace-text">{title}</strong><span className="mt-1 block text-[12px] leading-5 text-trace-faint">{children}</span></div>
+    </li>
+  );
+}
+
+function FeaturePreview({ label, title, children }: { label: string; title: string; children: ReactNode }) {
+  return (
+    <div className="mt-7 border border-trace-divider bg-trace-surface">
+      <div className="flex items-center justify-between border-b border-trace-divider px-5 py-4">
+        <h2 className="text-[14px] font-black tracking-[.04em]">{title}</h2>
+        <span className="font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent">{label}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PreviewStep({ number, title, detail }: { number: string; title: string; detail: string }) {
+  return <div className="min-h-44 bg-trace-surface p-6"><span className="font-mono text-[10px] text-trace-accent">{number}</span><h3 className="mt-7 text-base font-black">{title}</h3><p className="mt-2 text-[13px] leading-5 text-trace-faint">{detail}</p></div>;
+}
+
+function AvailabilityNote({ children }: { children: ReactNode }) {
+  return <p className="border border-t-0 border-trace-divider bg-trace-deep px-5 py-4 text-[12px] leading-5 text-trace-muted"><strong className="mr-2 text-trace-warning">NOT AVAILABLE YET</strong>{children}</p>;
 }
 
 function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
@@ -148,6 +247,7 @@ function Sessions({ sessions }: { sessions: RecordedSessionSummary[] }) {
         <div>
           <SectionHeading index="02">RECORDED SESSIONS</SectionHeading>
           <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">LOCAL TELEMETRY ARCHIVE</h1>
+          <p className="mt-2 text-[13px] text-trace-muted">Search recordings, expand a session to inspect its laps, or export telemetry for analysis.</p>
         </div>
         <span className="font-mono text-[11px] tracking-[.1em] text-trace-faint">
           {visibleSessions.length} / {sessions.length} SESSION(S)
