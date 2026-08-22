@@ -39,6 +39,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck frontend
+        run: pnpm check
+
+      - name: Build frontend
+        run: pnpm build
+
       - name: Check Rust formatting
         run: cargo fmt --all --check
 
@@ -47,12 +53,6 @@ jobs:
 
       - name: Test Rust workspace
         run: cargo test --workspace --all-features
-
-      - name: Typecheck frontend
-        run: pnpm check
-
-      - name: Build frontend
-        run: pnpm build
 
   windows-ac-boundary:
     runs-on: windows-latest
