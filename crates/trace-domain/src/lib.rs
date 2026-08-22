@@ -230,6 +230,8 @@ pub struct LapObservation {
     pub simulator_distance_m: Option<f64>,
     pub current_sector_index: Option<u32>,
     pub last_sector_time_ns: Option<u64>,
+    /// Instantaneous simulator-reported count of tyres outside track limits.
+    pub tyres_out: Option<u8>,
 }
 
 /// Environmental state sampled or scoped to the current session.

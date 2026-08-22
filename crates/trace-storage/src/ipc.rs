@@ -1084,6 +1084,7 @@ mod tests {
                 simulator_distance_m: Some(10.0),
                 current_sector_index: Some(1),
                 last_sector_time_ns: Some(11),
+                tyres_out: Some(2),
             },
             inputs: DriverInputs {
                 clutch: Some(0.2),

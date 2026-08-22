@@ -14,6 +14,7 @@ pub struct RecordedLap {
     pub sample_start: u64,
     pub sample_count: u64,
     pub partial: bool,
+    pub max_tyres_out: Option<u8>,
     pub sectors: Vec<RecordedSector>,
 }
 
@@ -85,6 +86,7 @@ struct OpenLap {
     sample_start: u64,
     started_offset_ns: u64,
     started_at_boundary: bool,
+    max_tyres_out: Option<u8>,
     current_sector_index: Option<u32>,
     sectors: Vec<RecordedSector>,
 }
@@ -239,6 +241,7 @@ impl ActiveSession {
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: false,
+                        max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
                         sectors: Vec::new(),
                     });
@@ -255,6 +258,7 @@ impl ActiveSession {
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
                         partial: !open.started_at_boundary,
+                        max_tyres_out: open.max_tyres_out,
                         sectors: open.sectors,
                     });
                     self.current_lap = Some(OpenLap {
@@ -262,6 +266,7 @@ impl ActiveSession {
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: true,
+                        max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
                         sectors: Vec::new(),
                     });
@@ -271,6 +276,12 @@ impl ActiveSession {
                 }
                 Some(_) => return Err(RecorderError::CompletedLapCounterJumped),
             }
+        }
+        if let (Some(open), Some(tyres_out)) = (&mut self.current_lap, frame.lap.tyres_out) {
+            open.max_tyres_out = Some(
+                open.max_tyres_out
+                    .map_or(tyres_out, |value| value.max(tyres_out)),
+            );
         }
         self.sample_count = self
             .sample_count
@@ -387,6 +398,7 @@ mod tests {
                     sample_start: 0,
                     sample_count: 3,
                     partial: true,
+                    max_tyres_out: None,
                     sectors: Vec::new(),
                 },
                 RecordedLap {
@@ -396,10 +408,39 @@ mod tests {
                     sample_start: 3,
                     sample_count: 3,
                     partial: false,
+                    max_tyres_out: None,
                     sectors: Vec::new(),
                 },
             ]
         );
+    }
+
+    #[test]
+    fn records_maximum_tyres_out_as_lap_evidence() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for (sequence, completed, tyres_out) in
+            [(1, 0, 0), (2, 1, 0), (3, 1, 1), (4, 1, 3), (5, 2, 0)]
+        {
+            let mut sample = frame(sequence, sequence * 100, completed, 0);
+            sample.lap.tyres_out = Some(tyres_out);
+            recorder
+                .consume(AdapterEvent::Frame(sample))
+                .expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+
+        assert_eq!(session.laps[1].max_tyres_out, Some(3));
     }
 
     #[test]

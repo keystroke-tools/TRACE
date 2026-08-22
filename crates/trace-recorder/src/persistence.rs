@@ -152,14 +152,8 @@ fn index_recording(
             started_offset_ns: Some(lap.started_offset_ns),
             duration_ns: lap.duration_ns,
             validity: if lap.partial { "invalid" } else { "unknown" }.into(),
-            validity_reason: Some(
-                if lap.partial {
-                    "capture began after lap start; partial lap or outlap"
-                } else {
-                    "simulator validity evidence unavailable"
-                }
-                .into(),
-            ),
+            validity_reason: Some(lap_validity_reason(lap)),
+            max_tyres_out: lap.max_tyres_out,
             sample_start: lap.sample_start,
             sample_count: lap.sample_count,
             is_personal_best: lap
@@ -186,6 +180,21 @@ fn index_recording(
         blob,
         lap_count: laps.len(),
     })
+}
+
+fn lap_validity_reason(lap: &crate::RecordedLap) -> String {
+    if lap.partial {
+        return "capture began after lap start; partial lap or outlap".into();
+    }
+    match lap.max_tyres_out {
+        Some(0) => {
+            "no tyres-out excursion observed; simulator does not expose final lap validity".into()
+        }
+        Some(count) => format!(
+            "track-limit evidence: up to {count} tyres outside the track; simulator does not expose final lap validity"
+        ),
+        None => "simulator track-limit evidence unavailable".into(),
+    }
 }
 
 #[cfg(test)]
@@ -249,6 +258,7 @@ mod tests {
                 sample_start: 0,
                 sample_count: 3,
                 partial: false,
+                max_tyres_out: None,
                 sectors: vec![
                     crate::RecordedSector {
                         index: 1,
@@ -300,7 +310,7 @@ mod tests {
         assert_eq!(summaries[0].laps[0].sectors[1].duration_ns, 65);
         assert_eq!(
             summaries[0].laps[0].validity_reason.as_deref(),
-            Some("simulator validity evidence unavailable")
+            Some("simulator track-limit evidence unavailable")
         );
     }
 

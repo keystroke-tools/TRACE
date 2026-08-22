@@ -264,6 +264,9 @@ The Live page's “What TRACE records” inventory separates portable analysis-r
 channels from the complete AC-native tyre, powertrain, chassis, session, and static
 page groups. Native coverage is shown as recorded source data even when TRACE has not
 yet promoted a field into a cross-simulator analytic meaning.
+AC's instantaneous tyres-out count is also aggregated into bounded lap metadata for
+quick archive display. A non-zero maximum is shown as track-limit evidence, while
+zero or missing evidence remains `Recorded` rather than being mislabelled `Valid`.
 
 Completed sessions can be exported from the Sessions UI into the user's Downloads
 directory. Arrow IPC export preserves the immutable full-fidelity recording. CSV

@@ -170,12 +170,16 @@ completed lap in SQLite. No synthetic equal-thirds split is inferred. Recordings
 before this metadata was available remain readable and show unavailable sector bars.
 
 Counter regression or a jump larger than one is rejected as ambiguous rather than
-silently producing incorrect sample ranges. Simulator-specific validity evidence is
-not yet authoritative, so this layer does not claim a lap is valid.
+silently producing incorrect sample ranges. TRACE aggregates AC's documented
+`numberOfTyresOut` samples into a per-lap maximum and shows an orange tyres-out marker
+when it observed an excursion. AC also exposes penalty time, penalty flags, and
+whether penalties are enabled; all remain in the native telemetry maps. Vanilla
+shared memory does not expose a final lap-valid boolean or a documented invalidation
+threshold, so TRACE deliberately does not turn this evidence into a false verdict.
 
 The desktop labels a complete lap with unknown validity as `Recorded`, not
-`Unverified`: this means the full lap was captured, not that track limits were
-checked. Partial/outlaps remain invalid and visibly marked. Lap detail panels render
+`Unverified`: this means the full lap was captured, not that AC declared it valid.
+Partial/outlaps remain invalid and visibly marked. Lap detail panels render
 only the first three entries until the user explicitly asks to show the remainder,
 keeping long race sessions bounded by default.
 The quickest non-invalid lap is highlighted in purple. Sector bars use purple for the

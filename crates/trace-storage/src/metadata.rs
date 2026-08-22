@@ -7,11 +7,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
 const MIGRATION_4: &str = include_str!("../migrations/0004_session_attribution.sql");
+const MIGRATION_5: &str = include_str!("../migrations/0005_lap_track_limits.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -46,6 +47,7 @@ pub struct NewLap {
     pub duration_ns: Option<u64>,
     pub validity: String,
     pub validity_reason: Option<String>,
+    pub max_tyres_out: Option<u8>,
     pub sample_start: u64,
     pub sample_count: u64,
     pub is_personal_best: bool,
@@ -66,6 +68,7 @@ pub struct LapSummary {
     pub duration_ns: Option<u64>,
     pub validity: String,
     pub validity_reason: Option<String>,
+    pub max_tyres_out: Option<u8>,
     pub is_personal_best: bool,
     pub sectors: Vec<SectorSummary>,
 }
@@ -186,6 +189,16 @@ impl MetadataStore {
                 .map_err(MetadataError::from)?;
             transaction
                 .pragma_update(None, "user_version", 4)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
+        if current < 5 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_5)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 5)
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
@@ -318,8 +331,8 @@ impl MetadataStore {
                     "INSERT INTO laps
                      (id, session_id, lap_index, started_offset_ns, duration_ns,
                       validity, validity_reason, telemetry_blob_id, sample_start,
-                      sample_count, is_personal_best)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                      sample_count, is_personal_best, max_tyres_out)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         lap.id,
                         session_id,
@@ -331,7 +344,8 @@ impl MetadataStore {
                         blob.id.as_str(),
                         to_i64(lap.sample_start)?,
                         to_i64(lap.sample_count)?,
-                        lap.is_personal_best
+                        lap.is_personal_best,
+                        lap.max_tyres_out
                     ],
                 )
                 .map_err(MetadataError::from)?;
@@ -382,29 +396,25 @@ impl MetadataStore {
                  LIMIT ?1",
             )
             .map_err(MetadataError::from)?;
+        let limit = i64::try_from(limit).map_err(|_| MetadataError::IntegerOverflow)?;
         let rows = statement
-            .query_map(
-                [to_i64(
-                    u64::try_from(limit).map_err(|_| MetadataError::IntegerOverflow)?,
-                )?],
-                |row| {
-                    Ok(SessionSummary {
-                        id: row.get(0)?,
-                        simulator_key: row.get(1)?,
-                        user_title: row.get(2)?,
-                        user_driver: row.get(3)?,
-                        ownership: row.get(4)?,
-                        tags: Vec::new(),
-                        track: row.get(5)?,
-                        car: row.get(6)?,
-                        session_type: row.get(7)?,
-                        started_at: row.get(8)?,
-                        source_kind: row.get(9)?,
-                        exportable: row.get(10)?,
-                        laps: Vec::new(),
-                    })
-                },
-            )
+            .query_map([limit], |row| {
+                Ok(SessionSummary {
+                    id: row.get(0)?,
+                    simulator_key: row.get(1)?,
+                    user_title: row.get(2)?,
+                    user_driver: row.get(3)?,
+                    ownership: row.get(4)?,
+                    tags: Vec::new(),
+                    track: row.get(5)?,
+                    car: row.get(6)?,
+                    session_type: row.get(7)?,
+                    started_at: row.get(8)?,
+                    source_kind: row.get(9)?,
+                    exportable: row.get(10)?,
+                    laps: Vec::new(),
+                })
+            })
             .map_err(MetadataError::from)?;
         let mut sessions: Vec<_> = rows
             .collect::<Result<_, _>>()
@@ -413,8 +423,8 @@ impl MetadataStore {
         let mut lap_statement = self
             .connection
             .prepare(
-                "SELECT id, lap_index, duration_ns, validity, validity_reason, is_personal_best
-                 FROM laps WHERE session_id = ?1 ORDER BY lap_index",
+                "SELECT id, lap_index, duration_ns, validity, validity_reason, is_personal_best, max_tyres_out FROM laps
+                 WHERE session_id = ?1 ORDER BY lap_index",
             )
             .map_err(MetadataError::from)?;
         for session in &mut sessions {
@@ -432,6 +442,7 @@ impl MetadataStore {
                             validity: row.get(3)?,
                             validity_reason: row.get(4)?,
                             is_personal_best: row.get(5)?,
+                            max_tyres_out: row.get(6)?,
                             sectors: Vec::new(),
                         },
                     ))
@@ -858,7 +869,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 4);
+        assert_eq!(store.schema_version().expect("schema version"), 5);
 
         let mut statement = store
             .connection
@@ -896,7 +907,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 4);
+        assert_eq!(store.schema_version().expect("schema version"), 5);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
@@ -934,6 +945,7 @@ mod tests {
                         duration_ns: Some(110_906_000_000),
                         validity: "valid".into(),
                         validity_reason: None,
+                        max_tyres_out: Some(0),
                         sample_start: 0,
                         sample_count: 100,
                         is_personal_best: true,
@@ -955,6 +967,7 @@ mod tests {
                         duration_ns: None,
                         validity: "invalid".into(),
                         validity_reason: Some("session ended".into()),
+                        max_tyres_out: None,
                         sample_start: 100,
                         sample_count: 100,
                         is_personal_best: false,
@@ -986,6 +999,7 @@ mod tests {
         assert!(summaries[0].exportable);
         assert_eq!(summaries[0].laps.len(), 2);
         assert_eq!(summaries[0].laps[0].duration_ns, Some(110_906_000_000));
+        assert_eq!(summaries[0].laps[0].max_tyres_out, Some(0));
         assert!(summaries[0].laps[0].is_personal_best);
         assert_eq!(
             summaries[0].laps[0].sectors,
@@ -1052,6 +1066,7 @@ mod tests {
                 duration_ns: None,
                 validity: "unknown".into(),
                 validity_reason: None,
+                max_tyres_out: None,
                 sample_start: 150,
                 sample_count: 100,
                 is_personal_best: false,

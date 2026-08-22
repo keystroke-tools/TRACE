@@ -623,7 +623,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
             </button>
           )}
           <p className="mt-3 text-[11px] leading-5 text-trace-dim">
-            “Recorded” means TRACE captured the complete lap. Track-limit validity is not available from the currently validated {session.simulatorName} adapter data.
+            “Recorded” means TRACE captured the complete lap. Tyres-out evidence is shown when available; {session.simulatorName} does not provide TRACE with a definitive final lap-valid verdict.
           </p>
         </div>
       )}
@@ -749,12 +749,15 @@ function EmptySessions({ title, children }: { title: string; children: ReactNode
 }
 
 function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
-  const label = lap.validity === "unknown"
-    ? "RECORDED"
+  const hasTrackLimitEvidence = lap.maxTyresOut != null && lap.maxTyresOut > 0;
+  const label = hasTrackLimitEvidence
+    ? `${lap.maxTyresOut} ${lap.maxTyresOut === 1 ? "TYRE" : "TYRES"} OUT`
+    : lap.validity === "unknown"
+      ? "RECORDED"
     : lap.validityReason?.includes("partial")
       ? "PARTIAL"
       : lap.validity.toUpperCase();
-  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : lap.validity === "unknown" ? "text-trace-soft" : "text-trace-warning"}`;
+  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${hasTrackLimitEvidence || lap.validity === "invalid" ? "text-trace-warning" : lap.validity === "valid" ? "text-trace-accent" : "text-trace-soft"}`;
   return lap.validityReason
     ? <Tooltip className={className} content={lap.validityReason}>{label}</Tooltip>
     : <span className={className}>{label}</span>;

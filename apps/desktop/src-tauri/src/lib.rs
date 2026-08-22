@@ -62,6 +62,7 @@ struct RecordedLapSummary {
     duration_ns: Option<u64>,
     validity: String,
     validity_reason: Option<String>,
+    max_tyres_out: Option<u8>,
     is_fastest: bool,
     sectors: Vec<RecordedSectorSummary>,
 }
@@ -162,6 +163,7 @@ fn recent_sessions(
                         duration_ns: lap.duration_ns,
                         validity: lap.validity,
                         validity_reason: lap.validity_reason,
+                        max_tyres_out: lap.max_tyres_out,
                         is_fastest: lap.is_personal_best,
                         sectors: lap
                             .sectors

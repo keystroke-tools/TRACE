@@ -59,6 +59,12 @@ impl<'a> PhysicsPage<'a> {
     pub(crate) fn suspension_travel(&self, index: usize) -> f32 {
         read_f32(self.0, 184 + index * 4)
     }
+    pub(crate) fn number_of_tyres_out(&self) -> Option<i32> {
+        self.0
+            .get(244..248)
+            .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+            .map(i32::from_le_bytes)
+    }
 }
 
 pub(crate) struct GraphicsPage<'a>(&'a [u8]);

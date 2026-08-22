@@ -78,6 +78,11 @@ pub fn map_frame(
             simulator_distance_m: None,
             current_sector_index: non_negative_i32(graphics.current_sector_index()),
             last_sector_time_ns: milliseconds_to_nanoseconds(graphics.last_sector_time_ms()),
+            tyres_out: physics
+                .number_of_tyres_out()
+                .and_then(non_negative_i32)
+                .and_then(|value| u8::try_from(value).ok())
+                .filter(|value| *value <= 4),
         },
         inputs: DriverInputs {
             throttle: ratio(physics.gas()),
@@ -204,7 +209,7 @@ mod tests {
 
     #[test]
     fn documented_offsets_map_to_canonical_units() {
-        let mut physics = vec![0; pages::PHYSICS_PREFIX_LENGTH];
+        let mut physics = vec![0; pages::PHYSICS_PAGE_LENGTH];
         put_f32(&mut physics, 4, 0.75);
         put_f32(&mut physics, 8, 0.25);
         put_f32(&mut physics, 12, 20.0);
@@ -215,6 +220,7 @@ mod tests {
         put_f32(&mut physics, 44, 1.0);
         put_f32(&mut physics, 152, 90.0);
         put_f32(&mut physics, 184, 0.04);
+        put_i32(&mut physics, 244, 2);
 
         let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
         put_i32(&mut graphics, 132, 2);
@@ -239,6 +245,7 @@ mod tests {
         assert_eq!(frame.lap.current_lap_time_ns, Some(12_345_000_000));
         assert_eq!(frame.lap.current_sector_index, Some(1));
         assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
+        assert_eq!(frame.lap.tyres_out, Some(2));
         assert_eq!(frame.motion.position_m.map(|value| value.x), Some(100.0));
         assert_eq!(
             frame.wheels[&WheelCorner::FrontLeft].tyre_core_temperature_c,

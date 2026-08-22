@@ -116,6 +116,7 @@ fn synthetic_frame(sequence: u64, rate_hz: u32) -> TelemetryFrame {
             ),
             current_sector_index: None,
             last_sector_time_ns: None,
+            tyres_out: None,
         },
         inputs: DriverInputs {
             throttle: Some((0.65 + wave * 0.3).clamp(0.0, 1.0) as f32),

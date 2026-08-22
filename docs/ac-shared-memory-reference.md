@@ -193,6 +193,12 @@ zero-based. These map columns are deliberately stable: adding another source fie
 adds a key, not another top-level Arrow schema version. The opaque page envelope is
 also retained so a later decoder can recover fields that were unknown when recorded.
 
+TRACE promotes `physics.number_of_tyres_out` into a per-lap maximum in SQLite for
+quick archive display. This is track-limit evidence, not a validity verdict: the
+published pages contain no final lap-valid flag or invalidation threshold. Penalty
+time, penalty flags, and `penaltiesEnabled` remain available in the native maps for
+future analysis without another Arrow schema revision.
+
 The static page contains player names. Local recordings and exported Arrow files must
 therefore be treated as potentially identifying. Checked-in fixtures use TRACE's
 redaction path and contain only version, car, track, and validated condition values.
