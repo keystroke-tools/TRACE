@@ -302,7 +302,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [sector, setSector] = useState<number | null>(null);
   const [cornerIndex, setCornerIndex] = useState<number | null>(null);
-  const [opportunitiesCollapsed, setOpportunitiesCollapsed] = useState(false);
+  const [analysisCollapsed, setAnalysisCollapsed] = useState(false);
   const mapPip = useTrackMapPip(comparison != null && state === "ready");
   const skipReferenceDefaults = useRef(false);
   const skipComparisonDefaults = useRef(false);
@@ -398,7 +398,8 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
           {comparison && state === "ready" && (
             <div>
               <div className="pb-56">
-                <div className={`grid items-start gap-3 transition-[grid-template-columns] ${opportunitiesCollapsed ? "grid-cols-[minmax(0,1fr)_44px]" : "grid-cols-[minmax(0,1fr)_288px]"}`}>
+                <div className={`grid items-start gap-3 transition-[grid-template-columns] ${analysisCollapsed ? "grid-cols-[44px_minmax(0,1fr)]" : "grid-cols-[288px_minmax(0,1fr)]"}`}>
+                  <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
                   <div className="min-w-0">
                     <div className="grid grid-cols-[minmax(480px,1.2fr)_minmax(360px,.8fr)] gap-3">
                       <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} height={512} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} /></div>
@@ -417,7 +418,6 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                       <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "COMPARISON VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                     </div>
                   </div>
-                  <CornerOpportunities corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={opportunitiesCollapsed} onCollapsed={setOpportunitiesCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
                 </div>
               </div>
               {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} onDismiss={mapPip.dismiss} />}
@@ -472,26 +472,26 @@ function filterSamplesByDistance(samples: LapComparisonSample[], startDistanceM:
   return samples.filter((sample) => sample.distanceM >= startDistanceM && sample.distanceM <= endDistanceM);
 }
 
-function CornerOpportunities({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; onSelect: (index: number) => void }) {
+function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; onSelect: (index: number) => void }) {
   const opportunities = corners
     .filter((corner) => corner.totalLossSeconds != null && corner.totalLossSeconds > 0.005)
     .slice()
     .sort((left, right) => (right.totalLossSeconds ?? 0) - (left.totalLossSeconds ?? 0))
     .slice(0, 4);
   return (
-    <section className="sticky top-0 max-h-[calc(100vh-190px)] overflow-y-auto border border-trace-divider bg-trace-surface" aria-label="Biggest corner opportunities">
+    <section className={`fixed bottom-[252px] left-[200px] top-16 z-50 overflow-y-auto border border-trace-divider bg-trace-surface shadow-[0_18px_55px_rgba(0,0,0,.45)] transition-[width] ${collapsed ? "w-11" : "w-72"}`} aria-label="Rule-based lap analysis">
       <div className={`flex border-b border-trace-divider ${collapsed ? "h-11 items-center justify-center" : "min-h-16 items-start justify-between gap-3 p-3"}`}>
-        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">COMPARISON OPPORTUNITIES</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">{comparisonIsFaster ? "Comparison is faster than Reference" : "Slower Comparison against faster Reference"}</span></div>}
-        <button type="button" onClick={() => onCollapsed(!collapsed)} className="grid size-8 shrink-0 place-items-center text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label={collapsed ? "Show corner opportunities" : "Hide corner opportunities"} aria-expanded={!collapsed}>
-          <svg className={`size-4 fill-none stroke-current transition-transform ${collapsed ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
+        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">ANALYSIS</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Rule-based comparison · No AI</span><span className="mt-1 block text-[10px] leading-4 text-trace-faint">{comparisonIsFaster ? "Comparison is faster than Reference" : "Slower Comparison against faster Reference"}</span></div>}
+        <button type="button" onClick={() => onCollapsed(!collapsed)} className="grid size-8 shrink-0 place-items-center text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label={collapsed ? "Show analysis" : "Hide analysis"} aria-expanded={!collapsed}>
+          <svg className={`size-4 fill-none stroke-current transition-transform ${collapsed ? "" : "rotate-180"}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
         </button>
       </div>
       {collapsed ? (
-        <button type="button" onClick={() => onCollapsed(false)} className="flex w-full items-center justify-center py-4 font-mono text-[10px] font-bold tracking-[.12em] text-trace-dim hover:text-trace-text" aria-label="Show corner opportunities">
-          <span className="[writing-mode:vertical-rl]">OPPORTUNITIES</span>
+        <button type="button" onClick={() => onCollapsed(false)} className="flex w-full items-center justify-center py-4 font-mono text-[10px] font-bold tracking-[.12em] text-trace-dim hover:text-trace-text" aria-label="Show analysis">
+          <span className="[writing-mode:vertical-rl]">ANALYSIS</span>
         </button>
       ) : opportunities.length === 0 ? (
-        <p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">No reliable corner losses were detected for this comparison.</p>
+        <p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">The rule-based comparison did not detect any meaningful corner losses.</p>
       ) : (
         <div className="divide-y divide-trace-divider">
           {selectedCornerIndex != null && <button type="button" onClick={() => onSelect(selectedCornerIndex)} className="w-full px-4 py-3 text-left font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent hover:bg-trace-deep hover:text-trace-text">SHOW FULL LAP</button>}
@@ -787,7 +787,7 @@ function useTrackMapPip(active: boolean) {
 }
 
 function FloatingTrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss: () => void }) {
-  return <aside className={`fixed top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)] ${comparison ? "left-[200px]" : "right-6"}`} aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} comparisonIsFaster={comparisonIsFaster} height={260} trackMap={trackMap} focusSelection={focusSelection} corners={corners} selectedCornerIndex={selectedCornerIndex} onDismiss={onDismiss} /></aside>;
+  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} comparisonIsFaster={comparisonIsFaster} height={260} trackMap={trackMap} focusSelection={focusSelection} corners={corners} selectedCornerIndex={selectedCornerIndex} onDismiss={onDismiss} /></aside>;
 }
 
 function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, height: requestedHeight, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss?: () => void }) {
