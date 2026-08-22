@@ -399,7 +399,9 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
             <div>
               <div className="pb-56">
                 <div className={`grid items-start gap-3 transition-[grid-template-columns] ${analysisCollapsed ? "grid-cols-[44px_minmax(0,1fr)]" : "grid-cols-[288px_minmax(0,1fr)]"}`}>
-                  <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
+                  <div className="w-full">
+                    <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
+                  </div>
                   <div className="min-w-0">
                     <div className="grid grid-cols-[minmax(480px,1.2fr)_minmax(360px,.8fr)] gap-3">
                       <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} height={512} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} /></div>
@@ -852,11 +854,40 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
     const start = project(x1, z1); const end = project(x2, z2);
     return [<line x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]} stroke="#ff334f" strokeWidth={strokeWidth} strokeLinecap="round" opacity={Math.min(1, 0.18 + brake / 100 * 0.82)} vectorEffect="non-scaling-stroke" key={`${prefix}-${offset}`} />];
   });
+  const mapCentre = project((minX + maxX) / 2, (minZ + maxZ) / 2);
+  const cornerLabelPoint = (x: number, z: number) => {
+    if (trackMap && trackMap.centreLine.length > 0) {
+      const nearestIndex = trackMap.centreLine.reduce((nearest, point, index) => {
+        const nearestPoint = trackMap.centreLine[nearest];
+        const distance = (point.xM - x) ** 2 + (point.zM - z) ** 2;
+        const nearestDistance = (nearestPoint.xM - x) ** 2 + (nearestPoint.zM - z) ** 2;
+        return distance < nearestDistance ? index : nearest;
+      }, 0);
+      const centrePoint = trackMap.centreLine[nearestIndex];
+      const boundaries = [trackMap.leftBoundary[nearestIndex], trackMap.rightBoundary[nearestIndex]].filter((point): point is TrackMapAsset["centreLine"][number] => point != null);
+      if (centrePoint && boundaries.length > 0) {
+        const centre = project(centrePoint.xM, centrePoint.zM);
+        const candidates = boundaries.map((boundary) => {
+          const edge = project(boundary.xM, boundary.zM);
+          const dx = edge[0] - centre[0];
+          const dy = edge[1] - centre[1];
+          const magnitude = Math.max(Math.hypot(dx, dy), 0.001);
+          return [edge[0] + dx / magnitude * 22, edge[1] + dy / magnitude * 22] as const;
+        });
+        return candidates.reduce((outside, candidate) => Math.hypot(candidate[0] - mapCentre[0], candidate[1] - mapCentre[1]) > Math.hypot(outside[0] - mapCentre[0], outside[1] - mapCentre[1]) ? candidate : outside);
+      }
+    }
+    const apex = project(x, z);
+    const dx = apex[0] - mapCentre[0];
+    const dy = apex[1] - mapCentre[1];
+    const magnitude = Math.max(Math.hypot(dx, dy), 0.001);
+    return [apex[0] + dx / magnitude * 28, apex[1] + dy / magnitude * 28] as const;
+  };
   const visibleCornerLabels = corners.flatMap((corner) => {
     if (corner.apexDistanceM < (samples[0]?.distanceM ?? 0) || corner.apexDistanceM > (samples.at(-1)?.distanceM ?? 0)) return [];
     const sample = samples.reduce((closest, candidate) => Math.abs(candidate.distanceM - corner.apexDistanceM) < Math.abs(closest.distanceM - corner.apexDistanceM) ? candidate : closest, samples[0]);
     if (!sample || sample.referencePositionXM == null || sample.referencePositionZM == null) return [];
-    return [{ corner, point: project(sample.referencePositionXM, sample.referencePositionZM) }];
+    return [{ corner, point: cornerLabelPoint(sample.referencePositionXM, sample.referencePositionZM) }];
   });
   const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
@@ -887,7 +918,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
           {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3" strokeDasharray={comparisonIsFaster ? "9 7" : undefined} strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
           {brakeSegments("reference-brake", "referencePositionXM", "referencePositionZM", "referenceBrakePercent", 6)}
           {comparison && brakeSegments("comparison-brake", "comparisonPositionXM", "comparisonPositionZM", "comparisonBrakePercent", 3.5)}
-          {visibleCornerLabels.map(({ corner, point }) => <g transform={`translate(${point[0]} ${point[1]})`} pointerEvents="none" key={corner.index}><circle r="12" fill={corner.index === selectedCornerIndex ? "var(--color-trace-accent)" : "var(--color-trace-black)"} stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /><text y="3.5" textAnchor="middle" fill={corner.index === selectedCornerIndex ? "var(--color-trace-black)" : "var(--color-trace-text)"} fontFamily="monospace" fontSize="10" fontWeight="900">{corner.label}</text></g>)}
+          {visibleCornerLabels.map(({ corner, point }) => <g transform={`translate(${point[0]} ${point[1]})`} pointerEvents="none" key={corner.index}><circle r="15" fill={corner.index === selectedCornerIndex ? "var(--color-trace-accent)" : "var(--color-trace-black)"} stroke="var(--color-trace-soft)" strokeWidth="1.75" vectorEffect="non-scaling-stroke" /><text y="4" textAnchor="middle" fill={corner.index === selectedCornerIndex ? "var(--color-trace-black)" : "var(--color-trace-text)"} fontFamily="monospace" fontSize="11" fontWeight="900">{corner.label}</text></g>)}
           {startPoint && <g transform={`translate(${startPoint[0]} ${startPoint[1]})`}><line x1="-7" y1="-7" x2="7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><line x1="7" y1="-7" x2="-7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></g>}
           {referenceCursor && <circle cx={referenceCursor[0]} cy={referenceCursor[1]} r="6" fill={referenceColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
           {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="4.5" fill={comparisonColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
