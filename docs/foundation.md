@@ -341,10 +341,13 @@ mislabelled `Valid`.
 
 Completed sessions can be exported from the Sessions UI into the user's Downloads
 directory. A self-contained `.trace` package combines a compact versioned metadata
-manifest with the immutable Arrow telemetry, allowing another TRACE installation to
-recreate the session, laps, sectors, annotations, attribution, and complete telemetry.
-Imported packages receive fresh local identities and are marked as another driver's
-data. Arrow IPC export preserves the raw full-fidelity recording alone. CSV
+manifest with a share-profile Arrow rewrite, allowing another TRACE installation to
+recreate the session, laps, sectors, annotations, attribution, and reviewable telemetry.
+The share profile retains canonical analysis channels and the native values consumed
+by current features while omitting duplicate opaque page bytes and unused repeated
+native maps. Imported packages receive fresh local identities and are marked as
+another driver's data. Arrow IPC export preserves the raw full-fidelity recording
+alone. CSV
 export streams the stable seven-column core projection (`sequence`, elapsed time,
 inputs, speed, RPM, and normalized lap position) one bounded Arrow batch at a time;
 missing optional values remain empty and units are named explicitly. TRACE does not

@@ -110,6 +110,7 @@ pub struct SessionSummary {
     pub session_type: Option<String>,
     pub started_at: String,
     pub source_kind: String,
+    #[serde(default)]
     pub conditions: SessionConditions,
     pub exportable: bool,
     pub laps: Vec<LapSummary>,

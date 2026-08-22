@@ -62,6 +62,7 @@ Currently implemented:
 - Measured Zstandard Arrow compression with selectable LZ4/uncompressed policies
 - Bounded lap-range Arrow reads backed by SQLite sample locators
 - Per-session full-fidelity Arrow and streaming core-channel CSV exports
+- Compact self-contained `.trace` sharing exports with measured ~90% size reduction
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
 - Compact searchable/filterable session library with dedicated full-session review and safe recording deletion

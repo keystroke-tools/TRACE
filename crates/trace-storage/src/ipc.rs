@@ -40,6 +40,16 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 6] = [
+    "static.max_fuel_litres",
+    "static.track_spline_length_m",
+    "physics.tyre_wear.0",
+    "physics.tyre_wear.1",
+    "physics.tyre_wear.2",
+    "physics.tyre_wear.3",
+];
+const SHARED_NATIVE_TEXT_FIELDS: [&str; 1] = ["static.track_configuration"];
+
 /// Minimal decoded columns used to validate the Arrow storage choice.
 /// This is not yet the final full-resolution persistence schema.
 #[derive(Clone, Debug, PartialEq)]
@@ -214,6 +224,117 @@ pub fn encode_frames(frames: &[TelemetryFrame]) -> Result<Vec<u8>, IpcError> {
         writer.finish().map_err(IpcError::from)?;
     }
     Ok(output.into_inner())
+}
+
+/// Rewrites a full-fidelity telemetry file into the compact representation used for
+/// session sharing. Canonical channels are retained; the opaque source page payload
+/// is omitted because it duplicates decoded fields and cannot be inspected by TRACE
+/// directly. Repeated native maps are reduced to the small set of values required by
+/// current analysis features.
+///
+/// # Errors
+///
+/// Returns [`IpcError`] for an unsupported source schema or Arrow read/write failure.
+pub fn compact_for_sharing<R: Read + Seek, W: Write>(
+    reader: R,
+    writer: W,
+) -> Result<u64, IpcError> {
+    let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
+    validate_schema(reader.schema().as_ref())?;
+    let schema = reader.schema();
+    let payload_index = schema.index_of("native_payload").ok();
+    let float_index = schema.index_of("native_float_fields").ok();
+    let integer_index = schema.index_of("native_integer_fields").ok();
+    let text_index = schema.index_of("native_text_fields").ok();
+    let mut writer = FileWriter::try_new_with_options(
+        writer,
+        &schema,
+        ipc_write_options(DEFAULT_IPC_COMPRESSION)?,
+    )
+    .map_err(IpcError::from)?;
+    let mut samples = 0_u64;
+    for batch in &mut reader {
+        let batch = batch.map_err(IpcError::from)?;
+        let rows = batch.num_rows();
+        let batch = if payload_index.is_some()
+            || float_index.is_some()
+            || integer_index.is_some()
+            || text_index.is_some()
+        {
+            let mut columns = batch.columns().to_vec();
+            if let Some(index) = payload_index {
+                columns[index] =
+                    Arc::new(std::iter::repeat_n(None::<&[u8]>, rows).collect::<BinaryArray>());
+            }
+            if let Some(index) = float_index {
+                let source = batch.column(index).as_any().downcast_ref::<MapArray>();
+                columns[index] = Arc::new(shared_native_float_map(source, rows)?);
+            }
+            if let Some(index) = integer_index {
+                columns[index] = Arc::new(empty_native_integer_map(rows)?);
+            }
+            if let Some(index) = text_index {
+                let source = batch.column(index).as_any().downcast_ref::<MapArray>();
+                columns[index] = Arc::new(shared_native_text_map(source, rows)?);
+            }
+            RecordBatch::try_new(schema.clone(), columns).map_err(IpcError::from)?
+        } else {
+            batch
+        };
+        writer.write(&batch).map_err(IpcError::from)?;
+        samples = samples
+            .checked_add(u64::try_from(rows).map_err(|_| IpcError::SampleOverflow)?)
+            .ok_or(IpcError::SampleOverflow)?;
+    }
+    if samples == 0 {
+        return Err(IpcError::EmptyBatch);
+    }
+    writer.finish().map_err(IpcError::from)?;
+    Ok(samples)
+}
+
+fn shared_native_float_map(source: Option<&MapArray>, rows: usize) -> Result<MapArray, IpcError> {
+    let mut builder = MapBuilder::new(None, StringBuilder::new(), Float64Builder::new());
+    for row in 0..rows {
+        let mut found = false;
+        if let Some(source) = source {
+            for key in SHARED_NATIVE_FLOAT_FIELDS {
+                if let Some(value) = native_float_value(source, row, key) {
+                    builder.keys().append_value(key);
+                    builder.values().append_value(value);
+                    found = true;
+                }
+            }
+        }
+        builder.append(found).map_err(IpcError::from)?;
+    }
+    Ok(builder.finish())
+}
+
+fn empty_native_integer_map(rows: usize) -> Result<MapArray, IpcError> {
+    let mut builder = MapBuilder::new(None, StringBuilder::new(), Int64Builder::new());
+    for _ in 0..rows {
+        builder.append(false).map_err(IpcError::from)?;
+    }
+    Ok(builder.finish())
+}
+
+fn shared_native_text_map(source: Option<&MapArray>, rows: usize) -> Result<MapArray, IpcError> {
+    let mut builder = MapBuilder::new(None, StringBuilder::new(), StringBuilder::new());
+    for row in 0..rows {
+        let mut found = false;
+        if let Some(source) = source {
+            for key in SHARED_NATIVE_TEXT_FIELDS {
+                if let Some(value) = native_text_value(source, row, key) {
+                    builder.keys().append_value(key);
+                    builder.values().append_value(value);
+                    found = true;
+                }
+            }
+        }
+        builder.append(found).map_err(IpcError::from)?;
+    }
+    Ok(builder.finish())
 }
 
 /// Incremental Arrow IPC file encoder with a fixed maximum in-memory frame batch.
@@ -1412,6 +1533,73 @@ mod tests {
         assert_eq!(decoded.speed_mps, vec![Some(30.0), None]);
         let projected = read_columns_range(Cursor::new(bytes), 0, 2).expect("full projection");
         assert_eq!(projected.track_configuration.as_deref(), Some("layout_gp"));
+    }
+
+    #[test]
+    fn compact_share_profile_keeps_analysis_data_and_strips_redundant_native_data() {
+        let frames = (0..8)
+            .map(|sequence| TelemetryFrame {
+                sequence: FrameSequence(sequence),
+                elapsed: ElapsedNanoseconds(sequence * 10),
+                inputs: DriverInputs {
+                    throttle: Some(0.75),
+                    ..DriverInputs::default()
+                },
+                native: Some(Box::new(NativeTelemetrySample {
+                    schema: "fixture.native/1".into(),
+                    payload: vec![u8::try_from(sequence).expect("byte"); 1_500],
+                    float_fields: BTreeMap::from([
+                        ("physics.tyre_wear.0".into(), 98.0),
+                        ("static.max_fuel_litres".into(), 60.0),
+                        ("physics.unused".into(), 123.0),
+                    ]),
+                    integer_fields: BTreeMap::from([("physics.unused".into(), 42)]),
+                    text_fields: BTreeMap::from([
+                        ("static.track_configuration".into(), "gp".into()),
+                        ("graphics.unused".into(), "value".into()),
+                    ]),
+                })),
+                ..TelemetryFrame::default()
+            })
+            .collect::<Vec<_>>();
+        let full = encode_frames(&frames).expect("full telemetry");
+        let mut compact = Vec::new();
+        assert_eq!(
+            compact_for_sharing(Cursor::new(&full), &mut compact).expect("compact telemetry"),
+            8
+        );
+        assert!(compact.len() < full.len());
+
+        let projected = read_columns_range(Cursor::new(&compact), 0, 8).expect("projection");
+        assert_eq!(projected.throttle, vec![Some(0.75); 8]);
+        assert_eq!(projected.track_configuration.as_deref(), Some("gp"));
+        let metrics = read_lap_metrics(Cursor::new(&compact), 0, 8).expect("metrics");
+        assert_eq!(metrics.fuel_capacity_litres, Some(60.0));
+        assert_eq!(metrics.tyre_wear_start[0], Some(98.0));
+
+        let mut reader = FileReader::try_new(Cursor::new(compact), None).expect("reader");
+        let batch = reader.next().expect("batch").expect("valid batch");
+        let payload = batch
+            .column(batch.schema().index_of("native_payload").expect("payload"))
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("binary payload");
+        assert_eq!(payload.null_count(), 8);
+        let floats = batch
+            .column(
+                batch
+                    .schema()
+                    .index_of("native_float_fields")
+                    .expect("float map"),
+            )
+            .as_any()
+            .downcast_ref::<MapArray>()
+            .expect("float map");
+        assert_eq!(
+            native_float_value(floats, 0, "physics.tyre_wear.0"),
+            Some(98.0)
+        );
+        assert_eq!(native_float_value(floats, 0, "physics.unused"), None);
     }
 
     #[test]

@@ -1263,7 +1263,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
                     {exportMenuOpen && session.exportable && (
                       <div className="ml-2 border-l border-trace-divider bg-trace-deep pb-1 pl-1 pt-2">
                         <span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">SHARE</span>
-                        <ExportOption label="Shareable session" detail=".trace · telemetry, laps & details" disabled={exporting} onClick={() => void exportTelemetry("trace")} />
+                        <ExportOption label="Shareable session" detail=".trace · compact telemetry, laps & details" disabled={exporting} onClick={() => void exportTelemetry("trace")} />
                         <span className="mt-1 block border-t border-trace-divider px-2 pb-1 pt-2 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">DATA EXPORTS</span>
                         <ExportOption label="Raw telemetry" detail="Arrow IPC · all captured channels" disabled={exporting} onClick={() => void exportTelemetry("arrow")} />
                         <ExportOption label="Spreadsheet" detail="CSV · core channels" disabled={exporting} onClick={() => void exportTelemetry("csv")} />

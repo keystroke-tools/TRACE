@@ -4,7 +4,10 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::metadata::{LapSummary, NewLap, NewSector, NewSession, SessionSummary};
+use crate::{
+    ipc::{IpcError, compact_for_sharing},
+    metadata::{LapSummary, NewLap, NewSector, NewSession, SessionSummary},
+};
 
 pub const PACKAGE_VERSION: u32 = 1;
 pub const MAX_MANIFEST_BYTES: u32 = 1024 * 1024;
@@ -32,6 +35,7 @@ pub struct SessionPackageLap {
 pub enum PackageError {
     Io(io::Error),
     Json(serde_json::Error),
+    Ipc(IpcError),
     Invalid(&'static str),
     UnsupportedVersion(u32),
 }
@@ -48,6 +52,12 @@ impl From<serde_json::Error> for PackageError {
     }
 }
 
+impl From<IpcError> for PackageError {
+    fn from(value: IpcError) -> Self {
+        Self::Ipc(value)
+    }
+}
+
 /// Writes a manifest and telemetry stream as one session package.
 ///
 /// # Errors
@@ -59,6 +69,36 @@ pub fn write_package<W: Write, R: Read>(
     mut telemetry: R,
     manifest: &SessionPackageManifest,
 ) -> Result<u64, PackageError> {
+    write_package_header(&mut destination, manifest)?;
+    io::copy(&mut telemetry, &mut destination).map_err(PackageError::from)
+}
+
+/// Writes a compact, shareable package while retaining every canonical channel and
+/// the source-native values used by TRACE's current analysis features.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] for invalid metadata, unsupported Arrow telemetry, a
+/// sample-count mismatch, or an output/read error.
+pub fn write_compact_package<W: Write, R: Read + Seek>(
+    mut destination: W,
+    telemetry: R,
+    manifest: &SessionPackageManifest,
+) -> Result<u64, PackageError> {
+    write_package_header(&mut destination, manifest)?;
+    let samples = compact_for_sharing(telemetry, &mut destination)?;
+    if samples != manifest.sample_count {
+        return Err(PackageError::Invalid(
+            "session sample count does not match telemetry",
+        ));
+    }
+    Ok(samples)
+}
+
+fn write_package_header<W: Write>(
+    destination: &mut W,
+    manifest: &SessionPackageManifest,
+) -> Result<(), PackageError> {
     validate_manifest(manifest, manifest.sample_count)?;
     let metadata = serde_json::to_vec(manifest)?;
     let metadata_length = u32::try_from(metadata.len())
@@ -71,7 +111,7 @@ pub fn write_package<W: Write, R: Read>(
     destination.write_all(&metadata_length.to_le_bytes())?;
     destination.write_all(&manifest.sample_count.to_le_bytes())?;
     destination.write_all(&metadata)?;
-    io::copy(&mut telemetry, &mut destination).map_err(PackageError::from)
+    Ok(())
 }
 
 /// Parses and bounds a session package while leaving telemetry available as a stream.
@@ -340,8 +380,21 @@ mod tests {
             }],
             sample_count: 3,
         };
+        let mut legacy_manifest = serde_json::to_value(&manifest).expect("legacy manifest");
+        legacy_manifest["session"]
+            .as_object_mut()
+            .expect("session object")
+            .remove("conditions");
+        let legacy_manifest: SessionPackageManifest =
+            serde_json::from_value(legacy_manifest).expect("legacy package metadata");
+        assert_eq!(
+            legacy_manifest.session.conditions,
+            crate::metadata::SessionConditions::default()
+        );
+
         let mut package_bytes = Vec::new();
-        write_package(&mut package_bytes, Cursor::new(&telemetry), &manifest).expect("package");
+        write_compact_package(&mut package_bytes, Cursor::new(&telemetry), &manifest)
+            .expect("package");
 
         let package = read_package(
             Cursor::new(&package_bytes),

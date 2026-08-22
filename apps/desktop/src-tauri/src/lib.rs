@@ -22,7 +22,7 @@ use trace_storage::{
     metadata::{MetadataStore, SessionSummary},
     package::{
         PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest, imported_records, read_package,
-        write_package,
+        write_compact_package,
     },
 };
 
@@ -1017,7 +1017,7 @@ fn export_session(
     let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
     let export_result = if export_format == "trace" {
         let manifest = trace_package_manifest(&store, &session_id, locator.sample_count)?;
-        write_package(&mut destination, &mut source, &manifest)
+        write_compact_package(&mut destination, &mut source, &manifest)
             .map(|_| locator.sample_count)
             .map_err(|error| format!("failed to export TRACE session: {error:?}"))
     } else if export_format == "arrow" {
