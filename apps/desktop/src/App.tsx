@@ -795,7 +795,7 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   return (
     <>
       <SuggestedReferencesAttachment suggestions={referenceSuggestions} open={suggestionsOpen} currentSessionId={referenceSessionId} currentLapIndex={referenceLap} onOpen={setSuggestionsOpen} onSelect={(suggestion) => { onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); setSuggestionsOpen(false); }} />
-      <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px]" : "grid-cols-[120px_72px_minmax(160px,1fr)_82px_82px_minmax(160px,1fr)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
+      <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
       </div>
@@ -810,8 +810,8 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <HudSteering value={sample?.referenceSteeringPercent} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster} />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
       {showConditions && (referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
-      <div className="col-span-2 h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
-        <span className="block truncate text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">{trackCarLabel}</span>
+      <div className="h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
+        <span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">LIVE GAP</span>
         <strong className={`mt-1 block truncate text-[13px] leading-5 tabular-nums ${gapTone}`}>{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${formatComparisonGap(sample.deltaSeconds)}`}</strong>
       </div>
       {showConditions && (comparisonHasConditions ? <HudConditions air={comparisonAirTemperature} track={comparisonTrackTemperature} /> : <div aria-hidden="true" />)}
@@ -819,7 +819,7 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <HudSteering value={sample?.comparisonSteeringPercent} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
       <HudValue label="ANALYSED SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
       <div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
-        <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} />
+        <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} trackCarLabel={trackCarLabel} />
       </div>
       </div>
     </>
@@ -892,12 +892,13 @@ function comparisonSectorDeltas(referenceLaps: RecordedSessionSummary["laps"], r
   });
 }
 
-function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDelta[]; value: number | null; onChange: (value: number | null) => void }) {
+function ComparisonSectorStrip({ sectors, value, onChange, trackCarLabel }: { sectors: SectorDelta[]; value: number | null; onChange: (value: number | null) => void; trackCarLabel: string }) {
   return (
-    <div className="flex h-6 min-w-0 items-stretch gap-1.5 overflow-x-auto font-mono" aria-label="Sector comparison and telemetry range">
-      <span className="flex w-28 shrink-0 items-center text-[9px] font-black tracking-[.08em] text-trace-accent">{value == null ? "VIEWING FULL LAP" : `VIEWING SECTOR ${value}`}</span>
-      <button type="button" onClick={() => onChange(null)} className={`shrink-0 border px-2 text-[9px] font-black tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
-      {sectors.map((sector) => {
+    <div className="flex h-6 min-w-0 items-stretch gap-3 font-mono" aria-label="Sector comparison and telemetry range">
+      <div className="flex min-w-0 flex-1 items-stretch gap-1.5 overflow-x-auto">
+        <span className="flex w-28 shrink-0 items-center text-[9px] font-black tracking-[.08em] text-trace-accent">{value == null ? "VIEWING FULL LAP" : `VIEWING SECTOR ${value}`}</span>
+        <button type="button" onClick={() => onChange(null)} className={`shrink-0 border px-2 text-[9px] font-black tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
+        {sectors.map((sector) => {
         const gaining = sector.seconds != null && sector.seconds < -0.0005;
         const losing = sector.seconds != null && sector.seconds > 0.0005;
         const tone = gaining
@@ -919,7 +920,11 @@ function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDe
             </button>
           </Tooltip>
         );
-      })}
+        })}
+      </div>
+      <Tooltip content={trackCarLabel} className="min-w-0 max-w-[38%] shrink-0 items-center justify-end">
+        <span className="truncate text-right text-[10px] font-bold tracking-[.06em] text-trace-soft">{trackCarLabel}</span>
+      </Tooltip>
     </div>
   );
 }
@@ -976,7 +981,7 @@ function HudProgress({ label, value, colour }: { label: string; value?: number |
 }
 
 function HudPedals({ throttle, brake }: { throttle?: number | null; brake?: number | null }) {
-  return <div className="grid h-10 min-w-0 grid-cols-2 gap-3"><HudProgress label="THROTTLE" value={throttle} colour={channelColours.throttle} /><HudProgress label="BRAKE" value={brake} colour={channelColours.brake} /></div>;
+  return <div className="grid h-10 w-full min-w-0 max-w-80 grid-cols-2 gap-3 justify-self-center"><HudProgress label="THROTTLE" value={throttle} colour={channelColours.throttle} /><HudProgress label="BRAKE" value={brake} colour={channelColours.brake} /></div>;
 }
 
 function formatHudTemperature(value?: number | null) {
