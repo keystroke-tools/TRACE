@@ -26,6 +26,11 @@ visualisation, comparison and future cross-simulator analysis. It also retains t
 source-native values currently required for tyre wear, fuel capacity and track
 geometry/configuration.
 
+The driver value comes from the session when one has been assigned. For a self-owned
+session without explicit attribution, export falls back to the local driver profile
+configured in Settings. Imported attribution is never replaced by that local profile,
+so a recipient can identify the original driver when choosing a comparison lap.
+
 The share export deliberately omits the opaque source-memory page snapshot and native
 key/value fields TRACE does not currently consume. Those representations duplicate
 the canonical sample data at every frame and dominated package size even after Arrow

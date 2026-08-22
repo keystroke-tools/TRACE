@@ -334,6 +334,13 @@ sit just left of the cursor with a small gap and do not intercept pointer input.
 values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
+Named comparisons persist the exact compatible lap pair in SQLite and can be restored
+from the Analysis dock without rebuilding the selection from timestamps. Storage
+normalises the faster selected lap as Reference when saving, so reopening a shortcut
+preserves the benchmark-first workflow. Saved comparisons contain only local lap
+references; deleting one does not delete either session, while deleting a referenced
+session removes the now-unusable shortcut through foreign-key cascading.
+
 The Live page's “What TRACE records” inventory separates portable analysis-ready
 channels from the complete AC-native tyre, powertrain, chassis, session, and static
 page groups. Native coverage is shown as recorded source data even when TRACE has not
@@ -377,8 +384,11 @@ telemetry HUD uses them only as a session-level fallback. AC's `steerAngle` is r
 and displayed as signed steering input percentage; it is not mislabeled as wheel
 degrees because actual angle depends on controller range and car steering lock.
 
-The Settings page lists the install directory used by each configurable simulator
-adapter. Assetto Corsa is auto-detected from Steam libraries and can be overridden with
+The Settings page stores an optional local driver profile as a nickname or full name.
+TRACE attaches it to future self-owned captures and uses it as attribution when an older
+self-owned session without a session-specific driver is exported. Session-specific and
+imported driver names always take precedence. The same page lists the install directory
+used by each configurable simulator adapter. Assetto Corsa is auto-detected from Steam libraries and can be overridden with
 a validated game-root path stored in SQLite. TRACE uses that root to read AC's own car
 and track UI metadata. It deliberately preserves raw source identifiers when metadata
 is unavailable instead of accumulating an incomplete alias list.

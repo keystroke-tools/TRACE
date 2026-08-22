@@ -70,10 +70,12 @@ Currently implemented:
 - Compact searchable/filterable session library with dedicated full-session review and safe recording deletion
 - Lazy per-lap fuel use, maximum speed, and four-corner tyre-wear summaries derived from recorded telemetry
 - User-managed session/replay names, driver attribution, ownership, and searchable tags
+- Local driver profile for consistently attributing new captures and shared `.trace` sessions
+- Named saved comparisons that restore the exact Reference and Analysed Lap pair
 - Assetto Corsa session classification (practice, qualifying, race, hotlap, time attack, drift, and drag)
 - Red invalid/track-limit lap treatment backed by persisted validity or three-plus-tyres-out evidence
 - Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
-- Settings page for reviewing auto-detected game folders or saving local overrides
+- Settings page for driver identity and reviewing auto-detected game folders or saving local overrides
 - AC car and track names read from installed `ui_car.json`/`ui_track.json` metadata, with exact source IDs preserved as the fallback
 - Track-map braking zones rendered as red intensity gradients over recorded driving lines
 - Transactional SQLite session/lap writes and bounded native session-browser queries

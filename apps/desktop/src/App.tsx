@@ -10,6 +10,7 @@ import {
   type TrackMapAsset,
   type RecordedLapMetrics,
   type RecordedSessionSummary,
+  type SavedComparison,
   type SessionExportFormat,
   type TelemetryStatus,
 } from "./data-source";
@@ -291,6 +292,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
 }
 
 function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
+  const showToast = useToast();
   const eligibleSessions = useMemo(() => sessions.filter((session) => validComparisonLaps(session).length > 0), [sessions]);
   const [referenceSessionId, setReferenceSessionId] = useState("");
   const [comparisonSessionId, setComparisonSessionId] = useState("");
@@ -303,6 +305,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const [sector, setSector] = useState<number | null>(null);
   const [cornerIndex, setCornerIndex] = useState<number | null>(null);
   const [analysisCollapsed, setAnalysisCollapsed] = useState(false);
+  const [savedComparisons, setSavedComparisons] = useState<SavedComparison[]>([]);
   const mapPip = useTrackMapPip(comparison != null && state === "ready");
   const skipReferenceDefaults = useRef(false);
   const skipComparisonDefaults = useRef(false);
@@ -311,6 +314,12 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const comparisonSession = compatibleSessions.find((candidate) => candidate.id === comparisonSessionId) ?? null;
   const referenceLaps = useMemo(() => referenceSession ? validComparisonLaps(referenceSession) : [], [referenceSession]);
   const comparisonLaps = useMemo(() => comparisonSession ? validComparisonLaps(comparisonSession) : [], [comparisonSession]);
+
+  useEffect(() => {
+    void telemetryDataSource.getSavedComparisons().then(setSavedComparisons).catch((reason) => {
+      showToast({ kind: "error", title: "Saved comparisons unavailable", message: reason instanceof Error ? reason.message : String(reason), timeoutMs: 8_000 });
+    });
+  }, [showToast]);
 
   useEffect(() => {
     if (!referenceSessionId && eligibleSessions[0]) {
@@ -375,12 +384,49 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const corners = comparison?.cornerAnalysis.value?.corners ?? [];
   const finalDelta = comparison?.samples.slice().reverse().find((sample) => sample.deltaSeconds != null)?.deltaSeconds ?? null;
   const comparisonIsFaster = finalDelta != null && finalDelta < -0.0005;
+  const defaultComparisonName = comparison
+    ? `${referenceSession?.driver ?? "Reference"} ${comparison.referenceLapTime} vs ${comparisonSession?.driver ?? "Analysed"} ${comparison.comparisonLapTime}`.slice(0, 80)
+    : "Saved comparison";
   const selectedCorner = corners.find((corner) => corner.index === cornerIndex) ?? null;
   const samples = comparison
     ? selectedCorner
       ? filterSamplesByDistance(comparison.samples, selectedCorner.startDistanceM, selectedCorner.endDistanceM)
       : filterSamplesBySector(comparison.samples, sector)
     : [];
+
+  async function saveCurrentComparison(name: string) {
+    if (referenceLap == null || comparisonLap == null) return false;
+    try {
+      setSavedComparisons(await telemetryDataSource.saveComparison(name, referenceSessionId, referenceLap, comparisonSessionId, comparisonLap));
+      showToast({ kind: "success", title: "Comparison saved", message: "You can restore this lap pair from the Analysis dock.", timeoutMs: 4_500 });
+      return true;
+    } catch (reason) {
+      showToast({ kind: "error", title: "Could not save comparison", message: reason instanceof Error ? reason.message : String(reason), timeoutMs: 8_000 });
+      return false;
+    }
+  }
+
+  async function deleteSavedComparison(comparisonId: string) {
+    try {
+      setSavedComparisons(await telemetryDataSource.deleteSavedComparison(comparisonId));
+      showToast({ kind: "success", title: "Saved comparison removed", message: "The shortcut was deleted; its sessions and telemetry were not changed.", timeoutMs: 3_500 });
+    } catch (reason) {
+      showToast({ kind: "error", title: "Could not remove comparison", message: reason instanceof Error ? reason.message : String(reason), timeoutMs: 8_000 });
+    }
+  }
+
+  function openSavedComparison(saved: SavedComparison) {
+    skipReferenceDefaults.current = true;
+    skipComparisonDefaults.current = true;
+    setReferenceSessionId(saved.referenceSessionId);
+    setReferenceLap(saved.referenceLapIndex);
+    setComparisonSessionId(saved.analysedSessionId);
+    setComparisonLap(saved.analysedLapIndex);
+    setComparison(null);
+    setSector(null);
+    setCornerIndex(null);
+    setCursorIndex(null);
+  }
 
   return (
     <>
@@ -392,15 +438,17 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
         </div>
       ) : (
         <>
-          {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
-          {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose a Reference and an Analysed Lap below</strong><p className="mt-2 text-[13px] text-trace-muted">Use a faster clean lap as the Reference, then choose the compatible lap you want to improve.</p></div>}
-          {state === "error" && <div className="border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Lap analysis unavailable.</strong> {error}</div>}
+          <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} savedComparisons={savedComparisons} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} onOpenSaved={openSavedComparison} onSave={saveCurrentComparison} onDeleteSaved={deleteSavedComparison} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
+          <div className={analysisCollapsed ? "ml-14" : "ml-[300px]"}>
+            {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
+            {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose a Reference and an Analysed Lap below</strong><p className="mt-2 text-[13px] text-trace-muted">Use a faster clean lap as the Reference, then choose the compatible lap you want to improve—or reopen a saved comparison from Analysis.</p></div>}
+            {state === "error" && <div className="border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Lap analysis unavailable.</strong> {error}</div>}
+          </div>
           {comparison && state === "ready" && (
             <div>
               <div className="pb-56">
                 <div className={`grid items-start gap-3 transition-[grid-template-columns] ${analysisCollapsed ? "grid-cols-[44px_minmax(0,1fr)]" : "grid-cols-[288px_minmax(0,1fr)]"}`}>
                   <div className="w-full">
-                    <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
                   </div>
                   <div className="min-w-0">
                     <div className="grid grid-cols-[minmax(480px,1.2fr)_minmax(360px,.8fr)] gap-3">
@@ -475,7 +523,14 @@ function filterSamplesByDistance(samples: LapComparisonSample[], startDistanceM:
   return samples.filter((sample) => sample.distanceM >= startDistanceM && sample.distanceM <= endDistanceM);
 }
 
-function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; onSelect: (index: number) => void }) {
+function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, savedComparisons, defaultName, canSave, onOpenSaved, onSave, onDeleteSaved, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; savedComparisons: SavedComparison[]; defaultName: string; canSave: boolean; onOpenSaved: (comparison: SavedComparison) => void; onSave: (name: string) => Promise<boolean>; onDeleteSaved: (id: string) => Promise<void>; onSelect: (index: number) => void }) {
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [draftName, setDraftName] = useState(defaultName);
+  const [selectedSavedId, setSelectedSavedId] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!saveOpen) setDraftName(defaultName);
+  }, [defaultName, saveOpen]);
   const opportunities = corners
     .filter((corner) => corner.totalLossSeconds != null && corner.totalLossSeconds > 0.005)
     .slice()
@@ -493,10 +548,26 @@ function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster,
         <button type="button" onClick={() => onCollapsed(false)} className="flex w-full items-center justify-center py-4 font-mono text-[10px] font-bold tracking-[.12em] text-trace-dim hover:text-trace-text" aria-label="Show analysis">
           <span className="[writing-mode:vertical-rl]">ANALYSIS</span>
         </button>
-      ) : opportunities.length === 0 ? (
-        <p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">The rule-based comparison did not detect any meaningful corner losses.</p>
       ) : (
-        <div className="divide-y divide-trace-divider">
+        <div>
+          <div className="space-y-2 border-b border-trace-divider p-3">
+            <div className="flex gap-2">
+              <select value={selectedSavedId} onChange={(event) => { const id = event.target.value; setSelectedSavedId(id); const saved = savedComparisons.find((item) => item.id === id); if (saved) onOpenSaved(saved); }} className="min-w-0 flex-1 border border-trace-divider bg-trace-deep px-2 py-2 font-mono text-[10px] font-bold text-trace-muted outline-none focus:border-trace-accent" aria-label="Open a saved comparison">
+                <option value="">SAVED COMPARISONS</option>
+                {savedComparisons.map((saved) => <option value={saved.id} key={saved.id}>{saved.name} · {saved.track} · {saved.car}</option>)}
+              </select>
+              <button type="button" disabled={!canSave} onClick={() => setSaveOpen(true)} className="border border-trace-divider px-3 font-mono text-[10px] font-bold text-trace-muted hover:border-trace-accent hover:text-trace-text disabled:cursor-not-allowed disabled:opacity-30">SAVE</button>
+              <button type="button" disabled={!selectedSavedId} onClick={async () => { await onDeleteSaved(selectedSavedId); setSelectedSavedId(""); }} className="grid size-8 shrink-0 place-items-center border border-trace-divider text-trace-muted hover:border-[#ff5263] hover:text-[#ff5263] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Delete selected saved comparison">
+                <svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M6 4V2h4v2m2 0-.5 10h-7L4 4m3 3v4m2-4v4" /></svg>
+              </button>
+            </div>
+            {saveOpen && <form onSubmit={async (event) => { event.preventDefault(); if (!draftName.trim()) return; setSaving(true); const saved = await onSave(draftName); setSaving(false); if (saved) setSaveOpen(false); }} className="space-y-2 border border-trace-divider bg-trace-deep p-2">
+              <label className="block font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim" htmlFor="comparison-name">COMPARISON NAME</label>
+              <input id="comparison-name" value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={80} autoFocus className="w-full border border-trace-divider bg-trace-black px-2 py-2 text-[12px] text-trace-text outline-none focus:border-trace-accent" />
+              <div className="flex justify-end gap-2"><button type="button" onClick={() => setSaveOpen(false)} className="px-2 py-1 font-mono text-[10px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button><button type="submit" disabled={saving || !draftName.trim()} className="bg-trace-accent px-3 py-1 font-mono text-[10px] font-black text-trace-black disabled:opacity-40">{saving ? "SAVING…" : "SAVE"}</button></div>
+            </form>}
+          </div>
+          {opportunities.length === 0 ? <p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">The rule-based comparison did not detect any meaningful corner losses.</p> : <div className="divide-y divide-trace-divider">
           {selectedCornerIndex != null && <button type="button" onClick={() => onSelect(selectedCornerIndex)} className="w-full px-4 py-3 text-left font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent hover:bg-trace-deep hover:text-trace-text">SHOW FULL LAP</button>}
           {opportunities.map((corner) => {
             const selected = selectedCornerIndex === corner.index;
@@ -517,6 +588,7 @@ function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster,
               </button>
             );
           })}
+          </div>}
         </div>
       )}
     </section>
@@ -1100,13 +1172,18 @@ function Settings() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [savedProfileName, setSavedProfileName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     let active = true;
-    void telemetryDataSource.getGameInstallDirectories().then((values) => {
+    void Promise.all([telemetryDataSource.getGameInstallDirectories(), telemetryDataSource.getDriverProfile()]).then(([values, profile]) => {
       if (!active) return;
       setDirectories(values);
       setDrafts(Object.fromEntries(values.map((value) => [value.simulatorId, value.path ?? ""])));
+      setProfileName(profile.name ?? "");
+      setSavedProfileName(profile.name ?? "");
       setLoading(false);
     }).catch((error) => {
       if (!active) return;
@@ -1115,6 +1192,20 @@ function Settings() {
     });
     return () => { active = false; };
   }, [showToast]);
+
+  async function saveProfile() {
+    setSavingProfile(true);
+    try {
+      const profile = await telemetryDataSource.setDriverProfile(profileName.trim() || null);
+      setProfileName(profile.name ?? "");
+      setSavedProfileName(profile.name ?? "");
+      showToast({ kind: "success", title: profile.name ? "Driver profile saved" : "Driver profile cleared", message: profile.name ? `${profile.name} will identify your new captures and shared TRACE sessions.` : "Future captures will not receive a driver name.", timeoutMs: 5_000 });
+    } catch (error) {
+      showToast({ kind: "error", title: "Could not save driver profile", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function saveDirectory(simulatorId: string, customPath: string | null) {
     setSaving(simulatorId);
@@ -1150,6 +1241,19 @@ function Settings() {
   return (
     <>
       <PageIntro index="05" eyebrow="PREFERENCES" title="SETTINGS" description="Control how TRACE connects to your simulators and works with their data. Recording, storage, analysis, and appearance preferences will also live here as those features become configurable." />
+      <form className="mt-7 border border-trace-divider bg-trace-surface" onSubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
+        <div className="border-b border-trace-divider px-5 py-4">
+          <h2 className="text-[14px] font-black tracking-[.04em]">DRIVER PROFILE</h2>
+          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Use a nickname or full name that other drivers will recognize. TRACE attaches it to new captures and includes it in shared <span className="font-mono text-trace-soft">.trace</span> packages; exports of older self-owned sessions use it when no session-specific driver is set.</p>
+        </div>
+        <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
+          DISPLAY NAME
+          <div className="mt-1.5 flex max-w-2xl">
+            <input value={profileName} maxLength={80} onChange={(event) => setProfileName(event.target.value)} placeholder="Nickname or full name" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 text-[13px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+            <button type="submit" disabled={savingProfile || profileName.trim() === savedProfileName} className="w-28 border border-l-0 border-trace-purple bg-trace-purple-wash text-[12px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingProfile ? "SAVING…" : "SAVE"}</button>
+          </div>
+        </label>
+      </form>
       <div className="mt-7 border border-trace-divider bg-trace-surface">
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>

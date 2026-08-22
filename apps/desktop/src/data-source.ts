@@ -232,6 +232,25 @@ export interface GameInstallDirectory {
   source: "manual" | "detected" | "missing";
 }
 
+export interface DriverProfile {
+  name?: string | null;
+}
+
+export interface SavedComparison {
+  id: string;
+  name: string;
+  referenceSessionId: string;
+  referenceLapIndex: number;
+  referenceDurationNs: number;
+  analysedSessionId: string;
+  analysedLapIndex: number;
+  analysedDurationNs: number;
+  simulatorKey: string;
+  track: string;
+  car: string;
+  createdAt: string;
+}
+
 export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
   selectSimulator(simulatorId: string): Promise<void>;
@@ -241,6 +260,11 @@ export interface TelemetryDataSource {
   compareSessionLaps(referenceSessionId: string, referenceLapIndex: number, comparisonSessionId: string, comparisonLapIndex: number): Promise<LapComparison>;
   getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
   setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
+  getDriverProfile(): Promise<DriverProfile>;
+  setDriverProfile(name: string | null): Promise<DriverProfile>;
+  getSavedComparisons(): Promise<SavedComparison[]>;
+  saveComparison(name: string, referenceSessionId: string, referenceLapIndex: number, analysedSessionId: string, analysedLapIndex: number): Promise<SavedComparison[]>;
+  deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   importSession(path: string): Promise<SessionImport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
@@ -249,6 +273,8 @@ export interface TelemetryDataSource {
 
 const deletedFixtureSessionIds = new Set<string>();
 const fixtureSessionDetails = new Map<string, { title: string | null; driver: string | null; ownership: RecordedSessionSummary["ownership"]; tags: string[] }>();
+let fixtureDriverProfile: DriverProfile = { name: null };
+let fixtureSavedComparisons: SavedComparison[] = [];
 
 export const fixtureDataSource: TelemetryDataSource = {
   async getStatus() {
@@ -406,6 +432,24 @@ export const fixtureDataSource: TelemetryDataSource = {
   async setGameInstallDirectory(simulatorId, customPath) {
     return { simulatorId, simulatorName: "Assetto Corsa", path: customPath, source: customPath ? "manual" : "detected" };
   },
+  async getDriverProfile() {
+    return fixtureDriverProfile;
+  },
+  async setDriverProfile(name) {
+    fixtureDriverProfile = { name };
+    return fixtureDriverProfile;
+  },
+  async getSavedComparisons() {
+    return fixtureSavedComparisons;
+  },
+  async saveComparison(name, referenceSessionId, referenceLapIndex, analysedSessionId, analysedLapIndex) {
+    fixtureSavedComparisons = [{ id: `comparison-${Date.now()}`, name, referenceSessionId, referenceLapIndex, referenceDurationNs: 110_906_000_000, analysedSessionId, analysedLapIndex, analysedDurationNs: 111_328_000_000, simulatorKey: "assetto-corsa", track: "MUGELLO", car: "TATUUS FA01", createdAt: new Date().toISOString() }, ...fixtureSavedComparisons];
+    return fixtureSavedComparisons;
+  },
+  async deleteSavedComparison(comparisonId) {
+    fixtureSavedComparisons = fixtureSavedComparisons.filter((comparison) => comparison.id !== comparisonId);
+    return fixtureSavedComparisons;
+  },
   async deleteSession(sessionId) {
     deletedFixtureSessionIds.add(sessionId);
     return { sessionId };
@@ -439,6 +483,21 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   setGameInstallDirectory(simulatorId, customPath) {
     return invoke<GameInstallDirectory>("set_game_install_directory", { simulatorId, customPath });
+  },
+  getDriverProfile() {
+    return invoke<DriverProfile>("driver_profile");
+  },
+  setDriverProfile(name) {
+    return invoke<DriverProfile>("set_driver_profile", { name });
+  },
+  getSavedComparisons() {
+    return invoke<SavedComparison[]>("saved_comparisons");
+  },
+  saveComparison(name, referenceSessionId, referenceLapIndex, analysedSessionId, analysedLapIndex) {
+    return invoke<SavedComparison[]>("save_comparison", { name, referenceSessionId, referenceLapIndex, analysedSessionId, analysedLapIndex });
+  },
+  deleteSavedComparison(comparisonId) {
+    return invoke<SavedComparison[]>("delete_saved_comparison", { comparisonId });
   },
   exportSession(sessionId, exportFormat) {
     return invoke<SessionExport>("export_session", { sessionId, exportFormat });
