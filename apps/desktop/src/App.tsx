@@ -227,7 +227,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [sector, setSector] = useState<number | null>(null);
   const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
-  const [mapZoomLinked, setMapZoomLinked] = useState(true);
+  const [mapZoomLinked, setMapZoomLinked] = useState(false);
   const mapPip = useTrackMapPip(trace != null);
 
   useEffect(() => {
@@ -316,7 +316,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [sector, setSector] = useState<number | null>(null);
   const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
-  const [mapZoomLinked, setMapZoomLinked] = useState(true);
+  const [mapZoomLinked, setMapZoomLinked] = useState(false);
   const [cornerIndex, setCornerIndex] = useState<number | null>(null);
   const [analysisCollapsed, setAnalysisCollapsed] = useState(false);
   const [savedComparisons, setSavedComparisons] = useState<SavedComparison[]>([]);
@@ -1065,8 +1065,8 @@ function useTrackMapPip(active: boolean) {
   return { anchor, visible: visible && !dismissed, dismiss: () => setDismissed(true) };
 }
 
-function FloatingTrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, trackMap, focusSelection = false, rangeLabel, corners = [], selectedCornerIndex = null, onRangeZoom, rangeZoomLinked = true, onRangeZoomLinked, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; rangeLabel?: string; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onRangeZoom?: (anchorM: number, direction: "in" | "out") => void; rangeZoomLinked?: boolean; onRangeZoomLinked?: (linked: boolean) => void; onDismiss: () => void }) {
-  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} comparisonIsFaster={comparisonIsFaster} height={260} trackMap={trackMap} focusSelection={focusSelection} rangeLabel={rangeLabel} corners={corners} selectedCornerIndex={selectedCornerIndex} onRangeZoom={onRangeZoom} rangeZoomLinked={rangeZoomLinked} onRangeZoomLinked={onRangeZoomLinked} onDismiss={onDismiss} /></aside>;
+function FloatingTrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, trackMap, focusSelection = false, rangeLabel, corners = [], selectedCornerIndex = null, onRangeZoom, rangeZoomLinked = false, onRangeZoomLinked, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; rangeLabel?: string; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onRangeZoom?: (anchorM: number, direction: "in" | "out") => void; rangeZoomLinked?: boolean; onRangeZoomLinked?: (linked: boolean) => void; onDismiss: () => void }) {
+  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} comparisonIsFaster={comparisonIsFaster} height={260} trackMap={trackMap} focusSelection={focusSelection} rangeLabel={rangeLabel} corners={corners} selectedCornerIndex={selectedCornerIndex} onRangeZoom={onRangeZoom} rangeZoomLinked={rangeZoomLinked} onRangeZoomLinked={onRangeZoomLinked} onDismiss={onDismiss} /></aside>;
 }
 
 function closestSampleAtElapsedTime(samples: LapComparisonSample[], key: "referenceElapsedSeconds" | "comparisonElapsedSeconds", targetSeconds: number) {
@@ -1078,7 +1078,7 @@ function closestSampleAtElapsedTime(samples: LapComparisonSample[], key: "refere
   }, null);
 }
 
-function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, height: requestedHeight, trackMap, focusSelection = false, rangeLabel, corners = [], selectedCornerIndex = null, onRangeZoom, rangeZoomLinked = true, onRangeZoomLinked, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; rangeLabel?: string; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onRangeZoom?: (anchorM: number, direction: "in" | "out") => void; rangeZoomLinked?: boolean; onRangeZoomLinked?: (linked: boolean) => void; onDismiss?: () => void }) {
+function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, height: requestedHeight, trackMap, focusSelection = false, rangeLabel, corners = [], selectedCornerIndex = null, onRangeZoom, rangeZoomLinked = false, onRangeZoomLinked, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; rangeLabel?: string; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onRangeZoom?: (anchorM: number, direction: "in" | "out") => void; rangeZoomLinked?: boolean; onRangeZoomLinked?: (linked: boolean) => void; onDismiss?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -1156,6 +1156,24 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
     return [<line x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]} stroke={channelColours.mapBrake} strokeWidth={strokeWidth} strokeLinecap="round" opacity={Math.min(0.7, 0.12 + brake / 100 * 0.58)} vectorEffect="non-scaling-stroke" key={`${prefix}-${offset}`} />];
   });
   const mapCentre = project((minX + maxX) / 2, (minZ + maxZ) / 2);
+  const lineSegments = (line: readonly (readonly [number, number])[]) => line.slice(1).map((point, index) => [line[index], point] as const);
+  const projectedGeometry = (line: TrackMapAsset["centreLine"]) => line.map((point) => project(point.xM, point.zM));
+  const projectedSamples = (xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM") => samples.flatMap((sample) => {
+    const x = sample[xKey]; const z = sample[zKey];
+    return x == null || z == null || !Number.isFinite(x) || !Number.isFinite(z) ? [] : [project(x, z)];
+  });
+  const obstructionSegments = trackMap
+    ? [...lineSegments(projectedGeometry(trackMap.leftBoundary)), ...lineSegments(projectedGeometry(trackMap.rightBoundary)), ...lineSegments(projectedGeometry(trackMap.centreLine))]
+    : [...lineSegments(projectedSamples("referencePositionXM", "referencePositionZM")), ...(comparison ? lineSegments(projectedSamples("comparisonPositionXM", "comparisonPositionZM")) : [])];
+  const distanceToSegment = (point: readonly [number, number], segment: readonly [readonly [number, number], readonly [number, number]]) => {
+    const [start, end] = segment;
+    const dx = end[0] - start[0]; const dy = end[1] - start[1];
+    const lengthSquared = dx * dx + dy * dy;
+    const position = lengthSquared === 0 ? 0 : Math.min(1, Math.max(0, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / lengthSquared));
+    return Math.hypot(point[0] - (start[0] + dx * position), point[1] - (start[1] + dy * position));
+  };
+  const labelClearance = (point: readonly [number, number]) => obstructionSegments.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...obstructionSegments.map((segment) => distanceToSegment(point, segment)));
+  const labelIsSafe = (point: readonly [number, number]) => point[0] >= 20 && point[0] <= width - 20 && point[1] >= 20 && point[1] <= height - 20 && labelClearance(point) >= 20;
   const cornerLabelPoint = (x: number, z: number) => {
     if (trackMap && trackMap.centreLine.length > 0) {
       const nearestIndex = trackMap.centreLine.reduce((nearest, point, index) => {
@@ -1165,30 +1183,39 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
         return distance < nearestDistance ? index : nearest;
       }, 0);
       const centrePoint = trackMap.centreLine[nearestIndex];
-      const boundaries = [trackMap.leftBoundary[nearestIndex], trackMap.rightBoundary[nearestIndex]].filter((point): point is TrackMapAsset["centreLine"][number] => point != null);
+      const nearestBoundary = (boundary: TrackMapAsset["centreLine"]) => boundary.reduce((nearest, point) => (point.xM - x) ** 2 + (point.zM - z) ** 2 < (nearest.xM - x) ** 2 + (nearest.zM - z) ** 2 ? point : nearest, boundary[0]);
+      const boundaries = [trackMap.leftBoundary, trackMap.rightBoundary].filter((boundary) => boundary.length > 0).map(nearestBoundary);
       if (centrePoint && boundaries.length > 0) {
         const centre = project(centrePoint.xM, centrePoint.zM);
-        const candidates = boundaries.map((boundary) => {
+        const directions = boundaries.map((boundary) => {
           const edge = project(boundary.xM, boundary.zM);
-          const dx = edge[0] - centre[0];
-          const dy = edge[1] - centre[1];
+          const dx = edge[0] - centre[0]; const dy = edge[1] - centre[1];
           const magnitude = Math.max(Math.hypot(dx, dy), 0.001);
-          return [edge[0] + dx / magnitude * 22, edge[1] + dy / magnitude * 22] as const;
+          return { edge, x: dx / magnitude, y: dy / magnitude };
         });
-        return candidates.reduce((outside, candidate) => Math.hypot(candidate[0] - mapCentre[0], candidate[1] - mapCentre[1]) > Math.hypot(outside[0] - mapCentre[0], outside[1] - mapCentre[1]) ? candidate : outside);
+        for (const offset of [24, 32, 42, 54, 70, 90]) {
+          const safe = directions.map((direction) => [direction.edge[0] + direction.x * offset, direction.edge[1] + direction.y * offset] as const).filter(labelIsSafe).sort((left, right) => labelClearance(right) - labelClearance(left));
+          if (safe[0]) return safe[0];
+        }
+        return null;
       }
     }
     const apex = project(x, z);
     const dx = apex[0] - mapCentre[0];
     const dy = apex[1] - mapCentre[1];
     const magnitude = Math.max(Math.hypot(dx, dy), 0.001);
-    return [apex[0] + dx / magnitude * 28, apex[1] + dy / magnitude * 28] as const;
+    for (const offset of [28, 38, 50, 66, 84, 104]) {
+      const candidate = [apex[0] + dx / magnitude * offset, apex[1] + dy / magnitude * offset] as const;
+      if (labelIsSafe(candidate)) return candidate;
+    }
+    return null;
   };
   const visibleCornerLabels = corners.flatMap((corner) => {
     if (corner.apexDistanceM < (samples[0]?.distanceM ?? 0) || corner.apexDistanceM > (samples.at(-1)?.distanceM ?? 0)) return [];
     const sample = samples.reduce((closest, candidate) => Math.abs(candidate.distanceM - corner.apexDistanceM) < Math.abs(closest.distanceM - corner.apexDistanceM) ? candidate : closest, samples[0]);
     if (!sample || sample.referencePositionXM == null || sample.referencePositionZM == null) return [];
-    return [{ corner, point: cornerLabelPoint(sample.referencePositionXM, sample.referencePositionZM) }];
+    const point = cornerLabelPoint(sample.referencePositionXM, sample.referencePositionZM);
+    return point ? [{ corner, point }] : [];
   });
   const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
@@ -1247,7 +1274,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
     <div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
       {onDismiss
         ? <div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
-        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div>{mapRangeLabel && <span className="font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}{zoom > 1 && followedTarget && <span className={`${mapRangeLabel ? "ml-3 " : ""}font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent`}>FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />BRAKE</span></div>{mapControls}</div>}
+        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div>{mapRangeLabel && <span className="font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />BRAKE</span></div>{mapControls}</div>}
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
