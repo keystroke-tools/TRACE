@@ -13,6 +13,8 @@ questions:
 Assetto Corsa is the first supported simulator. Other simulators will be added
 through independent adapters without coupling the analysis engine to any one game.
 
+![TRACE desktop application showing the live Assetto Corsa capture screen](docs/assets/trace-desktop.png)
+
 > [!IMPORTANT]
 > TRACE is being developed with substantial assistance from large language models.
 > LLMs are used as software-development tools for research, planning, code generation,
