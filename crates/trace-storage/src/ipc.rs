@@ -7,8 +7,8 @@ use std::{
 };
 
 use arrow_array::{
-    Array, BinaryArray, Float32Array, Float64Array, Int8Array, Int16Array, RecordBatch,
-    StringArray, UInt32Array, UInt64Array,
+    Array, BinaryArray, Float32Array, Float64Array, Int8Array, Int16Array, MapArray, RecordBatch,
+    StringArray, StructArray, UInt32Array, UInt64Array,
     builder::{Float64Builder, Int64Builder, MapBuilder, StringBuilder},
 };
 use arrow_ipc::{
@@ -51,6 +51,17 @@ pub struct TelemetryColumns {
     pub speed_mps: Vec<Option<f32>>,
     pub engine_rpm: Vec<Option<f32>>,
     pub lap_position: Vec<Option<f32>>,
+}
+
+/// Bounded summary derived from one lap's immutable telemetry sample range.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LapTelemetryMetrics {
+    pub fuel_start_litres: Option<f32>,
+    pub fuel_end_litres: Option<f32>,
+    pub max_speed_mps: Option<f32>,
+    pub tyre_wear_start: [Option<f32>; 4],
+    pub tyre_wear_end: [Option<f32>; 4],
+    pub tyre_wear_minimum: [Option<f32>; 4],
 }
 
 impl TelemetryColumns {
@@ -621,6 +632,133 @@ pub fn read_columns_range<R: Read + Seek>(
         return Err(IpcError::InvalidSampleRange);
     }
     Ok(decoded)
+}
+
+/// Derives lightweight lap-level metrics without loading a whole recording into memory.
+///
+/// Fuel and speed use portable canonical columns. Tyre wear is read from AC's native
+/// float map when present, so recordings from other simulators or older schemas simply
+/// return unavailable tyre values.
+///
+/// # Errors
+///
+/// Rejects malformed telemetry and invalid or out-of-bounds sample ranges.
+pub fn read_lap_metrics<R: Read + Seek>(
+    reader: R,
+    sample_start: u64,
+    sample_count: u64,
+) -> Result<LapTelemetryMetrics, IpcError> {
+    if sample_count == 0 {
+        return Err(IpcError::InvalidSampleRange);
+    }
+    let requested_end = sample_start
+        .checked_add(sample_count)
+        .ok_or(IpcError::InvalidSampleRange)?;
+    let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
+    validate_schema(reader.schema().as_ref())?;
+    let mut metrics = LapTelemetryMetrics::default();
+    let mut batch_start = 0_u64;
+    let mut observed = 0_u64;
+
+    for batch in &mut reader {
+        let batch = batch.map_err(IpcError::from)?;
+        let rows = u64::try_from(batch.num_rows()).map_err(|_| IpcError::SampleOverflow)?;
+        let batch_end = batch_start
+            .checked_add(rows)
+            .ok_or(IpcError::SampleOverflow)?;
+        let overlap_start = sample_start.max(batch_start);
+        let overlap_end = requested_end.min(batch_end);
+        if overlap_start < overlap_end {
+            let local_start = usize::try_from(overlap_start - batch_start)
+                .map_err(|_| IpcError::SampleOverflow)?;
+            let length = usize::try_from(overlap_end - overlap_start)
+                .map_err(|_| IpcError::SampleOverflow)?;
+            observe_lap_metrics(&mut metrics, &batch, local_start, length)?;
+            observed = observed
+                .checked_add(u64::try_from(length).map_err(|_| IpcError::SampleOverflow)?)
+                .ok_or(IpcError::SampleOverflow)?;
+        }
+        batch_start = batch_end;
+        if batch_start >= requested_end {
+            break;
+        }
+    }
+    if observed != sample_count {
+        return Err(IpcError::InvalidSampleRange);
+    }
+    Ok(metrics)
+}
+
+fn observe_lap_metrics(
+    metrics: &mut LapTelemetryMetrics,
+    batch: &RecordBatch,
+    start: usize,
+    length: usize,
+) -> Result<(), IpcError> {
+    let schema = batch.schema();
+    let fuel_index = schema.index_of("fuel_litres").map_err(IpcError::from)?;
+    let speed_index = schema.index_of("speed_mps").map_err(IpcError::from)?;
+    let fuel = batch
+        .column(fuel_index)
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    let speed = batch
+        .column(speed_index)
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .ok_or(IpcError::UnsupportedSchema)?;
+    let native = schema
+        .index_of("native_float_fields")
+        .ok()
+        .and_then(|index| batch.column(index).as_any().downcast_ref::<MapArray>());
+
+    for row in start..start + length {
+        if !fuel.is_null(row) && fuel.value(row).is_finite() {
+            let value = fuel.value(row);
+            metrics.fuel_start_litres.get_or_insert(value);
+            metrics.fuel_end_litres = Some(value);
+        }
+        if !speed.is_null(row) && speed.value(row).is_finite() {
+            let value = speed.value(row);
+            metrics.max_speed_mps = Some(metrics.max_speed_mps.map_or(value, |max| max.max(value)));
+        }
+        if let Some(native) = native {
+            for corner in 0..4 {
+                let key = format!("physics.tyre_wear.{corner}");
+                if let Some(value) = native_float_value(native, row, &key)
+                    .filter(|value| value.is_finite())
+                    .map(narrow_native_float)
+                {
+                    metrics.tyre_wear_start[corner].get_or_insert(value);
+                    metrics.tyre_wear_end[corner] = Some(value);
+                    metrics.tyre_wear_minimum[corner] = Some(
+                        metrics.tyre_wear_minimum[corner]
+                            .map_or(value, |minimum| minimum.min(value)),
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_float_value(map: &MapArray, row: usize, key: &str) -> Option<f64> {
+    if map.is_null(row) {
+        return None;
+    }
+    let entries = map.value(row);
+    let entries = entries.as_any().downcast_ref::<StructArray>()?;
+    let keys = entries.column(0).as_any().downcast_ref::<StringArray>()?;
+    let values = entries.column(1).as_any().downcast_ref::<Float64Array>()?;
+    (0..entries.len())
+        .find(|index| !keys.is_null(*index) && keys.value(*index) == key)
+        .and_then(|index| (!values.is_null(index)).then(|| values.value(index)))
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn narrow_native_float(value: f64) -> f32 {
+    value as f32
 }
 
 fn extend_projection(
@@ -1255,5 +1393,45 @@ mod tests {
             read_columns_range(Cursor::new(bytes), 5, 2),
             Err(IpcError::InvalidSampleRange)
         );
+    }
+
+    #[test]
+    fn lap_metrics_are_derived_from_a_bounded_sample_range() {
+        let frames = (0..5_u64)
+            .map(|sequence| {
+                let value = f32::from(u16::try_from(sequence).expect("bounded sequence"));
+                TelemetryFrame {
+                    sequence: FrameSequence(sequence),
+                    elapsed: ElapsedNanoseconds(sequence * 10),
+                    vehicle: VehicleState {
+                        speed_mps: Some(value),
+                        fuel_litres: Some(10.0 - value),
+                        ..VehicleState::default()
+                    },
+                    native: Some(Box::new(NativeTelemetrySample {
+                        schema: "assetto-corsa.shared-memory/1".into(),
+                        float_fields: (0..4)
+                            .map(|corner| {
+                                (
+                                    format!("physics.tyre_wear.{corner}"),
+                                    f64::from(100.0 - value),
+                                )
+                            })
+                            .collect(),
+                        ..NativeTelemetrySample::default()
+                    })),
+                    ..TelemetryFrame::default()
+                }
+            })
+            .collect::<Vec<_>>();
+        let bytes = encode_frames(&frames).expect("encoded");
+
+        let metrics = read_lap_metrics(Cursor::new(bytes), 1, 3).expect("metrics");
+        assert_eq!(metrics.fuel_start_litres, Some(9.0));
+        assert_eq!(metrics.fuel_end_litres, Some(7.0));
+        assert_eq!(metrics.max_speed_mps, Some(3.0));
+        assert_eq!(metrics.tyre_wear_start, [Some(99.0); 4]);
+        assert_eq!(metrics.tyre_wear_end, [Some(97.0); 4]);
+        assert_eq!(metrics.tyre_wear_minimum, [Some(97.0); 4]);
     }
 }

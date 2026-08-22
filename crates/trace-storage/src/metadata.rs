@@ -64,6 +64,7 @@ pub struct NewSector {
 /// Display-safe lap metadata returned to the desktop application.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LapSummary {
+    pub id: String,
     pub index: u32,
     pub duration_ns: Option<u64>,
     pub validity: String,
@@ -435,8 +436,9 @@ impl MetadataStore {
                     let index: u32 = row.get(1)?;
                     let duration = optional_row_u64(row, 2)?;
                     Ok((
-                        id,
+                        id.clone(),
                         LapSummary {
+                            id: id.clone(),
                             index,
                             duration_ns: duration,
                             validity: row.get(3)?,

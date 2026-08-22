@@ -51,6 +51,17 @@ export interface RecordedSectorSummary {
   durationNs: number;
 }
 
+export interface RecordedLapMetrics {
+  lapIndex: number;
+  fuelStartLitres?: number | null;
+  fuelEndLitres?: number | null;
+  fuelUsedLitres?: number | null;
+  maxSpeedKmh?: number | null;
+  tyreWearStart: Array<number | null>;
+  tyreWearEnd: Array<number | null>;
+  tyreWearMinimum: Array<number | null>;
+}
+
 export interface RecordedSessionSummary {
   id: string;
   simulatorId: string;
@@ -86,6 +97,7 @@ export interface TelemetryDataSource {
   getStatus(): Promise<TelemetryStatus>;
   selectSimulator(simulatorId: string): Promise<void>;
   getSessions(): Promise<RecordedSessionSummary[]>;
+  getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
   updateSessionDetails(sessionId: string, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]): Promise<void>;
@@ -186,6 +198,12 @@ export const fixtureDataSource: TelemetryDataSource = {
       sampleCount: 0,
     };
   },
+  async getSessionLapMetrics(_sessionId) {
+    return [
+      { lapIndex: 1, fuelStartLitres: 22, fuelEndLitres: 21.2, fuelUsedLitres: 0.8, maxSpeedKmh: 226.4, tyreWearStart: [100, 100, 100, 100], tyreWearEnd: [99.6, 99.6, 99.8, 99.8], tyreWearMinimum: [99.6, 99.6, 99.8, 99.8] },
+      { lapIndex: 2, fuelStartLitres: 21.2, fuelEndLitres: 20.4, fuelUsedLitres: 0.8, maxSpeedKmh: 231.1, tyreWearStart: [99.6, 99.6, 99.8, 99.8], tyreWearEnd: [99.2, 99.2, 99.6, 99.6], tyreWearMinimum: [99.2, 99.2, 99.6, 99.6] },
+    ];
+  },
   async deleteSession(sessionId) {
     deletedFixtureSessionIds.add(sessionId);
     return { sessionId };
@@ -204,6 +222,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   getSessions() {
     return invoke<RecordedSessionSummary[]>("recent_sessions");
+  },
+  getSessionLapMetrics(sessionId) {
+    return invoke<RecordedLapMetrics[]>("session_lap_metrics", { sessionId });
   },
   exportSession(sessionId, exportFormat) {
     return invoke<SessionExport>("export_session", { sessionId, exportFormat });

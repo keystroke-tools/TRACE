@@ -8,7 +8,10 @@ use serde::Serialize;
 use tauri::Manager;
 use trace_ac::AcAdapter;
 use trace_adapter::SimulatorAdapter;
-use trace_storage::{ipc::export_core_csv, metadata::MetadataStore};
+use trace_storage::{
+    ipc::{export_core_csv, read_lap_metrics},
+    metadata::MetadataStore,
+};
 
 mod capture;
 
@@ -73,6 +76,19 @@ struct RecordedSectorSummary {
     index: u32,
     time: String,
     duration_ns: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordedLapMetrics {
+    lap_index: u32,
+    fuel_start_litres: Option<f32>,
+    fuel_end_litres: Option<f32>,
+    fuel_used_litres: Option<f32>,
+    max_speed_kmh: Option<f32>,
+    tyre_wear_start: [Option<f32>; 4],
+    tyre_wear_end: [Option<f32>; 4],
+    tyre_wear_minimum: [Option<f32>; 4],
 }
 
 #[derive(Serialize)]
@@ -179,6 +195,53 @@ fn recent_sessions(
             }
         })
         .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle and deserializes the id.
+fn session_lap_metrics(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<Vec<RecordedLapMetrics>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let session = store
+        .recent_sessions(1_000)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "recorded session was not found".to_owned())?;
+    let mut result = Vec::with_capacity(session.laps.len());
+
+    for lap in session.laps {
+        let Ok(locator) = store.lap_telemetry(&lap.id) else {
+            continue;
+        };
+        let path = directory.join("telemetry").join(locator.blob_path.as_str());
+        let file =
+            File::open(path).map_err(|error| format!("failed to open lap telemetry: {error}"))?;
+        let metrics = read_lap_metrics(file, locator.sample_start, locator.sample_count)
+            .map_err(|error| format!("failed to derive lap metrics: {error:?}"))?;
+        let fuel_used_litres = metrics
+            .fuel_start_litres
+            .zip(metrics.fuel_end_litres)
+            .and_then(|(start, end)| (start >= end).then_some(start - end));
+        result.push(RecordedLapMetrics {
+            lap_index: lap.index,
+            fuel_start_litres: metrics.fuel_start_litres,
+            fuel_end_litres: metrics.fuel_end_litres,
+            fuel_used_litres,
+            max_speed_kmh: metrics.max_speed_mps.map(|value| value * 3.6),
+            tyre_wear_start: metrics.tyre_wear_start,
+            tyre_wear_end: metrics.tyre_wear_end,
+            tyre_wear_minimum: metrics.tyre_wear_minimum,
+        });
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -703,6 +766,7 @@ pub fn run() {
             foundation_status,
             select_simulator,
             recent_sessions,
+            session_lap_metrics,
             export_session,
             delete_session,
             update_session_details
