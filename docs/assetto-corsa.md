@@ -13,14 +13,17 @@ acpmf_graphics
 acpmf_static
 ```
 
+The complete page/field inventory is maintained in the
+[Assetto Corsa shared-memory API reference](ac-shared-memory-reference.md).
+
 The published interface uses 4-byte structure packing. TRACE does not cast these
 pages to packed Rust structs. `trace-ac` accepts an owned page snapshot, checks its
 minimum documented prefix length, and decodes explicit little-endian offsets. This
 avoids unaligned references, unsafe code, platform `wchar_t` differences, and
 accidental exposure of AC-specific layouts.
 
-`trace-windows-shmem` opens existing mappings read-only, maps only the validated
-prefix size, and volatile-copies every byte into an owned buffer. It is the sole TRACE
+`trace-windows-shmem` opens existing mappings read-only, maps the complete documented
+vanilla page size, and volatile-copies every byte into an owned buffer. It is the sole TRACE
 crate permitted to contain unsafe Rust. Handles and views use RAII cleanup, and raw
 pointers or borrowed mapped slices are never exposed. This follows Microsoft's
 [named shared-memory model](https://learn.microsoft.com/en-us/windows/win32/memory/sharing-files-and-memory),
@@ -106,6 +109,36 @@ length.
 
 Invalid numeric values degrade to missing canonical values rather than panicking.
 Short pages return a typed `TooShort` error containing expected and actual lengths.
+
+## Lossless native capture
+
+Canonical fields remain deliberately conservative, but production capture reads the
+complete vanilla 1.7 shared-memory structures: 580 physics bytes, 296 graphics bytes,
+and 684 static bytes. Every Arrow sample stores those exact page bytes in a native
+envelope identified as `assetto-corsa.shared-memory/1`. Its little-endian header is:
+
+| Offset | Type | Meaning |
+|---:|---|---|
+| 0 | `[u8; 4]` | magic `ACSM` |
+| 4 | `u16` | envelope version (`1`) |
+| 6 | `u16` | reserved, zero |
+| 8 | `u32` | physics page byte length |
+| 12 | `u32` | graphics page byte length |
+| 16 | `u32` | static page byte length |
+| 20 | bytes | physics, graphics, then static page bytes |
+
+This preserves fields TRACE does not yet understand, so future decoders and features
+can work on recordings made today. Adding a native decoder does not require another
+top-level Arrow schema revision. The static page includes AC's player-name fields;
+TRACE remains local-first, but users should treat exported Arrow recordings as
+potentially identifying data. Redacted regression fixtures continue to omit them.
+
+The schema also exposes the full documented page inventory through three typed Arrow
+maps: `native_float_fields`, `native_integer_fields`, and `native_text_fields`. Keys
+retain the page and source field name (for example `physics.wheel_slip.0`,
+`graphics.flag`, and `static.track_configuration`). Arrays use a zero-based numeric
+suffix in AC's native wheel/vector order. Deprecated static slots are retained under
+their published deprecated names; no meaning is invented for them.
 
 ## Intentionally not mapped yet
 

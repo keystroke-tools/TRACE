@@ -378,6 +378,9 @@ fn adapter_error(error: AcCaptureError) -> AdapterError {
         AcCaptureError::InvalidPage(_) => {
             AdapterError::InvalidSource(format!("Assetto Corsa page was invalid: {error:?}"))
         }
+        AcCaptureError::InvalidNativePayload => {
+            AdapterError::InvalidSource("Assetto Corsa native payload was invalid".into())
+        }
         AcCaptureError::Mapping(_) => AdapterError::TemporarilyUnavailable(format!(
             "Assetto Corsa shared memory is unavailable: {error:?}"
         )),

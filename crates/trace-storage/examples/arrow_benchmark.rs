@@ -155,5 +155,6 @@ fn synthetic_frame(sequence: u64, rate_hz: u32) -> TelemetryFrame {
             track_temperature_c: Some(31.0 + wave as f32),
             track_grip: Some(0.98),
         }),
+        native: None,
     }
 }

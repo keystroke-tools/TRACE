@@ -7,7 +7,9 @@ use std::{
 };
 
 use arrow_array::{
-    Array, Float32Array, Float64Array, Int8Array, Int16Array, RecordBatch, UInt32Array, UInt64Array,
+    Array, BinaryArray, Float32Array, Float64Array, Int8Array, Int16Array, RecordBatch,
+    StringArray, UInt32Array, UInt64Array,
+    builder::{Float64Builder, Int64Builder, MapBuilder, StringBuilder},
 };
 use arrow_ipc::{
     CompressionType,
@@ -18,10 +20,10 @@ use arrow_schema::{DataType, Field, Schema};
 use trace_domain::{CoordinateFrame, Gear, TelemetryFrame, WheelCorner};
 
 const FORMAT_NAME: &str = "trace.telemetry";
-const SCHEMA_VERSION: &str = "3";
+const SCHEMA_VERSION: &str = "4";
 
 /// Current full-fidelity telemetry schema version written by TRACE.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 3;
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 4;
 
 /// Compression policies supported by the standard Arrow IPC file writer.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -231,6 +233,9 @@ fn ipc_write_options(compression: IpcCompression) -> Result<IpcWriteOptions, Ipc
 fn record_batch(frames: &[TelemetryFrame]) -> Result<RecordBatch, IpcError> {
     let columns = TelemetryColumns::from_frames(frames);
     let schema = Arc::new(schema());
+    let native_float_fields = native_float_map(frames)?;
+    let native_integer_fields = native_integer_map(frames)?;
+    let native_text_fields = native_text_map(frames)?;
     RecordBatch::try_new(
         schema,
         vec![
@@ -358,9 +363,69 @@ fn record_batch(frames: &[TelemetryFrame]) -> Result<RecordBatch, IpcError> {
             Arc::new(UInt64Array::from_iter(
                 frames.iter().map(|frame| frame.lap.last_sector_time_ns),
             )),
+            Arc::new(StringArray::from_iter(frames.iter().map(|frame| {
+                frame.native.as_ref().map(|native| native.schema.as_str())
+            }))),
+            Arc::new(BinaryArray::from_iter(frames.iter().map(|frame| {
+                frame
+                    .native
+                    .as_ref()
+                    .map(|native| native.payload.as_slice())
+            }))),
+            Arc::new(native_float_fields),
+            Arc::new(native_integer_fields),
+            Arc::new(native_text_fields),
         ],
     )
     .map_err(IpcError::from)
+}
+
+fn native_float_map(frames: &[TelemetryFrame]) -> Result<arrow_array::MapArray, IpcError> {
+    let mut builder = MapBuilder::new(None, StringBuilder::new(), Float64Builder::new());
+    for frame in frames {
+        if let Some(native) = &frame.native {
+            for (key, value) in &native.float_fields {
+                builder.keys().append_value(key);
+                builder.values().append_value(*value);
+            }
+            builder.append(true).map_err(IpcError::from)?;
+        } else {
+            builder.append(false).map_err(IpcError::from)?;
+        }
+    }
+    Ok(builder.finish())
+}
+
+fn native_integer_map(frames: &[TelemetryFrame]) -> Result<arrow_array::MapArray, IpcError> {
+    let mut builder = MapBuilder::new(None, StringBuilder::new(), Int64Builder::new());
+    for frame in frames {
+        if let Some(native) = &frame.native {
+            for (key, value) in &native.integer_fields {
+                builder.keys().append_value(key);
+                builder.values().append_value(*value);
+            }
+            builder.append(true).map_err(IpcError::from)?;
+        } else {
+            builder.append(false).map_err(IpcError::from)?;
+        }
+    }
+    Ok(builder.finish())
+}
+
+fn native_text_map(frames: &[TelemetryFrame]) -> Result<arrow_array::MapArray, IpcError> {
+    let mut builder = MapBuilder::new(None, StringBuilder::new(), StringBuilder::new());
+    for frame in frames {
+        if let Some(native) = &frame.native {
+            for (key, value) in &native.text_fields {
+                builder.keys().append_value(key);
+                builder.values().append_value(value);
+            }
+            builder.append(true).map_err(IpcError::from)?;
+        } else {
+            builder.append(false).map_err(IpcError::from)?;
+        }
+    }
+    Ok(builder.finish())
 }
 
 fn gear_kind(gear: Gear) -> i8 {
@@ -646,7 +711,7 @@ fn schema_v2() -> Schema {
     )
 }
 
-fn schema() -> Schema {
+fn schema_v3() -> Schema {
     let mut fields = schema_v2()
         .fields()
         .iter()
@@ -666,9 +731,51 @@ fn schema() -> Schema {
         fields,
         HashMap::from([
             ("trace.format".into(), FORMAT_NAME.into()),
+            ("trace.schema_version".into(), "3".into()),
+            ("trace.units".into(), "si".into()),
+        ]),
+    )
+}
+
+fn schema() -> Schema {
+    let mut fields = schema_v3()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    fields.push(Field::new("native_schema", DataType::Utf8, true));
+    fields.push(Field::new("native_payload", DataType::Binary, true));
+    fields.push(native_map_field("native_float_fields", DataType::Float64));
+    fields.push(native_map_field("native_integer_fields", DataType::Int64));
+    fields.push(native_map_field("native_text_fields", DataType::Utf8));
+    Schema::new_with_metadata(
+        fields,
+        HashMap::from([
+            ("trace.format".into(), FORMAT_NAME.into()),
             ("trace.schema_version".into(), SCHEMA_VERSION.into()),
             ("trace.units".into(), "si".into()),
         ]),
+    )
+}
+
+fn native_map_field(name: &str, value_type: DataType) -> Field {
+    Field::new(
+        name,
+        DataType::Map(
+            Arc::new(Field::new(
+                "entries",
+                DataType::Struct(
+                    vec![
+                        Field::new("keys", DataType::Utf8, false),
+                        Field::new("values", value_type, true),
+                    ]
+                    .into(),
+                ),
+                false,
+            )),
+            false,
+        ),
+        true,
     )
 }
 
@@ -703,6 +810,7 @@ fn validate_schema(value: &Schema) -> Result<(), IpcError> {
     let fields_match = match version {
         Some("1") => value.fields() == schema_v1().fields(),
         Some("2") => value.fields() == schema_v2().fields(),
+        Some("3") => value.fields() == schema_v3().fields(),
         Some(SCHEMA_VERSION) => value.fields() == schema().fields(),
         _ => false,
     };
@@ -813,10 +921,12 @@ impl From<std::io::Error> for IpcError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use trace_domain::{
         CoordinateFrame, DriverInputs, ElapsedNanoseconds, EnvironmentState, FrameSequence, Gear,
-        LapObservation, MotionState, Vector3, VehicleState, WheelState,
+        LapObservation, MotionState, NativeTelemetrySample, Vector3, VehicleState, WheelState,
     };
 
     #[test]
@@ -952,7 +1062,8 @@ mod tests {
     }
 
     #[test]
-    fn schema_v3_preserves_full_canonical_channel_families() {
+    #[allow(clippy::too_many_lines)]
+    fn schema_v4_preserves_canonical_channels_and_native_payload() {
         let mut wheels = trace_domain::WheelStates::new();
         wheels.insert(
             WheelCorner::FrontLeft,
@@ -1010,14 +1121,21 @@ mod tests {
                 track_temperature_c: Some(34.0),
                 track_grip: Some(0.98),
             }),
+            native: Some(Box::new(NativeTelemetrySample {
+                schema: "fixture.native/1".into(),
+                payload: vec![1, 2, 3],
+                float_fields: BTreeMap::from([("physics.speed_kmh".into(), 120.0)]),
+                integer_fields: BTreeMap::from([("physics.rpm".into(), 6_000)]),
+                text_fields: BTreeMap::from([("graphics.tyre_compound".into(), "SM".into())]),
+            })),
         };
         let bytes = encode_frames(&[frame]).expect("encoded");
         let mut reader = FileReader::try_new(Cursor::new(bytes), None).expect("reader");
         assert_eq!(
             reader.schema().metadata().get("trace.schema_version"),
-            Some(&"3".to_owned())
+            Some(&"4".to_owned())
         );
-        assert_eq!(reader.schema().fields().len(), 48);
+        assert_eq!(reader.schema().fields().len(), 53);
         let batch = reader.next().expect("batch").expect("valid batch");
         assert_eq!(nullable_u32(&batch, 7).expect("laps"), vec![Some(3)]);
         assert_eq!(nullable_i8(&batch, 13).expect("gear kind"), vec![Some(2)]);
@@ -1048,6 +1166,26 @@ mod tests {
             nullable_u64(&batch, 47).expect("sector time"),
             vec![Some(11)]
         );
+        let native_schema = batch
+            .column(48)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("native schema");
+        let native_payload = batch
+            .column(49)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("native payload");
+        assert_eq!(native_schema.value(0), "fixture.native/1");
+        assert_eq!(native_payload.value(0), &[1, 2, 3]);
+        for index in 50..=52 {
+            let fields = batch
+                .column(index)
+                .as_any()
+                .downcast_ref::<arrow_array::MapArray>()
+                .expect("native field map");
+            assert_eq!(fields.value_length(0), 1);
+        }
     }
 
     #[test]
@@ -1080,6 +1218,11 @@ mod tests {
     #[test]
     fn schema_v2_remains_supported_after_sector_fields_are_added() {
         assert_eq!(validate_schema(&schema_v2()), Ok(()));
+    }
+
+    #[test]
+    fn schema_v3_remains_supported_after_native_payload_is_added() {
+        assert_eq!(validate_schema(&schema_v3()), Ok(()));
     }
 
     #[test]

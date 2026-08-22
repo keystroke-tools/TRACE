@@ -9,7 +9,10 @@ mod capture;
 mod pages;
 
 pub use adapter::{AcAdapter, AcSource, SystemAcSource};
-pub use capture::{AcAvailability, AcCaptureError, AcRedactedFixture, AcSharedMemory, AcSnapshot};
+pub use capture::{
+    AC_NATIVE_SCHEMA, AcAvailability, AcCaptureError, AcNativePages, AcRedactedFixture,
+    AcSharedMemory, AcSnapshot, decode_native_payload,
+};
 
 use trace_domain::{
     CoordinateFrame, DriverInputs, ElapsedNanoseconds, EnvironmentState, FrameSequence, Gear,
@@ -103,6 +106,7 @@ pub fn map_frame(
         },
         wheels,
         environment: None,
+        native: None,
     })
 }
 
@@ -257,6 +261,30 @@ mod tests {
             environment.and_then(|value| value.track_temperature_c),
             Some(31.0)
         );
+    }
+
+    #[test]
+    fn documented_native_inventory_reaches_the_end_of_every_page() {
+        let mut physics = vec![0; pages::PHYSICS_PAGE_LENGTH];
+        let mut graphics = vec![0; pages::GRAPHICS_PAGE_LENGTH];
+        let mut static_page = vec![0; pages::STATIC_PAGE_LENGTH];
+        put_f32(&mut physics, 576, 12.5);
+        put_f32(&mut graphics, 292, 270.0);
+        put_i32(&mut static_page, 680, 42);
+        put_utf16(&mut static_page, 604, 33, "skin_01");
+        let snapshot = AcSnapshot::from_pages(physics, graphics, static_page).expect("snapshot");
+
+        let frame = snapshot
+            .map_frame(FrameSequence(0), ElapsedNanoseconds(0))
+            .expect("frame");
+        let native = frame.native.expect("native fields");
+
+        assert!((native.float_fields["physics.local_velocity.2"] - 12.5).abs() < f64::EPSILON);
+        assert!(
+            (native.float_fields["graphics.wind_direction_degrees"] - 270.0).abs() < f64::EPSILON
+        );
+        assert_eq!(native.integer_fields["static.pit_window_end"], 42);
+        assert_eq!(native.text_fields["static.car_skin"], "skin_01");
     }
 
     #[test]

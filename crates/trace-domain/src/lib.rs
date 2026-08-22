@@ -240,6 +240,21 @@ pub struct EnvironmentState {
     pub track_grip: Option<f32>,
 }
 
+/// Lossless source-native sample retained for future simulator-specific decoding.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct NativeTelemetrySample {
+    /// Stable decoder identifier, for example `assetto-corsa.shared-memory/1`.
+    pub schema: String,
+    /// Opaque bytes governed by `schema`; canonical consumers must not interpret them.
+    pub payload: Vec<u8>,
+    /// Source fields whose published representation is floating point.
+    pub float_fields: BTreeMap<String, f64>,
+    /// Source fields whose published representation is integral or enumerated.
+    pub integer_fields: BTreeMap<String, i64>,
+    /// Source fields whose published representation is text.
+    pub text_fields: BTreeMap<String, String>,
+}
+
 /// One canonical sample produced by any adapter.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TelemetryFrame {
@@ -251,6 +266,7 @@ pub struct TelemetryFrame {
     pub motion: MotionState,
     pub wheels: WheelStates,
     pub environment: Option<EnvironmentState>,
+    pub native: Option<Box<NativeTelemetrySample>>,
 }
 
 /// Identity and version of a telemetry source.

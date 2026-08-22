@@ -57,7 +57,8 @@ Currently implemented:
 - Atomic filesystem telemetry blobs with restart-safe checksum indexing
 - Startup orphan quarantine and a continuously polling desktop capture worker
 - Bounded 240-frame Arrow IPC record-batch streaming during capture
-- Full canonical Apache Arrow IPC telemetry schema v3 with v1/v2 read compatibility
+- Stable canonical Apache Arrow IPC schema v4 with v1–v3 read compatibility
+- Lossless, versioned AC-native page payloads for future channel decoding
 - Measured Zstandard Arrow compression with selectable LZ4/uncompressed policies
 - Bounded lap-range Arrow reads backed by SQLite sample locators
 - Per-session full-fidelity Arrow and streaming core-channel CSV exports

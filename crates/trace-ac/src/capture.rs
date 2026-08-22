@@ -1,4 +1,6 @@
-use trace_domain::{ElapsedNanoseconds, FrameSequence, SessionSeed, TelemetryFrame};
+use trace_domain::{
+    ElapsedNanoseconds, FrameSequence, NativeTelemetrySample, SessionSeed, TelemetryFrame,
+};
 use trace_windows_shmem::{MappingError, NamedMapping};
 
 use crate::{AcPageError, map_frame, map_session, pages};
@@ -7,6 +9,12 @@ const PHYSICS_MAPPING: &str = "acpmf_physics";
 const GRAPHICS_MAPPING: &str = "acpmf_graphics";
 const STATIC_MAPPING: &str = "acpmf_static";
 const DEFAULT_STABILITY_ATTEMPTS: usize = 3;
+const NATIVE_PAYLOAD_MAGIC: &[u8; 4] = b"ACSM";
+const NATIVE_PAYLOAD_VERSION: u16 = 1;
+const NATIVE_PAYLOAD_HEADER_LENGTH: usize = 20;
+
+/// Decoder identifier for TRACE's lossless vanilla AC shared-memory envelope.
+pub const AC_NATIVE_SCHEMA: &str = "assetto-corsa.shared-memory/1";
 
 /// Whether Assetto Corsa shared memory can be opened on this host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,6 +30,7 @@ pub enum AcCaptureError {
     Mapping(MappingError),
     InvalidPage(AcPageError),
     UnstablePacket { page: &'static str, attempts: usize },
+    InvalidNativePayload,
 }
 
 impl From<MappingError> for AcCaptureError {
@@ -42,6 +51,14 @@ pub struct AcSnapshot {
     physics: Vec<u8>,
     graphics: Vec<u8>,
     static_page: Vec<u8>,
+}
+
+/// Borrowed pages decoded from one lossless AC-native telemetry payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AcNativePages<'a> {
+    pub physics: &'a [u8],
+    pub graphics: &'a [u8],
+    pub static_page: &'a [u8],
 }
 
 /// Packet-stable page prefixes suitable for a checked-in regression fixture.
@@ -94,7 +111,23 @@ impl AcSnapshot {
         sequence: FrameSequence,
         elapsed: ElapsedNanoseconds,
     ) -> Result<TelemetryFrame, AcCaptureError> {
-        Ok(map_frame(&self.physics, &self.graphics, sequence, elapsed)?)
+        let mut frame = map_frame(&self.physics, &self.graphics, sequence, elapsed)?;
+        frame.native = Some(Box::new(NativeTelemetrySample {
+            schema: AC_NATIVE_SCHEMA.into(),
+            payload: self.native_payload(),
+            float_fields: pages::native_float_fields(
+                &self.physics,
+                &self.graphics,
+                &self.static_page,
+            ),
+            integer_fields: pages::native_integer_fields(
+                &self.physics,
+                &self.graphics,
+                &self.static_page,
+            ),
+            text_fields: pages::native_text_fields(&self.graphics, &self.static_page),
+        }));
+        Ok(frame)
     }
 
     /// Extracts canonical session identity and environment from the static page.
@@ -127,6 +160,29 @@ impl AcSnapshot {
     pub(crate) fn versions(&self) -> Result<(Option<String>, Option<String>), AcCaptureError> {
         let page = pages::StaticPage::parse(&self.static_page)?;
         Ok((page.shared_memory_version(), page.assetto_corsa_version()))
+    }
+
+    fn native_payload(&self) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(
+            NATIVE_PAYLOAD_HEADER_LENGTH
+                + self.physics.len()
+                + self.graphics.len()
+                + self.static_page.len(),
+        );
+        payload.extend_from_slice(NATIVE_PAYLOAD_MAGIC);
+        payload.extend_from_slice(&NATIVE_PAYLOAD_VERSION.to_le_bytes());
+        payload.extend_from_slice(&0_u16.to_le_bytes());
+        for length in [
+            self.physics.len(),
+            self.graphics.len(),
+            self.static_page.len(),
+        ] {
+            payload.extend_from_slice(&u32::try_from(length).unwrap_or(u32::MAX).to_le_bytes());
+        }
+        payload.extend_from_slice(&self.physics);
+        payload.extend_from_slice(&self.graphics);
+        payload.extend_from_slice(&self.static_page);
+        payload
     }
 
     /// Produces page prefixes for regression testing without exporting personal data.
@@ -188,9 +244,9 @@ impl AcSharedMemory {
     /// Returns a mapping error if any required page cannot be opened.
     pub fn open() -> Result<Self, AcCaptureError> {
         Ok(Self {
-            physics: NamedMapping::open(PHYSICS_MAPPING, pages::PHYSICS_PREFIX_LENGTH)?,
-            graphics: NamedMapping::open(GRAPHICS_MAPPING, pages::GRAPHICS_PREFIX_LENGTH)?,
-            static_page: NamedMapping::open(STATIC_MAPPING, pages::STATIC_PREFIX_LENGTH)?,
+            physics: NamedMapping::open(PHYSICS_MAPPING, pages::PHYSICS_PAGE_LENGTH)?,
+            graphics: NamedMapping::open(GRAPHICS_MAPPING, pages::GRAPHICS_PAGE_LENGTH)?,
+            static_page: NamedMapping::open(STATIC_MAPPING, pages::STATIC_PAGE_LENGTH)?,
             stability_attempts: DEFAULT_STABILITY_ATTEMPTS,
         })
     }
@@ -211,6 +267,59 @@ impl AcSharedMemory {
         let static_page = self.static_page.copy_owned()?;
         AcSnapshot::from_pages(physics, graphics, static_page)
     }
+}
+
+/// Decodes a lossless AC-native envelope without assigning semantics to page bytes.
+///
+/// # Errors
+///
+/// Returns [`AcCaptureError::InvalidNativePayload`] for an unknown, truncated, or
+/// length-inconsistent envelope.
+pub fn decode_native_payload(payload: &[u8]) -> Result<AcNativePages<'_>, AcCaptureError> {
+    if payload.len() < NATIVE_PAYLOAD_HEADER_LENGTH
+        || payload.get(..4) != Some(NATIVE_PAYLOAD_MAGIC)
+        || read_u16(payload, 4) != Some(NATIVE_PAYLOAD_VERSION)
+        || read_u16(payload, 6) != Some(0)
+    {
+        return Err(AcCaptureError::InvalidNativePayload);
+    }
+    let physics_length = read_u32(payload, 8).ok_or(AcCaptureError::InvalidNativePayload)? as usize;
+    let graphics_length =
+        read_u32(payload, 12).ok_or(AcCaptureError::InvalidNativePayload)? as usize;
+    let static_length = read_u32(payload, 16).ok_or(AcCaptureError::InvalidNativePayload)? as usize;
+    let physics_end = NATIVE_PAYLOAD_HEADER_LENGTH
+        .checked_add(physics_length)
+        .ok_or(AcCaptureError::InvalidNativePayload)?;
+    let graphics_end = physics_end
+        .checked_add(graphics_length)
+        .ok_or(AcCaptureError::InvalidNativePayload)?;
+    let static_end = graphics_end
+        .checked_add(static_length)
+        .ok_or(AcCaptureError::InvalidNativePayload)?;
+    if static_end != payload.len() {
+        return Err(AcCaptureError::InvalidNativePayload);
+    }
+    Ok(AcNativePages {
+        physics: &payload[NATIVE_PAYLOAD_HEADER_LENGTH..physics_end],
+        graphics: &payload[physics_end..graphics_end],
+        static_page: &payload[graphics_end..static_end],
+    })
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+    bytes
+        .get(offset..offset + 2)?
+        .try_into()
+        .ok()
+        .map(u16::from_le_bytes)
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    bytes
+        .get(offset..offset + 4)?
+        .try_into()
+        .ok()
+        .map(u32::from_le_bytes)
 }
 
 trait ChangingPage {

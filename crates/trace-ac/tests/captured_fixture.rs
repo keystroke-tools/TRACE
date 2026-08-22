@@ -1,4 +1,4 @@
-use trace_ac::AcSnapshot;
+use trace_ac::{AC_NATIVE_SCHEMA, AcSnapshot, decode_native_payload};
 use trace_domain::{ElapsedNanoseconds, FrameSequence};
 
 const PHYSICS: &[u8] = include_bytes!("fixtures/ac-1.16.4-sm-1.7/physics.bin");
@@ -27,5 +27,11 @@ fn captured_ac_1_16_4_fixture_maps_through_the_canonical_boundary() {
     assert_eq!(frame.lap.normalized_position, Some(0.028_426_468));
     assert_eq!(frame.lap.current_sector_index, Some(0));
     assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
+    let native = frame.native.as_ref().expect("lossless native sample");
+    assert_eq!(native.schema, AC_NATIVE_SCHEMA);
+    let pages = decode_native_payload(&native.payload).expect("native pages");
+    assert_eq!(pages.physics, PHYSICS);
+    assert_eq!(pages.graphics, GRAPHICS);
+    assert_eq!(pages.static_page, STATIC);
     assert_eq!(frame.wheels.len(), 4);
 }
