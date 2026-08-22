@@ -742,7 +742,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
           <span className="font-mono text-[10px] text-trace-faint">{session.laps.length} TOTAL</span>
         </div>
         <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim">
-          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRES USED</span><span className="text-right">RESULT</span>
+          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRE WEAR</span><span className="text-right">RESULT</span>
         </div>
         {session.laps.length === 0 ? (
           <div className="p-8 text-center text-[12px] text-trace-dim">No complete laps are available.</div>
@@ -752,7 +752,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[74px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[10px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple" : "border-l-transparent"}`}
+              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[10px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple" : "border-l-transparent"}`}
               key={lap.index}
             >
               <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
@@ -760,7 +760,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
               {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[9px] text-trace-dim">UNAVAILABLE</span>}
               <LapMetricValue state={metricsState} value={formatFuelUsed(lapMetrics)} detail={fuelDetail(lapMetrics)} />
               <LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} />
-              <LapMetricValue state={metricsState} value={formatTyreWear(lapMetrics)} detail={tyreWearDetail(lapMetrics)} />
+              <TyreWearGrid state={metricsState} metrics={lapMetrics} />
               <LapValidity lap={lap} />
             </div>
           );
@@ -771,7 +771,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
         <SectorLegend colour="bg-trace-accent" label="Improved" />
         <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
       </div>
-      <p className="mt-3 text-[11px] leading-5 text-trace-dim">Fuel, speed, and tyre use come directly from each lap's recorded telemetry. Hover fuel or tyre values for more detail.</p>
+      <p className="mt-3 text-[11px] leading-5 text-trace-dim">Fuel, speed, and tyre use come directly from each lap's recorded telemetry. Tyre circles are front-left, front-right, rear-left, and rear-right; green indicates low wear, progressing through yellow and orange to red.</p>
     </>
   );
 }
@@ -792,26 +792,56 @@ function fuelDetail(metrics?: RecordedLapMetrics) {
     : null;
 }
 
-function formatTyreWear(metrics?: RecordedLapMetrics) {
-  const start = averageAvailable(metrics?.tyreWearStart);
-  const minimum = averageAvailable(metrics?.tyreWearMinimum);
-  return start != null && minimum != null ? `${Math.max(0, start - minimum).toFixed(2)}% used` : null;
+function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
+  if (state === "loading") return <span className="text-[9px] text-trace-dim">LOADING…</span>;
+  const tyres = [
+    { short: "FL", name: "Front left", index: 0 },
+    { short: "FR", name: "Front right", index: 1 },
+    { short: "RL", name: "Rear left", index: 2 },
+    { short: "RR", name: "Rear right", index: 3 },
+  ];
+  return (
+    <div className="grid w-fit grid-cols-2 gap-1" aria-label="Tyre wear used during this lap">
+      {tyres.map((tyre) => {
+        const start = metrics?.tyreWearStart[tyre.index];
+        const minimum = metrics?.tyreWearMinimum[tyre.index];
+        const used = start != null && minimum != null && Number.isFinite(start) && Number.isFinite(minimum)
+          ? Math.max(0, start - minimum)
+          : null;
+        const colour = used == null ? null : tyreWearColour(used);
+        const value = used == null ? "—" : `${used < 10 ? used.toFixed(1) : used.toFixed(0)}%`;
+        const detail = used == null
+          ? `${tyre.name}: wear telemetry unavailable`
+          : `${tyre.name}: ${value} used · ${start?.toFixed(1)}% to ${minimum?.toFixed(1)}% condition`;
+        return (
+          <Tooltip key={tyre.short} content={detail}>
+            <span
+              className="flex size-8 items-center justify-center border font-mono text-[8px] font-bold tabular-nums"
+              style={{
+                borderRadius: "9999px",
+                borderColor: colour?.border ?? "var(--color-trace-divider)",
+                backgroundColor: colour?.background ?? "var(--color-trace-deep)",
+                color: colour?.text ?? "var(--color-trace-dim)",
+              }}
+              aria-label={`${tyre.name}: ${used == null ? "unavailable" : `${value} used`}`}
+            >
+              {value}
+            </span>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
 }
 
-function tyreWearDetail(metrics?: RecordedLapMetrics) {
-  if (!metrics) return null;
-  const labels = ["FL", "FR", "RL", "RR"];
-  const values = labels.map((label, index) => {
-    const start = metrics.tyreWearStart[index];
-    const minimum = metrics.tyreWearMinimum[index];
-    return start != null && minimum != null ? `${label} ${start.toFixed(2)} → ${minimum.toFixed(2)}% minimum` : `${label} —`;
-  });
-  return values.join(" · ");
-}
-
-function averageAvailable(values?: Array<number | null>) {
-  const available = values?.filter((value): value is number => value != null && Number.isFinite(value)) ?? [];
-  return available.length > 0 ? available.reduce((sum, value) => sum + value, 0) / available.length : null;
+function tyreWearColour(usedPercent: number) {
+  const severity = Math.min(1, Math.max(0, usedPercent / 10));
+  const hue = 110 * (1 - severity);
+  return {
+    border: `hsl(${hue} 82% 48%)`,
+    background: `hsl(${hue} 82% 48% / 0.16)`,
+    text: `hsl(${hue} 88% 68%)`,
+  };
 }
 
 function lapIsInvalid(lap: RecordedSessionSummary["laps"][number]) {
