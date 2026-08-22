@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
+const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -79,6 +80,8 @@ pub struct SectorSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionSummary {
     pub id: String,
+    pub user_title: Option<String>,
+    pub tags: Vec<String>,
     pub track: Option<String>,
     pub car: Option<String>,
     pub session_type: Option<String>,
@@ -159,6 +162,16 @@ impl MetadataStore {
                 .map_err(MetadataError::from)?;
             transaction
                 .pragma_update(None, "user_version", 2)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
+        if current < 3 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_3)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 3)
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
@@ -345,7 +358,7 @@ impl MetadataStore {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT s.id, t.display_name, c.display_name, s.session_type,
+                "SELECT s.id, s.user_title, t.display_name, c.display_name, s.session_type,
                         s.started_at, s.source_kind,
                         EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id)
                  FROM sessions s
@@ -363,12 +376,14 @@ impl MetadataStore {
                 |row| {
                     Ok(SessionSummary {
                         id: row.get(0)?,
-                        track: row.get(1)?,
-                        car: row.get(2)?,
-                        session_type: row.get(3)?,
-                        started_at: row.get(4)?,
-                        source_kind: row.get(5)?,
-                        exportable: row.get(6)?,
+                        user_title: row.get(1)?,
+                        tags: Vec::new(),
+                        track: row.get(2)?,
+                        car: row.get(3)?,
+                        session_type: row.get(4)?,
+                        started_at: row.get(5)?,
+                        source_kind: row.get(6)?,
+                        exportable: row.get(7)?,
                         laps: Vec::new(),
                     })
                 },
@@ -386,6 +401,7 @@ impl MetadataStore {
             )
             .map_err(MetadataError::from)?;
         for session in &mut sessions {
+            session.tags = query_session_tags(&self.connection, &session.id)?;
             let laps: Vec<(String, LapSummary)> = lap_statement
                 .query_map([&session.id], |row| {
                     let id: String = row.get(0)?;
@@ -431,6 +447,46 @@ impl MetadataStore {
                 .collect::<Result<_, MetadataError>>()?;
         }
         Ok(sessions)
+    }
+
+    /// Replaces the user-managed title and tags for a recorded session atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the session is missing, details exceed bounded
+    /// limits, or `SQLite` cannot commit the update.
+    pub fn update_session_details(
+        &mut self,
+        session_id: &str,
+        user_title: Option<&str>,
+        tags: &[String],
+    ) -> Result<(), MetadataError> {
+        validate_session_details(user_title, tags)?;
+        let transaction = self.connection.transaction().map_err(MetadataError::from)?;
+        let changed = transaction
+            .execute(
+                "UPDATE sessions SET user_title = ?1 WHERE id = ?2",
+                params![user_title, session_id],
+            )
+            .map_err(MetadataError::from)?;
+        if changed != 1 {
+            return Err(MetadataError::RecordNotFound);
+        }
+        transaction
+            .execute(
+                "DELETE FROM session_tags WHERE session_id = ?1",
+                [session_id],
+            )
+            .map_err(MetadataError::from)?;
+        for tag in tags {
+            transaction
+                .execute(
+                    "INSERT INTO session_tags (session_id, tag) VALUES (?1, ?2)",
+                    params![session_id, tag],
+                )
+                .map_err(MetadataError::from)?;
+        }
+        transaction.commit().map_err(MetadataError::from)
     }
 
     /// Returns every filesystem blob path referenced by metadata.
@@ -614,6 +670,52 @@ fn validate_session(session: &NewSession) -> Result<(), MetadataError> {
     Ok(())
 }
 
+fn query_session_tags(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<Vec<String>, MetadataError> {
+    let mut statement = connection
+        .prepare("SELECT tag FROM session_tags WHERE session_id = ?1 ORDER BY tag COLLATE NOCASE")
+        .map_err(MetadataError::from)?;
+    statement
+        .query_map([session_id], |row| row.get(0))
+        .map_err(MetadataError::from)?
+        .collect::<Result<_, _>>()
+        .map_err(MetadataError::from)
+}
+
+fn validate_session_details(
+    user_title: Option<&str>,
+    tags: &[String],
+) -> Result<(), MetadataError> {
+    if user_title.is_some_and(|title| {
+        title.trim().is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control)
+    }) {
+        return Err(MetadataError::InvalidRecord(
+            "session title must contain 1–80 printable characters".into(),
+        ));
+    }
+    if tags.len() > 12 {
+        return Err(MetadataError::InvalidRecord(
+            "a session may have at most 12 tags".into(),
+        ));
+    }
+    let mut unique = BTreeSet::new();
+    for tag in tags {
+        if tag.trim() != tag
+            || tag.is_empty()
+            || tag.chars().count() > 32
+            || tag.chars().any(char::is_control)
+            || !unique.insert(tag.to_lowercase())
+        {
+            return Err(MetadataError::InvalidRecord(
+                "tags must be unique printable values of 1–32 characters".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_laps(laps: &[NewLap], samples: u64) -> Result<(), MetadataError> {
     for lap in laps {
         if lap.id.is_empty() || lap.validity.is_empty() {
@@ -720,7 +822,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 2);
+        assert_eq!(store.schema_version().expect("schema version"), 3);
 
         let mut statement = store
             .connection
@@ -735,6 +837,7 @@ mod tests {
         assert!(tables.contains(&"sessions".to_owned()));
         assert!(tables.contains(&"laps".to_owned()));
         assert!(tables.contains(&"lap_sectors".to_owned()));
+        assert!(tables.contains(&"session_tags".to_owned()));
         assert!(tables.contains(&"telemetry_blobs".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
     }
@@ -757,7 +860,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 2);
+        assert_eq!(store.schema_version().expect("schema version"), 3);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
@@ -776,6 +879,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn session_completion_is_returned_as_a_browser_summary() {
         let mut store = MetadataStore::open_in_memory().expect("migrated store");
         store
@@ -823,9 +927,21 @@ mod tests {
                 ],
             )
             .expect("completed session");
+        store
+            .update_session_details(
+                "session-1",
+                Some("League qualifying run"),
+                &["league".into(), "wet".into()],
+            )
+            .expect("session details");
 
         let summaries = store.recent_sessions(10).expect("session summaries");
         assert_eq!(summaries.len(), 1);
+        assert_eq!(
+            summaries[0].user_title.as_deref(),
+            Some("League qualifying run")
+        );
+        assert_eq!(summaries[0].tags, vec!["league", "wet"]);
         assert_eq!(summaries[0].track.as_deref(), Some("Mugello"));
         assert!(summaries[0].exportable);
         assert_eq!(summaries[0].laps.len(), 2);

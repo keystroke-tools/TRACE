@@ -41,6 +41,8 @@ export interface RecordedSectorSummary {
 
 export interface RecordedSessionSummary {
   id: string;
+  title?: string | null;
+  tags: string[];
   track: string;
   car: string;
   sessionType: string;
@@ -69,9 +71,11 @@ export interface TelemetryDataSource {
   getSessions(): Promise<RecordedSessionSummary[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
+  updateSessionDetails(sessionId: string, title: string | null, tags: string[]): Promise<void>;
 }
 
 const deletedFixtureSessionIds = new Set<string>();
+const fixtureSessionDetails = new Map<string, { title: string | null; tags: string[] }>();
 
 export const fixtureDataSource: TelemetryDataSource = {
   async getStatus() {
@@ -119,6 +123,8 @@ export const fixtureDataSource: TelemetryDataSource = {
     const sessions: RecordedSessionSummary[] = [
       {
         id: "replay-mugello-001",
+        title: null,
+        tags: [],
         track: "MUGELLO",
         car: "TATUUS FA01",
         sessionType: "REPLAY FIXTURE",
@@ -141,7 +147,9 @@ export const fixtureDataSource: TelemetryDataSource = {
         ],
       },
     ];
-    return sessions.filter((session) => !deletedFixtureSessionIds.has(session.id));
+    return sessions
+      .filter((session) => !deletedFixtureSessionIds.has(session.id))
+      .map((session) => ({ ...session, ...fixtureSessionDetails.get(session.id) }));
   },
   async exportSession(_sessionId, format) {
     return {
@@ -153,6 +161,9 @@ export const fixtureDataSource: TelemetryDataSource = {
   async deleteSession(sessionId) {
     deletedFixtureSessionIds.add(sessionId);
     return { sessionId };
+  },
+  async updateSessionDetails(sessionId, title, tags) {
+    fixtureSessionDetails.set(sessionId, { title, tags });
   },
 };
 
@@ -168,6 +179,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   deleteSession(sessionId) {
     return invoke<SessionDeletion>("delete_session", { sessionId });
+  },
+  updateSessionDetails(sessionId, title, tags) {
+    return invoke<void>("update_session_details", { sessionId, title, tags });
   },
 };
 

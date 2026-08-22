@@ -45,6 +45,7 @@ export function App() {
           <Sessions
             sessions={sessions}
             onDeleted={(sessionId) => setSessions((current) => current.filter((session) => session.id !== sessionId))}
+            onUpdated={(updated) => setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))}
           />
         )}
         {section === "COMPARE" && <Compare />}
@@ -224,7 +225,7 @@ function AvailabilityNote({ children }: { children: ReactNode }) {
   return <p className="border border-t-0 border-trace-divider bg-trace-deep px-5 py-4 text-[12px] leading-5 text-trace-muted"><strong className="mr-2 text-trace-warning">NOT AVAILABLE YET</strong>{children}</p>;
 }
 
-function Sessions({ sessions, onDeleted }: { sessions: RecordedSessionSummary[]; onDeleted: (sessionId: string) => void }) {
+function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessionSummary[]; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void }) {
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -235,7 +236,7 @@ function Sessions({ sessions, onDeleted }: { sessions: RecordedSessionSummary[];
       .filter((session) => {
         const source = sessionSourceGroup(session);
         const matchesSource = sourceFilter === "all" || source === sourceFilter;
-        const searchable = [session.track, session.car, session.sessionType, session.source]
+        const searchable = [session.title, session.track, session.car, session.sessionType, session.source, ...session.tags]
           .join(" ")
           .toLocaleLowerCase();
         return matchesSource && (!normalizedQuery || searchable.includes(normalizedQuery));
@@ -262,6 +263,19 @@ function Sessions({ sessions, onDeleted }: { sessions: RecordedSessionSummary[];
         kind: "error",
         text: error instanceof Error ? error.message : String(error),
       });
+      return false;
+    }
+  }
+
+  async function updateRecordedSession(session: RecordedSessionSummary, title: string | null, tags: string[]) {
+    setArchiveMessage(null);
+    try {
+      await telemetryDataSource.updateSessionDetails(session.id, title, tags);
+      onUpdated({ ...session, title, tags });
+      setArchiveMessage({ kind: "success", text: "Session name and tags were saved." });
+      return true;
+    } catch (error) {
+      setArchiveMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
       return false;
     }
   }
@@ -329,21 +343,25 @@ function Sessions({ sessions, onDeleted }: { sessions: RecordedSessionSummary[];
         ) : visibleSessions.length === 0 ? (
           <EmptySessions title="Nothing matches">Try a different search or change the source filter.</EmptySessions>
         ) : visibleSessions.map((session) => (
-          <SessionRow key={session.id} session={session} onDelete={deleteRecordedSession} />
+          <SessionRow key={session.id} session={session} onDelete={deleteRecordedSession} onUpdate={updateRecordedSession} />
         ))}
       </div>
     </>
   );
 }
 
-function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean> }) {
+function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean>; onUpdate: (session: RecordedSessionSummary, title: string | null, tags: string[]) => Promise<boolean> }) {
   const [expanded, setExpanded] = useState(false);
   const [showAllLaps, setShowAllLaps] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(session.title ?? "");
+  const [draftTags, setDraftTags] = useState(session.tags.join(", "));
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
   const actionsMenu = useRef<HTMLDivElement>(null);
   const timedLaps = session.laps.filter((lap) => lap.time !== "—" && lap.validity !== "invalid");
   const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
@@ -363,12 +381,14 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
       if (!actionsMenu.current?.contains(event.target as Node)) {
         setActionsOpen(false);
         setConfirmingDelete(false);
+        setEditingDetails(false);
       }
     }
     function dismissOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setActionsOpen(false);
         setConfirmingDelete(false);
+        setEditingDetails(false);
       }
     }
     document.addEventListener("pointerdown", dismissOnPointerDown);
@@ -400,6 +420,24 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
     if (deleted) setActionsOpen(false);
   }
 
+  async function saveDetails() {
+    setSavingDetails(true);
+    const title = draftTitle.trim() || null;
+    const seen = new Set<string>();
+    const tags = draftTags.split(",").map((tag) => tag.trim()).filter((tag) => {
+      const key = tag.toLocaleLowerCase();
+      if (!tag || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const saved = await onUpdate(session, title, tags);
+    setSavingDetails(false);
+    if (saved) {
+      setEditingDetails(false);
+      setActionsOpen(false);
+    }
+  }
+
   return (
     <article className="relative border-b border-trace-divider last:border-b-0">
       <div className="flex min-h-[82px] items-stretch">
@@ -411,12 +449,13 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
         >
           <div className="min-w-0">
             <span className="block truncate text-[10px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
-            <h2 className="mt-1.5 truncate text-base font-black tracking-[.03em]">{session.track}</h2>
-            <span className="mt-1 block truncate font-mono text-[9px] text-trace-dim" title={session.startedAt}>{formatSessionDate(session.startedAt)}</span>
+            <h2 className="mt-1.5 truncate text-base font-black tracking-[.03em]">{session.title ?? session.track}</h2>
+            <span className="mt-1 block truncate font-mono text-[9px] text-trace-dim" title={session.startedAt}>{session.title ? `${session.track} · ` : ""}{formatSessionDate(session.startedAt)}</span>
           </div>
           <div className="min-w-0">
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
             <span className="mt-1 block truncate text-[11px] text-trace-dim">{sessionSourceLabel(session)}</span>
+            {session.tags.length > 0 && <span className="mt-1 block truncate font-mono text-[9px] text-trace-purple">{session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}</span>}
           </div>
           <div className="font-mono">
             <span className="block text-[9px] tracking-[.08em] text-trace-dim">LAPS</span>
@@ -445,9 +484,12 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
               <div className="absolute right-0 top-[calc(100%-10px)] z-20 w-72 border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
                 {confirmingDelete ? (
                   <DeleteConfirmation session={session} deleting={deleting} onCancel={() => setConfirmingDelete(false)} onConfirm={() => void deleteRecording()} />
+                ) : editingDetails ? (
+                  <SessionDetailsEditor title={draftTitle} tags={draftTags} saving={savingDetails} onTitleChange={setDraftTitle} onTagsChange={setDraftTags} onCancel={() => setEditingDetails(false)} onSave={() => void saveDetails()} />
                 ) : (
                   <>
                     <span className="block px-2 pb-2 pt-1 text-[11px] font-bold text-trace-soft">Session actions</span>
+                    <button type="button" onClick={() => { setDraftTitle(session.title ?? ""); setDraftTags(session.tags.join(", ")); setEditingDetails(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised">Rename & tag…</button>
                     <ExportOption label="Export full recording" detail="Arrow IPC · all captured channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("arrow")} />
                     <ExportOption label="Export spreadsheet" detail="CSV · core channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("csv")} />
                     {!session.exportable && <p className="px-2 py-2 text-[10px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
@@ -588,6 +630,27 @@ function DeleteConfirmation({ session, deleting, onCancel, onConfirm }: { sessio
         </button>
       </div>
     </div>
+  );
+}
+
+function SessionDetailsEditor({ title, tags, saving, onTitleChange, onTagsChange, onCancel, onSave }: { title: string; tags: string; saving: boolean; onTitleChange: (value: string) => void; onTagsChange: (value: string) => void; onCancel: () => void; onSave: () => void }) {
+  return (
+    <form className="p-2" onSubmit={(event) => { event.preventDefault(); onSave(); }}>
+      <strong className="block text-[13px] text-trace-text">Rename and tag session</strong>
+      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+        DISPLAY NAME
+        <input autoFocus maxLength={80} value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Optional custom name" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+      </label>
+      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+        TAGS
+        <input value={tags} onChange={(event) => onTagsChange(event.target.value)} placeholder="league, wet, reference" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+      </label>
+      <p className="mt-2 text-[9px] leading-4 text-trace-dim">Separate up to 12 tags with commas. Names and tags are included in session search.</p>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button type="button" disabled={saving} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
+        <button type="submit" disabled={saving} className="border border-trace-purple bg-trace-purple-wash px-3 py-2.5 text-[11px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">{saving ? "Saving…" : "Save"}</button>
+      </div>
+    </form>
   );
 }
 

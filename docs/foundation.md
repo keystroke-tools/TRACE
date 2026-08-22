@@ -261,6 +261,11 @@ inputs, speed, RPM, and normalized lap position) one bounded Arrow batch at a ti
 missing optional values remain empty and units are named explicitly. TRACE does not
 yet claim a portable `.trace` bundle or proprietary MoTeC writer.
 
+Every recorded drive or replay can be given an optional custom display name and up to
+12 tags. SQLite keeps these annotations separate from simulator-provided track/car
+identity, and the archive searches both names and tags. Removing a custom name reveals
+the original track label again.
+
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so
 an existing destination is never overwritten. Blob identity is the SHA-256 digest of

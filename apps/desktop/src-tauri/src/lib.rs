@@ -56,6 +56,8 @@ struct RecordedSectorSummary {
 #[serde(rename_all = "camelCase")]
 struct RecordedSessionSummary {
     id: String,
+    title: Option<String>,
+    tags: Vec<String>,
     track: String,
     car: String,
     session_type: String,
@@ -109,6 +111,8 @@ fn recent_sessions(
             let deletable = active_session_id.as_deref() != Some(session.id.as_str());
             RecordedSessionSummary {
                 id: session.id,
+                title: session.user_title,
+                tags: session.tags,
                 track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
                 car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
                 session_type: session
@@ -255,6 +259,34 @@ fn delete_session(
         session_id,
         cleanup_warning,
     })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+fn update_session_details(
+    app: tauri::AppHandle,
+    session_id: String,
+    title: Option<String>,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let normalized_title = title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let normalized_tags = tags
+        .into_iter()
+        .map(|tag| tag.trim().to_owned())
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
+    store
+        .update_session_details(&session_id, normalized_title, &normalized_tags)
+        .map_err(|error| format!("failed to update session details: {error:?}"))
 }
 
 fn safe_export_stem(value: &str) -> String {
@@ -570,7 +602,8 @@ pub fn run() {
             foundation_status,
             recent_sessions,
             export_session,
-            delete_session
+            delete_session,
+            update_session_details
         ])
         .run(tauri::generate_context!())
         .expect("TRACE desktop runtime failed");
