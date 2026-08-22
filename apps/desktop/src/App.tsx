@@ -740,15 +740,12 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
       )}
 
       <div className="mt-4 border border-trace-divider bg-trace-surface">
-        <div className="flex items-center justify-between border-b border-trace-divider px-4 py-3">
-          <div>
-            <h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
-            <p className="mt-1 text-[12px] text-trace-dim">Timing, sectors, fuel, speed, and tyre condition for every recorded lap.</p>
-          </div>
+        <div className="flex items-center justify-between border-b border-trace-divider px-5 py-4">
+          <h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
           <span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
         </div>
-        <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_132px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
-          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRE WEAR</span><span className="text-right">RESULT</span>
+        <div className="grid grid-cols-[56px_92px_minmax(220px,1fr)_144px_110px_120px] items-center gap-5 border-b border-trace-divider bg-trace-deep px-5 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
+          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRES</span>
         </div>
         {session.laps.length === 0 ? (
           <div className="p-8 text-center text-[12px] text-trace-dim">No complete laps are available.</div>
@@ -758,16 +755,17 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_132px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
+              className={`grid min-h-[104px] grid-cols-[56px_92px_minmax(220px,1fr)_144px_110px_120px] items-center gap-5 border-b border-l-2 border-b-trace-divider px-5 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
               key={lap.index}
             >
-              <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
+              <Tooltip content={invalid ? lapInvalidityDetail(lap) : null}>
+                <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
+              </Tooltip>
               <strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
               {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
               <FuelUsage state={metricsState} metrics={lapMetrics} />
               <LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} />
               <TyreWearGrid state={metricsState} metrics={lapMetrics} />
-              <LapValidity lap={lap} />
             </div>
           );
         })}
@@ -777,7 +775,6 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
         <SectorLegend colour="bg-trace-accent" label="Improved" />
         <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
       </div>
-      <p className="mt-3 text-[12px] leading-5 text-trace-dim">Fuel, speed, and tyre condition come directly from each lap's recorded telemetry. Tyre circles are front-left, front-right, rear-left, and rear-right; they count down from 100%, shifting from green through yellow and orange to red.</p>
     </>
   );
 }
@@ -1011,19 +1008,13 @@ function EmptySessions({ title, children }: { title: string; children: ReactNode
   );
 }
 
-function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
-  if (!lapIsInvalid(lap)) return <span aria-label="No invalidity detected" />;
+function lapInvalidityDetail(lap: RecordedSessionSummary["laps"][number]) {
   const partial = lap.validityReason?.includes("partial") ?? false;
-  const detail = partial
+  return partial
     ? "TRACE joined after this lap began, so it is incomplete and excluded from comparisons."
     : lap.maxTyresOut != null && lap.maxTyresOut >= 3
       ? "Three or more tyres were observed outside the track; this lap is excluded from comparisons."
       : lap.validityReason ?? "The simulator marked this lap invalid.";
-  return (
-    <Tooltip className="justify-self-end border border-trace-danger/50 bg-trace-danger/20 px-2 py-1 text-[12px] font-bold tracking-[.08em] text-red-200" content={detail}>
-      INVALID
-    </Tooltip>
-  );
 }
 
 function sessionSourceGroup(session: RecordedSessionSummary) {
