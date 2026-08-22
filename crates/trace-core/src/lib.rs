@@ -3,5 +3,6 @@
 //! This crate deliberately has no simulator, storage, UI, or network dependencies.
 
 pub mod analysis;
+pub mod corners;
 pub mod delta;
 pub mod distance;

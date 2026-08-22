@@ -10,6 +10,8 @@ use tauri::Manager;
 use trace_ac::AcAdapter;
 use trace_adapter::SimulatorAdapter;
 use trace_core::{
+    analysis::{AnalysisResult, ComparisonContext},
+    corners::{CornerComparison, CornerComparisonSample, analyze_corner_comparison},
     delta::{ElapsedTimeSeries, calculate_delta},
     distance::{DistanceSample, DistanceSeries, InterpolationMethod, uniform_grid},
 };
@@ -124,6 +126,7 @@ struct LapComparison {
     comparison_lap_index: u32,
     comparison_lap_time: String,
     lap_length_m: f64,
+    corner_analysis: AnalysisResult<CornerComparison>,
     samples: Vec<LapComparisonSample>,
 }
 
@@ -561,6 +564,44 @@ fn compare_session_laps(
     let comparison_track_temperature =
         interpolate_channel(comparison_channels.track_temperature.as_ref(), &grid, 1.0)?;
 
+    let corner_samples = grid
+        .iter()
+        .enumerate()
+        .map(|(index, distance_m)| CornerComparisonSample {
+            distance_m: *distance_m,
+            delta_s: delta.samples[index].delta_s,
+            reference_speed_kmh: reference_speed[index],
+            comparison_speed_kmh: comparison_speed[index],
+            reference_throttle_percent: reference_throttle[index],
+            comparison_throttle_percent: comparison_throttle[index],
+            reference_brake_percent: reference_brake[index],
+            comparison_brake_percent: comparison_brake[index],
+            reference_steering_percent: reference_steering[index],
+            comparison_steering_percent: comparison_steering[index],
+            reference_position_x_m: reference_position_x[index],
+            reference_position_z_m: reference_position_z[index],
+            comparison_position_x_m: comparison_position_x[index],
+            comparison_position_z_m: comparison_position_z[index],
+        })
+        .collect::<Vec<_>>();
+    let same_car = match (
+        reference_session.source_car_id.as_deref(),
+        comparison_session.source_car_id.as_deref(),
+    ) {
+        (Some(reference), Some(comparison)) => reference == comparison,
+        _ => reference_session.car == comparison_session.car,
+    };
+    let corner_analysis = analyze_corner_comparison(
+        &corner_samples,
+        ComparisonContext {
+            same_simulator: true,
+            same_car,
+            same_track_layout: true,
+            setup_differs: None,
+            conditions_differ: None,
+        },
+    );
+
     let samples = grid
         .into_iter()
         .enumerate()
@@ -621,6 +662,7 @@ fn compare_session_laps(
         comparison_lap_index,
         comparison_lap_time,
         lap_length_m,
+        corner_analysis,
         samples,
     })
 }
