@@ -659,11 +659,18 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
   const cursorX = cursorSample ? x(cursorSample.distanceM) : null;
   const tooltipTransform = cursorX == null
     ? undefined
-    : cursorX < 230
+    : cursorX < 90
       ? "translateX(10px)"
-      : cursorX > width - 230
+      : cursorX > width - 90
         ? "translateX(calc(-100% - 10px))"
         : "translateX(-50%)";
+  const tooltipValues = cursorSample ? series.flatMap((item) => {
+    const value = item.value(cursorSample);
+    return value == null || !Number.isFinite(value) ? [] : [{ item, value, chartY: y(value) }];
+  }) : [];
+  const tooltipOffsets = tooltipValues.length === 2 && Math.abs(tooltipValues[0].chartY - tooltipValues[1].chartY) < 26 ? [-14, 14] : tooltipValues.map(() => 0);
+  const chartPixelHeight = compact ? 82 : 224;
+  const headerPixelHeight = compact ? 36 : 48;
   return (
     <div className="relative overflow-hidden border border-trace-divider bg-trace-surface">
       <div className={`flex items-center justify-between border-b border-trace-divider px-4 ${compact ? "h-9" : "min-h-12"}`}>
@@ -685,17 +692,9 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
         <text x={plot.left} y={height - 8} className="fill-trace-dim font-mono text-[12px]">{Math.round(firstDistance)} M</text>
         <text x={width - plot.right} y={height - 8} textAnchor="end" className="fill-trace-dim font-mono text-[12px]">{Math.round(lastDistance)} M</text>
       </svg>
-      {cursorSample && cursorX != null && (
-        <div className={`pointer-events-none absolute z-20 min-w-40 border border-trace-soft/40 bg-trace-black/95 px-3 py-2 font-mono shadow-[0_8px_24px_rgba(0,0,0,.5)] backdrop-blur ${compact ? "top-10" : "top-14"}`} style={{ left: `${cursorX / width * 100}%`, transform: tooltipTransform }} role="status" aria-live="off">
-          <span className="block border-b border-trace-divider pb-1 text-[10px] font-bold tabular-nums text-trace-dim">{Math.round(cursorSample.distanceM)} M</span>
-          <span className="mt-1.5 grid gap-1.5">
-            {series.map((item) => {
-              const value = item.value(cursorSample);
-              return <span className="flex items-center justify-between gap-5 text-[11px]" key={item.label}><span className="flex items-center gap-1.5 font-bold" style={{ color: item.colour }}><span className="size-1.5 rounded-full" style={{ backgroundColor: item.colour }} />{item.label}</span><strong className="tabular-nums text-trace-text">{value == null || !Number.isFinite(value) ? "—" : `${formatChartValue(value, unit)}${unit ? ` ${unit}` : ""}`}</strong></span>;
-            })}
-          </span>
-        </div>
-      )}
+      {cursorX != null && tooltipValues.map(({ item, value, chartY }, index) => (
+        <span className="pointer-events-none absolute z-20 whitespace-nowrap rounded-sm px-2 py-1 font-mono text-[11px] font-black tabular-nums shadow-[0_5px_14px_rgba(0,0,0,.5)]" style={{ left: `${cursorX / width * 100}%`, top: `${headerPixelHeight + chartY / height * chartPixelHeight + tooltipOffsets[index]}px`, transform: `${tooltipTransform} translateY(-50%)`, backgroundColor: item.colour, color: chartTooltipTextColour(item.colour) }} role="status" aria-label={`${item.label}: ${formatChartValue(value, unit)}${unit ? ` ${unit}` : ""}`} key={item.label}>{formatChartValue(value, unit)}{unit ? ` ${unit}` : ""}</span>
+      ))}
     </div>
   );
 }
@@ -719,6 +718,14 @@ function formatChartValue(value: number, unit: string) {
   if (unit === "s") return value.toFixed(3);
   const magnitude = Math.abs(value);
   return magnitude >= 100 ? value.toFixed(0) : magnitude >= 10 ? value.toFixed(1) : value.toFixed(3);
+}
+
+function chartTooltipTextColour(colour: string) {
+  if (!colour.startsWith("#") || colour.length !== 7) return "#fff";
+  const red = Number.parseInt(colour.slice(1, 3), 16);
+  const green = Number.parseInt(colour.slice(3, 5), 16);
+  const blue = Number.parseInt(colour.slice(5, 7), 16);
+  return red * 0.299 + green * 0.587 + blue * 0.114 > 150 ? "#090b0d" : "#fff";
 }
 
 function formatDelta(value: number) {

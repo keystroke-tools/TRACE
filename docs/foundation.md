@@ -318,8 +318,9 @@ and overlays both channel sets and track lines. Positive delta therefore means t
 comparison lap is behind. Colour consistently represents identity: reference telemetry
 uses the channel colour and comparison telemetry is purple, regardless of which lap is
 faster. Graph traces remain solid; on the map, Reference is solid and Comparison is
-dashed. A custom tooltip follows the shared cursor on every graph and lists distance
-plus both colour-coded values without intercepting pointer input. Missing
+dashed. Custom value badges follow each series at the shared cursor, using the line
+colour as their background and omitting redundant identity and distance labels. They
+do not intercept pointer input. Missing
 values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
