@@ -897,6 +897,15 @@ function FloatingTrackMap({ samples, cursorIndex, comparison = false, comparison
   return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} comparisonIsFaster={comparisonIsFaster} height={260} trackMap={trackMap} focusSelection={focusSelection} corners={corners} selectedCornerIndex={selectedCornerIndex} onDismiss={onDismiss} /></aside>;
 }
 
+function closestSampleAtElapsedTime(samples: LapComparisonSample[], key: "referenceElapsedSeconds" | "comparisonElapsedSeconds", targetSeconds: number) {
+  return samples.reduce<LapComparisonSample | null>((closest, sample) => {
+    const value = sample[key];
+    if (value == null || !Number.isFinite(value)) return closest;
+    const closestValue = closest?.[key];
+    return closestValue == null || Math.abs(value - targetSeconds) < Math.abs(closestValue - targetSeconds) ? sample : closest;
+  }, null);
+}
+
 function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster = false, height: requestedHeight, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; comparisonIsFaster?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -996,8 +1005,11 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
   });
   const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
+  const comparisonCursorSample = comparison && cursor?.referenceElapsedSeconds != null
+    ? closestSampleAtElapsedTime(samples, "comparisonElapsedSeconds", cursor.referenceElapsedSeconds) ?? cursor
+    : cursor;
   const referenceCursor = cursor?.referencePositionXM != null && cursor.referencePositionZM != null ? project(cursor.referencePositionXM, cursor.referencePositionZM) : null;
-  const comparisonCursor = cursor?.comparisonPositionXM != null && cursor.comparisonPositionZM != null ? project(cursor.comparisonPositionXM, cursor.comparisonPositionZM) : null;
+  const comparisonCursor = comparisonCursorSample?.comparisonPositionXM != null && comparisonCursorSample.comparisonPositionZM != null ? project(comparisonCursorSample.comparisonPositionXM, comparisonCursorSample.comparisonPositionZM) : null;
   const cursorTargets = [referenceCursor, comparisonCursor].filter((point): point is readonly [number, number] => point != null);
   const followedTarget = cursorTargets.length === 0 ? null : cursorTargets.reduce((total, point) => [total[0] + point[0], total[1] + point[1]] as const, [0, 0] as const).map((value) => value / cursorTargets.length);
   const followPan = zoom > 1 && followedTarget ? { x: zoom * (width / 2 - followedTarget[0]), y: zoom * (height / 2 - followedTarget[1]) } : { x: 0, y: 0 };

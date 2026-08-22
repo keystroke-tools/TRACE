@@ -142,6 +142,8 @@ struct LapComparison {
 struct LapComparisonSample {
     distance_m: f64,
     delta_seconds: Option<f64>,
+    reference_elapsed_seconds: Option<f64>,
+    comparison_elapsed_seconds: Option<f64>,
     reference_speed_kmh: Option<f64>,
     comparison_speed_kmh: Option<f64>,
     reference_throttle_percent: Option<f64>,
@@ -658,6 +660,17 @@ fn compare_session_laps(
         30.0,
     )
     .map_err(|error| format!("lap delta is unavailable: {error:?}"))?;
+    let reference_elapsed_series =
+        DistanceSeries::new(reference_channels.elapsed.samples().to_vec())
+            .map_err(|error| format!("reference lap clock is unavailable: {error:?}"))?;
+    let comparison_elapsed_series =
+        DistanceSeries::new(comparison_channels.elapsed.samples().to_vec())
+            .map_err(|error| format!("comparison lap clock is unavailable: {error:?}"))?;
+    let reference_elapsed = interpolate_channel(Some(&reference_elapsed_series), &grid, 1.0)?;
+    let comparison_elapsed = interpolate_channel(Some(&comparison_elapsed_series), &grid, 1.0)?
+        .into_iter()
+        .map(|value| value.map(|seconds| seconds - delta.baseline_s))
+        .collect::<Vec<_>>();
 
     let reference_speed = interpolate_channel(reference_channels.speed.as_ref(), &grid, 3.6)?;
     let comparison_speed = interpolate_channel(comparison_channels.speed.as_ref(), &grid, 3.6)?;
@@ -737,6 +750,8 @@ fn compare_session_laps(
         .map(|(index, distance_m)| LapComparisonSample {
             distance_m,
             delta_seconds: delta.samples[index].delta_s,
+            reference_elapsed_seconds: reference_elapsed[index],
+            comparison_elapsed_seconds: comparison_elapsed[index],
             reference_speed_kmh: reference_speed[index],
             comparison_speed_kmh: comparison_speed[index],
             reference_throttle_percent: reference_throttle[index],

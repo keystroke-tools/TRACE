@@ -290,6 +290,9 @@ guess sector boundaries when sector telemetry is absent. Invalid and incomplete 
 remain viewable because their telemetry can still diagnose a mistake.
 
 The map supports zooming and panning and marks the start and current cursor position.
+Comparison driving lines remain distance-aligned, but the two car markers are placed
+at the same aligned elapsed time. Their separation therefore represents the real gap
+around the circuit instead of incorrectly pinning both cars to the selected distance.
 Above the full-track zoom level it follows the active lap cursor automatically; during
 comparison it centres the midpoint between Reference and the Analysed Lap so both targets
 remain visible. Manual panning is retained as an offset from that followed position.

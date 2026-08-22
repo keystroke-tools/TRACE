@@ -88,6 +88,8 @@ export interface RecordedSessionSummary {
 export interface LapComparisonSample {
   distanceM: number;
   deltaSeconds?: number | null;
+  referenceElapsedSeconds?: number | null;
+  comparisonElapsedSeconds?: number | null;
   referenceSpeedKmh?: number | null;
   comparisonSpeedKmh?: number | null;
   referenceThrottlePercent?: number | null;
@@ -384,6 +386,8 @@ export const fixtureDataSource: TelemetryDataSource = {
       return {
         distanceM,
         deltaSeconds: index === 0 ? 0 : Math.sin(phase * 0.35) * 0.18 + index / 200 * 0.42,
+        referenceElapsedSeconds: index / 200 * 110.906,
+        comparisonElapsedSeconds: index / 200 * 111.328,
         referenceSpeedKmh: 178 + Math.sin(phase) * 48,
         comparisonSpeedKmh: 174 + Math.sin(phase + 0.08) * 47,
         referenceThrottlePercent: Math.sin(phase) > -0.35 ? 100 : 15,
