@@ -300,7 +300,7 @@ space and need no image transform. The old `map.png`/`map.ini` overlay is delibe
 not used: official and mod tracks provide visually inconsistent rasters whose transforms
 do not always agree with captured positions. The recorder stores AC's track configuration
 for new sessions; older sessions recover it from immutable native telemetry. Missing,
-oversized, malformed, ambiguous, or unsupported spline data falls back to the dotted
+oversized, malformed, ambiguous, or unsupported spline data falls back to the
 driven path and is labelled as lacking road edges. AI boundaries provide spatial
 context, not authoritative legal track limits or barrier geometry.
 
@@ -309,10 +309,11 @@ simulator, track, and layout. Each lap has an independent session selector, so a
 driver can compare separate visits, imported drivers, or two laps from one run. The
 compact selectors live in the persistent comparison HUD rather than consuming the
 analysis canvas. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
-presenting noisy precision that does not help the driver. The
-default Overview keeps the track lines, finish result, and time-difference chart in
-plain language; detailed speed, pedal, gear, and RPM traces live behind an optional
-Telemetry view. It
+presenting noisy precision that does not help the driver. Throttle and brake use
+separate side-by-side meters with independent percentages in both halves of the HUD.
+The analysis canvas keeps every channel visible in one scrollable workspace: speed and
+gear sit beside the map, full-width throttle and brake follow, then RPM and time
+difference. It
 calculates `comparison - reference` elapsed-time delta on their common distance domain
 and overlays both channel sets and track lines. Positive delta therefore means the
 comparison lap is behind. Colour consistently represents identity: reference telemetry
@@ -320,7 +321,7 @@ uses the channel colour and comparison telemetry is purple, regardless of which 
 faster. Graph traces remain solid; on the map, Reference is solid and Comparison is
 dashed. Custom value badges follow each series at the shared cursor, using the line
 colour as their background and omitting redundant identity and distance labels. They
-do not intercept pointer input. Missing
+sit just left of the cursor with a small gap and do not intercept pointer input. Missing
 values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
