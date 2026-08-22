@@ -338,6 +338,7 @@ function Sessions({ sessions, onDeleted }: { sessions: RecordedSessionSummary[];
 
 function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean> }) {
   const [expanded, setExpanded] = useState(false);
+  const [showAllLaps, setShowAllLaps] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
@@ -346,6 +347,13 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
   const actionsMenu = useRef<HTMLDivElement>(null);
   const timedLaps = session.laps.filter((lap) => lap.time !== "—");
   const bestLap = timedLaps.slice().sort((left, right) => lapTimeMs(left.time) - lapTimeMs(right.time))[0];
+  const visibleLaps = showAllLaps ? session.laps : session.laps.slice(0, 3);
+  const hiddenLapCount = session.laps.length - visibleLaps.length;
+
+  function toggleExpanded() {
+    if (expanded) setShowAllLaps(false);
+    setExpanded((value) => !value);
+  }
 
   useEffect(() => {
     if (!actionsOpen) return;
@@ -396,7 +404,7 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={toggleExpanded}
           className="grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px]"
         >
           <div className="min-w-0">
@@ -452,7 +460,7 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
             type="button"
             aria-label={expanded ? `Collapse ${session.track} laps` : `Show ${session.track} laps`}
             title={expanded ? "Hide laps" : "Show laps"}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={toggleExpanded}
             className="grid w-12 place-items-center border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
           >
             <svg className={`size-4 fill-none stroke-current transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true">
@@ -468,14 +476,14 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
       )}
       {expanded && (
         <div className="border-t border-trace-divider bg-trace-deep px-5 py-4">
-          <div className="mb-3 flex items-center justify-between font-mono text-[9px] tracking-[.09em] text-trace-dim">
-            <span>LAP DETAILS</span>
+          <div className="mb-3 flex items-center justify-between text-[11px] text-trace-dim">
+            <span>{visibleLaps.length} of {session.laps.length} laps shown</span>
             <span title={session.startedAt}>{formatSessionDate(session.startedAt)}</span>
           </div>
           <div className="max-h-56 overflow-y-auto border border-trace-divider bg-trace-surface">
             {session.laps.length === 0 ? (
-              <div className="p-5 font-mono text-[10px] text-trace-dim">NO COMPLETED LAP BOUNDARIES</div>
-            ) : session.laps.map((lap) => (
+              <div className="p-5 text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
+            ) : visibleLaps.map((lap) => (
               <div className="grid min-h-11 grid-cols-[80px_1fr_100px] items-center border-b border-trace-divider px-4 font-mono text-[10px] last:border-b-0" key={lap.index}>
                 <span className="text-trace-faint">LAP {String(lap.index).padStart(2, "0")}</span>
                 <strong className={lap.validity === "valid" ? "text-trace-text" : "text-trace-soft"}>{lap.time}</strong>
@@ -483,6 +491,14 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
               </div>
             ))}
           </div>
+          {session.laps.length > 3 && (
+            <button type="button" onClick={() => setShowAllLaps((value) => !value)} className="mt-3 border border-trace-divider bg-trace-surface px-3 py-2 text-[11px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text">
+              {showAllLaps ? "Show first 3 laps" : `Show ${hiddenLapCount} more lap${hiddenLapCount === 1 ? "" : "s"}`}
+            </button>
+          )}
+          <p className="mt-3 text-[11px] leading-5 text-trace-dim">
+            “Recorded” means TRACE captured the complete lap. Track-limit validity is not available from the currently validated AC data.
+          </p>
         </div>
       )}
     </article>
@@ -532,13 +548,13 @@ function EmptySessions({ title, children }: { title: string; children: ReactNode
 
 function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
   const label = lap.validity === "unknown"
-    ? "UNVERIFIED"
+    ? "RECORDED"
     : lap.validityReason?.includes("partial")
       ? "PARTIAL"
       : lap.validity.toUpperCase();
   return (
     <span
-      className={`text-right text-[9px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : "text-trace-warning"}`}
+      className={`text-right text-[9px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : lap.validity === "unknown" ? "text-trace-soft" : "text-trace-warning"}`}
       title={lap.validityReason ?? undefined}
     >
       {label}

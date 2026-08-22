@@ -133,6 +133,12 @@ Counter regression or a jump larger than one is rejected as ambiguous rather tha
 silently producing incorrect sample ranges. Simulator-specific validity evidence is
 not yet authoritative, so this layer does not claim a lap is valid.
 
+The desktop labels a complete lap with unknown validity as `Recorded`, not
+`Unverified`: this means the full lap was captured, not that track limits were
+checked. Partial/outlaps remain invalid and visibly marked. Lap detail panels render
+only the first three entries until the user explicitly asks to show the remainder,
+keeping long race sessions bounded by default.
+
 The desktop starts the production adapter on a dedicated polling thread. An unstable
 packet remains a temporary acquisition error and does not split the session. Loss of
 the underlying mappings is a distinct adapter error that closes the current canonical
