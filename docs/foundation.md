@@ -298,6 +298,9 @@ that could be mistaken for measured track limits.
 Comparison uses the same projection for two complete valid laps from the same
 simulator, track, and layout. Each lap has an independent session selector, so a
 driver can compare separate visits, imported drivers, or two laps from one run. The
+compact selectors live in the persistent comparison HUD rather than consuming the
+analysis canvas. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
+presenting noisy precision that does not help the driver. The
 default Overview keeps the track lines, finish result, and time-difference chart in
 plain language; detailed speed, pedal, gear, and RPM traces live behind an optional
 Telemetry view. It

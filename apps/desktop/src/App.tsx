@@ -358,16 +358,9 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
         </div>
       ) : (
         <>
-          <div className="mt-7 grid grid-cols-[1fr_52px_1fr] items-stretch gap-3">
-            <LapChoiceCard label="LAP A · REFERENCE" colour="text-trace-accent" sessions={eligibleSessions} sessionId={referenceSessionId} onSession={setReferenceSessionId} laps={referenceLaps} lapIndex={referenceLap} onLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} />
-            <div className="my-auto grid size-[52px] place-items-center border border-trace-divider bg-trace-deep text-trace-dim" aria-hidden="true">
-              <svg className="size-5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg>
-            </div>
-            <LapChoiceCard label="LAP B · COMPARE" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={setComparisonSessionId} laps={comparisonLaps} lapIndex={comparisonLap} onLap={setComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
-          </div>
-
-          {state === "loading" && <div className="mt-4 border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
-          {state === "error" && <div className="mt-4 border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Comparison unavailable.</strong> {error}</div>}
+          {state === "loading" && <div className="mt-7 border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
+          {state === "idle" && <div className="mt-7 border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose two clean laps below</strong><p className="mt-2 text-[13px] text-trace-muted">Lap B can come from this run or any other compatible session.</p></div>}
+          {state === "error" && <div className="mt-7 border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Comparison unavailable.</strong> {error}</div>}
           {comparison && state === "ready" && (
             <div className="mt-4">
               <div className="grid grid-cols-4 border border-trace-divider bg-trace-surface">
@@ -381,7 +374,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                 <div className="flex border border-trace-divider bg-trace-deep"><button type="button" onClick={() => setView("overview")} className={`px-4 py-2 font-mono text-[11px] font-bold ${view === "overview" ? "bg-trace-accent-wash text-trace-accent" : "text-trace-muted"}`}>OVERVIEW</button><button type="button" onClick={() => setView("telemetry")} className={`border-0 border-l border-trace-divider px-4 py-2 font-mono text-[11px] font-bold ${view === "telemetry" ? "bg-trace-accent-wash text-trace-accent" : "text-trace-muted"}`}>TELEMETRY</button></div>
               </div>
               {view === "overview" ? (
-                <div className="mt-3 grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3 pb-32">
+                <div className="mt-3 grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3 pb-48">
                   <TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={540} />
                   <div className="space-y-3">
                     <div className="border border-trace-divider bg-trace-surface p-6"><span className="font-mono text-[11px] font-bold tracking-[.1em] text-trace-dim">WHAT THIS MEANS</span><strong className="mt-3 block text-xl">{comparisonOutcomeSentence(finalDelta)}</strong><p className="mt-2 text-[13px] leading-6 text-trace-muted">Move across the purple time-difference chart to see where Lap B gained or lost time. Above zero means Lap B was behind at that point.</p></div>
@@ -389,7 +382,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   </div>
                 </div>
               ) : (
-                <div className="mt-3 grid grid-cols-2 gap-3 pb-32">
+                <div className="mt-3 grid grid-cols-2 gap-3 pb-48">
                   <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed)} />
                   <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle)} />
                   <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake)} />
@@ -398,9 +391,9 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "LAP B VS A", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                 </div>
               )}
-              <ComparisonHud comparison={comparison} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
             </div>
           )}
+          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </>
       )}
     </>
@@ -409,11 +402,6 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
 
 function validComparisonLaps(session: RecordedSessionSummary) {
   return session.laps.filter((lap) => !lapIsInvalid(lap) && lap.time !== "—").slice().sort((left, right) => lapDuration(left) - lapDuration(right));
-}
-
-function LapChoiceCard({ label, colour, sessions, sessionId, onSession, laps, lapIndex, onLap, disabledLap = null }: { label: string; colour: string; sessions: RecordedSessionSummary[]; sessionId: string; onSession: (value: string) => void; laps: RecordedSessionSummary["laps"]; lapIndex: number | null; onLap: (value: number) => void; disabledLap?: number | null }) {
-  const session = sessions.find((candidate) => candidate.id === sessionId);
-  return <div className="border border-trace-divider bg-trace-surface p-5"><span className={`font-mono text-[11px] font-black tracking-[.12em] ${colour}`}>{label}</span><label className="mt-4 block"><span className="text-[11px] font-bold text-trace-muted">SESSION</span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select mt-2 h-11 w-full border border-trace-divider bg-trace-deep px-3 text-[13px] font-bold text-trace-text outline-none">{sessions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.title ?? `${candidate.track} · ${formatSessionDate(candidate.startedAt)}`}</option>)}</select></label><label className="mt-3 block"><span className="text-[11px] font-bold text-trace-muted">LAP</span><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select mt-2 h-11 w-full border border-trace-divider bg-trace-deep px-3 font-mono text-[13px] font-bold text-trace-text outline-none">{lapIndex == null && <option value="" disabled>No other clean lap available</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}{lap.isFastest ? " · Fastest" : ""}</option>)}</select></label><p className="mt-3 truncate text-[12px] text-trace-dim">{session ? `${session.car} · ${friendlySessionType(session)} · ${formatSessionDate(session.startedAt)}` : "Choose a session"}</p></div>;
 }
 
 function comparisonOutcome(delta?: number | null) {
@@ -483,20 +471,47 @@ function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { ses
   );
 }
 
-function ComparisonHud({ comparison, samples, cursorIndex, onSeek }: { comparison: LapComparison; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
+type ComparisonHudProps = {
+  comparison: LapComparison | null;
+  sessions: RecordedSessionSummary[];
+  compatibleSessions: RecordedSessionSummary[];
+  referenceSessionId: string;
+  onReferenceSession: (value: string) => void;
+  referenceLaps: RecordedSessionSummary["laps"];
+  referenceLap: number | null;
+  onReferenceLap: (value: number) => void;
+  comparisonSessionId: string;
+  onComparisonSession: (value: string) => void;
+  comparisonLaps: RecordedSessionSummary["laps"];
+  comparisonLap: number | null;
+  onComparisonLap: (value: number) => void;
+  samples: LapComparisonSample[];
+  cursorIndex: number | null;
+  onSeek: (index: number) => void;
+};
+
+function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, samples, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(250px,1fr)_110px_110px_170px_170px_90px_90px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
-      <div className="min-w-0"><span className="block truncate text-[13px] font-black">{comparison.referenceTrack}</span><span className="font-mono text-[11px] text-trace-dim">A: {comparison.referenceCar} · B: {comparison.comparisonCar}</span></div>
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_110px_110px_minmax(150px,1fr)_minmax(150px,1fr)] items-center gap-x-4 gap-y-2 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+      <div className="col-span-full grid grid-cols-[1fr_120px_1fr] gap-3 border-b border-trace-divider pb-2">
+        <HudLapChoice label="A · REFERENCE" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
+        <HudValue label="FINISH" value={comparison?.samples.at(-1)?.deltaSeconds == null ? "—" : formatDelta(comparison.samples.at(-1)?.deltaSeconds ?? 0)} colour={channelColours.delta} />
+        <HudLapChoice label="B · COMPARE" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
+      </div>
+      <HudValue label="A SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
+      <HudProgress label="A THROTTLE / BRAKE" value={sample?.referenceThrottlePercent} secondary={sample?.referenceBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="DELTA" value={sample?.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)} colour={channelColours.delta} />
-      <HudProgress label="REF THROTTLE / BRAKE" value={sample?.referenceThrottlePercent} secondary={sample?.referenceBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
-      <HudProgress label="COMPARE THROTTLE / BRAKE" value={sample?.comparisonThrottlePercent} secondary={sample?.comparisonBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
-      <HudValue label="REF GEAR" value={formatGear(sample?.referenceGear)} colour={channelColours.gear} />
-      <HudValue label="CMP GEAR" value={formatGear(sample?.comparisonGear)} colour={channelColours.gear} />
+      <HudValue label="B SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
+      <HudProgress label="B THROTTLE / BRAKE" value={sample?.comparisonThrottlePercent} secondary={sample?.comparisonBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
       <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
     </div>
   );
+}
+
+function HudLapChoice({ label, colour, sessions, sessionId, onSession, laps, lapIndex, onLap, disabledLap = null }: { label: string; colour: string; sessions: RecordedSessionSummary[]; sessionId: string; onSession: (value: string) => void; laps: RecordedSessionSummary["laps"]; lapIndex: number | null; onLap: (value: number) => void; disabledLap?: number | null }) {
+  return <div className="grid min-w-0 grid-cols-[100px_minmax(150px,1fr)_150px] items-center gap-2"><span className={`font-mono text-[10px] font-black tracking-[.1em] ${colour}`}>{label}</span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} session`}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.title ?? `${session.track} · ${formatSessionDate(session.startedAt)}`}</option>)}</select><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} lap`}>{lapIndex == null && <option value="" disabled>No clean lap</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}</select></div>;
 }
 
 function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
@@ -609,7 +624,7 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
     <div className="border border-trace-divider bg-trace-surface">
       <div className={`flex items-center justify-between border-b border-trace-divider px-4 ${compact ? "h-9" : "min-h-12"}`}>
         <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
-        <div className="flex items-center gap-4 font-mono text-[12px]">{series.map((item) => <span style={{ color: item.colour }} key={item.label}>{item.label} {cursorSample && item.value(cursorSample) != null ? `${formatChartValue(item.value(cursorSample) ?? 0)} ${unit}` : "—"}</span>)}</div>
+        <div className="flex items-center gap-4 font-mono text-[12px]">{series.map((item) => <span style={{ color: item.colour }} key={item.label}>{item.label} {cursorSample && item.value(cursorSample) != null ? `${formatChartValue(item.value(cursorSample) ?? 0, unit)} ${unit}` : "—"}</span>)}</div>
       </div>
       <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
@@ -621,8 +636,8 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
         {zeroLine && minimum < 0 && maximum > 0 && <line x1={plot.left} x2={width - plot.right} y1={y(0)} y2={y(0)} className="stroke-trace-dim" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
         {series.map((item) => <path d={comparisonPath(samples, item.value, x, y)} fill="none" stroke={item.colour} strokeDasharray={item.dash} strokeWidth="2" vectorEffect="non-scaling-stroke" key={item.label} />)}
         {cursorSample && <line x1={x(cursorSample.distanceM)} x2={x(cursorSample.distanceM)} y1={plot.top} y2={height - plot.bottom} className="stroke-trace-text" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
-        <text x="8" y={plot.top + 4} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(maximum)}</text>
-        <text x="8" y={height - plot.bottom} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(minimum)}</text>
+        <text x="8" y={plot.top + 4} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(maximum, unit)}</text>
+        <text x="8" y={height - plot.bottom} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(minimum, unit)}</text>
         <text x={plot.left} y={height - 8} className="fill-trace-dim font-mono text-[12px]">{Math.round(firstDistance)} M</text>
         <text x={width - plot.right} y={height - 8} textAnchor="end" className="fill-trace-dim font-mono text-[12px]">{Math.round(lastDistance)} M</text>
       </svg>
@@ -644,7 +659,9 @@ function comparisonPath(samples: LapComparisonSample[], value: (sample: LapCompa
   }, "");
 }
 
-function formatChartValue(value: number) {
+function formatChartValue(value: number, unit: string) {
+  if (unit === "%" || unit === "" || unit === "rpm" || unit === "km/h") return String(Math.round(value));
+  if (unit === "s") return value.toFixed(3);
   const magnitude = Math.abs(value);
   return magnitude >= 100 ? value.toFixed(0) : magnitude >= 10 ? value.toFixed(1) : value.toFixed(3);
 }
