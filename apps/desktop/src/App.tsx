@@ -511,8 +511,9 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
             <span className="mt-1 block truncate text-[11px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}</span>
             {(session.driver || session.ownership !== "unknown") && (
-              <span className={`mt-1 block truncate font-mono text-[9px] font-bold tracking-[.05em] ${session.ownership === "other" ? "text-trace-purple" : "text-trace-accent"}`}>
-                {session.ownership === "other" ? "OTHER DRIVER" : session.ownership === "mine" ? "MY DRIVE" : "DRIVER"}{session.driver ? ` · ${session.driver}` : ""}
+              <span className="mt-1 flex min-w-0 items-center gap-2">
+                {session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
+                {session.driver && <span className="truncate text-[11px] text-trace-muted">{session.driver}</span>}
               </span>
             )}
             {session.tags.length > 0 && <span className="mt-1 block truncate font-mono text-[9px] text-trace-purple">{session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}</span>}
@@ -647,6 +648,19 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
 
 function SectorLegend({ colour, label }: { colour: string; label: string }) {
   return <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-3 ${colour}`} aria-hidden="true" />{label}</span>;
+}
+
+function OwnershipBadge({ ownership }: { ownership: Exclude<RecordedSessionSummary["ownership"], "unknown"> }) {
+  const mine = ownership === "mine";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 border px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-[.08em] ${mine ? "border-trace-accent/40 bg-trace-accent/10 text-trace-accent" : "border-trace-purple/40 bg-trace-purple-wash text-trace-purple"}`}
+      aria-label={mine ? "Your recording" : "Another driver's recording"}
+    >
+      <span className={`size-1.5 rounded-full ${mine ? "bg-trace-accent" : "bg-trace-purple"}`} aria-hidden="true" />
+      {mine ? "YOU" : "OTHER"}
+    </span>
+  );
 }
 
 function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["laps"][number]; laps: RecordedSessionSummary["laps"]; sectorCount: number }) {
