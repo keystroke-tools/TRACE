@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 
 pub mod ipc;
 pub mod metadata;
+pub mod package;
 
 /// Opaque identity of a committed telemetry blob.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]

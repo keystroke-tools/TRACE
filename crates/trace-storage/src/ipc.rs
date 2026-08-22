@@ -605,6 +605,29 @@ pub fn decode_columns(bytes: &[u8]) -> Result<TelemetryColumns, IpcError> {
     Ok(decoded)
 }
 
+/// Validates a telemetry Arrow file and returns its exact number of samples without
+/// retaining record batches in memory.
+///
+/// # Errors
+///
+/// Rejects malformed Arrow data, unsupported TRACE schemas, empty recordings, and
+/// sample-count overflow.
+pub fn sample_count<R: Read + Seek>(reader: R) -> Result<u64, IpcError> {
+    let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
+    validate_schema(reader.schema().as_ref())?;
+    let mut samples = 0_u64;
+    for batch in &mut reader {
+        let batch = batch.map_err(IpcError::from)?;
+        samples = samples
+            .checked_add(u64::try_from(batch.num_rows()).map_err(|_| IpcError::SampleOverflow)?)
+            .ok_or(IpcError::SampleOverflow)?;
+    }
+    if samples == 0 {
+        return Err(IpcError::EmptyBatch);
+    }
+    Ok(samples)
+}
+
 /// Streams the stable core telemetry projection as numeric CSV.
 ///
 /// The export deliberately includes only the seven channels shared by every supported
@@ -864,6 +887,7 @@ fn narrow_native_float(value: f64) -> f32 {
     value as f32
 }
 
+#[allow(clippy::too_many_lines)]
 fn extend_projection(
     decoded: &mut TelemetryColumns,
     batch: &RecordBatch,

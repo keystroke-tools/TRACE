@@ -340,11 +340,15 @@ one or two remains `Recorded`, as do zero or missing evidence, rather than being
 mislabelled `Valid`.
 
 Completed sessions can be exported from the Sessions UI into the user's Downloads
-directory. Arrow IPC export preserves the immutable full-fidelity recording. CSV
+directory. A self-contained `.trace` package combines a compact versioned metadata
+manifest with the immutable Arrow telemetry, allowing another TRACE installation to
+recreate the session, laps, sectors, annotations, attribution, and complete telemetry.
+Imported packages receive fresh local identities and are marked as another driver's
+data. Arrow IPC export preserves the raw full-fidelity recording alone. CSV
 export streams the stable seven-column core projection (`sequence`, elapsed time,
 inputs, speed, RPM, and normalized lap position) one bounded Arrow batch at a time;
 missing optional values remain empty and units are named explicitly. TRACE does not
-yet claim a portable `.trace` bundle or proprietary MoTeC writer.
+claim a proprietary MoTeC writer.
 
 Every recorded drive or replay can be given an optional custom display name, driver or
 author, ownership marker (`mine`, `other`, or `unknown`), and up to 12 tags. SQLite

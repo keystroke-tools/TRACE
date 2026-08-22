@@ -3994,6 +3994,7 @@ dependencies = [
  "arrow-schema",
  "rusqlite",
  "serde",
+ "serde_json",
  "sha2",
  "trace-domain",
 ]
