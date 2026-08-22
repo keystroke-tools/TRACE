@@ -357,8 +357,10 @@ rather than being extrapolated or connected with false precision.
 
 Named comparisons persist the exact compatible lap pair in SQLite and can be restored
 from a right-anchored Favourites dock without rebuilding the selection from timestamps.
-A star beside the capture-status indicator opens the dock and, when a comparison is
-ready, immediately offers a naming popover. The dock presents each favourite as a
+A star beside the capture-status indicator opens only a compact, top-anchored naming
+popover for saving the current comparison. The saved-comparison library is a separate,
+collapsible rail anchored to the right of the comparison workspace, mirroring the
+Analysis rail on the left. It presents each favourite as a
 fully clickable card with both drivers, lap times, session timestamps, track, car, and
 save time instead of compressing that context into a selector option. A per-card menu
 supports persisted rename and delete actions. Storage
