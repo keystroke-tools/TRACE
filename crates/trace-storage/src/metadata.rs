@@ -338,6 +338,56 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns the configured base URL for the Go Live service.
+    ///
+    /// `None` means the application should use its built-in hosted default.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn live_service_endpoint(&self) -> Result<Option<String>, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'live_service_endpoint'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(MetadataError::from)
+    }
+
+    /// Persists the base URL used for hosted or self-hosted Go Live sessions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the endpoint is invalid or `SQLite` cannot persist it.
+    pub fn set_live_service_endpoint(&mut self, endpoint: &str) -> Result<(), MetadataError> {
+        let endpoint = endpoint.trim();
+        let valid_scheme = endpoint.starts_with("https://") || endpoint.starts_with("http://");
+        let has_host = endpoint
+            .split_once("://")
+            .is_some_and(|(_, authority)| !authority.is_empty() && !authority.starts_with('/'));
+        if endpoint.is_empty()
+            || endpoint.len() > 2_048
+            || endpoint.chars().any(char::is_control)
+            || endpoint.chars().any(char::is_whitespace)
+            || !valid_scheme
+            || !has_host
+        {
+            return Err(MetadataError::InvalidRecord(
+                "Go Live endpoint must be a valid HTTP or HTTPS URL".into(),
+            ));
+        }
+        self.connection
+            .execute(
+                "INSERT INTO app_settings (key, value) VALUES ('live_service_endpoint', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [endpoint],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
     /// Saves a compatible lap pair, normalising the faster lap as Reference.
     ///
     /// # Errors
@@ -1366,6 +1416,28 @@ mod tests {
 
         store.set_driver_profile_name(None).expect("clear profile");
         assert_eq!(store.driver_profile_name().expect("profile"), None);
+    }
+
+    #[test]
+    fn live_service_endpoint_is_persisted_and_validated() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        assert_eq!(store.live_service_endpoint().expect("endpoint"), None);
+
+        store
+            .set_live_service_endpoint(" https://trace.example.test/live ")
+            .expect("set endpoint");
+        assert_eq!(
+            store.live_service_endpoint().expect("endpoint"),
+            Some("https://trace.example.test/live".into())
+        );
+
+        assert!(
+            store
+                .set_live_service_endpoint("ftp://trace.example.test")
+                .is_err()
+        );
+        assert!(store.set_live_service_endpoint("https://").is_err());
+        assert!(store.set_live_service_endpoint("not a URL").is_err());
     }
 
     #[test]

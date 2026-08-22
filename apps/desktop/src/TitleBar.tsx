@@ -58,7 +58,7 @@ export function TitleBar({ status, onBack, backLabel = "SESSIONS" }: { status: T
         <span>{state.toUpperCase()}</span>
       </div>
       <div id="trace-titlebar-actions" className="flex h-12 items-stretch" />
-      <Tooltip className="h-full" content="Remote spectating requires the Phase 7 TRACE backend, which is not configured yet">
+      <Tooltip className="h-full" content="Remote spectating is not available yet. Configure the hosted or self-hosted Go Live endpoint in Settings.">
         <button
           type="button"
           disabled

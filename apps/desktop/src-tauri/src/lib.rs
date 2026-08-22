@@ -51,6 +51,14 @@ struct DriverProfile {
     name: Option<String>,
 }
 
+const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://simtrace.run";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveSettings {
+    endpoint: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FoundationStatus {
@@ -464,6 +472,43 @@ fn set_driver_profile(
         .map_err(|error| format!("failed to save driver profile: {error:?}"))?;
     Ok(DriverProfile {
         name: normalized.map(str::to_owned),
+    })
+}
+
+#[tauri::command]
+fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    Ok(LiveSettings {
+        endpoint: store
+            .live_service_endpoint()
+            .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?
+            .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned()),
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_live_service_endpoint(
+    app: tauri::AppHandle,
+    endpoint: String,
+) -> Result<LiveSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let endpoint = endpoint.trim();
+    store
+        .set_live_service_endpoint(endpoint)
+        .map_err(|error| format!("failed to save Go Live endpoint: {error:?}"))?;
+    Ok(LiveSettings {
+        endpoint: endpoint.to_owned(),
     })
 }
 
@@ -1950,6 +1995,8 @@ pub fn run() {
             set_game_install_directory,
             driver_profile,
             set_driver_profile,
+            live_settings,
+            set_live_service_endpoint,
             saved_comparisons,
             save_comparison,
             delete_saved_comparison,

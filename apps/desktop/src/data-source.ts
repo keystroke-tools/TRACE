@@ -238,6 +238,10 @@ export interface DriverProfile {
   name?: string | null;
 }
 
+export interface LiveSettings {
+  endpoint: string;
+}
+
 export interface SavedComparison {
   id: string;
   name: string;
@@ -266,6 +270,8 @@ export interface TelemetryDataSource {
   setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
   getDriverProfile(): Promise<DriverProfile>;
   setDriverProfile(name: string | null): Promise<DriverProfile>;
+  getLiveSettings(): Promise<LiveSettings>;
+  setLiveServiceEndpoint(endpoint: string): Promise<LiveSettings>;
   getSavedComparisons(): Promise<SavedComparison[]>;
   saveComparison(name: string, referenceSessionId: string, referenceLapIndex: number, analysedSessionId: string, analysedLapIndex: number): Promise<SavedComparison[]>;
   deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
@@ -279,6 +285,7 @@ export interface TelemetryDataSource {
 const deletedFixtureSessionIds = new Set<string>();
 const fixtureSessionDetails = new Map<string, { title: string | null; driver: string | null; ownership: RecordedSessionSummary["ownership"]; tags: string[] }>();
 let fixtureDriverProfile: DriverProfile = { name: null };
+let fixtureLiveSettings: LiveSettings = { endpoint: "https://simtrace.run" };
 let fixtureSavedComparisons: SavedComparison[] = [];
 
 export const fixtureDataSource: TelemetryDataSource = {
@@ -446,6 +453,13 @@ export const fixtureDataSource: TelemetryDataSource = {
     fixtureDriverProfile = { name };
     return fixtureDriverProfile;
   },
+  async getLiveSettings() {
+    return fixtureLiveSettings;
+  },
+  async setLiveServiceEndpoint(endpoint) {
+    fixtureLiveSettings = { endpoint };
+    return fixtureLiveSettings;
+  },
   async getSavedComparisons() {
     return fixtureSavedComparisons;
   },
@@ -500,6 +514,12 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   setDriverProfile(name) {
     return invoke<DriverProfile>("set_driver_profile", { name });
+  },
+  getLiveSettings() {
+    return invoke<LiveSettings>("live_settings");
+  },
+  setLiveServiceEndpoint(endpoint) {
+    return invoke<LiveSettings>("set_live_service_endpoint", { endpoint });
   },
   getSavedComparisons() {
     return invoke<SavedComparison[]>("saved_comparisons");

@@ -21,6 +21,7 @@ import { useToast } from "./Toast";
 
 const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS", "SETTINGS"] as const;
 type Section = (typeof navigation)[number];
+const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://simtrace.run";
 
 export function App() {
   const [status, setStatus] = useState<TelemetryStatus | null>(null);
@@ -1401,6 +1402,16 @@ function Setups() {
   );
 }
 
+function normalizeLiveServiceEndpoint(value: string) {
+  try {
+    const endpoint = new URL(value.trim());
+    if ((endpoint.protocol !== "https:" && endpoint.protocol !== "http:") || !endpoint.hostname) return null;
+    return endpoint.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
 function Settings() {
   const showToast = useToast();
   const [directories, setDirectories] = useState<GameInstallDirectory[]>([]);
@@ -1410,15 +1421,20 @@ function Settings() {
   const [profileName, setProfileName] = useState("");
   const [savedProfileName, setSavedProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [liveEndpoint, setLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
+  const [savedLiveEndpoint, setSavedLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
+  const [savingLiveEndpoint, setSavingLiveEndpoint] = useState(false);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([telemetryDataSource.getGameInstallDirectories(), telemetryDataSource.getDriverProfile()]).then(([values, profile]) => {
+    void Promise.all([telemetryDataSource.getGameInstallDirectories(), telemetryDataSource.getDriverProfile(), telemetryDataSource.getLiveSettings()]).then(([values, profile, liveSettings]) => {
       if (!active) return;
       setDirectories(values);
       setDrafts(Object.fromEntries(values.map((value) => [value.simulatorId, value.path ?? ""])));
       setProfileName(profile.name ?? "");
       setSavedProfileName(profile.name ?? "");
+      setLiveEndpoint(liveSettings.endpoint);
+      setSavedLiveEndpoint(liveSettings.endpoint);
       setLoading(false);
     }).catch((error) => {
       if (!active) return;
@@ -1456,6 +1472,25 @@ function Settings() {
     }
   }
 
+  async function saveLiveEndpoint() {
+    const normalized = normalizeLiveServiceEndpoint(liveEndpoint);
+    if (!normalized) {
+      showToast({ kind: "error", title: "Invalid Go Live endpoint", message: "Enter a complete HTTP or HTTPS URL, such as https://simtrace.run.", timeoutMs: 7_000 });
+      return;
+    }
+    setSavingLiveEndpoint(true);
+    try {
+      const settings = await telemetryDataSource.setLiveServiceEndpoint(normalized);
+      setLiveEndpoint(settings.endpoint);
+      setSavedLiveEndpoint(settings.endpoint);
+      showToast({ kind: "success", title: "Go Live endpoint saved", message: `${settings.endpoint} will be used when remote spectating becomes available.`, timeoutMs: 5_000 });
+    } catch (error) {
+      showToast({ kind: "error", title: "Could not save Go Live endpoint", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setSavingLiveEndpoint(false);
+    }
+  }
+
   async function chooseDirectory(directory: GameInstallDirectory) {
     try {
       const selected = await open({
@@ -1487,6 +1522,21 @@ function Settings() {
             <input value={profileName} maxLength={80} onChange={(event) => setProfileName(event.target.value)} placeholder="Nickname or full name" className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 text-[13px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
             <button type="submit" disabled={savingProfile || profileName.trim() === savedProfileName} className="w-28 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingProfile ? "SAVING…" : "SAVE"}</button>
           </div>
+        </label>
+      </form>
+      <form className="mt-7 border border-trace-divider bg-trace-surface" onSubmit={(event) => { event.preventDefault(); void saveLiveEndpoint(); }}>
+        <div className="border-b border-trace-divider px-5 py-4">
+          <h2 className="text-[14px] font-black tracking-[.04em]">GO LIVE</h2>
+          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Choose the service TRACE will use to publish spectatable sessions. Keep the hosted default, or point TRACE at your own compatible deployment when self-hosting.</p>
+        </div>
+        <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
+          SERVICE ENDPOINT
+          <div className="mt-1.5 flex max-w-3xl">
+            <input type="url" value={liveEndpoint} onChange={(event) => setLiveEndpoint(event.target.value)} placeholder={DEFAULT_LIVE_SERVICE_ENDPOINT} spellCheck={false} className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
+            <button type="button" disabled={savingLiveEndpoint || liveEndpoint === DEFAULT_LIVE_SERVICE_ENDPOINT} onClick={() => setLiveEndpoint(DEFAULT_LIVE_SERVICE_ENDPOINT)} className="w-28 border border-l-0 border-trace-divider bg-trace-surface text-[11px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:bg-trace-deep disabled:text-trace-dim">USE DEFAULT</button>
+            <button type="submit" disabled={savingLiveEndpoint || !liveEndpoint.trim() || liveEndpoint.trim() === savedLiveEndpoint} className="w-24 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingLiveEndpoint ? "SAVING…" : "SAVE"}</button>
+          </div>
+          <span className="mt-2 block font-normal normal-case tracking-normal text-trace-dim">Default: <span className="font-mono text-trace-soft">{DEFAULT_LIVE_SERVICE_ENDPOINT}</span>. Only HTTP and HTTPS endpoints are accepted.</span>
         </label>
       </form>
       <div className="mt-7 border border-trace-divider bg-trace-surface">
