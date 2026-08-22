@@ -61,8 +61,8 @@
 
   body {
     margin: 0;
-    min-width: 1280px;
-    min-height: 800px;
+    min-width: 1440px;
+    min-height: 900px;
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;

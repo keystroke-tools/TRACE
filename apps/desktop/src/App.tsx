@@ -744,8 +744,8 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
           <h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
           <span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
         </div>
-        <div className="grid grid-cols-[56px_92px_minmax(220px,1fr)_144px_110px_120px] items-center gap-5 border-b border-trace-divider bg-trace-deep px-5 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
-          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRES</span>
+        <div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_136px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
+          <span>LAP</span><span>TIME</span><span>SECTORS</span><span className="border-l border-trace-divider pl-6">FUEL</span><span className="border-l border-trace-divider pl-6">TOP SPEED</span><span className="border-l border-trace-divider pl-6">TYRES</span>
         </div>
         {session.laps.length === 0 ? (
           <div className="p-8 text-center text-[12px] text-trace-dim">No complete laps are available.</div>
@@ -755,7 +755,7 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[104px] grid-cols-[56px_92px_minmax(220px,1fr)_144px_110px_120px] items-center gap-5 border-b border-l-2 border-b-trace-divider px-5 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
+              className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_136px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
               key={lap.index}
             >
               <Tooltip content={invalid ? lapInvalidityDetail(lap) : null}>
@@ -763,9 +763,9 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
               </Tooltip>
               <strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
               {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
-              <FuelUsage state={metricsState} metrics={lapMetrics} />
-              <LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} />
-              <TyreWearGrid state={metricsState} metrics={lapMetrics} />
+              <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><FuelUsage state={metricsState} metrics={lapMetrics} /></div>
+              <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} /></div>
+              <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><TyreWearGrid state={metricsState} metrics={lapMetrics} /></div>
             </div>
           );
         })}
@@ -807,7 +807,7 @@ function FuelUsage({ state, metrics }: { state: "loading" | "ready" | "error"; m
   const fill = percentage <= 10 ? "bg-trace-danger" : percentage <= 25 ? "bg-trace-warning" : "bg-trace-accent";
   const detail = `${remaining.toFixed(2)} L of ${capacity.toFixed(2)} L remaining${used ? ` · ${used} consumed this lap` : ""}`;
   return (
-    <Tooltip className="flex min-w-0 flex-col" content={detail}>
+    <Tooltip className="flex w-full min-w-0 flex-col" content={detail}>
       <span className="flex w-full items-center justify-between gap-2 text-[12px]">
         <span className="truncate text-trace-soft">{used ? `${used} USED` : "—"}</span>
         <span className="shrink-0 text-trace-faint">{Math.round(percentage)}%</span>
