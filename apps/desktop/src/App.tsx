@@ -242,7 +242,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
     referenceSpeedKmh: sample.speedKmh,
     referenceThrottlePercent: sample.throttlePercent,
     referenceBrakePercent: sample.brakePercent,
-    referenceSteeringDegrees: sample.steeringDegrees,
+    referenceSteeringPercent: sample.steeringPercent,
     referenceRpm: sample.rpm,
     referenceGear: sample.gear,
     referencePositionXM: sample.positionXM,
@@ -278,7 +278,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
             <div className="mt-3 grid gap-3">
               <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent", channelColours.throttle)} />
               <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent", channelColours.brake)} />
-              <ComparisonChart label="STEERING ANGLE" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringAngleRange(samples)} zeroLine series={singleSeries("referenceSteeringDegrees", channelColours.steering)} />
+              <ComparisonChart label="STEERING INPUT" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringInputRange(samples)} zeroLine series={singleSeries("referenceSteeringPercent", channelColours.steering)} />
             </div>
           </div>
           {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} focusSelection={sector != null} onDismiss={mapPip.dismiss} />}
@@ -398,7 +398,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                 <div className="mt-3 grid gap-3">
                   <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle)} />
                   <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake)} />
-                  <ComparisonChart label="STEERING ANGLE" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringAngleRange(samples)} zeroLine series={comparisonSeries("referenceSteeringDegrees", "comparisonSteeringDegrees", channelColours.steering)} />
+                  <ComparisonChart label="STEERING INPUT" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringInputRange(samples)} zeroLine series={comparisonSeries("referenceSteeringPercent", "comparisonSteeringPercent", channelColours.steering)} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm)} />
@@ -425,7 +425,7 @@ function comparisonOutcome(delta?: number | null) {
   return delta > 0 ? "REFERENCE FASTER" : "COMPARISON FASTER";
 }
 
-type ComparisonValueKey = keyof Pick<LapComparisonSample, "referenceSpeedKmh" | "comparisonSpeedKmh" | "referenceThrottlePercent" | "comparisonThrottlePercent" | "referenceBrakePercent" | "comparisonBrakePercent" | "referenceSteeringDegrees" | "comparisonSteeringDegrees" | "referenceRpm" | "comparisonRpm" | "referenceGear" | "comparisonGear">;
+type ComparisonValueKey = keyof Pick<LapComparisonSample, "referenceSpeedKmh" | "comparisonSpeedKmh" | "referenceThrottlePercent" | "comparisonThrottlePercent" | "referenceBrakePercent" | "comparisonBrakePercent" | "referenceSteeringPercent" | "comparisonSteeringPercent" | "referenceRpm" | "comparisonRpm" | "referenceGear" | "comparisonGear">;
 type ComparisonChartSeries = { label: string; colour: string; value: (sample: LapComparisonSample) => number | null | undefined };
 
 const channelColours = {
@@ -472,7 +472,7 @@ function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { ses
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
       <HudValue label="RPM" value={sample?.referenceRpm == null ? "—" : String(Math.round(sample.referenceRpm))} colour={channelColours.rpm} />
-      <HudSteering value={sample?.referenceSteeringDegrees} colour={channelColours.steering} />
+      <HudSteering value={sample?.referenceSteeringPercent} colour={channelColours.steering} />
       <HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
       <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
       <HudConditions air={sample?.referenceAirTemperatureC ?? numericCondition(session.ambientTemperatureC)} track={sample?.referenceTrackTemperatureC ?? numericCondition(session.roadTemperatureC)} />
@@ -516,16 +516,16 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
         <HudLapChoice label="COMPARISON" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
       <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
-      <HudSteering value={sample?.referenceSteeringDegrees} colour="var(--color-trace-accent)" />
+      <HudSteering value={sample?.referenceSteeringPercent} colour="var(--color-trace-accent)" />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
       <HudConditions air={sample?.referenceAirTemperatureC ?? numericCondition(referenceSession?.ambientTemperatureC)} track={sample?.referenceTrackTemperatureC ?? numericCondition(referenceSession?.roadTemperatureC)} />
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="DELTA" value={sample?.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)} colour={channelColours.delta} />
       <HudConditions air={sample?.comparisonAirTemperatureC ?? numericCondition(comparisonSession?.ambientTemperatureC)} track={sample?.comparisonTrackTemperatureC ?? numericCondition(comparisonSession?.roadTemperatureC)} />
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
-      <HudSteering value={sample?.comparisonSteeringDegrees} colour={channelColours.delta} />
+      <HudSteering value={sample?.comparisonSteeringPercent} colour={channelColours.delta} />
       <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
-      <div className="col-span-full grid h-9 grid-cols-[auto_minmax(280px,1fr)] items-end gap-5 border-t border-trace-divider pt-2">
+      <div className="col-span-full grid h-9 min-w-0 grid-cols-[minmax(0,2fr)_minmax(280px,3fr)] items-end gap-5 border-t border-trace-divider pt-2">
         <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} />
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} embedded />
       </div>
@@ -559,8 +559,8 @@ function comparisonSectorDeltas(referenceLaps: RecordedSessionSummary["laps"], r
 
 function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDelta[]; value: number | null; onChange: (value: number | null) => void }) {
   return (
-    <div className="flex h-6 items-stretch gap-1.5 font-mono" aria-label="Sector comparison and telemetry range">
-      <button type="button" onClick={() => onChange(null)} className={`border px-2 text-[9px] font-black tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
+    <div className="flex h-6 min-w-0 items-stretch gap-1.5 overflow-x-auto font-mono" aria-label="Sector comparison and telemetry range">
+      <button type="button" onClick={() => onChange(null)} className={`shrink-0 border px-2 text-[9px] font-black tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
       {sectors.map((sector) => {
         const gaining = sector.seconds != null && sector.seconds < -0.0005;
         const losing = sector.seconds != null && sector.seconds > 0.0005;
@@ -577,7 +577,7 @@ function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDe
             : `The comparison ${gaining ? "gained" : "lost"} ${Math.abs(sector.seconds).toFixed(3)} seconds in sector ${sector.index}.`;
         return (
           <Tooltip content={explanation} key={sector.index}>
-            <button type="button" onClick={() => onChange(sector.index)} className={`flex items-center gap-1.5 border px-2 text-[10px] font-bold tabular-nums ${tone} ${selected}`} aria-pressed={value === sector.index}>
+            <button type="button" onClick={() => onChange(sector.index)} className={`flex shrink-0 items-center gap-1.5 border px-2 text-[10px] font-bold tabular-nums ${tone} ${selected}`} aria-pressed={value === sector.index}>
               <span className="text-[9px] opacity-75">S{sector.index}</span>
               <strong>{sector.seconds == null ? "—" : `${sector.seconds >= 0 ? "+" : "−"}${Math.abs(sector.seconds).toFixed(3)}`}</strong>
             </button>
@@ -610,8 +610,9 @@ function HudValue({ label, value, unit, colour }: { label: string; value: string
 }
 
 function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
-  const degrees = value == null || !Number.isFinite(value) ? 0 : value;
-  return <div className="flex h-10 min-w-0 items-center gap-2 font-mono"><svg className="size-9 shrink-0" viewBox="0 0 36 36" role="img" aria-label={value == null ? "Steering unavailable" : `Steering angle ${Math.round(value)} degrees`}><circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" /><g transform={`rotate(${degrees} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="18" x2="18" y2="31" /><line x1="7" y1="17" x2="29" y2="17" /></g><circle cx="18" cy="18" r="2.5" fill={colour} /></svg><span className="min-w-0"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span><strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>{value == null ? "—" : `${Math.round(value)}°`}</strong></span></div>;
+  const percent = value == null || !Number.isFinite(value) ? 0 : Math.min(100, Math.max(-100, value));
+  const rotation = percent * 4.5;
+  return <div className="flex h-10 min-w-0 items-center gap-2 font-mono"><svg className="size-9 shrink-0" viewBox="0 0 36 36" role="img" aria-label={value == null ? "Steering unavailable" : `Steering input ${Math.round(value)} percent`}><circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" /><g transform={`rotate(${rotation} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="18" x2="18" y2="5" /><line x1="7" y1="19" x2="29" y2="19" /></g><circle cx="18" cy="18" r="2.5" fill={colour} /></svg><span className="min-w-0"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span><strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>{value == null ? "—" : `${Math.round(value)}%`}</strong></span></div>;
 }
 
 function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
@@ -761,9 +762,9 @@ function deltaRange(samples: LapComparisonSample[]): [number, number] {
   return [-maximum, maximum];
 }
 
-function steeringAngleRange(samples: LapComparisonSample[]): [number, number] {
-  const maximum = Math.max(5, ...samples.flatMap((sample) => [sample.referenceSteeringDegrees, sample.comparisonSteeringDegrees].flatMap((value) => value == null || !Number.isFinite(value) ? [] : [Math.abs(value)])));
-  const bound = Math.ceil(maximum / 5) * 5;
+function steeringInputRange(samples: LapComparisonSample[]): [number, number] {
+  const maximum = Math.max(10, ...samples.flatMap((sample) => [sample.referenceSteeringPercent, sample.comparisonSteeringPercent].flatMap((value) => value == null || !Number.isFinite(value) ? [] : [Math.abs(value)])));
+  const bound = Math.min(100, Math.ceil(maximum / 10) * 10);
   return [-bound, bound];
 }
 
@@ -1354,11 +1355,11 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
   const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
   const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
   const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
-  const sectorCount = Math.max(3, ...session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)));
+  const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
   const timedLaps = session.laps.filter((lap) => lap.time !== "—" && !lapIsInvalid(lap));
   const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
   const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
-  const theoreticalBest = theoreticalBestLap(session.laps, sectorCount);
+  const theoreticalBest = theoreticalBestLap(session.laps, sectorIndices);
 
   useEffect(() => {
     let active = true;
@@ -1443,7 +1444,7 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
                 <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
               </Tooltip>
               <strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
-              {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
+              {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorIndices={sectorIndices} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
               <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><FuelUsage state={metricsState} metrics={lapMetrics} /></div>
               <div className="flex min-h-16 items-center border-l border-trace-divider pl-6"><LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} /></div>
               <div className="flex min-h-16 items-center justify-between gap-3 border-l border-trace-divider pl-6"><TyreWearGrid state={metricsState} metrics={lapMetrics} /><svg className="size-4 shrink-0 fill-none stroke-current text-trace-dim" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></div>
@@ -1576,10 +1577,10 @@ function OwnershipBadge({ ownership }: { ownership: Exclude<RecordedSessionSumma
   );
 }
 
-function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["laps"][number]; laps: RecordedSessionSummary["laps"]; sectorCount: number }) {
+function SectorBars({ lap, laps, sectorIndices }: { lap: RecordedSessionSummary["laps"][number]; laps: RecordedSessionSummary["laps"]; sectorIndices: number[] }) {
   return (
-    <div className="flex min-w-0 gap-1.5" aria-label={`Sector times for lap ${lap.index}`}>
-      {Array.from({ length: sectorCount }, (_, offset) => offset + 1).map((index) => {
+    <div className="flex min-w-0 gap-1.5 overflow-x-auto" aria-label={`Sector times for lap ${lap.index}`}>
+      {sectorIndices.map((index) => {
         const sector = lap.sectors.find((candidate) => candidate.index === index);
         const performance = sectorPerformance(laps, lap, index);
         const colour = performance === "purple"
@@ -1590,7 +1591,7 @@ function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["l
               ? "bg-trace-sector-yellow"
               : "bg-trace-dim";
         return (
-          <Tooltip className="min-w-0 flex-1 flex-col" content={`Sector ${index}: ${sector?.time ?? "unavailable"}`} key={index}>
+          <Tooltip className="min-w-[72px] flex-1 flex-col" content={`Sector ${index}: ${sector?.time ?? "unavailable"}`} key={index}>
             <div className={`h-1.5 ${colour}`} aria-hidden="true" />
             <span className="mt-1 block truncate text-[12px] text-trace-faint">S{index} {sector?.time ?? "—"}</span>
           </Tooltip>
@@ -1726,10 +1727,11 @@ function lapDuration(lap: RecordedSessionSummary["laps"][number]) {
   return lapTimeMs(lap.time) * 1_000_000;
 }
 
-function theoreticalBestLap(laps: RecordedSessionSummary["laps"], sectorCount: number) {
+function theoreticalBestLap(laps: RecordedSessionSummary["laps"], sectorIndices: number[]) {
+  if (sectorIndices.length === 0) return null;
   const validLaps = laps.filter((lap) => !lapIsInvalid(lap));
   let totalDurationNs = 0;
-  for (let index = 1; index <= sectorCount; index += 1) {
+  for (const index of sectorIndices) {
     const durations = validLaps
       .flatMap((lap) => lap.sectors)
       .filter((sector) => sector.index === index && Number.isFinite(sector.durationNs) && sector.durationNs > 0)
