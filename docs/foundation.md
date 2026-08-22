@@ -312,8 +312,11 @@ plain language; detailed speed, pedal, gear, and RPM traces live behind an optio
 Telemetry view. It
 calculates `comparison - reference` elapsed-time delta on their common distance domain
 and overlays both channel sets and track lines. Positive delta therefore means the
-comparison lap is behind. Both traces are solid: the faster lap is consistently purple
-in every graph and on the map, while the other lap uses the channel colour. Missing
+comparison lap is behind. Colour consistently represents identity: reference telemetry
+uses the channel colour and comparison telemetry is purple, regardless of which lap is
+faster. Graph traces remain solid; on the map, Reference is solid and Comparison is
+dashed. A custom tooltip follows the shared cursor on every graph and lists distance
+plus both colour-coded values without intercepting pointer input. Missing
 values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
