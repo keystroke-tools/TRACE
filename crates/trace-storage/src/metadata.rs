@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
+const MIGRATION_4: &str = include_str!("../migrations/0004_session_attribution.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -81,6 +82,8 @@ pub struct SectorSummary {
 pub struct SessionSummary {
     pub id: String,
     pub user_title: Option<String>,
+    pub user_driver: Option<String>,
+    pub ownership: String,
     pub tags: Vec<String>,
     pub track: Option<String>,
     pub car: Option<String>,
@@ -172,6 +175,16 @@ impl MetadataStore {
                 .map_err(MetadataError::from)?;
             transaction
                 .pragma_update(None, "user_version", 3)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
+        if current < 4 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_4)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 4)
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
@@ -358,7 +371,8 @@ impl MetadataStore {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT s.id, s.user_title, t.display_name, c.display_name, s.session_type,
+                "SELECT s.id, s.user_title, s.user_driver, s.ownership,
+                        t.display_name, c.display_name, s.session_type,
                         s.started_at, s.source_kind,
                         EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id)
                  FROM sessions s
@@ -377,13 +391,15 @@ impl MetadataStore {
                     Ok(SessionSummary {
                         id: row.get(0)?,
                         user_title: row.get(1)?,
+                        user_driver: row.get(2)?,
+                        ownership: row.get(3)?,
                         tags: Vec::new(),
-                        track: row.get(2)?,
-                        car: row.get(3)?,
-                        session_type: row.get(4)?,
-                        started_at: row.get(5)?,
-                        source_kind: row.get(6)?,
-                        exportable: row.get(7)?,
+                        track: row.get(4)?,
+                        car: row.get(5)?,
+                        session_type: row.get(6)?,
+                        started_at: row.get(7)?,
+                        source_kind: row.get(8)?,
+                        exportable: row.get(9)?,
                         laps: Vec::new(),
                     })
                 },
@@ -459,14 +475,17 @@ impl MetadataStore {
         &mut self,
         session_id: &str,
         user_title: Option<&str>,
+        user_driver: Option<&str>,
+        ownership: &str,
         tags: &[String],
     ) -> Result<(), MetadataError> {
-        validate_session_details(user_title, tags)?;
+        validate_session_details(user_title, user_driver, ownership, tags)?;
         let transaction = self.connection.transaction().map_err(MetadataError::from)?;
         let changed = transaction
             .execute(
-                "UPDATE sessions SET user_title = ?1 WHERE id = ?2",
-                params![user_title, session_id],
+                "UPDATE sessions SET user_title = ?1, user_driver = ?2, ownership = ?3
+                 WHERE id = ?4",
+                params![user_title, user_driver, ownership, session_id],
             )
             .map_err(MetadataError::from)?;
         if changed != 1 {
@@ -686,6 +705,8 @@ fn query_session_tags(
 
 fn validate_session_details(
     user_title: Option<&str>,
+    user_driver: Option<&str>,
+    ownership: &str,
     tags: &[String],
 ) -> Result<(), MetadataError> {
     if user_title.is_some_and(|title| {
@@ -693,6 +714,20 @@ fn validate_session_details(
     }) {
         return Err(MetadataError::InvalidRecord(
             "session title must contain 1–80 printable characters".into(),
+        ));
+    }
+    if user_driver.is_some_and(|driver| {
+        driver.trim().is_empty()
+            || driver.chars().count() > 80
+            || driver.chars().any(char::is_control)
+    }) {
+        return Err(MetadataError::InvalidRecord(
+            "driver name must contain 1–80 printable characters".into(),
+        ));
+    }
+    if !matches!(ownership, "mine" | "other" | "unknown") {
+        return Err(MetadataError::InvalidRecord(
+            "session ownership must be mine, other, or unknown".into(),
         ));
     }
     if tags.len() > 12 {
@@ -822,7 +857,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 3);
+        assert_eq!(store.schema_version().expect("schema version"), 4);
 
         let mut statement = store
             .connection
@@ -860,7 +895,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 3);
+        assert_eq!(store.schema_version().expect("schema version"), 4);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
@@ -931,6 +966,8 @@ mod tests {
             .update_session_details(
                 "session-1",
                 Some("League qualifying run"),
+                Some("Alex Driver"),
+                "other",
                 &["league".into(), "wet".into()],
             )
             .expect("session details");
@@ -942,6 +979,8 @@ mod tests {
             Some("League qualifying run")
         );
         assert_eq!(summaries[0].tags, vec!["league", "wet"]);
+        assert_eq!(summaries[0].user_driver.as_deref(), Some("Alex Driver"));
+        assert_eq!(summaries[0].ownership, "other");
         assert_eq!(summaries[0].track.as_deref(), Some("Mugello"));
         assert!(summaries[0].exportable);
         assert_eq!(summaries[0].laps.len(), 2);

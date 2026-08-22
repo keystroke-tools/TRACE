@@ -261,10 +261,17 @@ inputs, speed, RPM, and normalized lap position) one bounded Arrow batch at a ti
 missing optional values remain empty and units are named explicitly. TRACE does not
 yet claim a portable `.trace` bundle or proprietary MoTeC writer.
 
-Every recorded drive or replay can be given an optional custom display name and up to
-12 tags. SQLite keeps these annotations separate from simulator-provided track/car
-identity, and the archive searches both names and tags. Removing a custom name reveals
-the original track label again.
+Every recorded drive or replay can be given an optional custom display name, driver or
+author, ownership marker (`mine`, `other`, or `unknown`), and up to 12 tags. SQLite
+keeps these annotations separate from simulator-provided track/car identity. The
+archive searches every annotation and visibly marks another driver's telemetry so an
+imported reference does not look like the user's own lap. Removing a custom name
+reveals the original track label again.
+
+TRACE also reads Assetto Corsa's session classification from the graphics page and
+stores it with the recording. The archive therefore distinguishes practice,
+qualifying, race, hotlap, time attack, drift, and drag sessions instead of reducing
+all native drives to a generic session label.
 
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so

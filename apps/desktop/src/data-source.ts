@@ -42,6 +42,8 @@ export interface RecordedSectorSummary {
 export interface RecordedSessionSummary {
   id: string;
   title?: string | null;
+  driver?: string | null;
+  ownership: "mine" | "other" | "unknown";
   tags: string[];
   track: string;
   car: string;
@@ -71,11 +73,11 @@ export interface TelemetryDataSource {
   getSessions(): Promise<RecordedSessionSummary[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
-  updateSessionDetails(sessionId: string, title: string | null, tags: string[]): Promise<void>;
+  updateSessionDetails(sessionId: string, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]): Promise<void>;
 }
 
 const deletedFixtureSessionIds = new Set<string>();
-const fixtureSessionDetails = new Map<string, { title: string | null; tags: string[] }>();
+const fixtureSessionDetails = new Map<string, { title: string | null; driver: string | null; ownership: RecordedSessionSummary["ownership"]; tags: string[] }>();
 
 export const fixtureDataSource: TelemetryDataSource = {
   async getStatus() {
@@ -124,6 +126,8 @@ export const fixtureDataSource: TelemetryDataSource = {
       {
         id: "replay-mugello-001",
         title: null,
+        driver: null,
+        ownership: "unknown",
         tags: [],
         track: "MUGELLO",
         car: "TATUUS FA01",
@@ -162,8 +166,8 @@ export const fixtureDataSource: TelemetryDataSource = {
     deletedFixtureSessionIds.add(sessionId);
     return { sessionId };
   },
-  async updateSessionDetails(sessionId, title, tags) {
-    fixtureSessionDetails.set(sessionId, { title, tags });
+  async updateSessionDetails(sessionId, title, driver, ownership, tags) {
+    fixtureSessionDetails.set(sessionId, { title, driver, ownership, tags });
   },
 };
 
@@ -180,8 +184,8 @@ export const tauriDataSource: TelemetryDataSource = {
   deleteSession(sessionId) {
     return invoke<SessionDeletion>("delete_session", { sessionId });
   },
-  updateSessionDetails(sessionId, title, tags) {
-    return invoke<void>("update_session_details", { sessionId, title, tags });
+  updateSessionDetails(sessionId, title, driver, ownership, tags) {
+    return invoke<void>("update_session_details", { sessionId, title, driver, ownership, tags });
   },
 };
 

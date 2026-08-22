@@ -6,6 +6,7 @@ import {
   type TelemetryStatus,
 } from "./data-source";
 import { TitleBar } from "./TitleBar";
+import { Tooltip } from "./Tooltip";
 
 const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS"] as const;
 type Section = (typeof navigation)[number];
@@ -113,9 +114,9 @@ function Live({ status, onOpenSessions }: { status: TelemetryStatus | null; onOp
                 <strong className={`font-mono text-[10px] tracking-[.1em] ${category.startsWith("AC-NATIVE") ? "text-trace-purple" : "text-trace-accent"}`}>{category}</strong>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {availableChannels.filter((channel) => channel.category === category).map((channel) => (
-                    <span className="border border-trace-divider bg-trace-surface px-2.5 py-1.5 text-[12px] text-trace-soft" title={channel.detail} key={channel.id}>
+                    <Tooltip className="border border-trace-divider bg-trace-surface px-2.5 py-1.5 text-[12px] text-trace-soft" content={channel.detail} key={channel.id}>
                       {channel.label}
-                    </span>
+                    </Tooltip>
                   ))}
                 </div>
               </div>
@@ -236,7 +237,8 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
       .filter((session) => {
         const source = sessionSourceGroup(session);
         const matchesSource = sourceFilter === "all" || source === sourceFilter;
-        const searchable = [session.title, session.track, session.car, session.sessionType, session.source, ...session.tags]
+        const ownershipLabel = session.ownership === "other" ? "other driver" : session.ownership === "mine" ? "my drive" : "not specified";
+        const searchable = [session.title, session.driver, ownershipLabel, session.track, session.car, session.sessionType, session.source, ...session.tags]
           .join(" ")
           .toLocaleLowerCase();
         return matchesSource && (!normalizedQuery || searchable.includes(normalizedQuery));
@@ -267,12 +269,12 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
     }
   }
 
-  async function updateRecordedSession(session: RecordedSessionSummary, title: string | null, tags: string[]) {
+  async function updateRecordedSession(session: RecordedSessionSummary, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]) {
     setArchiveMessage(null);
     try {
-      await telemetryDataSource.updateSessionDetails(session.id, title, tags);
-      onUpdated({ ...session, title, tags });
-      setArchiveMessage({ kind: "success", text: "Session name and tags were saved." });
+      await telemetryDataSource.updateSessionDetails(session.id, title, driver, ownership, tags);
+      onUpdated({ ...session, title, driver, ownership, tags });
+      setArchiveMessage({ kind: "success", text: "Session attribution and details were saved." });
       return true;
     } catch (error) {
       setArchiveMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
@@ -350,13 +352,15 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
   );
 }
 
-function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean>; onUpdate: (session: RecordedSessionSummary, title: string | null, tags: string[]) => Promise<boolean> }) {
+function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean>; onUpdate: (session: RecordedSessionSummary, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]) => Promise<boolean> }) {
   const [expanded, setExpanded] = useState(false);
   const [showAllLaps, setShowAllLaps] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [draftTitle, setDraftTitle] = useState(session.title ?? "");
+  const [draftDriver, setDraftDriver] = useState(session.driver ?? "");
+  const [draftOwnership, setDraftOwnership] = useState<RecordedSessionSummary["ownership"]>(session.ownership);
   const [draftTags, setDraftTags] = useState(session.tags.join(", "));
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -430,7 +434,8 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
       seen.add(key);
       return true;
     });
-    const saved = await onUpdate(session, title, tags);
+    const driver = draftDriver.trim() || null;
+    const saved = await onUpdate(session, title, driver, draftOwnership, tags);
     setSavingDetails(false);
     if (saved) {
       setEditingDetails(false);
@@ -450,11 +455,18 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
           <div className="min-w-0">
             <span className="block truncate text-[10px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
             <h2 className="mt-1.5 truncate text-base font-black tracking-[.03em]">{session.title ?? session.track}</h2>
-            <span className="mt-1 block truncate font-mono text-[9px] text-trace-dim" title={session.startedAt}>{session.title ? `${session.track} · ` : ""}{formatSessionDate(session.startedAt)}</span>
+            <Tooltip className="mt-1 flex min-w-0 font-mono text-[9px] text-trace-dim" content={session.startedAt}>
+              <span className="truncate">{session.title ? `${session.track} · ` : ""}{formatSessionDate(session.startedAt)}</span>
+            </Tooltip>
           </div>
           <div className="min-w-0">
             <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
             <span className="mt-1 block truncate text-[11px] text-trace-dim">{sessionSourceLabel(session)}</span>
+            {(session.driver || session.ownership !== "unknown") && (
+              <span className={`mt-1 block truncate font-mono text-[9px] font-bold tracking-[.05em] ${session.ownership === "other" ? "text-trace-purple" : "text-trace-accent"}`}>
+                {session.ownership === "other" ? "OTHER DRIVER" : session.ownership === "mine" ? "MY DRIVE" : "DRIVER"}{session.driver ? ` · ${session.driver}` : ""}
+              </span>
+            )}
             {session.tags.length > 0 && <span className="mt-1 block truncate font-mono text-[9px] text-trace-purple">{session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}</span>}
           </div>
           <div className="font-mono">
@@ -468,28 +480,29 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
         </button>
         <div className="flex shrink-0 items-stretch border-l border-trace-divider">
           <div className="relative flex" ref={actionsMenu}>
-            <button
-              type="button"
-              aria-label={`Actions for ${session.track} session`}
-              aria-expanded={actionsOpen}
-              title="Session actions"
-              onClick={() => { setActionsOpen((value) => !value); setConfirmingDelete(false); }}
-              className="grid w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
-            >
-              <svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
-                <circle cx="3" cy="8" r="1.2" /><circle cx="8" cy="8" r="1.2" /><circle cx="13" cy="8" r="1.2" />
-              </svg>
-            </button>
+            <Tooltip className="h-full" content="Session actions">
+              <button
+                type="button"
+                aria-label={`Actions for ${session.track} session`}
+                aria-expanded={actionsOpen}
+                onClick={() => { setActionsOpen((value) => !value); setConfirmingDelete(false); }}
+                className="grid h-full w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+              >
+                <svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.2" /><circle cx="8" cy="8" r="1.2" /><circle cx="13" cy="8" r="1.2" />
+                </svg>
+              </button>
+            </Tooltip>
             {actionsOpen && (
-              <div className="absolute right-0 top-[calc(100%-10px)] z-20 w-72 border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
+              <div className="absolute right-0 top-[calc(100%-10px)] z-20 max-h-[calc(100vh-80px)] w-72 overflow-y-auto border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
                 {confirmingDelete ? (
                   <DeleteConfirmation session={session} deleting={deleting} onCancel={() => setConfirmingDelete(false)} onConfirm={() => void deleteRecording()} />
                 ) : editingDetails ? (
-                  <SessionDetailsEditor title={draftTitle} tags={draftTags} saving={savingDetails} onTitleChange={setDraftTitle} onTagsChange={setDraftTags} onCancel={() => setEditingDetails(false)} onSave={() => void saveDetails()} />
+                  <SessionDetailsEditor title={draftTitle} driver={draftDriver} ownership={draftOwnership} tags={draftTags} saving={savingDetails} onTitleChange={setDraftTitle} onDriverChange={setDraftDriver} onOwnershipChange={setDraftOwnership} onTagsChange={setDraftTags} onCancel={() => setEditingDetails(false)} onSave={() => void saveDetails()} />
                 ) : (
                   <>
                     <span className="block px-2 pb-2 pt-1 text-[11px] font-bold text-trace-soft">Session actions</span>
-                    <button type="button" onClick={() => { setDraftTitle(session.title ?? ""); setDraftTags(session.tags.join(", ")); setEditingDetails(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised">Rename & tag…</button>
+                    <button type="button" onClick={() => { setDraftTitle(session.title ?? ""); setDraftDriver(session.driver ?? ""); setDraftOwnership(session.ownership); setDraftTags(session.tags.join(", ")); setEditingDetails(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised">Name, driver & tags…</button>
                     <ExportOption label="Export full recording" detail="Arrow IPC · all captured channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("arrow")} />
                     <ExportOption label="Export spreadsheet" detail="CSV · core channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("csv")} />
                     {!session.exportable && <p className="px-2 py-2 text-[10px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
@@ -500,17 +513,18 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
               </div>
             )}
           </div>
-          <button
-            type="button"
-            aria-label={expanded ? `Collapse ${session.track} laps` : `Show ${session.track} laps`}
-            title={expanded ? "Hide laps" : "Show laps"}
-            onClick={toggleExpanded}
-            className="grid w-12 place-items-center border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
-          >
-            <svg className={`size-4 fill-none stroke-current transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true">
-              <path d="m4 6 4 4 4-4" />
-            </svg>
-          </button>
+          <Tooltip className="h-full" content={expanded ? "Hide laps" : "Show laps"}>
+            <button
+              type="button"
+              aria-label={expanded ? `Collapse ${session.track} laps` : `Show ${session.track} laps`}
+              onClick={toggleExpanded}
+              className="grid h-full w-12 place-items-center border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+            >
+              <svg className={`size-4 fill-none stroke-current transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4 6 4 4 4-4" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
       </div>
       {exportMessage && (
@@ -522,7 +536,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
         <div className="border-t border-trace-divider bg-trace-deep px-5 py-4">
           <div className="mb-3 flex items-center justify-between text-[11px] text-trace-dim">
             <span>{visibleLaps.length} of {session.laps.length} laps shown</span>
-            <span title={session.startedAt}>{formatSessionDate(session.startedAt)}</span>
+            <Tooltip content={session.startedAt}>{formatSessionDate(session.startedAt)}</Tooltip>
           </div>
           <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px] text-trace-dim" aria-label="Sector colour legend">
             <SectorLegend colour="bg-trace-purple" label="Session best" />
@@ -577,10 +591,10 @@ function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["l
               ? "bg-trace-sector-yellow"
               : "bg-trace-dim";
         return (
-          <div className="min-w-0 flex-1" key={index} title={`Sector ${index}: ${sector?.time ?? "unavailable"}`}>
+          <Tooltip className="min-w-0 flex-1 flex-col" content={`Sector ${index}: ${sector?.time ?? "unavailable"}`} key={index}>
             <div className={`h-1.5 ${colour}`} aria-hidden="true" />
             <span className="mt-1 block truncate text-[9px] text-trace-faint">S{index} {sector?.time ?? "—"}</span>
-          </div>
+          </Tooltip>
         );
       })}
     </div>
@@ -633,19 +647,31 @@ function DeleteConfirmation({ session, deleting, onCancel, onConfirm }: { sessio
   );
 }
 
-function SessionDetailsEditor({ title, tags, saving, onTitleChange, onTagsChange, onCancel, onSave }: { title: string; tags: string; saving: boolean; onTitleChange: (value: string) => void; onTagsChange: (value: string) => void; onCancel: () => void; onSave: () => void }) {
+function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleChange, onDriverChange, onOwnershipChange, onTagsChange, onCancel, onSave }: { title: string; driver: string; ownership: RecordedSessionSummary["ownership"]; tags: string; saving: boolean; onTitleChange: (value: string) => void; onDriverChange: (value: string) => void; onOwnershipChange: (value: RecordedSessionSummary["ownership"]) => void; onTagsChange: (value: string) => void; onCancel: () => void; onSave: () => void }) {
   return (
     <form className="p-2" onSubmit={(event) => { event.preventDefault(); onSave(); }}>
-      <strong className="block text-[13px] text-trace-text">Rename and tag session</strong>
+      <strong className="block text-[13px] text-trace-text">Session identity</strong>
       <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
         DISPLAY NAME
         <input autoFocus maxLength={80} value={title} onChange={(event) => onTitleChange(event.target.value)} placeholder="Optional custom name" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
       </label>
       <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+        DRIVER / AUTHOR
+        <input maxLength={80} value={driver} onChange={(event) => onDriverChange(event.target.value)} placeholder="Who drove this recording?" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+      </label>
+      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
+        OWNERSHIP
+        <select value={ownership} onChange={(event) => onOwnershipChange(event.target.value as RecordedSessionSummary["ownership"])} className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple">
+          <option value="unknown">Not specified</option>
+          <option value="mine">My driving</option>
+          <option value="other">Another driver</option>
+        </select>
+      </label>
+      <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
         TAGS
         <input value={tags} onChange={(event) => onTagsChange(event.target.value)} placeholder="league, wet, reference" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
       </label>
-      <p className="mt-2 text-[9px] leading-4 text-trace-dim">Separate up to 12 tags with commas. Names and tags are included in session search.</p>
+      <p className="mt-2 text-[9px] leading-4 text-trace-dim">Separate up to 12 tags with commas. Name, driver, ownership, and tags are included in search.</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button type="button" disabled={saving} onClick={onCancel} className="border border-trace-divider bg-transparent px-3 py-2.5 text-[11px] font-bold text-trace-soft hover:bg-trace-raised disabled:text-trace-dim">Cancel</button>
         <button type="submit" disabled={saving} className="border border-trace-purple bg-trace-purple-wash px-3 py-2.5 text-[11px] font-bold text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:text-trace-dim">{saving ? "Saving…" : "Save"}</button>
@@ -670,14 +696,10 @@ function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
     : lap.validityReason?.includes("partial")
       ? "PARTIAL"
       : lap.validity.toUpperCase();
-  return (
-    <span
-      className={`text-right text-[9px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : lap.validity === "unknown" ? "text-trace-soft" : "text-trace-warning"}`}
-      title={lap.validityReason ?? undefined}
-    >
-      {label}
-    </span>
-  );
+  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${lap.validity === "valid" ? "text-trace-accent" : lap.validity === "unknown" ? "text-trace-soft" : "text-trace-warning"}`;
+  return lap.validityReason
+    ? <Tooltip className={className} content={lap.validityReason}>{label}</Tooltip>
+    : <span className={className}>{label}</span>;
 }
 
 function sessionSourceGroup(session: RecordedSessionSummary) {
@@ -697,6 +719,8 @@ function sessionSourceLabel(session: RecordedSessionSummary) {
 function friendlySessionType(session: RecordedSessionSummary) {
   const type = session.sessionType.toLocaleLowerCase();
   if (type === "ac session") return "DRIVE";
+  if (type === "qualify") return "QUALIFYING";
+  if (type === "time_attack") return "TIME ATTACK";
   if (type.includes("replay")) return "REPLAY";
   return session.sessionType;
 }

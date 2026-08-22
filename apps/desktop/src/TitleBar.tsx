@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ReactNode } from "react";
 import type { TelemetryStatus } from "./data-source";
+import { Tooltip } from "./Tooltip";
 
 const desktopWindow = isTauri() ? getCurrentWindow() : null;
 
@@ -50,14 +51,15 @@ export function TitleBar({ status }: { status: TelemetryStatus | null }) {
         />
         <span>{state.toUpperCase()}</span>
       </div>
-      <button
-        type="button"
-        disabled
-        title="Remote spectating requires the Phase 7 TRACE backend, which is not configured yet"
-        className="border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[10px] font-black tracking-[.1em] text-trace-accent-muted"
-      >
-        GO LIVE
-      </button>
+      <Tooltip className="h-full" content="Remote spectating requires the Phase 7 TRACE backend, which is not configured yet">
+        <button
+          type="button"
+          disabled
+          className="h-full w-[88px] border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[10px] font-black tracking-[.1em] text-trace-accent-muted"
+        >
+          GO LIVE
+        </button>
+      </Tooltip>
       <div className="flex" aria-label="Window controls">
         <WindowButton
           label="Minimize"
@@ -107,22 +109,23 @@ function WindowButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={`group grid h-12 w-12 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
-        close ? "hover:bg-trace-danger" : "hover:bg-trace-raised"
-      }`}
-    >
-      <span
-        className={`block size-3.5 [&_svg]:size-full [&_svg]:fill-none [&_svg]:stroke-current [&_svg]:stroke-[1.25] ${
-          close ? "text-trace-soft group-hover:text-white" : "text-trace-muted group-hover:text-trace-text"
+    <Tooltip className="h-full" content={label}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className={`group grid h-12 w-12 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
+          close ? "hover:bg-trace-danger" : "hover:bg-trace-raised"
         }`}
       >
-        {children}
-      </span>
-    </button>
+        <span
+          className={`block size-3.5 [&_svg]:size-full [&_svg]:fill-none [&_svg]:stroke-current [&_svg]:stroke-[1.25] ${
+            close ? "text-trace-soft group-hover:text-white" : "text-trace-muted group-hover:text-trace-text"
+          }`}
+        >
+          {children}
+        </span>
+      </button>
+    </Tooltip>
   );
 }

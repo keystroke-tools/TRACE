@@ -72,6 +72,10 @@ impl<'a> GraphicsPage<'a> {
         read_i32(self.0, 4)
     }
 
+    pub(crate) fn session_type(&self) -> i32 {
+        read_i32(self.0, 8)
+    }
+
     pub(crate) fn packet_id(&self) -> i32 {
         read_i32(self.0, 0)
     }

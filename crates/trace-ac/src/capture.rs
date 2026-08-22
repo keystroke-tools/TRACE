@@ -130,7 +130,7 @@ impl AcSnapshot {
         Ok(frame)
     }
 
-    /// Extracts canonical session identity and environment from the static page.
+    /// Extracts canonical session identity and environment from the captured pages.
     ///
     /// # Errors
     ///
@@ -138,7 +138,10 @@ impl AcSnapshot {
     pub fn map_session(
         &self,
     ) -> Result<(SessionSeed, Option<trace_domain::EnvironmentState>), AcCaptureError> {
-        Ok(map_session(&self.static_page)?)
+        let (mut session, environment) = map_session(&self.static_page)?;
+        let graphics = pages::GraphicsPage::parse(&self.graphics)?;
+        session.session_type = ac_session_type(graphics.session_type()).map(str::to_owned);
+        Ok((session, environment))
     }
 
     pub(crate) fn status(&self) -> i32 {
@@ -210,6 +213,19 @@ impl AcSnapshot {
             car_model: session.car_id,
             track: session.track_id,
         })
+    }
+}
+
+fn ac_session_type(value: i32) -> Option<&'static str> {
+    match value {
+        0 => Some("practice"),
+        1 => Some("qualifying"),
+        2 => Some("race"),
+        3 => Some("hotlap"),
+        4 => Some("time attack"),
+        5 => Some("drift"),
+        6 => Some("drag"),
+        _ => None,
     }
 }
 
@@ -423,6 +439,19 @@ mod tests {
             AcSharedMemory::detect(),
             Ok(AcAvailability::UnsupportedPlatform)
         );
+    }
+
+    #[test]
+    fn maps_assetto_corsa_session_type_from_graphics() {
+        let physics = vec![0; pages::PHYSICS_PREFIX_LENGTH];
+        let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
+        graphics[8..12].copy_from_slice(&2_i32.to_le_bytes());
+        let static_page = vec![0; pages::STATIC_PREFIX_LENGTH];
+        let snapshot =
+            AcSnapshot::from_pages(physics, graphics, static_page).expect("valid prefixes");
+
+        let (session, _) = snapshot.map_session().expect("mapped session");
+        assert_eq!(session.session_type.as_deref(), Some("race"));
     }
 
     #[test]

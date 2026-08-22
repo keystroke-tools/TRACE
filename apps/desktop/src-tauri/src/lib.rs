@@ -57,6 +57,8 @@ struct RecordedSectorSummary {
 struct RecordedSessionSummary {
     id: String,
     title: Option<String>,
+    driver: Option<String>,
+    ownership: String,
     tags: Vec<String>,
     track: String,
     car: String,
@@ -112,6 +114,8 @@ fn recent_sessions(
             RecordedSessionSummary {
                 id: session.id,
                 title: session.user_title,
+                driver: session.user_driver,
+                ownership: session.ownership,
                 tags: session.tags,
                 track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
                 car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
@@ -267,6 +271,8 @@ fn update_session_details(
     app: tauri::AppHandle,
     session_id: String,
     title: Option<String>,
+    driver: Option<String>,
+    ownership: String,
     tags: Vec<String>,
 ) -> Result<(), String> {
     let directory = app
@@ -279,13 +285,23 @@ fn update_session_details(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    let normalized_driver = driver
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let normalized_tags = tags
         .into_iter()
         .map(|tag| tag.trim().to_owned())
         .filter(|tag| !tag.is_empty())
         .collect::<Vec<_>>();
     store
-        .update_session_details(&session_id, normalized_title, &normalized_tags)
+        .update_session_details(
+            &session_id,
+            normalized_title,
+            normalized_driver,
+            &ownership,
+            &normalized_tags,
+        )
         .map_err(|error| format!("failed to update session details: {error:?}"))
 }
 
