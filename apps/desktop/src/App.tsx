@@ -186,7 +186,7 @@ function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null;
           value={status?.simulatorId ?? ""}
           disabled={selectable.length <= 1}
           onChange={(event) => void changeSimulator(event.target.value)}
-          className="min-w-0 flex-1 border-0 bg-transparent text-[12px] font-bold text-trace-text outline-none disabled:cursor-default disabled:opacity-100"
+          className="trace-select min-w-0 flex-1 border-0 bg-transparent pl-2 text-[12px] font-bold text-trace-text outline-none disabled:cursor-default disabled:opacity-100"
         >
           {simulators.map((simulator) => <option value={simulator.id} disabled={!simulator.available} key={simulator.id}>{simulator.name}{simulator.available ? "" : " · unavailable"}</option>)}
         </select>
@@ -367,7 +367,7 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
           aria-label="Filter sessions by source"
           value={sourceFilter}
           onChange={(event) => setSourceFilter(event.target.value)}
-          className="h-12 border-0 border-r border-trace-divider bg-trace-surface px-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+          className="trace-select h-12 border-0 border-r border-trace-divider bg-trace-surface pl-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
         >
           <option value="all">All sources</option>
           <option value="replay">Replays</option>
@@ -379,7 +379,7 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
             aria-label="Filter sessions by simulator"
             value={simulatorFilter}
             onChange={(event) => setSimulatorFilter(event.target.value)}
-            className="h-12 border-0 border-r border-trace-divider bg-trace-surface px-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+            className="trace-select h-12 border-0 border-r border-trace-divider bg-trace-surface pl-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
           >
             <option value="all">All simulators</option>
             {simulators.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
@@ -389,7 +389,7 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
           aria-label="Sort sessions"
           value={sortOrder}
           onChange={(event) => setSortOrder(event.target.value)}
-          className="h-12 border-0 bg-trace-surface px-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
+          className="trace-select h-12 border-0 bg-trace-surface pl-4 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft outline-none focus:bg-trace-raised"
         >
           <option value="newest">Newest first</option>
           <option value="oldest">Oldest first</option>
@@ -718,7 +718,7 @@ function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleC
       </label>
       <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
         OWNERSHIP
-        <select value={ownership} onChange={(event) => onOwnershipChange(event.target.value as RecordedSessionSummary["ownership"])} className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple">
+        <select value={ownership} onChange={(event) => onOwnershipChange(event.target.value as RecordedSessionSummary["ownership"])} className="trace-select mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep pl-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple">
           <option value="unknown">Not specified</option>
           <option value="mine">My driving</option>
           <option value="other">Another driver</option>
