@@ -299,6 +299,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const [referenceLap, setReferenceLap] = useState<number | null>(null);
   const [comparisonLap, setComparisonLap] = useState<number | null>(null);
   const [comparison, setComparison] = useState<LapComparison | null>(null);
+  const [comparisonRequestVersion, setComparisonRequestVersion] = useState(0);
   const [state, setState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
@@ -379,7 +380,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
       setState("error");
     });
     return () => { active = false; };
-  }, [comparisonLap, comparisonSessionId, referenceLap, referenceSessionId]);
+  }, [comparisonLap, comparisonRequestVersion, comparisonSessionId, referenceLap, referenceSessionId]);
 
   const corners = comparison?.cornerAnalysis.value?.corners ?? [];
   const finalDelta = comparison?.samples.slice().reverse().find((sample) => sample.deltaSeconds != null)?.deltaSeconds ?? null;
@@ -416,6 +417,14 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   }
 
   function openSavedComparison(saved: SavedComparison) {
+    const alreadySelected = saved.referenceSessionId === referenceSessionId
+      && saved.referenceLapIndex === referenceLap
+      && saved.analysedSessionId === comparisonSessionId
+      && saved.analysedLapIndex === comparisonLap;
+    if (alreadySelected) {
+      if (comparison == null || state !== "ready") setComparisonRequestVersion((version) => version + 1);
+      return;
+    }
     skipReferenceDefaults.current = true;
     skipComparisonDefaults.current = true;
     setReferenceSessionId(saved.referenceSessionId);
@@ -424,6 +433,19 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
     setComparisonLap(saved.analysedLapIndex);
     setComparison(null);
     setSector(null);
+    setCornerIndex(null);
+    setCursorIndex(null);
+  }
+
+  function selectSuggestedReference(sessionId: string, lapIndex: number) {
+    if (sessionId === referenceSessionId && lapIndex === referenceLap) {
+      if (comparison == null || state !== "ready") setComparisonRequestVersion((version) => version + 1);
+      return;
+    }
+    skipReferenceDefaults.current = true;
+    setReferenceSessionId(sessionId);
+    setReferenceLap(lapIndex);
+    setComparison(null);
     setCornerIndex(null);
     setCursorIndex(null);
   }
@@ -473,7 +495,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
               {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} onDismiss={mapPip.dismiss} />}
             </div>
           )}
-          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} onReferenceSuggestion={(sessionId, lapIndex) => { skipReferenceDefaults.current = true; setReferenceSessionId(sessionId); setReferenceLap(lapIndex); setComparison(null); setCornerIndex(null); setCursorIndex(null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
+          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} onReferenceSuggestion={selectSuggestedReference} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </>
       )}
     </>
