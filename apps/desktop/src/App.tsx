@@ -415,6 +415,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(session.title ?? "");
   const [draftDriver, setDraftDriver] = useState(session.driver ?? "");
   const [draftOwnership, setDraftOwnership] = useState<RecordedSessionSummary["ownership"]>(session.ownership);
@@ -443,6 +444,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
         setActionsOpen(false);
         setConfirmingDelete(false);
         setEditingDetails(false);
+        setExportMenuOpen(false);
       }
     }
     function dismissOnEscape(event: KeyboardEvent) {
@@ -450,6 +452,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
         setActionsOpen(false);
         setConfirmingDelete(false);
         setEditingDetails(false);
+        setExportMenuOpen(false);
       }
     }
     document.addEventListener("pointerdown", dismissOnPointerDown);
@@ -466,6 +469,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
     try {
       const result = await telemetryDataSource.exportSession(session.id, exportFormat);
       setExportMessage(`${result.format} · ${result.sampleCount.toLocaleString()} samples · ${result.path}`);
+      setExportMenuOpen(false);
       setActionsOpen(false);
     } catch (error) {
       setExportMessage(`EXPORT FAILED · ${error instanceof Error ? error.message : String(error)}`);
@@ -542,7 +546,7 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
                 type="button"
                 aria-label={`Actions for ${session.track} session`}
                 aria-expanded={actionsOpen}
-                onClick={() => { setActionsOpen((value) => !value); setConfirmingDelete(false); }}
+                onClick={() => { setActionsOpen((value) => !value); setConfirmingDelete(false); setEditingDetails(false); setExportMenuOpen(false); }}
                 className="grid h-full w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
               >
                 <svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
@@ -559,12 +563,28 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
                 ) : (
                   <>
                     <span className="block px-2 pb-2 pt-1 text-[11px] font-bold text-trace-soft">Session actions</span>
-                    <button type="button" onClick={() => { setDraftTitle(session.title ?? ""); setDraftDriver(session.driver ?? ""); setDraftOwnership(session.ownership); setDraftTags(session.tags.join(", ")); setEditingDetails(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised">Name, driver & tags…</button>
-                    <ExportOption label="Export full recording" detail="Arrow IPC · all captured channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("arrow")} />
-                    <ExportOption label="Export spreadsheet" detail="CSV · core channels" disabled={exporting || !session.exportable} onClick={() => void exportTelemetry("csv")} />
+                    <button type="button" onClick={() => { setDraftTitle(session.title ?? ""); setDraftDriver(session.driver ?? ""); setDraftOwnership(session.ownership); setDraftTags(session.tags.join(", ")); setExportMenuOpen(false); setEditingDetails(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised">Name, driver & tags…</button>
+                    <button
+                      type="button"
+                      aria-expanded={exportMenuOpen}
+                      disabled={exporting || !session.exportable}
+                      onClick={() => setExportMenuOpen((value) => !value)}
+                      className="flex w-full items-center justify-between border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
+                    >
+                      <span>{exporting ? "Exporting…" : "Export…"}</span>
+                      <svg className={`size-3 fill-none stroke-current transition-transform ${exportMenuOpen ? "rotate-90" : ""}`} viewBox="0 0 12 12" aria-hidden="true">
+                        <path d="m4.5 2.5 3 3.5-3 3.5" />
+                      </svg>
+                    </button>
+                    {exportMenuOpen && session.exportable && (
+                      <div className="ml-2 border-l border-trace-divider bg-trace-deep pl-1">
+                        <ExportOption label="Full recording" detail="Arrow IPC · all captured channels" disabled={exporting} onClick={() => void exportTelemetry("arrow")} />
+                        <ExportOption label="Spreadsheet" detail="CSV · core channels" disabled={exporting} onClick={() => void exportTelemetry("csv")} />
+                      </div>
+                    )}
                     {!session.exportable && <p className="px-2 py-2 text-[10px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
                     <div className="my-1 border-t border-trace-divider" />
-                    <button type="button" disabled={!session.deletable} onClick={() => setConfirmingDelete(true)} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent">{session.deletable ? "Delete recording…" : "Recording in progress"}</button>
+                    <button type="button" disabled={!session.deletable} onClick={() => { setExportMenuOpen(false); setConfirmingDelete(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent">{session.deletable ? "Delete recording…" : "Recording in progress"}</button>
                   </>
                 )}
               </div>
