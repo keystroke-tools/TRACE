@@ -279,11 +279,20 @@ turns normalized position into metres using the simulator-reported track length,
 interpolates continuous channels onto a 5 m grid. Gear and sector use hold-previous
 interpolation so discrete states are not blended into values that never existed.
 
-The visualizer displays speed, throttle, brake, steering, RPM, and gear alongside the
-car's recorded world-space path. Every graph shares a cursor. Full-lap and
+The visualizer displays compact, channel-coloured speed, throttle, brake, RPM, and
+gear charts alongside the car's recorded world-space path. A fixed telemetry HUD
+keeps pedal positions, speed, gear, distance, session identity, and recorded air and
+track temperatures visible without turning every value into another graph. Every
+graph shares a cursor. Full-lap and
 simulator-reported sector controls filter both charts and the path; TRACE does not
 guess sector boundaries when sector telemetry is absent. Invalid and incomplete laps
 remain viewable because their telemetry can still diagnose a mistake.
+
+The map supports zooming and panning and marks the start and current cursor position.
+It is deliberately labelled as a driven line: telemetry contains car position but no
+authoritative circuit edges. TRACE must load simulator circuit geometry before it can
+show a racing line relative to track boundaries, and must not render a wide stroke
+that could be mistaken for measured track limits.
 
 Comparison uses the same projection for two complete valid laps from one session. It
 calculates `comparison - reference` elapsed-time delta on their common distance domain

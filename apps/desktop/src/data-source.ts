@@ -101,6 +101,10 @@ export interface LapComparisonSample {
   referencePositionZM?: number | null;
   comparisonPositionXM?: number | null;
   comparisonPositionZM?: number | null;
+  referenceAirTemperatureC?: number | null;
+  referenceTrackTemperatureC?: number | null;
+  comparisonAirTemperatureC?: number | null;
+  comparisonTrackTemperatureC?: number | null;
 }
 
 export interface LapTraceSample {
@@ -114,6 +118,8 @@ export interface LapTraceSample {
   gear?: number | null;
   positionXM?: number | null;
   positionZM?: number | null;
+  airTemperatureC?: number | null;
+  trackTemperatureC?: number | null;
 }
 
 export interface LapTrace {
@@ -297,6 +303,10 @@ export const fixtureDataSource: TelemetryDataSource = {
         referencePositionZM: Math.sin(index / 200 * Math.PI * 2) * (180 + Math.cos(phase) * 35),
         comparisonPositionXM: Math.cos(index / 200 * Math.PI * 2 + 0.004) * (260 + Math.sin(phase) * 60),
         comparisonPositionZM: Math.sin(index / 200 * Math.PI * 2 + 0.004) * (180 + Math.cos(phase) * 35),
+        referenceAirTemperatureC: 22,
+        referenceTrackTemperatureC: 31.5,
+        comparisonAirTemperatureC: 22,
+        comparisonTrackTemperatureC: 31.5,
       };
     });
     return { sessionId, track: "MUGELLO", car: "TATUUS FA01", referenceLapIndex, referenceLapTime: "1:50.906", comparisonLapIndex, comparisonLapTime: "1:51.328", lapLengthM: 5_000, samples };
@@ -305,7 +315,7 @@ export const fixtureDataSource: TelemetryDataSource = {
     const comparison = await this.compareSessionLaps(sessionId, lapIndex, lapIndex + 1);
     return {
       sessionId, lapIndex, lapTime: comparison.referenceLapTime, track: comparison.track, car: comparison.car, lapLengthM: comparison.lapLengthM,
-      samples: comparison.samples.map((sample) => ({ distanceM: sample.distanceM, sectorIndex: sample.sectorIndex, speedKmh: sample.referenceSpeedKmh, throttlePercent: sample.referenceThrottlePercent, brakePercent: sample.referenceBrakePercent, steeringDegrees: sample.referenceSteeringDegrees, rpm: sample.referenceRpm, gear: sample.referenceGear, positionXM: sample.referencePositionXM, positionZM: sample.referencePositionZM })),
+      samples: comparison.samples.map((sample) => ({ distanceM: sample.distanceM, sectorIndex: sample.sectorIndex, speedKmh: sample.referenceSpeedKmh, throttlePercent: sample.referenceThrottlePercent, brakePercent: sample.referenceBrakePercent, steeringDegrees: sample.referenceSteeringDegrees, rpm: sample.referenceRpm, gear: sample.referenceGear, positionXM: sample.referencePositionXM, positionZM: sample.referencePositionZM, airTemperatureC: sample.referenceAirTemperatureC, trackTemperatureC: sample.referenceTrackTemperatureC })),
     };
   },
   async getGameInstallDirectories() {

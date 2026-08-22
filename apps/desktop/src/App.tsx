@@ -244,6 +244,8 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
     referenceGear: sample.gear,
     referencePositionXM: sample.positionXM,
     referencePositionZM: sample.positionZM,
+    referenceAirTemperatureC: sample.airTemperatureC,
+    referenceTrackTemperatureC: sample.trackTemperatureC,
   })) ?? [], [trace]);
   const samples = filterSamplesBySector(chartSamples, sector);
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
@@ -262,17 +264,17 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
               <span>GEAR <strong className="text-trace-text">{formatGear(cursor?.referenceGear)}</strong></span>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-[minmax(360px,.8fr)_minmax(560px,1.2fr)] gap-3">
+          <div className="mt-3 grid grid-cols-[minmax(520px,1.2fr)_minmax(480px,.8fr)] gap-3 pb-28">
             <TrackMap samples={samples} cursorIndex={cursorIndex} />
-            <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh")} />
+            <div className="grid gap-2">
+              <ComparisonChart compact label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh", channelColours.speed)} />
+              <ComparisonChart compact label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent", channelColours.throttle)} />
+              <ComparisonChart compact label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent", channelColours.brake)} />
+              <ComparisonChart compact label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear", channelColours.gear)} />
+              <ComparisonChart compact label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceRpm", channelColours.rpm)} />
+            </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent")} />
-            <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent")} />
-            <ComparisonChart label="STEERING" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSteeringDegrees")} zeroLine />
-            <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceRpm")} />
-            <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear")} />
-          </div>
+          <TelemetryHud session={session} lapIndex={lapIndex} sample={cursor ?? samples[0] ?? null} />
         </div>
       )}
     </>
@@ -369,22 +371,18 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                 <SectorPicker samples={comparison.samples} value={sector} onChange={(value) => { setSector(value); setCursorIndex(null); }} />
                 <span className="font-mono text-[12px] text-trace-dim">TRACK LINE AND CHARTS FOLLOW THE SAME SELECTION</span>
               </div>
-              <div className="mt-3 grid grid-cols-[minmax(360px,.8fr)_minmax(560px,1.2fr)] gap-3">
+              <div className="mt-3 grid grid-cols-[minmax(520px,1.2fr)_minmax(480px,.8fr)] gap-3 pb-28">
                 <TrackMap samples={samples} cursorIndex={cursorIndex} comparison />
-                <ComparisonChart label="LAP DELTA" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "DELTA", colour: "var(--color-trace-purple)", value: (sample) => sample.deltaSeconds }]} zeroLine />
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh")} />
-                <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent")} />
-                <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent")} />
-                <ComparisonChart label="STEERING" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSteeringDegrees", "comparisonSteeringDegrees")} zeroLine />
-                <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm")} />
-                <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear")} />
-                <div className="flex min-h-56 flex-col justify-between border border-trace-divider bg-trace-deep p-5">
-                  <div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">SHARED CURSOR</span><strong className="mt-3 block font-mono text-2xl text-trace-text">{cursorSample == null ? "MOVE OVER A CHART" : `${Math.round(cursorSample.distanceM)} M`}</strong><span className="mt-2 block font-mono text-[12px] text-trace-muted">REF {formatGear(cursorSample?.referenceGear)} · COMPARE {formatGear(cursorSample?.comparisonGear)}</span></div>
-                  <div className="flex items-center gap-5 font-mono text-[12px]"><span className="text-trace-accent">REFERENCE</span><span className="text-trace-purple">COMPARISON</span></div>
+                <div className="grid gap-2">
+                  <ComparisonChart compact label="LAP DELTA" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "DELTA", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
+                  <ComparisonChart compact label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed)} />
+                  <ComparisonChart compact label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle)} />
+                  <ComparisonChart compact label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake)} />
+                  <ComparisonChart compact label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear)} />
+                  <ComparisonChart compact label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm)} />
                 </div>
               </div>
+              <ComparisonHud comparison={comparison} sample={cursorSample ?? samples[0] ?? null} />
             </div>
           )}
         </>
@@ -403,17 +401,26 @@ function ComparisonSelect({ label, value, onChange, children, colour = "text-tra
 }
 
 type ComparisonValueKey = keyof Pick<LapComparisonSample, "referenceSpeedKmh" | "comparisonSpeedKmh" | "referenceThrottlePercent" | "comparisonThrottlePercent" | "referenceBrakePercent" | "comparisonBrakePercent" | "referenceSteeringDegrees" | "comparisonSteeringDegrees" | "referenceRpm" | "comparisonRpm" | "referenceGear" | "comparisonGear">;
-type ComparisonChartSeries = { label: string; colour: string; value: (sample: LapComparisonSample) => number | null | undefined };
+type ComparisonChartSeries = { label: string; colour: string; dash?: string; value: (sample: LapComparisonSample) => number | null | undefined };
 
-function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey): ComparisonChartSeries[] {
+const channelColours = {
+  speed: "#45d6e8",
+  throttle: "#42db76",
+  brake: "#ff5263",
+  gear: "#5394ff",
+  rpm: "#ffb84d",
+  delta: "var(--color-trace-purple)",
+};
+
+function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey, colour: string): ComparisonChartSeries[] {
   return [
-    { label: "REF", colour: "var(--color-trace-accent)", value: (sample) => sample[reference] },
-    { label: "COMPARE", colour: "var(--color-trace-purple)", value: (sample) => sample[comparison] },
+    { label: "REF", colour, value: (sample) => sample[reference] },
+    { label: "COMPARE", colour: "#f3f3f3", dash: "5 4", value: (sample) => sample[comparison] },
   ];
 }
 
-function singleSeries(key: ComparisonValueKey): ComparisonChartSeries[] {
-  return [{ label: "LAP", colour: "var(--color-trace-accent)", value: (sample) => sample[key] }];
+function singleSeries(key: ComparisonValueKey, colour: string): ComparisonChartSeries[] {
+  return [{ label: "LAP", colour, value: (sample) => sample[key] }];
 }
 
 function filterSamplesBySector(samples: LapComparisonSample[], sector: number | null) {
@@ -431,9 +438,55 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
   );
 }
 
+function TelemetryHud({ session, lapIndex, sample }: { session: RecordedSessionSummary; lapIndex: number; sample: LapComparisonSample | null }) {
+  return (
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(240px,1fr)_120px_100px_110px_150px_150px_90px_90px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+      <div className="min-w-0"><span className="block truncate text-[13px] font-black">{session.track} · {session.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {lapIndex} · {friendlySessionType(session)}</span></div>
+      <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
+      <HudValue label="SPEED" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)}`} unit="KM/H" colour={channelColours.speed} />
+      <HudValue label="GEAR" value={formatGear(sample?.referenceGear)} colour={channelColours.gear} />
+      <HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
+      <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
+      <HudValue label="AIR" value={formatTemperature(sample?.referenceAirTemperatureC)} />
+      <HudValue label="TRACK" value={formatTemperature(sample?.referenceTrackTemperatureC)} />
+    </div>
+  );
+}
+
+function ComparisonHud({ comparison, sample }: { comparison: LapComparison; sample: LapComparisonSample | null }) {
+  return (
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(250px,1fr)_110px_110px_170px_170px_90px_90px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+      <div className="min-w-0"><span className="block truncate text-[13px] font-black">{comparison.track} · {comparison.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {comparison.referenceLapIndex} REF · LAP {comparison.comparisonLapIndex} COMPARE</span></div>
+      <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
+      <HudValue label="DELTA" value={sample?.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)} colour={channelColours.delta} />
+      <HudProgress label="REF THROTTLE / BRAKE" value={sample?.referenceThrottlePercent} secondary={sample?.referenceBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
+      <HudProgress label="COMPARE THROTTLE / BRAKE" value={sample?.comparisonThrottlePercent} secondary={sample?.comparisonBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
+      <HudValue label="REF GEAR" value={formatGear(sample?.referenceGear)} colour={channelColours.gear} />
+      <HudValue label="CMP GEAR" value={formatGear(sample?.comparisonGear)} colour={channelColours.gear} />
+    </div>
+  );
+}
+
+function HudValue({ label, value, unit, colour }: { label: string; value: string; unit?: string; colour?: string }) {
+  return <div className="min-w-0 font-mono"><span className="block text-[10px] font-bold tracking-[.1em] text-trace-dim">{label}</span><strong className="mt-1 block truncate text-[15px]" style={{ color: colour }}>{value}{unit && <small className="ml-1 text-[9px] text-trace-dim">{unit}</small>}</strong></div>;
+}
+
+function HudProgress({ label, value, secondary, colour, secondaryColour }: { label: string; value?: number | null; secondary?: number | null; colour: string; secondaryColour?: string }) {
+  const primary = Math.min(100, Math.max(0, value ?? 0));
+  const second = Math.min(100, Math.max(0, secondary ?? 0));
+  return <div className="font-mono"><span className="flex justify-between text-[10px] font-bold tracking-[.08em] text-trace-dim"><span>{label}</span><span>{Math.round(primary)}%</span></span><span className="mt-2 block h-2 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${primary}%`, backgroundColor: colour }} /></span>{secondaryColour && <span className="mt-1 block h-1.5 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${second}%`, backgroundColor: secondaryColour }} /></span>}</div>;
+}
+
+function formatTemperature(value?: number | null) {
+  return value == null ? "—" : `${value.toFixed(1)}°C`;
+}
+
 function TrackMap({ samples, cursorIndex, comparison = false }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean }) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const width = 620;
-  const height = 340;
+  const height = comparison ? 720 : 600;
   const padding = 28;
   const points = samples.flatMap((sample) => [
     sample.referencePositionXM != null && sample.referencePositionZM != null ? [sample.referencePositionXM, sample.referencePositionZM] as const : null,
@@ -457,14 +510,20 @@ function TrackMap({ samples, cursorIndex, comparison = false }: { samples: LapCo
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
   const referenceCursor = cursor?.referencePositionXM != null && cursor.referencePositionZM != null ? project(cursor.referencePositionXM, cursor.referencePositionZM) : null;
   const comparisonCursor = cursor?.comparisonPositionXM != null && cursor.comparisonPositionZM != null ? project(cursor.comparisonPositionXM, cursor.comparisonPositionZM) : null;
+  const start = samples.find((sample) => sample.referencePositionXM != null && sample.referencePositionZM != null);
+  const startPoint = start?.referencePositionXM != null && start.referencePositionZM != null ? project(start.referencePositionXM, start.referencePositionZM) : null;
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
   return (
     <div className="border border-trace-divider bg-trace-surface">
-      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK LINE</span><span className="font-mono text-[12px] text-trace-dim">{comparison ? "REFERENCE / COMPARISON" : "RECORDED PATH"}</span></div>
-      <svg className="block h-[340px] w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track">
-        <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke="var(--color-trace-accent)" strokeWidth="4" vectorEffect="non-scaling-stroke" />
-        {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke="var(--color-trace-purple)" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
-        {referenceCursor && <circle cx={referenceCursor[0]} cy={referenceCursor[1]} r="6" fill="var(--color-trace-accent)" />}
-        {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="5" fill="var(--color-trace-purple)" />}
+      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">DRIVEN LINE</span><span className="ml-3 font-mono text-[10px] text-trace-dim">TRACK LIMIT GEOMETRY IS NOT IN THE RECORDING</span></div><div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button></div></div>
+      <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(1, value * (event.deltaY < 0 ? 1.15 : 0.87)))); }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
+        <g transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
+          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke="var(--color-trace-accent)" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke="var(--color-trace-purple)" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+          {startPoint && <g transform={`translate(${startPoint[0]} ${startPoint[1]})`}><line x1="-7" y1="-7" x2="7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><line x1="7" y1="-7" x2="-7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></g>}
+          {referenceCursor && <path d={`M${referenceCursor[0]},${referenceCursor[1] - 8} l6,14 h-12 z`} fill="var(--color-trace-accent)" stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+          {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="5" fill="var(--color-trace-purple)" stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+        </g>
       </svg>
     </div>
   );
@@ -482,10 +541,10 @@ function deltaRange(samples: LapComparisonSample[]): [number, number] {
   return [-maximum, maximum];
 }
 
-function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, fixedRange, zeroLine = false }: { label: string; unit: string; samples: LapComparisonSample[]; series: ComparisonChartSeries[]; cursorIndex: number | null; onCursor: (index: number | null) => void; fixedRange?: [number, number]; zeroLine?: boolean }) {
+function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, fixedRange, zeroLine = false, compact = false }: { label: string; unit: string; samples: LapComparisonSample[]; series: ComparisonChartSeries[]; cursorIndex: number | null; onCursor: (index: number | null) => void; fixedRange?: [number, number]; zeroLine?: boolean; compact?: boolean }) {
   const width = 1_000;
-  const height = 220;
-  const plot = { left: 58, right: 18, top: 24, bottom: 30 };
+  const height = compact ? 82 : 220;
+  const plot = { left: 58, right: 18, top: compact ? 10 : 24, bottom: compact ? 20 : 30 };
   const values = series.flatMap((item) => samples.flatMap((sample) => {
     const value = item.value(sample);
     return value == null || !Number.isFinite(value) ? [] : [value];
@@ -503,18 +562,18 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
   const cursorSample = cursorIndex == null ? null : samples[cursorIndex] ?? null;
   return (
     <div className="border border-trace-divider bg-trace-surface">
-      <div className="flex min-h-12 items-center justify-between border-b border-trace-divider px-4">
+      <div className={`flex items-center justify-between border-b border-trace-divider px-4 ${compact ? "h-9" : "min-h-12"}`}>
         <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
         <div className="flex items-center gap-4 font-mono text-[12px]">{series.map((item) => <span style={{ color: item.colour }} key={item.label}>{item.label} {cursorSample && item.value(cursorSample) != null ? `${formatChartValue(item.value(cursorSample) ?? 0)} ${unit}` : "—"}</span>)}</div>
       </div>
-      <svg className="block h-56 w-full touch-none" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseLeave={() => onCursor(null)} onMouseMove={(event) => {
+      <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseLeave={() => onCursor(null)} onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
         const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
         onCursor(Math.round(ratio * (samples.length - 1)));
       }}>
         {[0, 0.5, 1].map((ratio) => <line x1={plot.left} x2={width - plot.right} y1={plot.top + ratio * (height - plot.top - plot.bottom)} y2={plot.top + ratio * (height - plot.top - plot.bottom)} className="stroke-trace-divider" strokeWidth="1" vectorEffect="non-scaling-stroke" key={ratio} />)}
         {zeroLine && minimum < 0 && maximum > 0 && <line x1={plot.left} x2={width - plot.right} y1={y(0)} y2={y(0)} className="stroke-trace-dim" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
-        {series.map((item) => <path d={comparisonPath(samples, item.value, x, y)} fill="none" stroke={item.colour} strokeWidth="2" vectorEffect="non-scaling-stroke" key={item.label} />)}
+        {series.map((item) => <path d={comparisonPath(samples, item.value, x, y)} fill="none" stroke={item.colour} strokeDasharray={item.dash} strokeWidth="2" vectorEffect="non-scaling-stroke" key={item.label} />)}
         {cursorSample && <line x1={x(cursorSample.distanceM)} x2={x(cursorSample.distanceM)} y1={plot.top} y2={height - plot.bottom} className="stroke-trace-text" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
         <text x="8" y={plot.top + 4} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(maximum)}</text>
         <text x="8" y={height - plot.bottom} className="fill-trace-dim font-mono text-[12px]">{formatChartValue(minimum)}</text>
