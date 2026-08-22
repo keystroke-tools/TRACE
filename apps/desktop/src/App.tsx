@@ -448,6 +448,17 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
     }
   }
 
+  async function renameSavedComparison(comparisonId: string, name: string) {
+    try {
+      setSavedComparisons(await telemetryDataSource.renameSavedComparison(comparisonId, name));
+      showToast({ kind: "success", title: "Favourite renamed", message: "The saved lap pair has a new name.", timeoutMs: 3_500 });
+      return true;
+    } catch (reason) {
+      showToast({ kind: "error", title: "Could not rename favourite", message: reason instanceof Error ? reason.message : String(reason), timeoutMs: 8_000 });
+      return false;
+    }
+  }
+
   function openSavedComparison(saved: SavedComparison) {
     const alreadySelected = saved.referenceSessionId === referenceSessionId
       && saved.referenceLapIndex === referenceLap
@@ -494,7 +505,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
         </div>
       ) : (
         <>
-          <SavedComparisonsDock savedComparisons={savedComparisons} sessions={sessions} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} currentReferenceSessionId={referenceSessionId} currentReferenceLap={referenceLap} currentAnalysedSessionId={comparisonSessionId} currentAnalysedLap={comparisonLap} onOpen={openSavedComparison} onSave={saveCurrentComparison} onDelete={deleteSavedComparison} />
+          <SavedComparisonsDock savedComparisons={savedComparisons} sessions={sessions} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} currentReferenceSessionId={referenceSessionId} currentReferenceLap={referenceLap} currentAnalysedSessionId={comparisonSessionId} currentAnalysedLap={comparisonLap} onOpen={openSavedComparison} onSave={saveCurrentComparison} onDelete={deleteSavedComparison} onRename={renameSavedComparison} />
           <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setTelemetryWindow(null); setCursorIndex(null); }} />
           <div className={analysisCollapsed ? "ml-14" : "ml-[300px]"}>
             {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
@@ -612,30 +623,36 @@ function nextTelemetryWindow(samples: LapComparisonSample[], current: TelemetryW
   return { startM: nextStart, endM: nextEnd };
 }
 
-function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave, currentReferenceSessionId, currentReferenceLap, currentAnalysedSessionId, currentAnalysedLap, onOpen, onSave, onDelete }: { savedComparisons: SavedComparison[]; sessions: RecordedSessionSummary[]; defaultName: string; canSave: boolean; currentReferenceSessionId: string; currentReferenceLap: number | null; currentAnalysedSessionId: string; currentAnalysedLap: number | null; onOpen: (comparison: SavedComparison) => void; onSave: (name: string) => Promise<boolean>; onDelete: (id: string) => Promise<void> }) {
+function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave, currentReferenceSessionId, currentReferenceLap, currentAnalysedSessionId, currentAnalysedLap, onOpen, onSave, onDelete, onRename }: { savedComparisons: SavedComparison[]; sessions: RecordedSessionSummary[]; defaultName: string; canSave: boolean; currentReferenceSessionId: string; currentReferenceLap: number | null; currentAnalysedSessionId: string; currentAnalysedLap: number | null; onOpen: (comparison: SavedComparison) => void; onSave: (name: string) => Promise<boolean>; onDelete: (id: string) => Promise<void>; onRename: (id: string, name: string) => Promise<boolean> }) {
   const [open, setOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [draftName, setDraftName] = useState(defaultName);
   const [saving, setSaving] = useState(false);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renaming, setRenaming] = useState(false);
   useEffect(() => {
     if (!saveOpen) setDraftName(defaultName);
   }, [defaultName, saveOpen]);
+  const currentSaved = savedComparisons.some((saved) => saved.referenceSessionId === currentReferenceSessionId && saved.referenceLapIndex === currentReferenceLap && saved.analysedSessionId === currentAnalysedSessionId && saved.analysedLapIndex === currentAnalysedLap);
   return (
-    <aside className="fixed right-[232px] top-12 z-[60] w-[720px] max-w-[calc(100vw-456px)] border border-t-0 border-trace-divider bg-trace-black/98 shadow-[0_18px_45px_rgba(0,0,0,.55)] backdrop-blur" aria-label="Saved comparisons">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="flex h-10 w-full items-center justify-between gap-4 px-4 hover:bg-trace-deep" aria-expanded={open}>
-        <span className="flex min-w-0 items-center gap-2 font-mono"><svg className="size-3.5 fill-trace-accent stroke-trace-accent" viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1.5 1.9 3.85 4.25.62-3.08 3 .73 4.23L8 11.2l-3.8 2 .73-4.23-3.08-3 4.25-.62Z" /></svg><strong className="truncate text-[10px] tracking-[.1em] text-trace-soft">SAVED COMPARISONS</strong><span className="border border-trace-accent/40 px-1.5 py-0.5 text-[9px] font-black text-trace-accent">{savedComparisons.length}</span></span>
-        <span className="flex shrink-0 items-center gap-2 font-mono text-[9px] font-bold text-trace-dim"><span>{open ? "CLOSE" : savedComparisons.length ? "OPEN FAVOURITES" : "SAVE A LAP PAIR"}</span><svg className={`size-3 fill-none stroke-current transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg></span>
-      </button>
-      {open && <div className="max-h-[460px] overflow-y-auto border-t border-trace-divider">
-        <div className="flex items-center justify-between gap-4 border-b border-trace-divider bg-trace-surface px-4 py-3">
-          <p className="text-[11px] leading-4 text-trace-dim">Favourite lap pairs keep their roles, drivers, and session context together.</p>
-          <button type="button" disabled={!canSave} onClick={() => setSaveOpen(true)} className="shrink-0 border border-trace-accent/50 bg-trace-accent-wash px-3 py-2 font-mono text-[10px] font-black text-trace-accent hover:border-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-not-allowed disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">SAVE CURRENT</button>
-        </div>
+    <>
+      <Tooltip content={canSave ? "Save this lap pair or open a favourite comparison" : "Open favourite comparisons"} className="fixed right-[352px] top-0 z-[70] h-12">
+        <button type="button" onClick={() => { const next = !open; setOpen(next); setMenuId(null); if (next && canSave) setSaveOpen(true); }} className={`relative grid size-12 place-items-center border-x border-trace-divider bg-trace-black ${open ? "text-trace-accent" : "text-trace-muted hover:bg-trace-raised hover:text-trace-text"}`} aria-label="Favourite comparisons" aria-expanded={open}>
+          <svg className={`size-4 stroke-current ${currentSaved ? "fill-trace-accent" : "fill-none"}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1.5 1.9 3.85 4.25.62-3.08 3 .73 4.23L8 11.2l-3.8 2 .73-4.23-3.08-3 4.25-.62Z" /></svg>
+          {savedComparisons.length > 0 && <span className="absolute right-1 top-1 min-w-3.5 rounded-full bg-trace-accent px-1 font-mono text-[8px] font-black leading-3.5 text-trace-black">{savedComparisons.length}</span>}
+        </button>
+      </Tooltip>
+      {open && <aside className="fixed bottom-[252px] right-6 top-16 z-[60] flex w-[420px] max-w-[calc(100vw-240px)] flex-col border border-trace-divider bg-trace-black/98 shadow-[0_18px_55px_rgba(0,0,0,.65)] backdrop-blur" aria-label="Favourite comparisons">
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-trace-divider px-4"><span className="font-mono"><strong className="text-[11px] tracking-[.1em] text-trace-soft">FAVOURITE COMPARISONS</strong><span className="ml-2 text-[9px] font-black text-trace-accent">{savedComparisons.length}</span></span><button type="button" onClick={() => setOpen(false)} className="grid size-8 place-items-center text-lg text-trace-dim hover:bg-trace-deep hover:text-trace-text" aria-label="Close favourite comparisons">×</button></div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
         {saveOpen && <form onSubmit={async (event) => { event.preventDefault(); if (!draftName.trim()) return; setSaving(true); const saved = await onSave(draftName); setSaving(false); if (saved) setSaveOpen(false); }} className="flex items-end gap-3 border-b border-trace-divider bg-trace-deep p-3">
           <label className="min-w-0 flex-1 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim" htmlFor="saved-comparison-name">COMPARISON NAME<input id="saved-comparison-name" value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={80} autoFocus className="mt-1.5 h-9 w-full border border-trace-divider bg-trace-black px-3 text-[12px] font-sans font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" /></label>
           <button type="button" onClick={() => setSaveOpen(false)} className="h-9 px-3 font-mono text-[10px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button>
           <button type="submit" disabled={saving || !draftName.trim()} className="h-9 bg-trace-accent px-4 font-mono text-[10px] font-black text-trace-black disabled:opacity-40">{saving ? "SAVING…" : "SAVE"}</button>
         </form>}
+        {!saveOpen && canSave && <button type="button" onClick={() => setSaveOpen(true)} className="flex w-full items-center justify-center gap-2 border-b border-trace-divider px-4 py-2.5 font-mono text-[9px] font-black text-trace-accent hover:bg-trace-accent-wash"><span className="text-base leading-none">☆</span>SAVE CURRENT LAP PAIR</button>}
         {savedComparisons.length === 0 ? <div className="px-5 py-8 text-center"><strong className="block text-[13px] text-trace-soft">No favourite comparisons yet</strong><p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-trace-dim">Choose a useful Reference and Analysed Lap, then save the pair here for quick access later.</p></div> : <div className="grid gap-3 p-3">
           {savedComparisons.map((saved) => {
             const referenceSession = sessions.find((session) => session.id === saved.referenceSessionId);
@@ -643,19 +660,24 @@ function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave
             const referenceDriver = savedComparisonDriver(referenceSession);
             const analysedDriver = savedComparisonDriver(analysedSession);
             const current = saved.referenceSessionId === currentReferenceSessionId && saved.referenceLapIndex === currentReferenceLap && saved.analysedSessionId === currentAnalysedSessionId && saved.analysedLapIndex === currentAnalysedLap;
-            return <article className={`min-w-0 border bg-trace-surface ${current ? "border-trace-accent/70 outline outline-1 -outline-offset-1 outline-trace-accent/30" : "border-trace-divider"}`} key={saved.id}>
-              <div className="flex items-start justify-between gap-3 border-b border-trace-divider px-3 py-2.5"><span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{saved.name}</strong><span className="mt-1 block truncate font-mono text-[9px] font-bold text-trace-dim">{saved.track} · {saved.car}</span></span>{current && <span className="shrink-0 border border-trace-accent/40 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[8px] font-black text-trace-accent">CURRENT</span>}</div>
+            return <article className={`relative min-w-0 border bg-trace-surface ${current ? "border-trace-accent/70 outline outline-1 -outline-offset-1 outline-trace-accent/30" : "border-trace-divider hover:border-trace-soft"}`} key={saved.id}>
+              <button type="button" onClick={() => { onOpen(saved); setOpen(false); }} className="block w-full text-left">
+              <div className="flex items-start justify-between gap-3 border-b border-trace-divider px-3 py-2.5 pr-12"><span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{saved.name}</strong><span className="mt-1 block truncate font-mono text-[9px] font-bold text-trace-dim">{saved.track} · {saved.car}</span></span>{current && <span className="shrink-0 border border-trace-accent/40 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[8px] font-black text-trace-accent">CURRENT</span>}</div>
               <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 px-3 py-3">
                 <SavedComparisonLap role="REFERENCE" driver={referenceDriver} lapIndex={saved.referenceLapIndex} durationNs={saved.referenceDurationNs} startedAt={saved.referenceStartedAt} accent="text-trace-purple" />
                 <span className="self-center font-mono text-[9px] font-black text-trace-dim">VS</span>
                 <SavedComparisonLap role="ANALYSED" driver={analysedDriver} lapIndex={saved.analysedLapIndex} durationNs={saved.analysedDurationNs} startedAt={saved.analysedStartedAt} accent="text-trace-accent" alignRight />
               </div>
-              <div className="flex items-center justify-between border-t border-trace-divider px-3 py-2"><span className="font-mono text-[8px] font-bold text-trace-dim">SAVED {formatSessionDate(saved.createdAt)}</span><span className="flex items-center gap-1"><button type="button" onClick={() => { onOpen(saved); setOpen(false); }} className="px-2.5 py-1.5 font-mono text-[9px] font-black text-trace-accent hover:bg-trace-accent-wash">OPEN</button><Tooltip content="Remove this favourite without deleting either session"><button type="button" onClick={() => void onDelete(saved.id)} className="grid size-7 place-items-center text-trace-dim hover:bg-trace-danger/20 hover:text-[#ff5263]" aria-label={`Delete saved comparison ${saved.name}`}><svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M6 4V2h4v2m2 0-.5 10h-7L4 4m3 3v4m2-4v4" /></svg></button></Tooltip></span></div>
+              <div className="border-t border-trace-divider px-3 py-2 font-mono text-[8px] font-bold text-trace-dim">SAVED {formatSessionDate(saved.createdAt)}</div>
+              </button>
+              <div className="absolute right-2 top-2 z-10"><button type="button" onClick={() => setMenuId((value) => value === saved.id ? null : saved.id)} className="grid size-7 place-items-center border border-transparent font-mono text-base leading-none text-trace-dim hover:border-trace-divider hover:bg-trace-deep hover:text-trace-text" aria-label={`Actions for ${saved.name}`} aria-expanded={menuId === saved.id}>•••</button>{menuId === saved.id && <div className="absolute right-0 top-8 w-28 border border-trace-divider bg-trace-black p-1 shadow-[0_10px_25px_rgba(0,0,0,.55)]"><button type="button" onClick={() => { setRenameId(saved.id); setRenameDraft(saved.name); setMenuId(null); }} className="block w-full px-2 py-2 text-left font-mono text-[9px] font-bold text-trace-muted hover:bg-trace-deep hover:text-trace-text">RENAME</button><button type="button" onClick={() => { setMenuId(null); void onDelete(saved.id); }} className="block w-full px-2 py-2 text-left font-mono text-[9px] font-bold text-[#ff5263] hover:bg-trace-danger/20">DELETE</button></div>}</div>
+              {renameId === saved.id && <form onSubmit={async (event) => { event.preventDefault(); if (!renameDraft.trim()) return; setRenaming(true); const renamed = await onRename(saved.id, renameDraft); setRenaming(false); if (renamed) setRenameId(null); }} className="flex items-end gap-2 border-t border-trace-divider bg-trace-deep p-2" onClick={(event) => event.stopPropagation()}><label className="min-w-0 flex-1 font-mono text-[8px] font-bold text-trace-dim" htmlFor={`rename-${saved.id}`}>NEW NAME<input id={`rename-${saved.id}`} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} maxLength={80} autoFocus className="mt-1 h-8 w-full border border-trace-divider bg-trace-black px-2 font-sans text-[11px] font-normal text-trace-text outline-none focus:border-trace-accent" /></label><button type="button" onClick={() => setRenameId(null)} className="h-8 px-2 font-mono text-[9px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button><button type="submit" disabled={renaming || !renameDraft.trim()} className="h-8 bg-trace-accent px-3 font-mono text-[9px] font-black text-trace-black disabled:opacity-40">{renaming ? "…" : "SAVE"}</button></form>}
             </article>;
           })}
         </div>}
-      </div>}
-    </aside>
+        </div>
+      </aside>}
+    </>
   );
 }
 
@@ -1063,6 +1085,11 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const mapViewport = useRef<HTMLDivElement>(null);
+  const spatialZoomAt = useRef<(direction: "in" | "out", anchor: readonly [number, number]) => void>(() => undefined);
+  const rangeDistanceAt = useRef<(anchor: readonly [number, number]) => number | null>(() => null);
+  const displayHeight = requestedHeight ?? (comparison ? 720 : 600);
+  const width = 1_000;
+  const height = 700;
   useEffect(() => {
     const element = mapViewport.current;
     if (!element) return;
@@ -1070,24 +1097,28 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      const svg = element.querySelector("svg");
+      const bounds = svg?.getBoundingClientRect();
+      const insideMap = bounds != null && event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+      const anchor = insideMap && bounds
+        ? [(event.clientX - bounds.left) / Math.max(bounds.width, 1) * width, (event.clientY - bounds.top) / Math.max(bounds.height, 1) * height] as const
+        : [width / 2, height / 2] as const;
+      const direction = event.deltaY < 0 ? "in" : "out";
       if (onRangeZoom && rangeZoomLinked) {
         const cursorDistance = cursorIndex == null ? null : samples[cursorIndex]?.distanceM;
-        const anchor = cursorDistance ?? ((samples[0]?.distanceM ?? 0) + (samples.at(-1)?.distanceM ?? 0)) / 2;
-        onRangeZoom(anchor, event.deltaY < 0 ? "in" : "out");
+        const anchorDistance = insideMap ? rangeDistanceAt.current(anchor) : null;
+        onRangeZoom(anchorDistance ?? cursorDistance ?? ((samples[0]?.distanceM ?? 0) + (samples.at(-1)?.distanceM ?? 0)) / 2, direction);
         return;
       }
-      setZoom((value) => Math.min(8, Math.max(1, value * (event.deltaY < 0 ? 1.15 : 0.87))));
+      spatialZoomAt.current(direction, anchor);
     };
     element.addEventListener("wheel", handleWheel, { passive: false, capture: true });
     return () => element.removeEventListener("wheel", handleWheel, { capture: true });
-  }, [cursorIndex, onRangeZoom, rangeZoomLinked, samples]);
+  }, [cursorIndex, height, onRangeZoom, rangeZoomLinked, samples, width]);
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, [focusSelection]);
-  const displayHeight = requestedHeight ?? (comparison ? 720 : 600);
-  const width = 1_000;
-  const height = 700;
   const padding = focusSelection ? 90 : 42;
   const drivenPoints = samples.flatMap((sample) => [
     sample.referencePositionXM != null && sample.referencePositionZM != null ? [sample.referencePositionXM, sample.referencePositionZM] as const : null,
@@ -1172,6 +1203,33 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
   const followedTarget = cursorTargets.length === 0 ? null : cursorTargets.reduce((total, point) => [total[0] + point[0], total[1] + point[1]] as const, [0, 0] as const).map((value) => value / cursorTargets.length);
   const followPan = zoom > 1 && followedTarget ? { x: zoom * (width / 2 - followedTarget[0]), y: zoom * (height / 2 - followedTarget[1]) } : { x: 0, y: 0 };
   const renderedPan = { x: pan.x + followPan.x, y: pan.y + followPan.y };
+  const mapPointUnderViewportPoint = (anchor: readonly [number, number]) => [
+    width / 2 + (anchor[0] - renderedPan.x - width / 2) / zoom,
+    height / 2 + (anchor[1] - renderedPan.y - height / 2) / zoom,
+  ] as const;
+  rangeDistanceAt.current = (anchor) => {
+    const mapPoint = mapPointUnderViewportPoint(anchor);
+    return samples.reduce<{ distanceM: number; squaredDistance: number } | null>((nearest, sample) => {
+      const positions = [
+        sample.referencePositionXM != null && sample.referencePositionZM != null ? project(sample.referencePositionXM, sample.referencePositionZM) : null,
+        comparison && sample.comparisonPositionXM != null && sample.comparisonPositionZM != null ? project(sample.comparisonPositionXM, sample.comparisonPositionZM) : null,
+      ].filter((point): point is readonly [number, number] => point != null);
+      const squaredDistance = Math.min(...positions.map((point) => (point[0] - mapPoint[0]) ** 2 + (point[1] - mapPoint[1]) ** 2));
+      return positions.length > 0 && (nearest == null || squaredDistance < nearest.squaredDistance) ? { distanceM: sample.distanceM, squaredDistance } : nearest;
+    }, null)?.distanceM ?? null;
+  };
+  spatialZoomAt.current = (direction, anchor) => {
+    const nextZoom = Math.min(8, Math.max(1, zoom * (direction === "in" ? 1.15 : 0.87)));
+    if (Math.abs(nextZoom - zoom) < 0.000_001) return;
+    const ratio = nextZoom / zoom;
+    const nextRenderedPan = {
+      x: ratio * renderedPan.x + (1 - ratio) * (anchor[0] - width / 2),
+      y: ratio * renderedPan.y + (1 - ratio) * (anchor[1] - height / 2),
+    };
+    const nextFollowPan = nextZoom > 1 && followedTarget ? { x: nextZoom * (width / 2 - followedTarget[0]), y: nextZoom * (height / 2 - followedTarget[1]) } : { x: 0, y: 0 };
+    setZoom(nextZoom);
+    setPan({ x: nextRenderedPan.x - nextFollowPan.x, y: nextRenderedPan.y - nextFollowPan.y });
+  };
   const start = samples.find((sample) => sample.referencePositionXM != null && sample.referencePositionZM != null);
   const startPoint = start?.referencePositionXM != null && start.referencePositionZM != null ? project(start.referencePositionXM, start.referencePositionZM) : null;
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
@@ -1180,10 +1238,10 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
   const mapRangeLabel = focusSelection ? rangeLabel ?? "SELECTED RANGE" : null;
   const adjustMapZoom = (direction: "in" | "out") => {
     if (onRangeZoom && rangeZoomLinked) {
-      const anchor = cursor?.distanceM ?? ((samples[0]?.distanceM ?? 0) + (samples.at(-1)?.distanceM ?? 0)) / 2;
+      const anchor = cursor?.distanceM ?? rangeDistanceAt.current([width / 2, height / 2]) ?? ((samples[0]?.distanceM ?? 0) + (samples.at(-1)?.distanceM ?? 0)) / 2;
       onRangeZoom(anchor, direction);
     } else {
-      setZoom((value) => Math.min(8, Math.max(1, value * (direction === "in" ? 1.4 : 1 / 1.4))));
+      spatialZoomAt.current(direction, [width / 2, height / 2]);
     }
   };
   const mapControls = <div className="flex items-center gap-1">{onRangeZoom && onRangeZoomLinked && <button type="button" onClick={() => onRangeZoomLinked(!rangeZoomLinked)} className={`h-8 border px-2 font-mono text-[9px] font-bold ${rangeZoomLinked ? "border-trace-accent/50 bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`} aria-label={rangeZoomLinked ? "Unlink map zoom from telemetry graphs" : "Link map zoom to telemetry graphs"}>{rangeZoomLinked ? "LINKED" : "MAP"}</button>}<button type="button" onClick={() => adjustMapZoom("in")} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label={rangeZoomLinked ? "Zoom all telemetry in" : "Zoom map in"}>+</button><button type="button" onClick={() => adjustMapZoom("out")} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label={rangeZoomLinked ? "Zoom all telemetry out" : "Zoom map out"}>−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text" aria-label="Reset map pan and spatial zoom">RESET</button>{onDismiss && <button type="button" onClick={onDismiss} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-lg leading-none text-trace-muted hover:border-trace-accent/50 hover:text-trace-text" aria-label="Dismiss floating track map">×</button>}</div>;

@@ -296,7 +296,11 @@ can be reset from the active-range control. Ordinary wheel scrolling over a grap
 scrolls the page. Track-map scrolling and `+`/`−` controls use the shared window while
 **Zoom linked** is enabled.
 Switching the map to **Map only** preserves the graph window and makes map zoom spatial
-and independent; the map reset control affects only that spatial pan/zoom state.
+and independent; wheel zoom keeps the map point beneath the pointer stationary, while
+the map buttons retain whichever point was manually panned into the viewport centre.
+With linked zoom enabled, TRACE finds the recorded path nearest the pointer and uses its
+lap distance as the shared telemetry-range anchor. The map reset control affects only
+the spatial pan/zoom state.
 
 TRACE's Analysis panel is a deterministic, rule-based telemetry comparison rather than
 AI coaching. Its suggestions are heuristic and may be incorrect; drivers should verify
@@ -352,10 +356,12 @@ values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
 Named comparisons persist the exact compatible lap pair in SQLite and can be restored
-from a dedicated sticky Saved Comparisons dock without rebuilding the selection from
-timestamps. The dock presents each favourite as a structured card with both drivers,
-lap times, session timestamps, track, car, and save time instead of compressing that
-context into a selector option. Storage
+from a right-anchored Favourites dock without rebuilding the selection from timestamps.
+A star beside the capture-status indicator opens the dock and, when a comparison is
+ready, immediately offers a naming popover. The dock presents each favourite as a
+fully clickable card with both drivers, lap times, session timestamps, track, car, and
+save time instead of compressing that context into a selector option. A per-card menu
+supports persisted rename and delete actions. Storage
 normalises the faster selected lap as Reference when saving, so reopening a shortcut
 preserves the benchmark-first workflow. Saved comparisons contain only local lap
 references; deleting one does not delete either session, while deleting a referenced

@@ -463,6 +463,35 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Renames one saved lap pair without changing either referenced lap.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError::InvalidRecord`] for an invalid name,
+    /// [`MetadataError::RecordNotFound`] for an unknown id, or a `SQLite` error.
+    pub fn rename_saved_comparison(&mut self, id: &str, name: &str) -> Result<(), MetadataError> {
+        if id.is_empty()
+            || name.trim().is_empty()
+            || name.chars().count() > 80
+            || name.chars().any(char::is_control)
+        {
+            return Err(MetadataError::InvalidRecord(
+                "invalid saved comparison name".into(),
+            ));
+        }
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE saved_comparisons SET name = ?2 WHERE id = ?1",
+                params![id, name.trim()],
+            )
+            .map_err(MetadataError::from)?;
+        if changed == 0 {
+            return Err(MetadataError::RecordNotFound);
+        }
+        Ok(())
+    }
+
     fn saved_lap_identity(
         &self,
         session_id: &str,
@@ -1400,6 +1429,14 @@ mod tests {
         assert_eq!(saved[0].name, "Race setup");
         assert_eq!(saved[0].reference_started_at, "2026-08-21T14:32:00Z");
         assert_eq!(saved[0].analysed_started_at, "2026-08-21T14:32:00Z");
+
+        store
+            .rename_saved_comparison("saved-1", "Qualifying benchmark")
+            .expect("rename comparison");
+        assert_eq!(
+            store.saved_comparisons().expect("renamed comparisons")[0].name,
+            "Qualifying benchmark"
+        );
 
         store
             .delete_saved_comparison("saved-1")

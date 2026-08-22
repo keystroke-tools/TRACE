@@ -539,6 +539,27 @@ fn delete_saved_comparison(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn rename_saved_comparison(
+    app: tauri::AppHandle,
+    comparison_id: String,
+    name: String,
+) -> Result<Vec<SavedComparison>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .rename_saved_comparison(&comparison_id, &name)
+        .map_err(|error| format!("failed to rename saved comparison: {error:?}"))?;
+    store
+        .saved_comparisons()
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+}
+
+#[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle and deserializes the id.
 fn session_lap_metrics(
     app: tauri::AppHandle,
@@ -1932,6 +1953,7 @@ pub fn run() {
             saved_comparisons,
             save_comparison,
             delete_saved_comparison,
+            rename_saved_comparison,
             export_session,
             import_session,
             delete_session,

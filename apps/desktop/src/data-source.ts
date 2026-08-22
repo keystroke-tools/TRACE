@@ -269,6 +269,7 @@ export interface TelemetryDataSource {
   getSavedComparisons(): Promise<SavedComparison[]>;
   saveComparison(name: string, referenceSessionId: string, referenceLapIndex: number, analysedSessionId: string, analysedLapIndex: number): Promise<SavedComparison[]>;
   deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
+  renameSavedComparison(comparisonId: string, name: string): Promise<SavedComparison[]>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
   importSession(path: string): Promise<SessionImport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
@@ -456,6 +457,10 @@ export const fixtureDataSource: TelemetryDataSource = {
     fixtureSavedComparisons = fixtureSavedComparisons.filter((comparison) => comparison.id !== comparisonId);
     return fixtureSavedComparisons;
   },
+  async renameSavedComparison(comparisonId, name) {
+    fixtureSavedComparisons = fixtureSavedComparisons.map((comparison) => comparison.id === comparisonId ? { ...comparison, name: name.trim() } : comparison);
+    return fixtureSavedComparisons;
+  },
   async deleteSession(sessionId) {
     deletedFixtureSessionIds.add(sessionId);
     return { sessionId };
@@ -504,6 +509,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   deleteSavedComparison(comparisonId) {
     return invoke<SavedComparison[]>("delete_saved_comparison", { comparisonId });
+  },
+  renameSavedComparison(comparisonId, name) {
+    return invoke<SavedComparison[]>("rename_saved_comparison", { comparisonId, name });
   },
   exportSession(sessionId, exportFormat) {
     return invoke<SessionExport>("export_session", { sessionId, exportFormat });
