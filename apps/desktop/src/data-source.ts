@@ -26,8 +26,17 @@ export interface TelemetryStatus {
 export interface RecordedLapSummary {
   index: number;
   time: string;
+  durationNs?: number | null;
   validity: "valid" | "invalid" | "unknown";
   validityReason?: string | null;
+  isFastest?: boolean;
+  sectors: RecordedSectorSummary[];
+}
+
+export interface RecordedSectorSummary {
+  index: number;
+  time: string;
+  durationNs: number;
 }
 
 export interface RecordedSessionSummary {
@@ -104,9 +113,17 @@ export const fixtureDataSource: TelemetryDataSource = {
         exportable: true,
         deletable: true,
         laps: [
-          { index: 1, time: "1:52.418", validity: "valid" },
-          { index: 2, time: "1:50.906", validity: "valid" },
-          { index: 3, time: "—", validity: "unknown" },
+          { index: 1, time: "1:52.418", durationNs: 112_418_000_000, validity: "valid", sectors: [
+            { index: 1, time: "0:37.518", durationNs: 37_518_000_000 },
+            { index: 2, time: "0:38.406", durationNs: 38_406_000_000 },
+            { index: 3, time: "0:36.494", durationNs: 36_494_000_000 },
+          ] },
+          { index: 2, time: "1:50.906", durationNs: 110_906_000_000, validity: "valid", isFastest: true, sectors: [
+            { index: 1, time: "0:36.901", durationNs: 36_901_000_000 },
+            { index: 2, time: "0:37.802", durationNs: 37_802_000_000 },
+            { index: 3, time: "0:36.203", durationNs: 36_203_000_000 },
+          ] },
+          { index: 3, time: "—", validity: "unknown", sectors: [] },
         ],
       },
     ];

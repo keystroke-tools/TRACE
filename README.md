@@ -51,12 +51,13 @@ Currently implemented:
 - Assetto Corsa replay capture through the running simulator, with replay provenance
   preserved in the local session archive
 - Simulator-agnostic session recording with conservative lap-boundary detection
+- Genuine AC sector-boundary recording with fastest-lap and sector-performance colours
 - Transactional SQLite session/lap writes and bounded native archive queries
 - Recovery-aware Arrow blob and SQLite completion orchestration
 - Atomic filesystem telemetry blobs with restart-safe checksum indexing
 - Startup orphan quarantine and a continuously polling desktop capture worker
 - Bounded 240-frame Arrow IPC record-batch streaming during capture
-- Full canonical Apache Arrow IPC telemetry schema with v1 read compatibility
+- Full canonical Apache Arrow IPC telemetry schema v3 with v1/v2 read compatibility
 - Measured Zstandard Arrow compression with selectable LZ4/uncompressed policies
 - Bounded lap-range Arrow reads backed by SQLite sample locators
 - Per-session full-fidelity Arrow and streaming core-channel CSV exports

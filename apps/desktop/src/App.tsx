@@ -345,8 +345,10 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const actionsMenu = useRef<HTMLDivElement>(null);
-  const timedLaps = session.laps.filter((lap) => lap.time !== "—");
-  const bestLap = timedLaps.slice().sort((left, right) => lapTimeMs(left.time) - lapTimeMs(right.time))[0];
+  const timedLaps = session.laps.filter((lap) => lap.time !== "—" && lap.validity !== "invalid");
+  const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
+  const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
+  const sectorCount = Math.max(3, ...session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)));
   const visibleLaps = showAllLaps ? session.laps : session.laps.slice(0, 3);
   const hiddenLapCount = session.laps.length - visibleLaps.length;
 
@@ -480,16 +482,26 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
             <span>{visibleLaps.length} of {session.laps.length} laps shown</span>
             <span title={session.startedAt}>{formatSessionDate(session.startedAt)}</span>
           </div>
-          <div className="max-h-56 overflow-y-auto border border-trace-divider bg-trace-surface">
+          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px] text-trace-dim" aria-label="Sector colour legend">
+            <SectorLegend colour="bg-trace-purple" label="Session best" />
+            <SectorLegend colour="bg-trace-accent" label="Improved" />
+            <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
+            <SectorLegend colour="bg-trace-dim" label="Unavailable" />
+          </div>
+          <div className="max-h-64 overflow-y-auto border border-trace-divider bg-trace-surface">
             {session.laps.length === 0 ? (
               <div className="p-5 text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
-            ) : visibleLaps.map((lap) => (
-              <div className="grid min-h-11 grid-cols-[80px_1fr_100px] items-center border-b border-trace-divider px-4 font-mono text-[10px] last:border-b-0" key={lap.index}>
-                <span className="text-trace-faint">LAP {String(lap.index).padStart(2, "0")}</span>
-                <strong className={lap.validity === "valid" ? "text-trace-text" : "text-trace-soft"}>{lap.time}</strong>
+            ) : visibleLaps.map((lap) => {
+              const fastest = lap.time !== "—" && lapDuration(lap) === fastestDuration;
+              return (
+              <div className={`grid min-h-16 grid-cols-[72px_92px_minmax(190px,1fr)_92px] items-center gap-3 border-b px-4 font-mono text-[10px] last:border-b-0 ${fastest ? "border-l-2 border-l-trace-purple border-b-trace-divider bg-trace-purple-wash" : "border-b-trace-divider"}`} key={lap.index}>
+                <span className={fastest ? "text-trace-purple" : "text-trace-faint"}>LAP {String(lap.index).padStart(2, "0")}</span>
+                <strong className={fastest ? "text-trace-purple" : lap.validity === "valid" ? "text-trace-text" : "text-trace-soft"}>{lap.time}</strong>
+                <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} />
                 <LapValidity lap={lap} />
               </div>
-            ))}
+              );
+            })}
           </div>
           {session.laps.length > 3 && (
             <button type="button" onClick={() => setShowAllLaps((value) => !value)} className="mt-3 border border-trace-divider bg-trace-surface px-3 py-2 text-[11px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text">
@@ -503,6 +515,49 @@ function SessionRow({ session, onDelete }: { session: RecordedSessionSummary; on
       )}
     </article>
   );
+}
+
+function SectorLegend({ colour, label }: { colour: string; label: string }) {
+  return <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-3 ${colour}`} aria-hidden="true" />{label}</span>;
+}
+
+function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["laps"][number]; laps: RecordedSessionSummary["laps"]; sectorCount: number }) {
+  return (
+    <div className="flex min-w-0 gap-1.5" aria-label={`Sector times for lap ${lap.index}`}>
+      {Array.from({ length: sectorCount }, (_, offset) => offset + 1).map((index) => {
+        const sector = lap.sectors.find((candidate) => candidate.index === index);
+        const performance = sectorPerformance(laps, lap, index);
+        const colour = performance === "purple"
+          ? "bg-trace-purple"
+          : performance === "green"
+            ? "bg-trace-accent"
+            : performance === "yellow"
+              ? "bg-trace-sector-yellow"
+              : "bg-trace-dim";
+        return (
+          <div className="min-w-0 flex-1" key={index} title={`Sector ${index}: ${sector?.time ?? "unavailable"}`}>
+            <div className={`h-1.5 ${colour}`} aria-hidden="true" />
+            <span className="mt-1 block truncate text-[9px] text-trace-faint">S{index} {sector?.time ?? "—"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function sectorPerformance(laps: RecordedSessionSummary["laps"], lap: RecordedSessionSummary["laps"][number], sectorIndex: number) {
+  const sector = lap.sectors.find((candidate) => candidate.index === sectorIndex);
+  if (!sector || lap.validity === "invalid" || lap.validityReason?.includes("partial")) return "grey";
+  const comparable = laps.flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex));
+  const sessionBest = Math.min(...comparable.map((candidate) => candidate.durationNs));
+  if (sector.durationNs === sessionBest) return "purple";
+  const priorBest = Math.min(
+    ...laps
+      .filter((candidate) => candidate.index < lap.index)
+      .flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex))
+      .map((candidate) => candidate.durationNs),
+  );
+  return sector.durationNs < priorBest ? "green" : "yellow";
 }
 
 function ExportOption({ label, detail, disabled, onClick }: { label: string; detail: string; disabled: boolean; onClick: () => void }) {
@@ -581,6 +636,11 @@ function friendlySessionType(session: RecordedSessionSummary) {
   if (type === "ac session") return "DRIVE";
   if (type.includes("replay")) return "REPLAY";
   return session.sessionType;
+}
+
+function lapDuration(lap: RecordedSessionSummary["laps"][number]) {
+  if (lap.durationNs != null) return lap.durationNs;
+  return lapTimeMs(lap.time) * 1_000_000;
 }
 
 function lapTimeMs(value: string) {

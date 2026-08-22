@@ -187,13 +187,15 @@ Blob paths are normalized portable relative paths. Absolute paths, traversal,
 backslashes, empty components, and control characters are rejected. The in-memory
 implementation is a tested fixture.
 
-Apache Arrow IPC schema v2 writes random-access files with TRACE format/schema/SI
-metadata and 46 aligned nullable columns. It preserves sequence and monotonic time,
+Apache Arrow IPC schema v3 writes random-access files with TRACE format/schema/SI
+metadata and 48 aligned nullable columns. It preserves sequence and monotonic time,
 lap observations, every driver and vehicle field, explicit gear variants, motion
-vectors with coordinate-frame tags, all four wheel states, and environment data.
+vectors with coordinate-frame tags, all four wheel states, environment data, and AC's
+observed sector index and last-sector time. The reader continues to accept schema v2
+and the seven-column schema v1 projection.
 Gear kind and raw value are separate so unknown simulator values round-trip without
-colliding with reverse, neutral, or forward gears. The reader continues to accept the
-seven-column schema v1 projection. Round-trip tests preserve missing values and reject
+colliding with reverse, neutral, or forward gears. Round-trip tests preserve missing
+values and reject
 malformed or foreign schemas. Standard Arrow record-batch metadata declares
 compression without a custom wrapper. Zstandard is the default; LZ4 frame and
 uncompressed policies remain available for comparisons. The checked-in benchmark
@@ -216,7 +218,7 @@ can remove that scan if benchmarks show it matters.
 The initial forward-only migration creates tables for:
 
 - simulators, tracks, and cars
-- sessions and laps
+- sessions, laps, and genuine simulator-observed sector times
 - telemetry blob indexes
 - reconstructed track geometry
 - setup snapshots and revisions
@@ -240,7 +242,9 @@ and maps those summaries into the typed Sessions UI. Lap durations are formatted
 integer nanoseconds; the command does not read or fabricate telemetry samples. The
 archive presents compact searchable, source-filtered, and sortable session rows. Lap
 details expand on demand into a bounded scroller so long races do not dominate the
-archive, while export formats remain behind a per-session action popover.
+archive. Fastest laps and sectors are purple; green/yellow/grey sector bars distinguish
+improvements, slower splits, and unavailable data. Export formats remain behind a
+per-session action popover.
 
 Completed sessions can be exported from the Sessions UI into the user's Downloads
 directory. Arrow IPC export preserves the immutable full-fidelity recording. CSV

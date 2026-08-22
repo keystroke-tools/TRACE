@@ -37,8 +37,19 @@ struct FoundationStatus {
 struct RecordedLapSummary {
     index: u32,
     time: String,
+    duration_ns: Option<u64>,
     validity: String,
     validity_reason: Option<String>,
+    is_fastest: bool,
+    sectors: Vec<RecordedSectorSummary>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordedSectorSummary {
+    index: u32,
+    time: String,
+    duration_ns: u64,
 }
 
 #[derive(Serialize)]
@@ -114,8 +125,19 @@ fn recent_sessions(
                     .map(|lap| RecordedLapSummary {
                         index: lap.index,
                         time: lap.duration_ns.map_or_else(|| "—".into(), format_lap_time),
+                        duration_ns: lap.duration_ns,
                         validity: lap.validity,
                         validity_reason: lap.validity_reason,
+                        is_fastest: lap.is_personal_best,
+                        sectors: lap
+                            .sectors
+                            .into_iter()
+                            .map(|sector| RecordedSectorSummary {
+                                index: sector.index,
+                                time: format_lap_time(sector.duration_ns),
+                                duration_ns: sector.duration_ns,
+                            })
+                            .collect(),
                     })
                     .collect(),
             }

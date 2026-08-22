@@ -17,6 +17,9 @@
   --color-trace-deep: #151515;
   --color-trace-black: #101010;
   --color-trace-warning: #ff6b35;
+  --color-trace-purple: #b87cff;
+  --color-trace-purple-wash: #24182f;
+  --color-trace-sector-yellow: #e3c64b;
   --color-trace-danger: #c42b1c;
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;

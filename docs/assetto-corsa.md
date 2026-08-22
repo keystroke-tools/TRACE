@@ -97,6 +97,8 @@ length.
 | `suspensionTravel[4]` | suspension travel m | canonical wheel ordering |
 | `completedLaps` | completed laps | non-negative only |
 | `iCurrentTime` | current lap time ns | milliseconds converted with checked arithmetic |
+| `currentSectorIndex` | current zero-based sector index | non-negative only |
+| `lastSectorTime` | last completed sector time ns | positive milliseconds converted with checked arithmetic |
 | `normalizedCarPosition` | normalized position | accepted only as finite 0–1 ratio |
 | `carCoordinates[3]` | position m | AC source-world coordinate frame |
 | `carModel`, `track` | session source IDs | decoded from fixed UTF-16, NUL terminated |
@@ -129,6 +131,11 @@ Its duration remains unavailable. Later laps close only after TRACE observes the
 completed-lap counter boundary, and their durations come from TRACE's monotonic capture
 clock rather than AC's transient current-lap timer.
 
+Sector boundaries are recorded only when AC's `currentSectorIndex` changes. The
+duration comes from the corresponding `lastSectorTime` value and is stored beside the
+completed lap in SQLite. No synthetic equal-thirds split is inferred. Recordings made
+before this metadata was available remain readable and show unavailable sector bars.
+
 Counter regression or a jump larger than one is rejected as ambiguous rather than
 silently producing incorrect sample ranges. Simulator-specific validity evidence is
 not yet authoritative, so this layer does not claim a lap is valid.
@@ -138,6 +145,9 @@ The desktop labels a complete lap with unknown validity as `Recorded`, not
 checked. Partial/outlaps remain invalid and visibly marked. Lap detail panels render
 only the first three entries until the user explicitly asks to show the remainder,
 keeping long race sessions bounded by default.
+The quickest non-invalid lap is highlighted in purple. Sector bars use purple for the
+best sector in the session, green for an improvement over earlier laps, yellow for a
+slower recorded sector, and grey for unavailable, partial, or invalid sector data.
 
 The desktop starts the production adapter on a dedicated polling thread. An unstable
 packet remains a temporary acquisition error and does not split the session. Loss of
