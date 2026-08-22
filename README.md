@@ -64,10 +64,11 @@ Currently implemented:
 - Per-session full-fidelity Arrow and streaming core-channel CSV exports
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
-- Compact searchable/filterable session library with expandable lap details and safe recording deletion
+- Compact searchable/filterable session library with dedicated full-session review and safe recording deletion
+- Lazy per-lap fuel use, maximum speed, and four-corner tyre-wear summaries derived from recorded telemetry
 - User-managed session/replay names, driver attribution, ownership, and searchable tags
 - Assetto Corsa session classification (practice, qualifying, race, hotlap, time attack, drift, and drag)
-- Per-lap Assetto Corsa tyres-out evidence without inventing an unsupported validity verdict
+- Red invalid/track-limit lap treatment backed by persisted validity or three-plus-tyres-out evidence
 - Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
 - Transactional SQLite session/lap writes and bounded native session-browser queries
 

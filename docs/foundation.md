@@ -254,11 +254,21 @@ A bounded recent-session query returns display-safe session and lap summaries. T
 native Tauri command opens `trace.sqlite` in the platform application-data directory
 and maps those summaries into the typed Sessions UI. Lap durations are formatted from
 integer nanoseconds; the command does not read or fabricate telemetry samples. The
-archive presents compact searchable, source-filtered, and sortable session rows. Lap
-details expand on demand into a bounded scroller so long races do not dominate the
-archive. Fastest laps and sectors are purple; green/yellow/grey sector bars distinguish
-improvements, slower splits, and unavailable data. Export formats remain behind a
-per-session action popover.
+archive presents compact searchable, source-filtered, and sortable session rows.
+Opening one moves into a dedicated session detail view, where the complete lap list can
+use the available workspace without making the archive unwieldy. Fastest laps and
+sectors are purple; green/yellow/grey sector bars distinguish improvements, slower
+splits, and unavailable data. Persisted invalid laps and laps with three-plus-tyres-out
+evidence use a red row treatment and are excluded from clean fastest-lap/sector
+comparisons. Export formats remain behind a per-session action popover.
+
+The detail command derives fuel used, maximum speed, and tyre condition independently
+for each lap from its bounded Arrow sample range. Canonical columns provide fuel and
+speed; the AC-native float map provides the four `tyreWear` values. Hotlap mode can
+reset tyre condition near a boundary, so TRACE reports start-to-lowest-observed wear
+within the lap rather than a misleading start-to-end recovery. These metrics are read
+only when the user opens a session, keeping archive polling independent of recording
+length.
 
 The Live page's “What TRACE records” inventory separates portable analysis-ready
 channels from the complete AC-native tyre, powertrain, chassis, session, and static

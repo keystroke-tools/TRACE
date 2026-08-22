@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   telemetryDataSource,
+  type RecordedLapMetrics,
   type RecordedSessionSummary,
   type SessionExportFormat,
   type TelemetryStatus,
@@ -16,6 +17,8 @@ export function App() {
   const [status, setStatus] = useState<TelemetryStatus | null>(null);
   const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
   const [section, setSection] = useState<Section>("LIVE");
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
 
   async function selectSimulator(simulatorId: string) {
     await telemetryDataSource.selectSimulator(simulatorId);
@@ -45,15 +48,20 @@ export function App() {
   return (
     <main className="grid h-screen grid-cols-[176px_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text max-[900px]:grid-cols-[140px_1fr]">
       <TitleBar status={status} />
-      <Navigation active={section} onChange={setSection} />
+      <Navigation active={section} onChange={(next) => { setSection(next); if (next !== "SESSIONS") setOpenSessionId(null); }} />
       <section className="trace-grid overflow-auto p-7">
         {section === "LIVE" && <Live status={status} onOpenSessions={() => setSection("SESSIONS")} onSelectSimulator={selectSimulator} />}
         {section === "SESSIONS" && (
-          <Sessions
-            sessions={sessions}
-            onDeleted={(sessionId) => setSessions((current) => current.filter((session) => session.id !== sessionId))}
-            onUpdated={(updated) => setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))}
-          />
+          openSession ? (
+            <SessionDetail session={openSession} onBack={() => setOpenSessionId(null)} />
+          ) : (
+            <Sessions
+              sessions={sessions}
+              onOpen={(sessionId) => setOpenSessionId(sessionId)}
+              onDeleted={(sessionId) => setSessions((current) => current.filter((session) => session.id !== sessionId))}
+              onUpdated={(updated) => setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))}
+            />
+          )
         )}
         {section === "COMPARE" && <Compare />}
         {section === "SETUPS" && <Setups />}
@@ -269,7 +277,7 @@ function AvailabilityNote({ children }: { children: ReactNode }) {
   return <p className="border border-t-0 border-trace-divider bg-trace-deep px-5 py-4 text-[12px] leading-5 text-trace-muted"><strong className="mr-2 text-trace-warning">NOT AVAILABLE YET</strong>{children}</p>;
 }
 
-function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessionSummary[]; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void }) {
+function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: RecordedSessionSummary[]; onOpen: (sessionId: string) => void; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void }) {
   const showToast = useToast();
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -389,17 +397,15 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
         ) : visibleSessions.length === 0 ? (
           <EmptySessions title="Nothing matches">Try a different search or change the source filter.</EmptySessions>
         ) : visibleSessions.map((session) => (
-          <SessionRow key={session.id} session={session} onDelete={deleteRecordedSession} onUpdate={updateRecordedSession} />
+          <SessionRow key={session.id} session={session} onOpen={() => onOpen(session.id)} onDelete={deleteRecordedSession} onUpdate={updateRecordedSession} />
         ))}
       </div>
     </>
   );
 }
 
-function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean>; onUpdate: (session: RecordedSessionSummary, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]) => Promise<boolean> }) {
+function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: RecordedSessionSummary; onOpen: () => void; onDelete: (session: RecordedSessionSummary) => Promise<boolean>; onUpdate: (session: RecordedSessionSummary, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]) => Promise<boolean> }) {
   const showToast = useToast();
-  const [expanded, setExpanded] = useState(false);
-  const [showAllLaps, setShowAllLaps] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
@@ -414,16 +420,6 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
   const actionsMenu = useRef<HTMLDivElement>(null);
   const timedLaps = session.laps.filter((lap) => lap.time !== "—" && lap.validity !== "invalid");
   const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
-  const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
-  const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
-  const sectorCount = Math.max(3, ...session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)));
-  const visibleLaps = showAllLaps ? session.laps : session.laps.slice(0, 3);
-  const hiddenLapCount = session.laps.length - visibleLaps.length;
-
-  function toggleExpanded() {
-    if (expanded) setShowAllLaps(false);
-    setExpanded((value) => !value);
-  }
 
   useEffect(() => {
     if (!actionsOpen) return;
@@ -496,8 +492,8 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
       <div className="flex min-h-[82px] items-stretch">
         <button
           type="button"
-          aria-expanded={expanded}
-          onClick={toggleExpanded}
+          aria-label={`View ${session.track} session`}
+          onClick={onOpen}
           className="grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px]"
         >
           <div className="min-w-0">
@@ -578,72 +574,155 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
               </div>
             )}
           </div>
-          <Tooltip className="h-full" content={expanded ? "Hide laps" : "Show laps"}>
+          <Tooltip className="h-full" content="View session">
             <button
               type="button"
-              aria-label={expanded ? `Collapse ${session.track} laps` : `Show ${session.track} laps`}
-              onClick={toggleExpanded}
+              aria-label={`View ${session.track} session`}
+              onClick={onOpen}
               className="grid h-full w-12 place-items-center border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
             >
-              <svg className={`size-4 fill-none stroke-current transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m4 6 4 4 4-4" />
+              <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m6 4 4 4-4 4" />
               </svg>
             </button>
           </Tooltip>
         </div>
       </div>
-      {expanded && (
-        <div className="border-t border-trace-divider bg-trace-deep px-5 py-4">
-          <div className="mb-3 flex items-center justify-between text-[11px] text-trace-dim">
-            <span>{visibleLaps.length} of {session.laps.length} laps shown</span>
-            <Tooltip content={session.startedAt}>{formatSessionDate(session.startedAt)}</Tooltip>
-          </div>
-          {hasSectorTiming ? (
-            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9px] text-trace-dim" aria-label="Sector colour legend">
-              <SectorLegend colour="bg-trace-purple" label="Session best" />
-              <SectorLegend colour="bg-trace-accent" label="Improved" />
-              <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
-              <SectorLegend colour="bg-trace-dim" label="Unavailable" />
-            </div>
-          ) : (
-            <div className="mb-3 border border-trace-divider bg-trace-surface px-3 py-2.5 text-[11px] leading-5 text-trace-muted">
-              <strong className="text-trace-soft">Sector timing was not emitted by the simulator.</strong>{" "}
-              {sessionSourceLabel(session) === "Replay capture"
-                ? "Assetto Corsa replay shared memory can leave both the sector index and last-sector time empty; the recorded lap and telemetry remain usable."
-                : "TRACE retained the lap and telemetry without inventing sector splits."}
-            </div>
-          )}
-          <div className="max-h-64 overflow-y-auto border border-trace-divider bg-trace-surface">
-            {session.laps.length === 0 ? (
-              <div className="p-5 text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
-            ) : visibleLaps.map((lap) => {
-              const fastest = lap.time !== "—" && lapDuration(lap) === fastestDuration;
-              return (
-              <div className={`grid min-h-16 grid-cols-[72px_92px_minmax(190px,1fr)_92px] items-center gap-3 border-b px-4 font-mono text-[10px] last:border-b-0 ${fastest ? "border-l-2 border-l-trace-purple border-b-trace-divider bg-trace-purple-wash" : "border-b-trace-divider"}`} key={lap.index}>
-                <span className={fastest ? "text-trace-purple" : "text-trace-faint"}>LAP {String(lap.index).padStart(2, "0")}</span>
-                <strong className={fastest ? "text-trace-purple" : lap.validity === "valid" ? "text-trace-text" : "text-trace-soft"}>{lap.time}</strong>
-                {hasSectorTiming ? (
-                  <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} />
-                ) : (
-                  <span className="text-[9px] tracking-[.04em] text-trace-dim">NO SECTOR TELEMETRY</span>
-                )}
-                <LapValidity lap={lap} />
-              </div>
-              );
-            })}
-          </div>
-          {session.laps.length > 3 && (
-            <button type="button" onClick={() => setShowAllLaps((value) => !value)} className="mt-3 border border-trace-divider bg-trace-surface px-3 py-2 text-[11px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text">
-              {showAllLaps ? "Show first 3 laps" : `Show ${hiddenLapCount} more lap${hiddenLapCount === 1 ? "" : "s"}`}
-            </button>
-          )}
-          <p className="mt-3 text-[11px] leading-5 text-trace-dim">
-            “Recorded” means TRACE captured the complete lap. Tyres-out evidence is shown when available; {session.simulatorName} does not provide TRACE with a definitive final lap-valid verdict.
-          </p>
-        </div>
-      )}
     </article>
   );
+}
+
+function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; onBack: () => void }) {
+  const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
+  const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
+  const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
+  const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
+  const sectorCount = Math.max(3, ...session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)));
+  const timedLaps = session.laps.filter((lap) => lap.time !== "—" && !lapIsInvalid(lap));
+  const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
+  const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
+
+  useEffect(() => {
+    let active = true;
+    setMetricsState("loading");
+    void telemetryDataSource.getSessionLapMetrics(session.id).then((values) => {
+      if (!active) return;
+      setMetrics(values);
+      setMetricsState("ready");
+    }).catch(() => {
+      if (active) setMetricsState("error");
+    });
+    return () => { active = false; };
+  }, [session.id]);
+
+  return (
+    <>
+      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 border-0 bg-transparent py-2 text-[11px] font-bold tracking-[.06em] text-trace-muted hover:text-trace-text">
+        <svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
+        ALL SESSIONS
+      </button>
+      <div className="mt-3 flex items-end justify-between gap-6">
+        <div className="min-w-0">
+          <SectionHeading index="02">SESSION DETAIL</SectionHeading>
+          <h1 className="mt-3 truncate text-2xl font-black tracking-[-.02em]">{session.title ?? session.track}</h1>
+          <p className="mt-2 text-[13px] text-trace-muted">{session.car} · {friendlySessionType(session)} · {formatSessionDate(session.startedAt)}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
+          {session.driver && <span className="text-[12px] text-trace-soft">{session.driver}</span>}
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-4 border border-trace-divider bg-trace-surface">
+        <Metric label="LAPS CAPTURED" value={String(session.laps.length)} accent />
+        <Metric label="BEST CLEAN" value={bestLap?.time ?? "—"} />
+        <Metric label="SOURCE" value={sessionSourceLabel(session).toUpperCase()} />
+        <Metric label="SIMULATOR" value={session.simulatorName.toUpperCase()} />
+      </div>
+
+      {!hasSectorTiming && (
+        <div className="mt-4 border border-trace-divider bg-trace-surface px-4 py-3 text-[12px] leading-5 text-trace-muted">
+          <strong className="text-trace-soft">No sector timing was emitted for this session.</strong> Lap telemetry and derived metrics remain available.
+        </div>
+      )}
+
+      <div className="mt-4 border border-trace-divider bg-trace-surface">
+        <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim">
+          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL USED</span><span>MAX SPEED</span><span>TYRE WEAR</span><span className="text-right">STATUS</span>
+        </div>
+        {session.laps.length === 0 ? (
+          <div className="p-8 text-center text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
+        ) : session.laps.map((lap) => {
+          const lapMetrics = metricsByLap.get(lap.index);
+          const invalid = lapIsInvalid(lap);
+          const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
+          return (
+            <div
+              className={`grid min-h-[74px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider px-4 font-mono text-[10px] last:border-b-0 ${invalid ? "border-l-2 border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-2 border-l-trace-purple bg-trace-purple-wash" : "hover:bg-trace-raised/50"}`}
+              key={lap.index}
+            >
+              <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
+              <strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
+              {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[9px] text-trace-dim">UNAVAILABLE</span>}
+              <LapMetricValue state={metricsState} value={formatFuelUsed(lapMetrics)} detail={fuelDetail(lapMetrics)} />
+              <LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} />
+              <LapMetricValue state={metricsState} value={formatTyreWear(lapMetrics)} detail={tyreWearDetail(lapMetrics)} />
+              <LapValidity lap={lap} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[9px] text-trace-dim">
+        <SectorLegend colour="bg-trace-purple" label="Session best" />
+        <SectorLegend colour="bg-trace-accent" label="Improved" />
+        <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
+        <SectorLegend colour="bg-trace-danger" label="Invalid / track limit" />
+      </div>
+      <p className="mt-3 text-[11px] leading-5 text-trace-dim">Fuel, speed, and tyre wear are derived on demand from each lap's recorded sample range. Tyre wear is the average of the four AC wheel values; hover it for the per-corner readings.</p>
+    </>
+  );
+}
+
+function LapMetricValue({ state, value, detail }: { state: "loading" | "ready" | "error"; value: string | null; detail?: string | null }) {
+  const label = state === "loading" ? "LOADING…" : value ?? "—";
+  const className = `truncate text-[9px] ${value ? "text-trace-soft" : "text-trace-dim"}`;
+  return detail ? <Tooltip className={className} content={detail}>{label}</Tooltip> : <span className={className}>{label}</span>;
+}
+
+function formatFuelUsed(metrics?: RecordedLapMetrics) {
+  return metrics?.fuelUsedLitres != null ? `${metrics.fuelUsedLitres.toFixed(2)} L` : null;
+}
+
+function fuelDetail(metrics?: RecordedLapMetrics) {
+  return metrics?.fuelStartLitres != null && metrics.fuelEndLitres != null
+    ? `${metrics.fuelStartLitres.toFixed(2)} L → ${metrics.fuelEndLitres.toFixed(2)} L`
+    : null;
+}
+
+function formatTyreWear(metrics?: RecordedLapMetrics) {
+  const start = averageAvailable(metrics?.tyreWearStart);
+  const minimum = averageAvailable(metrics?.tyreWearMinimum);
+  return start != null && minimum != null ? `${Math.max(0, start - minimum).toFixed(2)}% used` : null;
+}
+
+function tyreWearDetail(metrics?: RecordedLapMetrics) {
+  if (!metrics) return null;
+  const labels = ["FL", "FR", "RL", "RR"];
+  const values = labels.map((label, index) => {
+    const start = metrics.tyreWearStart[index];
+    const minimum = metrics.tyreWearMinimum[index];
+    return start != null && minimum != null ? `${label} ${start.toFixed(2)} → ${minimum.toFixed(2)}% minimum` : `${label} —`;
+  });
+  return values.join(" · ");
+}
+
+function averageAvailable(values?: Array<number | null>) {
+  const available = values?.filter((value): value is number => value != null && Number.isFinite(value)) ?? [];
+  return available.length > 0 ? available.reduce((sum, value) => sum + value, 0) / available.length : null;
+}
+
+function lapIsInvalid(lap: RecordedSessionSummary["laps"][number]) {
+  return lap.validity === "invalid" || (lap.maxTyresOut != null && lap.maxTyresOut >= 3);
 }
 
 function SectorLegend({ colour, label }: { colour: string; label: string }) {
@@ -689,13 +768,13 @@ function SectorBars({ lap, laps, sectorCount }: { lap: RecordedSessionSummary["l
 
 function sectorPerformance(laps: RecordedSessionSummary["laps"], lap: RecordedSessionSummary["laps"][number], sectorIndex: number) {
   const sector = lap.sectors.find((candidate) => candidate.index === sectorIndex);
-  if (!sector || lap.validity === "invalid" || lap.validityReason?.includes("partial")) return "grey";
-  const comparable = laps.flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex));
+  if (!sector || lapIsInvalid(lap)) return "grey";
+  const comparable = laps.filter((candidate) => !lapIsInvalid(candidate)).flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex));
   const sessionBest = Math.min(...comparable.map((candidate) => candidate.durationNs));
   if (sector.durationNs === sessionBest) return "purple";
   const priorBest = Math.min(
     ...laps
-      .filter((candidate) => candidate.index < lap.index)
+      .filter((candidate) => candidate.index < lap.index && !lapIsInvalid(candidate))
       .flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex))
       .map((candidate) => candidate.durationNs),
   );
@@ -782,11 +861,11 @@ function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
   const label = partial
     ? "PARTIAL"
     : hasTrackLimitWarning
-    ? `${lap.maxTyresOut} ${lap.maxTyresOut === 1 ? "TYRE" : "TYRES"} OUT`
+    ? "TRACK LIMIT"
     : lap.validity === "unknown"
       ? "RECORDED"
       : lap.validity.toUpperCase();
-  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${hasTrackLimitWarning || lap.validity === "invalid" ? "text-trace-warning" : lap.validity === "valid" ? "text-trace-accent" : "text-trace-soft"}`;
+  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${hasTrackLimitWarning || lap.validity === "invalid" ? "text-red-300" : lap.validity === "valid" ? "text-trace-accent" : "text-trace-soft"}`;
   const detail = !partial && lap.maxTyresOut != null && lap.maxTyresOut > 0 && lap.maxTyresOut < 3
     ? `Up to ${lap.maxTyresOut} ${lap.maxTyresOut === 1 ? "tyre was" : "tyres were"} outside; at least two remained within the track, so TRACE does not show a track-limit warning.`
     : lap.validityReason;
