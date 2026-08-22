@@ -1,7 +1,8 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io,
+    io::{self, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
@@ -13,8 +14,16 @@ use trace_core::{
     distance::{DistanceSample, DistanceSeries, InterpolationMethod, uniform_grid},
 };
 use trace_storage::{
-    ipc::{TelemetryColumns, export_core_csv, read_columns_range, read_lap_metrics},
+    BlobCommit, BlobFormat, FileBlobStore, RelativeBlobPath, TelemetryBlobStore,
+    ipc::{
+        TELEMETRY_SCHEMA_VERSION, TelemetryColumns, export_core_csv, read_columns_range,
+        read_lap_metrics, sample_count,
+    },
     metadata::{MetadataStore, SessionSummary},
+    package::{
+        PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest, imported_records, read_package,
+        write_package,
+    },
 };
 
 mod ac_content;
@@ -203,6 +212,16 @@ struct SessionExport {
     format: String,
     sample_count: u64,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionImport {
+    session_id: String,
+    lap_count: usize,
+    sample_count: u64,
+}
+
+const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -976,7 +995,7 @@ fn export_session(
     let source_path = data_directory
         .join("telemetry")
         .join(locator.blob_path.as_str());
-    let source = File::open(&source_path)
+    let mut source = File::open(&source_path)
         .map_err(|error| format!("failed to open session telemetry: {error}"))?;
     let downloads = app
         .path()
@@ -986,14 +1005,19 @@ fn export_session(
         .map_err(|error| format!("failed to create exports directory: {error}"))?;
 
     let (label, extension) = match export_format.as_str() {
+        "trace" => ("TRACE session", "trace"),
         "arrow" => ("Arrow IPC", "arrow"),
         "csv" => ("CSV", "csv"),
         _ => return Err("unsupported export format".into()),
     };
     let stem = format!("trace-{}", safe_export_stem(&session_id));
     let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
-    let export_result = if export_format == "arrow" {
-        let mut source = source;
+    let export_result = if export_format == "trace" {
+        let manifest = trace_package_manifest(&store, &session_id, locator.sample_count)?;
+        write_package(&mut destination, &mut source, &manifest)
+            .map(|_| locator.sample_count)
+            .map_err(|error| format!("failed to export TRACE session: {error:?}"))
+    } else if export_format == "arrow" {
         io::copy(&mut source, &mut destination)
             .map(|_| locator.sample_count)
             .map_err(|error| format!("failed to export Arrow telemetry: {error}"))
@@ -1020,6 +1044,146 @@ fn export_session(
         format: label.into(),
         sample_count,
     })
+}
+
+fn trace_package_manifest(
+    store: &MetadataStore,
+    session_id: &str,
+    sample_count: u64,
+) -> Result<SessionPackageManifest, String> {
+    let session = store
+        .recent_sessions(10_000)
+        .map_err(|error| format!("failed to read session metadata: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "session metadata no longer exists".to_owned())?;
+    let laps = session
+        .laps
+        .iter()
+        .map(|lap| {
+            let locator = store
+                .lap_telemetry(&lap.id)
+                .map_err(|error| format!("failed to read lap metadata: {error:?}"))?;
+            Ok(SessionPackageLap {
+                summary: lap.clone(),
+                sample_start: locator.sample_start,
+                sample_count: locator.sample_count,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(SessionPackageManifest {
+        format_version: PACKAGE_VERSION,
+        telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
+        session,
+        laps,
+        sample_count,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn import_session(app: tauri::AppHandle, path: String) -> Result<SessionImport, String> {
+    let source_path = PathBuf::from(path);
+    let source = File::open(&source_path)
+        .map_err(|error| format!("failed to open TRACE session: {error}"))?;
+    let file_length = source
+        .metadata()
+        .map_err(|error| format!("failed to inspect TRACE session: {error}"))?
+        .len();
+    let package = read_package(source, file_length, MAX_SESSION_BYTES)
+        .map_err(|error| format!("invalid TRACE session package: {error:?}"))?;
+    let manifest = package.manifest;
+    let mut telemetry = package.telemetry;
+    if manifest.telemetry_schema_version > TELEMETRY_SCHEMA_VERSION {
+        return Err(format!(
+            "this session uses telemetry schema {} but this TRACE build supports up to {}",
+            manifest.telemetry_schema_version, TELEMETRY_SCHEMA_VERSION
+        ));
+    }
+    let actual_sample_count = sample_count(&mut telemetry)
+        .map_err(|error| format!("invalid TRACE telemetry payload: {error:?}"))?;
+    if actual_sample_count != manifest.sample_count {
+        return Err("TRACE session sample count does not match its telemetry".into());
+    }
+    telemetry
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("failed to rewind TRACE telemetry: {error}"))?;
+
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&data_directory)
+        .map_err(|error| format!("failed to prepare TRACE storage: {error}"))?;
+    let mut metadata = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let mut blobs = FileBlobStore::open(&data_directory.join("telemetry"), MAX_SESSION_BYTES)
+        .map_err(|error| format!("failed to open TRACE telemetry storage: {error:?}"))?;
+    let session_id = unique_import_session_id();
+    let (new_session, laps) = imported_records(&session_id, &manifest);
+    metadata
+        .create_session(&new_session)
+        .map_err(|error| format!("failed to create imported session: {error:?}"))?;
+
+    let relative_path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
+        .map_err(|error| format!("failed to create imported telemetry path: {error:?}"))?;
+    let import_result = (|| {
+        let mut writer = blobs
+            .begin_writer()
+            .map_err(|error| format!("failed to stage imported telemetry: {error:?}"))?;
+        io::copy(&mut telemetry, &mut writer)
+            .map_err(|error| format!("failed to copy imported telemetry: {error}"))?;
+        writer
+            .flush()
+            .map_err(|error| format!("failed to flush imported telemetry: {error}"))?;
+        let blob = blobs
+            .commit(
+                &writer.into_pending(),
+                BlobCommit {
+                    path: relative_path.clone(),
+                    format: BlobFormat::ArrowIpc,
+                    schema_version: manifest.telemetry_schema_version,
+                    sample_count: manifest.sample_count,
+                    expected_sha256: None,
+                },
+            )
+            .map_err(|error| format!("failed to commit imported telemetry: {error:?}"))?;
+        metadata
+            .complete_session(&session_id, &manifest.session.started_at, &blob, &laps)
+            .map_err(|error| format!("failed to index imported laps: {error:?}"))?;
+        metadata
+            .update_session_details(
+                &session_id,
+                manifest.session.user_title.as_deref(),
+                manifest.session.user_driver.as_deref(),
+                "other",
+                &manifest.session.tags,
+            )
+            .map_err(|error| format!("failed to restore session details: {error:?}"))?;
+        Ok::<(), String>(())
+    })();
+    if let Err(error) = import_result {
+        let _ = metadata.delete_session(&session_id);
+        let _ = fs::remove_file(
+            data_directory
+                .join("telemetry")
+                .join(relative_path.as_str()),
+        );
+        return Err(error);
+    }
+
+    Ok(SessionImport {
+        session_id,
+        lap_count: manifest.laps.len(),
+        sample_count: manifest.sample_count,
+    })
+}
+
+fn unique_import_session_id() -> String {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    format!("imported-{nonce}")
 }
 
 #[tauri::command]
@@ -1486,6 +1650,7 @@ pub fn run() {
             game_install_directories,
             set_game_install_directory,
             export_session,
+            import_session,
             delete_session,
             update_session_details
         ])

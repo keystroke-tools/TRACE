@@ -162,7 +162,7 @@ export interface LapComparison {
   samples: LapComparisonSample[];
 }
 
-export type SessionExportFormat = "arrow" | "csv";
+export type SessionExportFormat = "trace" | "arrow" | "csv";
 
 export interface SessionExport {
   path: string;
@@ -173,6 +173,12 @@ export interface SessionExport {
 export interface SessionDeletion {
   sessionId: string;
   cleanupWarning?: string | null;
+}
+
+export interface SessionImport {
+  sessionId: string;
+  lapCount: number;
+  sampleCount: number;
 }
 
 export interface GameInstallDirectory {
@@ -192,6 +198,7 @@ export interface TelemetryDataSource {
   getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
   setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
   exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
+  importSession(path: string): Promise<SessionImport>;
   deleteSession(sessionId: string): Promise<SessionDeletion>;
   updateSessionDetails(sessionId: string, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]): Promise<void>;
 }
@@ -287,9 +294,12 @@ export const fixtureDataSource: TelemetryDataSource = {
   async exportSession(_sessionId, format) {
     return {
       path: `Browser preview (${format.toUpperCase()})`,
-      format: format === "arrow" ? "Arrow IPC" : "CSV",
+      format: format === "trace" ? "TRACE session" : format === "arrow" ? "Arrow IPC" : "CSV",
       sampleCount: 0,
     };
+  },
+  async importSession(_path) {
+    return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600 };
   },
   async getSessionLapMetrics(_sessionId) {
     return [
@@ -378,6 +388,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   exportSession(sessionId, exportFormat) {
     return invoke<SessionExport>("export_session", { sessionId, exportFormat });
+  },
+  importSession(path) {
+    return invoke<SessionImport>("import_session", { path });
   },
   deleteSession(sessionId) {
     return invoke<SessionDeletion>("delete_session", { sessionId });

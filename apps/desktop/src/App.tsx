@@ -69,6 +69,7 @@ export function App() {
               onOpen={(sessionId) => { setOpenSessionId(sessionId); setOpenLapIndex(null); }}
               onDeleted={(sessionId) => setSessions((current) => current.filter((session) => session.id !== sessionId))}
               onUpdated={(updated) => setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))}
+              onImported={async () => setSessions(await telemetryDataSource.getSessions())}
             />
           )
         )}
@@ -509,7 +510,7 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
     <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[157px] grid-cols-[125px_80px_minmax(140px,1fr)_120px_90px_90px_120px_minmax(140px,1fr)_80px_125px] grid-rows-[45px_44px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
-        <div className="flex items-center justify-center gap-3"><HudValue label="FINISH" value={comparison?.samples.at(-1)?.deltaSeconds == null ? "—" : formatDelta(comparison.samples.at(-1)?.deltaSeconds ?? 0)} colour={channelColours.delta} /><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
+        <div className="flex items-center justify-center"><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
         <HudLapChoice label="COMPARISON" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
       <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
@@ -947,12 +948,13 @@ function AvailabilityNote({ children }: { children: ReactNode }) {
   return <p className="border border-t-0 border-trace-divider bg-trace-deep px-5 py-4 text-[12px] leading-5 text-trace-muted"><strong className="mr-2 text-trace-warning">NOT AVAILABLE YET</strong>{children}</p>;
 }
 
-function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: RecordedSessionSummary[]; onOpen: (sessionId: string) => void; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void }) {
+function Sessions({ sessions, onOpen, onDeleted, onUpdated, onImported }: { sessions: RecordedSessionSummary[]; onOpen: (sessionId: string) => void; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void; onImported: () => Promise<void> }) {
   const showToast = useToast();
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [simulatorFilter, setSimulatorFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
+  const [importing, setImporting] = useState(false);
   const visibleSessions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return sessions
@@ -1000,6 +1002,26 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
     }
   }
 
+  async function importTraceSession() {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title: "Import a TRACE session",
+      filters: [{ name: "TRACE session", extensions: ["trace"] }],
+    });
+    if (typeof selected !== "string") return;
+    setImporting(true);
+    try {
+      const result = await telemetryDataSource.importSession(selected);
+      await onImported();
+      showToast({ kind: "success", title: "Session imported", message: `${result.lapCount} laps and ${result.sampleCount.toLocaleString()} telemetry samples are ready to review.`, timeoutMs: 6_000 });
+    } catch (error) {
+      showToast({ kind: "error", title: "Import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <>
       <div className="flex items-end justify-between gap-6">
@@ -1008,9 +1030,10 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
           <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">SESSIONS</h1>
           <p className="mt-2 text-[13px] text-trace-muted">Browse drives and replays, then open one to review every lap and its telemetry.</p>
         </div>
-        <span className="font-mono text-[12px] text-trace-faint">
-          {visibleSessions.length} shown · {sessions.length} total
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="font-mono text-[12px] text-trace-faint">{visibleSessions.length} shown · {sessions.length} total</span>
+          <button type="button" disabled={importing} onClick={() => void importTraceSession()} className="h-10 border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.08em] text-trace-accent hover:border-trace-accent hover:text-white disabled:border-trace-divider disabled:text-trace-dim">{importing ? "IMPORTING…" : "IMPORT .TRACE"}</button>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap border border-trace-divider bg-trace-surface">
@@ -1230,8 +1253,11 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
                       </svg>
                     </button>
                     {exportMenuOpen && session.exportable && (
-                      <div className="ml-2 border-l border-trace-divider bg-trace-deep pl-1">
-                        <ExportOption label="Full session" detail="Arrow IPC · all captured channels" disabled={exporting} onClick={() => void exportTelemetry("arrow")} />
+                      <div className="ml-2 border-l border-trace-divider bg-trace-deep pb-1 pl-1 pt-2">
+                        <span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">SHARE</span>
+                        <ExportOption label="Shareable session" detail=".trace · telemetry, laps & details" disabled={exporting} onClick={() => void exportTelemetry("trace")} />
+                        <span className="mt-1 block border-t border-trace-divider px-2 pb-1 pt-2 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">DATA EXPORTS</span>
+                        <ExportOption label="Raw telemetry" detail="Arrow IPC · all captured channels" disabled={exporting} onClick={() => void exportTelemetry("arrow")} />
                         <ExportOption label="Spreadsheet" detail="CSV · core channels" disabled={exporting} onClick={() => void exportTelemetry("csv")} />
                       </div>
                     )}
