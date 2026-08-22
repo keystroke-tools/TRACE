@@ -363,31 +363,24 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
     return () => { active = false; };
   }, [comparisonLap, comparisonSessionId, referenceLap, referenceSessionId]);
 
-  const finalDelta = comparison?.samples.slice().reverse().find((sample) => sample.deltaSeconds != null)?.deltaSeconds;
   const samples = comparison ? filterSamplesBySector(comparison.samples, sector) : [];
 
   return (
     <>
-      <PageIntro index="03" eyebrow="LAP COMPARISON" title="SEE WHAT MADE ONE LAP FASTER" description="Pick any two clean laps from the same track—even from different sessions. Every comparison channel shares one distance cursor." />
+      <h1 className="sr-only">Lap comparison</h1>
       {eligibleSessions.length === 0 ? (
-        <div className="mt-7 border border-trace-divider bg-trace-surface p-10 text-center">
+        <div className="border border-trace-divider bg-trace-surface p-10 text-center">
           <strong className="block text-base">A clean lap is required</strong>
           <p className="mx-auto mt-2 max-w-lg text-[13px] leading-6 text-trace-muted">Record or import at least one complete valid lap. A second lap may come from the same session or another visit to the same track.</p>
         </div>
       ) : (
         <>
-          {state === "loading" && <div className="mt-7 border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
-          {state === "idle" && <div className="mt-7 border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose two clean laps below</strong><p className="mt-2 text-[13px] text-trace-muted">The comparison lap can come from this run or any other compatible session.</p></div>}
-          {state === "error" && <div className="mt-7 border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Comparison unavailable.</strong> {error}</div>}
+          {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
+          {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose two clean laps below</strong><p className="mt-2 text-[13px] text-trace-muted">The comparison lap can come from this run or any other compatible session.</p></div>}
+          {state === "error" && <div className="border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Comparison unavailable.</strong> {error}</div>}
           {comparison && state === "ready" && (
-            <div className="mt-4">
-              <div className="grid grid-cols-4 border border-trace-divider bg-trace-surface">
-                <Metric label="REFERENCE" value={comparison.referenceLapTime} accent />
-                <Metric label="COMPARISON" value={comparison.comparisonLapTime} purple />
-                <Metric label="DIFFERENCE" value={finalDelta == null ? "—" : `${Math.abs(finalDelta).toFixed(3)} S`} purple={finalDelta != null && finalDelta > 0} accent={finalDelta != null && finalDelta <= 0} />
-                <Metric label="QUICK ANSWER" value={comparisonOutcome(finalDelta)} />
-              </div>
-              <div className="mt-3 pb-56">
+            <div>
+              <div className="pb-56">
                 <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
                   <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} focusSelection={sector != null} /></div>
                   <div className="grid gap-3">
@@ -507,6 +500,7 @@ type ComparisonHudProps = {
 
 function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
+  const finalDelta = comparison?.samples.slice().reverse().find((candidate) => candidate.deltaSeconds != null)?.deltaSeconds;
   const referenceSession = sessions.find((session) => session.id === referenceSessionId);
   const comparisonSession = compatibleSessions.find((session) => session.id === comparisonSessionId);
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
@@ -524,8 +518,10 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <HudSteering value={sample?.referenceSteeringPercent} colour="var(--color-trace-accent)" />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
       <HudConditions air={sample?.referenceAirTemperatureC ?? numericCondition(referenceSession?.ambientTemperatureC)} track={sample?.referenceTrackTemperatureC ?? numericCondition(referenceSession?.roadTemperatureC)} />
-      <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
-      <HudValue label="DELTA" value={sample?.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)} colour={channelColours.delta} />
+      <div className="col-span-2 h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
+        <span className="block truncate text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">{comparisonOutcome(finalDelta)}</span>
+        <strong className="mt-1 block truncate text-[13px] leading-5 tabular-nums text-trace-purple">{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${sample.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)}`}</strong>
+      </div>
       <HudConditions air={sample?.comparisonAirTemperatureC ?? numericCondition(comparisonSession?.ambientTemperatureC)} track={sample?.comparisonTrackTemperatureC ?? numericCondition(comparisonSession?.roadTemperatureC)} />
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
       <HudSteering value={sample?.comparisonSteeringPercent} colour={channelColours.delta} />
