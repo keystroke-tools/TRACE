@@ -44,6 +44,11 @@ filtering, and native-channel presentation derive from those descriptors rather 
 assuming Assetto Corsa. The current registry contains one adapter; adding another
 does not require a simulator-specific session browser.
 
+Action feedback uses a shared bottom-right toast provider instead of inserting
+messages into page layout. Toasts provide success, error, and informational variants,
+accessible live announcements, bounded stacking, animated entry/exit, manual
+dismissal, and a caller-selected timeout (including persistent notifications).
+
 The Sessions route now defines the first typed session/lap summary presentation.
 Browser development displays one replay fixture, while the native command returns an
 empty archive until SQLite recording persistence is connected. The UI therefore does

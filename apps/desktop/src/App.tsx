@@ -7,6 +7,7 @@ import {
 } from "./data-source";
 import { TitleBar } from "./TitleBar";
 import { Tooltip } from "./Tooltip";
+import { useToast } from "./Toast";
 
 const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS"] as const;
 type Section = (typeof navigation)[number];
@@ -164,16 +165,15 @@ function Live({ status, onOpenSessions, onSelectSimulator }: { status: Telemetry
 }
 
 function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null; onSelect: (simulatorId: string) => Promise<void> }) {
-  const [message, setMessage] = useState<string | null>(null);
+  const showToast = useToast();
   const simulators = status?.simulators ?? [];
   const selectable = simulators.filter((simulator) => simulator.available);
 
   async function changeSimulator(simulatorId: string) {
-    setMessage(null);
     try {
       await onSelect(simulatorId);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      showToast({ kind: "error", title: "Simulator not changed", message: error instanceof Error ? error.message : String(error), timeoutMs: 7_000 });
     }
   }
 
@@ -192,7 +192,7 @@ function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null;
         </select>
       </label>
       <span className="px-4 text-[11px] text-trace-dim">
-        {message ?? `${selectable.length} capture adapter${selectable.length === 1 ? "" : "s"} installed`}
+        {selectable.length} capture adapter{selectable.length === 1 ? "" : "s"} installed
       </span>
     </div>
   );
@@ -270,11 +270,11 @@ function AvailabilityNote({ children }: { children: ReactNode }) {
 }
 
 function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessionSummary[]; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void }) {
+  const showToast = useToast();
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [simulatorFilter, setSimulatorFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
-  const [archiveMessage, setArchiveMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const visibleSessions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return sessions
@@ -297,33 +297,27 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
   const simulators = useMemo(() => Array.from(new Map(sessions.map((session) => [session.simulatorId, session.simulatorName])).entries()), [sessions]);
 
   async function deleteRecordedSession(session: RecordedSessionSummary) {
-    setArchiveMessage(null);
     try {
       const result = await telemetryDataSource.deleteSession(session.id);
       onDeleted(result.sessionId);
-      setArchiveMessage({
-        kind: result.cleanupWarning ? "error" : "success",
-        text: result.cleanupWarning ?? `${session.track} was deleted from your session library.`,
-      });
+      showToast(result.cleanupWarning
+        ? { kind: "error", title: "Deleted with cleanup warning", message: result.cleanupWarning, timeoutMs: 9_000 }
+        : { kind: "success", title: "Recording deleted", message: `${session.track} was deleted from your session library.`, timeoutMs: 4_500 });
       return true;
     } catch (error) {
-      setArchiveMessage({
-        kind: "error",
-        text: error instanceof Error ? error.message : String(error),
-      });
+      showToast({ kind: "error", title: "Could not delete recording", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
       return false;
     }
   }
 
   async function updateRecordedSession(session: RecordedSessionSummary, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]) {
-    setArchiveMessage(null);
     try {
       await telemetryDataSource.updateSessionDetails(session.id, title, driver, ownership, tags);
       onUpdated({ ...session, title, driver, ownership, tags });
-      setArchiveMessage({ kind: "success", text: "Session attribution and details were saved." });
+      showToast({ kind: "success", title: "Session updated", message: "Name, driver attribution, ownership, and tags were saved.", timeoutMs: 3_500 });
       return true;
     } catch (error) {
-      setArchiveMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
+      showToast({ kind: "error", title: "Could not update session", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
       return false;
     }
   }
@@ -341,14 +335,7 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
         </span>
       </div>
 
-      {archiveMessage && (
-        <div className={`mt-5 flex items-center justify-between border px-4 py-3 text-[12px] ${archiveMessage.kind === "success" ? "border-trace-accent-muted bg-trace-accent-wash text-trace-soft" : "border-trace-warning bg-trace-deep text-trace-soft"}`} role="status">
-          <span>{archiveMessage.text}</span>
-          <button type="button" onClick={() => setArchiveMessage(null)} className="ml-4 border-0 bg-transparent text-trace-muted hover:text-trace-text" aria-label="Dismiss message">×</button>
-        </div>
-      )}
-
-      <div className={`${archiveMessage ? "mt-3" : "mt-6"} flex flex-wrap border border-trace-divider bg-trace-surface`}>
+      <div className="mt-6 flex flex-wrap border border-trace-divider bg-trace-surface">
         <label className="flex min-w-[280px] flex-1 items-center gap-3 border-r border-trace-divider px-4 focus-within:bg-trace-raised">
           <svg className="size-3.5 shrink-0 stroke-trace-dim" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="7" cy="7" r="4.5" />
@@ -410,6 +397,7 @@ function Sessions({ sessions, onDeleted, onUpdated }: { sessions: RecordedSessio
 }
 
 function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionSummary; onDelete: (session: RecordedSessionSummary) => Promise<boolean>; onUpdate: (session: RecordedSessionSummary, title: string | null, driver: string | null, ownership: RecordedSessionSummary["ownership"], tags: string[]) => Promise<boolean> }) {
+  const showToast = useToast();
   const [expanded, setExpanded] = useState(false);
   const [showAllLaps, setShowAllLaps] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -420,7 +408,6 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
   const [draftDriver, setDraftDriver] = useState(session.driver ?? "");
   const [draftOwnership, setDraftOwnership] = useState<RecordedSessionSummary["ownership"]>(session.ownership);
   const [draftTags, setDraftTags] = useState(session.tags.join(", "));
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);
@@ -465,14 +452,13 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
 
   async function exportTelemetry(exportFormat: SessionExportFormat) {
     setExporting(true);
-    setExportMessage(null);
     try {
       const result = await telemetryDataSource.exportSession(session.id, exportFormat);
-      setExportMessage(`${result.format} · ${result.sampleCount.toLocaleString()} samples · ${result.path}`);
+      showToast({ kind: "success", title: `${result.format} exported`, message: `${result.sampleCount.toLocaleString()} samples saved to ${result.path}`, timeoutMs: 7_000 });
       setExportMenuOpen(false);
       setActionsOpen(false);
     } catch (error) {
-      setExportMessage(`EXPORT FAILED · ${error instanceof Error ? error.message : String(error)}`);
+      showToast({ kind: "error", title: "Export failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
     } finally {
       setExporting(false);
     }
@@ -604,11 +590,6 @@ function SessionRow({ session, onDelete, onUpdate }: { session: RecordedSessionS
           </Tooltip>
         </div>
       </div>
-      {exportMessage && (
-        <p className="border-t border-trace-divider bg-trace-deep px-5 py-2 break-all font-mono text-[9px] leading-4 text-trace-faint" role="status">
-          {exportMessage}
-        </p>
-      )}
       {expanded && (
         <div className="border-t border-trace-divider bg-trace-deep px-5 py-4">
           <div className="mb-3 flex items-center justify-between text-[11px] text-trace-dim">
