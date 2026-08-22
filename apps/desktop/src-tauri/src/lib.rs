@@ -48,6 +48,7 @@ struct RecordedSessionSummary {
     session_type: String,
     started_at: String,
     source: String,
+    exportable: bool,
     laps: Vec<RecordedLapSummary>,
 }
 
@@ -87,6 +88,7 @@ fn recent_sessions(app: tauri::AppHandle) -> Result<Vec<RecordedSessionSummary>,
                     .to_uppercase(),
                 started_at: session.started_at,
                 source: session.source_kind.replace('_', " ").to_uppercase(),
+                exportable: session.exportable,
                 laps: session
                     .laps
                     .into_iter()

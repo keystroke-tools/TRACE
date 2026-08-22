@@ -237,7 +237,10 @@ lap metadata.
 A bounded recent-session query returns display-safe session and lap summaries. The
 native Tauri command opens `trace.sqlite` in the platform application-data directory
 and maps those summaries into the typed Sessions UI. Lap durations are formatted from
-integer nanoseconds; the command does not read or fabricate telemetry samples.
+integer nanoseconds; the command does not read or fabricate telemetry samples. The
+archive presents compact searchable, source-filtered, and sortable session rows. Lap
+details expand on demand into a bounded scroller so long races do not dominate the
+archive, while export formats remain behind a per-session action popover.
 
 Completed sessions can be exported from the Sessions UI into the user's Downloads
 directory. Arrow IPC export preserves the immutable full-fidelity recording. CSV

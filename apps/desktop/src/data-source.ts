@@ -35,6 +35,7 @@ export interface RecordedSessionSummary {
   sessionType: string;
   startedAt: string;
   source: string;
+  exportable: boolean;
   laps: RecordedLapSummary[];
 }
 
@@ -77,6 +78,7 @@ export const fixtureDataSource: TelemetryDataSource = {
         sessionType: "REPLAY FIXTURE",
         startedAt: "21 AUG / 14:32",
         source: "TRACE REPLAY",
+        exportable: true,
         laps: [
           { index: 1, time: "1:52.418", validity: "valid" },
           { index: 2, time: "1:50.906", validity: "valid" },

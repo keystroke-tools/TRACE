@@ -67,6 +67,7 @@ pub struct SessionSummary {
     pub session_type: Option<String>,
     pub started_at: String,
     pub source_kind: String,
+    pub exportable: bool,
     pub laps: Vec<LapSummary>,
 }
 
@@ -309,7 +310,8 @@ impl MetadataStore {
             .connection
             .prepare(
                 "SELECT s.id, t.display_name, c.display_name, s.session_type,
-                        s.started_at, s.source_kind
+                        s.started_at, s.source_kind,
+                        EXISTS(SELECT 1 FROM telemetry_blobs b WHERE b.session_id = s.id)
                  FROM sessions s
                  LEFT JOIN tracks t ON t.id = s.track_id
                  LEFT JOIN cars c ON c.id = s.car_id
@@ -330,6 +332,7 @@ impl MetadataStore {
                         session_type: row.get(3)?,
                         started_at: row.get(4)?,
                         source_kind: row.get(5)?,
+                        exportable: row.get(6)?,
                         laps: Vec::new(),
                     })
                 },
@@ -665,6 +668,7 @@ mod tests {
         let summaries = store.recent_sessions(10).expect("session summaries");
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].track.as_deref(), Some("Mugello"));
+        assert!(summaries[0].exportable);
         assert_eq!(summaries[0].laps.len(), 2);
         assert_eq!(summaries[0].laps[0].duration_ns, Some(110_906_000_000));
         assert!(summaries[0].laps[0].is_personal_best);
@@ -726,10 +730,8 @@ mod tests {
             }],
         );
         assert!(matches!(error, Err(MetadataError::InvalidRecord(_))));
-        assert!(
-            store.recent_sessions(10).expect("sessions")[0]
-                .laps
-                .is_empty()
-        );
+        let sessions = store.recent_sessions(10).expect("sessions");
+        assert!(sessions[0].laps.is_empty());
+        assert!(!sessions[0].exportable);
     }
 }

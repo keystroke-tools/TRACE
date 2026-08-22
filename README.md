@@ -62,7 +62,7 @@ Currently implemented:
 - Per-session full-fidelity Arrow and streaming core-channel CSV exports
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
-- Typed session-browser route with replay-fixture and empty native data states
+- Compact searchable/filterable session archive with expandable lap details
 - Transactional SQLite session/lap writes and bounded native session-browser queries
 
 The complete product direction and current technical proposal are documented in:
