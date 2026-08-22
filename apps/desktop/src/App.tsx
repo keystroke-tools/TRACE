@@ -265,14 +265,17 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
               <span>GEAR <strong className="text-trace-text">{formatGear(cursor?.referenceGear)}</strong></span>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-[minmax(520px,1.2fr)_minmax(480px,.8fr)] gap-3 pb-28">
-            <TrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} />
-            <div className="grid gap-2">
-              <ComparisonChart compact label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh", channelColours.speed)} />
-              <ComparisonChart compact label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent", channelColours.throttle)} />
-              <ComparisonChart compact label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent", channelColours.brake)} />
-              <ComparisonChart compact label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear", channelColours.gear)} />
-              <ComparisonChart compact label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceRpm", channelColours.rpm)} />
+          <div className="mt-3 pb-32">
+            <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
+              <TrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} height={556} />
+              <div className="grid gap-3">
+                <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh", channelColours.speed)} />
+                <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear", channelColours.gear)} />
+              </div>
+            </div>
+            <div className="mt-3 grid gap-3">
+              <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent", channelColours.throttle)} />
+              <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent", channelColours.brake)} />
             </div>
           </div>
           <TelemetryHud session={session} lapIndex={lapIndex} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
@@ -475,11 +478,11 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
 function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { session: RecordedSessionSummary; lapIndex: number; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(240px,1fr)_120px_100px_110px_150px_150px_90px_90px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(210px,1fr)_105px_135px_100px_140px_140px_80px_80px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="min-w-0"><span className="block truncate text-[13px] font-black">{session.track} · {session.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {lapIndex} · {friendlySessionType(session)}</span></div>
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
-      <HudValue label="SPEED" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)}`} unit="KM/H" colour={channelColours.speed} />
-      <HudValue label="GEAR" value={formatGear(sample?.referenceGear)} colour={channelColours.gear} />
+      <HudValue label="SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
+      <HudValue label="RPM" value={sample?.referenceRpm == null ? "—" : String(Math.round(sample.referenceRpm))} colour={channelColours.rpm} />
       <HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
       <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
       <HudValue label="AIR" value={formatTemperature(sample?.referenceAirTemperatureC)} />
@@ -581,7 +584,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const offsetX = (width - (maxX - minX) * scale) / 2;
   const offsetZ = (height - (maxZ - minZ) * scale) / 2;
   const project = (x: number, z: number) => trackMap
-    ? [(x + trackMap.xOffset) * trackMap.scaleFactor, (trackMap.zOffset - z) * trackMap.scaleFactor] as const
+    ? [x * trackMap.scaleFactor + trackMap.xOffset, z * trackMap.scaleFactor + trackMap.zOffset] as const
     : [offsetX + (x - minX) * scale, height - offsetZ - (z - minZ) * scale] as const;
   const path = (xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM") => samples.reduce((result, sample) => {
     const x = sample[xKey]; const z = sample[zKey];
