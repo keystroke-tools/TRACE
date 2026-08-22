@@ -459,8 +459,11 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
 
 function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { session: RecordedSessionSummary; lapIndex: number; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
   const sample = samples[cursorIndex ?? 0] ?? null;
+  const airTemperature = sample?.referenceAirTemperatureC ?? numericCondition(session.ambientTemperatureC);
+  const trackTemperature = sample?.referenceTrackTemperatureC ?? numericCondition(session.roadTemperatureC);
+  const showConditions = hasHudConditions(airTemperature, trackTemperature);
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px] grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] ${showConditions ? "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
       </div>
@@ -471,7 +474,7 @@ function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { ses
       <HudSteering value={sample?.referenceSteeringPercent} colour={channelColours.steering} />
       <HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
       <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
-      <HudConditions air={sample?.referenceAirTemperatureC ?? numericCondition(session.ambientTemperatureC)} track={sample?.referenceTrackTemperatureC ?? numericCondition(session.roadTemperatureC)} />
+      {showConditions && <HudConditions air={airTemperature} track={trackTemperature} />}
     </div>
   );
 }
@@ -503,9 +506,16 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   const finalDelta = comparison?.samples.slice().reverse().find((candidate) => candidate.deltaSeconds != null)?.deltaSeconds;
   const referenceSession = sessions.find((session) => session.id === referenceSessionId);
   const comparisonSession = compatibleSessions.find((session) => session.id === comparisonSessionId);
+  const referenceAirTemperature = sample?.referenceAirTemperatureC ?? numericCondition(referenceSession?.ambientTemperatureC);
+  const referenceTrackTemperature = sample?.referenceTrackTemperatureC ?? numericCondition(referenceSession?.roadTemperatureC);
+  const comparisonAirTemperature = sample?.comparisonAirTemperatureC ?? numericCondition(comparisonSession?.ambientTemperatureC);
+  const comparisonTrackTemperature = sample?.comparisonTrackTemperatureC ?? numericCondition(comparisonSession?.roadTemperatureC);
+  const referenceHasConditions = hasHudConditions(referenceAirTemperature, referenceTrackTemperature);
+  const comparisonHasConditions = hasHudConditions(comparisonAirTemperature, comparisonTrackTemperature);
+  const showConditions = referenceHasConditions || comparisonHasConditions;
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px] grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px]" : "grid-cols-[120px_72px_minmax(160px,1fr)_82px_82px_minmax(160px,1fr)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
       </div>
@@ -517,12 +527,12 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
       <HudSteering value={sample?.referenceSteeringPercent} colour="var(--color-trace-accent)" />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
-      <HudConditions air={sample?.referenceAirTemperatureC ?? numericCondition(referenceSession?.ambientTemperatureC)} track={sample?.referenceTrackTemperatureC ?? numericCondition(referenceSession?.roadTemperatureC)} />
+      {showConditions && (referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
       <div className="col-span-2 h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
         <span className="block truncate text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">{comparisonOutcome(finalDelta)}</span>
         <strong className="mt-1 block truncate text-[13px] leading-5 tabular-nums text-trace-purple">{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${sample.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)}`}</strong>
       </div>
-      <HudConditions air={sample?.comparisonAirTemperatureC ?? numericCondition(comparisonSession?.ambientTemperatureC)} track={sample?.comparisonTrackTemperatureC ?? numericCondition(comparisonSession?.roadTemperatureC)} />
+      {showConditions && (comparisonHasConditions ? <HudConditions air={comparisonAirTemperature} track={comparisonTrackTemperature} /> : <div aria-hidden="true" />)}
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
       <HudSteering value={sample?.comparisonSteeringPercent} colour={channelColours.delta} />
       <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
@@ -616,7 +626,11 @@ function HudSteering({ value, colour }: { value?: number | null; colour: string 
 }
 
 function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
-  return <div className="h-10 min-w-0 overflow-hidden font-mono"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">CONDITIONS</span><span className="mt-1 flex items-center gap-2 whitespace-nowrap text-[10px] leading-4 tabular-nums"><span className="text-trace-dim">AIR <strong className="text-trace-text">{formatHudTemperature(air)}</strong></span><span className="text-trace-dim">TRACK <strong className="text-trace-text">{formatHudTemperature(track)}</strong></span></span></div>;
+  return <div className="h-10 min-w-0 overflow-hidden font-mono"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">CONDITIONS</span><span className="mt-1 flex items-center gap-2 whitespace-nowrap text-[10px] leading-4 tabular-nums">{air != null && <span className="text-trace-dim">AIR <strong className="text-trace-text">{formatHudTemperature(air)}</strong></span>}{track != null && <span className="text-trace-dim">TRACK <strong className="text-trace-text">{formatHudTemperature(track)}</strong></span>}</span></div>;
+}
+
+function hasHudConditions(air?: number | null, track?: number | null) {
+  return (air != null && Number.isFinite(air)) || (track != null && Number.isFinite(track));
 }
 
 function HudProgress({ label, value, colour }: { label: string; value?: number | null; colour: string }) {
