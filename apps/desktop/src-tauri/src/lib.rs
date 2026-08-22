@@ -1034,7 +1034,13 @@ fn export_session(
         "csv" => ("CSV", "csv"),
         _ => return Err("unsupported export format".into()),
     };
-    let stem = format!("trace-{}", safe_export_stem(&session_id));
+    let session = store
+        .recent_sessions(10_000)
+        .map_err(|error| format!("failed to read session metadata: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "session metadata no longer exists".to_owned())?;
+    let stem = session_export_stem(&session);
     let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
     let export_result = if export_format == "trace" {
         let manifest = trace_package_manifest(&store, &session_id, locator.sample_count)?;
@@ -1297,21 +1303,56 @@ fn update_session_details(
         .map_err(|error| format!("failed to update session details: {error:?}"))
 }
 
-fn safe_export_stem(value: &str) -> String {
+fn safe_export_component(value: &str) -> String {
+    let mut previous_was_separator = false;
     let sanitized: String = value
+        .trim()
         .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
-                character
+        .filter_map(|character| {
+            if character.is_ascii_alphanumeric() {
+                previous_was_separator = false;
+                Some(character)
+            } else if previous_was_separator {
+                None
             } else {
-                '-'
+                previous_was_separator = true;
+                Some('-')
             }
         })
+        .take(48)
         .collect();
-    if sanitized.is_empty() {
-        "session".into()
+    sanitized.trim_matches('-').to_owned()
+}
+
+fn session_export_stem(session: &SessionSummary) -> String {
+    let date = session.started_at.get(..10).filter(|value| {
+        value.len() == 10
+            && value.as_bytes()[4] == b'-'
+            && value.as_bytes()[7] == b'-'
+            && value
+                .bytes()
+                .enumerate()
+                .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+    });
+    let values = [
+        Some("trace"),
+        date,
+        session.user_title.as_deref(),
+        session.user_driver.as_deref(),
+        session.track.as_deref(),
+        session.car.as_deref(),
+    ];
+    let stem = values
+        .into_iter()
+        .flatten()
+        .map(safe_export_component)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if stem == "trace" {
+        format!("trace-{}", safe_export_component(&session.id))
     } else {
-        sanitized
+        stem
     }
 }
 
@@ -1704,9 +1745,13 @@ mod tests {
     }
 
     #[test]
-    fn export_stems_cannot_escape_the_download_directory() {
-        assert_eq!(safe_export_stem("session-123"), "session-123");
-        assert_eq!(safe_export_stem("../session\\bad"), "---session-bad");
+    fn export_filename_components_are_safe_and_readable() {
+        assert_eq!(safe_export_component("session-123"), "session-123");
+        assert_eq!(safe_export_component("../session\\bad"), "session-bad");
+        assert_eq!(
+            safe_export_component("  Mazda MX-5 Cup  "),
+            "Mazda-MX-5-Cup"
+        );
     }
 
     #[test]
