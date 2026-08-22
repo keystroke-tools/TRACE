@@ -134,6 +134,10 @@ struct LapComparisonSample {
     reference_position_z_m: Option<f64>,
     comparison_position_x_m: Option<f64>,
     comparison_position_z_m: Option<f64>,
+    reference_air_temperature_c: Option<f64>,
+    reference_track_temperature_c: Option<f64>,
+    comparison_air_temperature_c: Option<f64>,
+    comparison_track_temperature_c: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -161,6 +165,8 @@ struct LapTraceSample {
     gear: Option<i16>,
     position_x_m: Option<f64>,
     position_z_m: Option<f64>,
+    air_temperature_c: Option<f64>,
+    track_temperature_c: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -505,6 +511,14 @@ fn compare_session_laps(
         interpolate_channel(comparison_channels.position_x.as_ref(), &grid, 1.0)?;
     let comparison_position_z =
         interpolate_channel(comparison_channels.position_z.as_ref(), &grid, 1.0)?;
+    let reference_air_temperature =
+        interpolate_channel(reference_channels.air_temperature.as_ref(), &grid, 1.0)?;
+    let reference_track_temperature =
+        interpolate_channel(reference_channels.track_temperature.as_ref(), &grid, 1.0)?;
+    let comparison_air_temperature =
+        interpolate_channel(comparison_channels.air_temperature.as_ref(), &grid, 1.0)?;
+    let comparison_track_temperature =
+        interpolate_channel(comparison_channels.track_temperature.as_ref(), &grid, 1.0)?;
 
     let samples = grid
         .into_iter()
@@ -529,6 +543,10 @@ fn compare_session_laps(
             reference_position_z_m: reference_position_z[index],
             comparison_position_x_m: comparison_position_x[index],
             comparison_position_z_m: comparison_position_z[index],
+            reference_air_temperature_c: reference_air_temperature[index],
+            reference_track_temperature_c: reference_track_temperature[index],
+            comparison_air_temperature_c: comparison_air_temperature[index],
+            comparison_track_temperature_c: comparison_track_temperature[index],
         })
         .collect();
 
@@ -596,6 +614,8 @@ fn visualize_session_lap(
     let gear = interpolate_discrete(channels.gear.as_ref(), &grid)?;
     let position_x = interpolate_channel(channels.position_x.as_ref(), &grid, 1.0)?;
     let position_z = interpolate_channel(channels.position_z.as_ref(), &grid, 1.0)?;
+    let air_temperature = interpolate_channel(channels.air_temperature.as_ref(), &grid, 1.0)?;
+    let track_temperature = interpolate_channel(channels.track_temperature.as_ref(), &grid, 1.0)?;
     let samples = grid
         .into_iter()
         .enumerate()
@@ -610,6 +630,8 @@ fn visualize_session_lap(
             gear: gear[index].map(|value| value.round() as i16),
             position_x_m: position_x[index],
             position_z_m: position_z[index],
+            air_temperature_c: air_temperature[index],
+            track_temperature_c: track_temperature[index],
         })
         .collect();
     Ok(LapTrace {
@@ -677,6 +699,8 @@ struct AlignedLapChannels {
     gear: Option<DistanceSeries>,
     position_x: Option<DistanceSeries>,
     position_z: Option<DistanceSeries>,
+    air_temperature: Option<DistanceSeries>,
+    track_temperature: Option<DistanceSeries>,
 }
 
 impl AlignedLapChannels {
@@ -741,6 +765,16 @@ impl AlignedLapChannels {
             position_z: numeric_series(
                 &columns.lap_position,
                 columns.position_z_m.iter().copied(),
+                lap_length_m,
+            ),
+            air_temperature: continuous_series(
+                &columns.lap_position,
+                &columns.ambient_temperature_c,
+                lap_length_m,
+            ),
+            track_temperature: continuous_series(
+                &columns.lap_position,
+                &columns.track_temperature_c,
                 lap_length_m,
             ),
         })

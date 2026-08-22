@@ -53,6 +53,8 @@ pub struct TelemetryColumns {
     pub lap_position: Vec<Option<f32>>,
     pub lap_time_ns: Vec<Option<u64>>,
     pub steering_angle_rad: Vec<Option<f32>>,
+    pub ambient_temperature_c: Vec<Option<f32>>,
+    pub track_temperature_c: Vec<Option<f32>>,
     pub position_x_m: Vec<Option<f64>>,
     pub position_z_m: Vec<Option<f64>>,
     pub gear_kind: Vec<Option<i8>>,
@@ -97,6 +99,22 @@ impl TelemetryColumns {
             steering_angle_rad: frames
                 .iter()
                 .map(|frame| frame.inputs.steering_angle_rad)
+                .collect(),
+            ambient_temperature_c: frames
+                .iter()
+                .map(|frame| {
+                    frame
+                        .environment
+                        .and_then(|value| value.ambient_temperature_c)
+                })
+                .collect(),
+            track_temperature_c: frames
+                .iter()
+                .map(|frame| {
+                    frame
+                        .environment
+                        .and_then(|value| value.track_temperature_c)
+                })
                 .collect(),
             position_x_m: frames
                 .iter()
@@ -150,6 +168,8 @@ impl TelemetryColumns {
             lap_position: Vec::new(),
             lap_time_ns: Vec::new(),
             steering_angle_rad: Vec::new(),
+            ambient_temperature_c: Vec::new(),
+            track_temperature_c: Vec::new(),
             position_x_m: Vec::new(),
             position_z_m: Vec::new(),
             gear_kind: Vec::new(),
@@ -855,6 +875,18 @@ fn extend_projection(
     );
     decoded.steering_angle_rad.extend(
         optional_f32(batch, "steering_angle_rad")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.ambient_temperature_c.extend(
+        optional_f32(batch, "ambient_temperature_c")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.track_temperature_c.extend(
+        optional_f32(batch, "track_temperature_c")?
             .into_iter()
             .skip(start)
             .take(length),
