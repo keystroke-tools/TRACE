@@ -315,10 +315,10 @@ simulator, track, car, and layout. The faster benchmark is labelled **Reference*
 lap being reviewed is labelled **Analysed Lap**. Each lap has an independent session selector, so a
 driver can compare separate visits, imported drivers, or two laps from one run. The
 compact selectors live in the persistent comparison HUD rather than consuming the
-analysis canvas. A faster-reference picker lists only clean, exactly compatible laps
-that beat the Analysed Lap. Imported laps rank before locally captured or replay laps,
-then candidates sort by lap time; choosing one replaces the Reference without changing
-the Analysed Lap. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
+analysis canvas. A collapsed attachment above the Analysed Lap side of the HUD lists
+only clean, exactly compatible laps that beat it. Imported laps rank before locally
+captured or replay laps, then candidates sort by lap time; choosing one replaces the
+Reference without changing the Analysed Lap. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
 presenting noisy precision that does not help the driver. Throttle and brake use
 separate side-by-side meters with independent percentages in both halves of the HUD.
 Reference and the Analysed Lap also have independent steering indicators and air/track

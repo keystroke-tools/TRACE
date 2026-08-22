@@ -681,6 +681,7 @@ type ComparisonHudProps = {
 };
 
 function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, onReferenceSuggestion, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const sample = samples[cursorIndex ?? 0] ?? null;
   const finalDelta = comparison?.samples.slice().reverse().find((candidate) => candidate.deltaSeconds != null)?.deltaSeconds;
   const comparisonIsFaster = finalDelta != null && finalDelta < -0.0005;
@@ -696,19 +697,18 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
   const referenceSuggestions = fasterReferenceSuggestions(sessions, comparisonSession, comparisonLaps.find((lap) => lap.index === comparisonLap) ?? null, comparisonSessionId, comparisonLap);
   const gapTone = sample?.deltaSeconds == null || Math.abs(sample.deltaSeconds) < 0.0005 ? "text-trace-text" : sample.deltaSeconds > 0 ? "text-[#ff5263]" : "text-[#42db76]";
+  useEffect(() => setSuggestionsOpen(false), [comparisonLap, comparisonSessionId]);
   return (
-    <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px]" : "grid-cols-[120px_72px_minmax(160px,1fr)_82px_82px_minmax(160px,1fr)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
+    <>
+      <SuggestedReferencesAttachment suggestions={referenceSuggestions} open={suggestionsOpen} currentSessionId={referenceSessionId} currentLapIndex={referenceLap} onOpen={setSuggestionsOpen} onSelect={(suggestion) => { onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); setSuggestionsOpen(false); }} />
+      <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px]" : "grid-cols-[120px_72px_minmax(160px,1fr)_82px_82px_minmax(160px,1fr)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
       </div>
-      <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
+      <div className="col-span-full grid grid-cols-[1fr_52px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER BASELINE"} colour={comparisonIsFaster ? "text-trace-accent" : "text-trace-purple"} sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
-        <div className="flex min-w-0 items-center justify-center gap-2">
+        <div className="flex min-w-0 items-center justify-center">
           <button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap Reference and Analysed Lap"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button>
-          <select value="" disabled={referenceSuggestions.length === 0} onChange={(event) => { const suggestion = referenceSuggestions[Number(event.target.value)]; if (suggestion) onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); }} className="trace-select h-9 min-w-0 flex-1 border border-trace-divider bg-trace-deep pl-2 font-mono text-[9px] font-bold text-trace-soft outline-none disabled:text-trace-dim" aria-label="Choose a faster Reference for the Analysed Lap">
-            <option value="">{referenceSuggestions.length === 0 ? "NO FASTER LAP" : "FASTER REFERENCES"}</option>
-            {referenceSuggestions.map((suggestion, index) => <option value={index} key={`${suggestion.session.id}-${suggestion.lap.index}`}>{referenceSuggestionLabel(suggestion)}</option>)}
-          </select>
         </div>
         <HudLapChoice label="ANALYSED LAP" role={comparisonIsFaster ? "FASTER SELECTED LAP" : "LAP TO IMPROVE"} colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"} sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
@@ -727,7 +727,8 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
         <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} />
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -735,6 +736,7 @@ type ReferenceSuggestion = {
   session: RecordedSessionSummary;
   lap: RecordedSessionSummary["laps"][number];
   imported: boolean;
+  gainSeconds: number;
 };
 
 function fasterReferenceSuggestions(sessions: RecordedSessionSummary[], targetSession: RecordedSessionSummary | undefined, targetLap: RecordedSessionSummary["laps"][number] | null, targetSessionId: string, targetLapIndex: number | null) {
@@ -744,14 +746,32 @@ function fasterReferenceSuggestions(sessions: RecordedSessionSummary[], targetSe
     .filter((session) => session.simulatorId === targetSession.simulatorId && session.track === targetSession.track && session.car === targetSession.car)
     .flatMap((session) => validComparisonLaps(session)
       .filter((lap) => lapDuration(lap) < targetDuration && (session.id !== targetSessionId || lap.index !== targetLapIndex))
-      .map((lap): ReferenceSuggestion => ({ session, lap, imported: sessionSourceGroup(session) === "imported" })))
+      .map((lap): ReferenceSuggestion => ({ session, lap, imported: sessionSourceGroup(session) === "imported", gainSeconds: (targetDuration - lapDuration(lap)) / 1_000_000_000 })))
     .sort((left, right) => Number(right.imported) - Number(left.imported) || lapDuration(left.lap) - lapDuration(right.lap))
     .slice(0, 10);
 }
 
-function referenceSuggestionLabel(suggestion: ReferenceSuggestion) {
-  const identity = suggestion.session.driver ?? suggestion.session.title ?? formatSessionDate(suggestion.session.startedAt);
-  return `${suggestion.imported ? "IMPORTED · " : ""}${identity} · LAP ${suggestion.lap.index} · ${suggestion.lap.time}`;
+function SuggestedReferencesAttachment({ suggestions, open, currentSessionId, currentLapIndex, onOpen, onSelect }: { suggestions: ReferenceSuggestion[]; open: boolean; currentSessionId: string; currentLapIndex: number | null; onOpen: (open: boolean) => void; onSelect: (suggestion: ReferenceSuggestion) => void }) {
+  return (
+    <aside className="fixed bottom-[239px] right-6 z-[31] w-[620px] max-w-[calc(100vw-248px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur" aria-label="Suggested faster references">
+      <button type="button" onClick={() => onOpen(!open)} className="flex h-10 w-full items-center justify-between gap-3 px-4 text-left hover:bg-trace-deep" aria-expanded={open}>
+        <span className="flex min-w-0 items-center gap-2 font-mono"><strong className="truncate text-[10px] tracking-[.1em] text-trace-soft">SUGGESTED REFERENCES</strong><span className={`shrink-0 border px-1.5 py-0.5 text-[9px] font-black ${suggestions.length > 0 ? "border-trace-purple/50 text-trace-purple" : "border-trace-divider text-trace-dim"}`}>{suggestions.length}</span></span>
+        <span className="flex shrink-0 items-center gap-2 font-mono text-[9px] font-bold text-trace-dim"><span>{suggestions.length > 0 ? "FASTER CLEAN LAPS" : "NONE AVAILABLE"}</span><svg className={`size-3 fill-none stroke-current transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg></span>
+      </button>
+      {open && <div className="max-h-72 overflow-y-auto border-t border-trace-divider">
+        <p className="border-b border-trace-divider px-4 py-2 text-[11px] leading-4 text-trace-dim">Clean laps that are faster than the Analysed Lap. Imported references are listed first.</p>
+        {suggestions.length === 0 ? <p className="px-4 py-4 text-[12px] text-trace-muted">No faster lap with the same simulator, car, track, and layout has been recorded or imported.</p> : suggestions.map((suggestion) => {
+          const identity = suggestion.session.driver ?? suggestion.session.title ?? formatSessionDate(suggestion.session.startedAt);
+          const current = suggestion.session.id === currentSessionId && suggestion.lap.index === currentLapIndex;
+          return <button type="button" onClick={() => onSelect(suggestion)} className={`grid w-full grid-cols-[minmax(0,1fr)_100px_82px] items-center gap-4 border-b border-trace-divider px-4 py-3 text-left last:border-b-0 ${current ? "bg-trace-purple-wash" : "hover:bg-trace-deep"}`} aria-current={current ? "true" : undefined} key={`${suggestion.session.id}-${suggestion.lap.index}`}>
+            <span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{identity}</strong><span className="mt-1 flex items-center gap-2 font-mono text-[9px] font-bold tracking-[.07em] text-trace-dim">{suggestion.imported && <span className="text-trace-purple">IMPORTED</span>}<span>{suggestion.session.sessionType}</span>{current && <span className="text-trace-accent">CURRENT</span>}</span></span>
+            <span className="font-mono text-right"><strong className="block text-[12px] text-trace-soft">{suggestion.lap.time}</strong><span className="mt-1 block text-[9px] text-trace-dim">LAP {suggestion.lap.index}</span></span>
+            <strong className="font-mono text-right text-[12px] tabular-nums text-trace-purple">−{suggestion.gainSeconds.toFixed(3)}s</strong>
+          </button>;
+        })}
+      </div>}
+    </aside>
+  );
 }
 
 type SectorDelta = { index: number; seconds: number | null };
