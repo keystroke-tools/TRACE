@@ -20,7 +20,7 @@ use trace_storage::{
 mod ac_content;
 mod capture;
 
-use ac_content::{AcContentNames, AcTrackMap};
+use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
 
 #[derive(Serialize)]
@@ -109,7 +109,7 @@ struct LapComparison {
     comparison_session_title: Option<String>,
     comparison_track: String,
     comparison_car: String,
-    track_map: Option<AcTrackMap>,
+    track_map: Option<AcTrackGeometry>,
     reference_lap_index: u32,
     reference_lap_time: String,
     comparison_lap_index: u32,
@@ -155,7 +155,7 @@ struct LapTrace {
     track: String,
     car: String,
     lap_length_m: f64,
-    track_map: Option<AcTrackMap>,
+    track_map: Option<AcTrackGeometry>,
     samples: Vec<LapTraceSample>,
 }
 
@@ -707,7 +707,7 @@ fn track_map_for_session(
     store: &MetadataStore,
     session: &SessionSummary,
     recorded_layout: Option<&str>,
-) -> Result<Option<AcTrackMap>, String> {
+) -> Result<Option<AcTrackGeometry>, String> {
     if session.simulator_key != "assetto-corsa" {
         return Ok(None);
     }
@@ -719,7 +719,7 @@ fn track_map_for_session(
         .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
         .map(PathBuf::from);
     Ok(
-        AcContentNames::discover(configured_path.as_deref()).track_map(
+        AcContentNames::discover(configured_path.as_deref()).track_geometry(
             source_track_id,
             recorded_layout.or(session.layout_id.as_deref()),
         ),

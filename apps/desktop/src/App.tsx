@@ -568,14 +568,16 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const displayHeight = requestedHeight ?? (comparison ? 720 : 600);
-  const width = trackMap?.width ?? 620;
-  const height = trackMap?.height ?? displayHeight;
-  const padding = 28;
-  const points = samples.flatMap((sample) => [
+  const width = 1_000;
+  const height = 700;
+  const padding = 42;
+  const drivenPoints = samples.flatMap((sample) => [
     sample.referencePositionXM != null && sample.referencePositionZM != null ? [sample.referencePositionXM, sample.referencePositionZM] as const : null,
     comparison && sample.comparisonPositionXM != null && sample.comparisonPositionZM != null ? [sample.comparisonPositionXM, sample.comparisonPositionZM] as const : null,
   ].filter((point): point is readonly [number, number] => point != null && point.every(Number.isFinite)));
-  if (points.length < 2) return <div className="grid min-h-[340px] place-items-center border border-trace-divider bg-trace-surface p-8 text-center text-[12px] leading-5 text-trace-dim">TRACK POSITION WAS NOT RECORDED<br />FOR THIS LAP</div>;
+  if (drivenPoints.length < 2) return <div className="grid min-h-[340px] place-items-center border border-trace-divider bg-trace-surface p-8 text-center text-[12px] leading-5 text-trace-dim">TRACK POSITION WAS NOT RECORDED<br />FOR THIS LAP</div>;
+  const geometryPoints = trackMap ? [...trackMap.leftBoundary, ...trackMap.rightBoundary].map((point) => [point.xM, point.zM] as const) : [];
+  const points = geometryPoints.length > 3 ? geometryPoints : drivenPoints;
   const xs = points.map(([x]) => x);
   const zs = points.map(([, z]) => z);
   const minX = Math.min(...xs); const maxX = Math.max(...xs);
@@ -583,15 +585,21 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const scale = Math.min((width - padding * 2) / Math.max(maxX - minX, 1), (height - padding * 2) / Math.max(maxZ - minZ, 1));
   const offsetX = (width - (maxX - minX) * scale) / 2;
   const offsetZ = (height - (maxZ - minZ) * scale) / 2;
-  const project = (x: number, z: number) => trackMap
-    ? [x * trackMap.scaleFactor + trackMap.xOffset, z * trackMap.scaleFactor + trackMap.zOffset] as const
-    : [offsetX + (x - minX) * scale, height - offsetZ - (z - minZ) * scale] as const;
+  const project = (x: number, z: number) => [offsetX + (x - minX) * scale, height - offsetZ - (z - minZ) * scale] as const;
   const path = (xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM") => samples.reduce((result, sample) => {
     const x = sample[xKey]; const z = sample[zKey];
     if (x == null || z == null || !Number.isFinite(x) || !Number.isFinite(z)) return result;
     const [px, py] = project(x, z);
     return `${result}${result ? "L" : "M"}${px.toFixed(2)},${py.toFixed(2)}`;
   }, "");
+  const geometryPath = (geometry: TrackMapAsset["centreLine"], close = false) => {
+    const result = geometry.reduce((value, point) => {
+      const [px, py] = project(point.xM, point.zM);
+      return `${value}${value ? "L" : "M"}${px.toFixed(2)},${py.toFixed(2)}`;
+    }, "");
+    return close && result ? `${result}Z` : result;
+  };
+  const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
   const referenceCursor = cursor?.referencePositionXM != null && cursor.referencePositionZM != null ? project(cursor.referencePositionXM, cursor.referencePositionZM) : null;
   const comparisonCursor = cursor?.comparisonPositionXM != null && cursor.comparisonPositionZM != null ? project(cursor.comparisonPositionXM, cursor.comparisonPositionZM) : null;
@@ -602,12 +610,15 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const comparisonColour = faster === "comparison" ? channelColours.delta : "var(--color-trace-accent)";
   return (
     <div className="border border-trace-divider bg-trace-surface">
-      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">DRIVEN LINE</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{trackMap ? "INSTALLED CIRCUIT MAP" : "ROAD EDGES UNAVAILABLE"}</span></div><div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button></div></div>
+      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span></div><div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button></div></div>
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(1, value * (event.deltaY < 0 ? 1.15 : 0.87)))); }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
-          {trackMap && <image href={trackMap.dataUrl} x="0" y="0" width={trackMap.width} height={trackMap.height} opacity="0.58" />}
-          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3" vectorEffect="non-scaling-stroke" />
-          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+          {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
+          {trackMap && <path d={geometryPath(trackMap.leftBoundary)} fill="none" stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
+          {trackMap && <path d={geometryPath(trackMap.rightBoundary)} fill="none" stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
+          {trackMap && <path d={geometryPath(trackMap.centreLine)} fill="none" stroke="var(--color-trace-divider)" strokeWidth="1" strokeDasharray="5 8" vectorEffect="non-scaling-stroke" />}
+          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3.5" strokeDasharray="1 8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3.5" strokeDasharray="1 8" strokeDashoffset="4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
           {startPoint && <g transform={`translate(${startPoint[0]} ${startPoint[1]})`}><line x1="-7" y1="-7" x2="7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><line x1="7" y1="-7" x2="-7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></g>}
           {referenceCursor && <path d={`M${referenceCursor[0]},${referenceCursor[1] - 8} l6,14 h-12 z`} fill={referenceColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
           {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="5" fill={comparisonColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}

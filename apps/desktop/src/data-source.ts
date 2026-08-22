@@ -123,12 +123,14 @@ export interface LapTraceSample {
 }
 
 export interface TrackMapAsset {
-  dataUrl: string;
-  width: number;
-  height: number;
-  scaleFactor: number;
-  xOffset: number;
-  zOffset: number;
+  centreLine: TrackMapPoint[];
+  leftBoundary: TrackMapPoint[];
+  rightBoundary: TrackMapPoint[];
+}
+
+export interface TrackMapPoint {
+  xM: number;
+  zM: number;
 }
 
 export interface LapTrace {

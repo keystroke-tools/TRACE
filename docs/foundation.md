@@ -290,14 +290,16 @@ guess sector boundaries when sector telemetry is absent. Invalid and incomplete 
 remain viewable because their telemetry can still diagnose a mistake.
 
 The map supports zooming and panning and marks the start and current cursor position.
-For Assetto Corsa, TRACE loads the installed circuit `map.png` and its `data/map.ini`
-coordinate transform when both are present, then overlays recorded world positions on
-the game's road outline. The recorder stores AC's track configuration for new sessions;
-for older sessions whose metadata predates that field, the visualizer recovers the
-configuration from the immutable native telemetry before resolving layout-specific
-maps. Missing, oversized, malformed, or unsafe asset paths fall
-back to the driven line and are labelled as lacking road edges; TRACE does not invent
-track limits.
+For Assetto Corsa, TRACE reads the selected layout's version-7 `ai/fast_lane.ai`
+spline and constructs a road ribbon from its world-space centre points and left/right
+AI boundary distances. Recorded world positions therefore share the same coordinate
+space and need no image transform. The old `map.png`/`map.ini` overlay is deliberately
+not used: official and mod tracks provide visually inconsistent rasters whose transforms
+do not always agree with captured positions. The recorder stores AC's track configuration
+for new sessions; older sessions recover it from immutable native telemetry. Missing,
+oversized, malformed, ambiguous, or unsupported spline data falls back to the dotted
+driven path and is labelled as lacking road edges. AI boundaries provide spatial
+context, not authoritative legal track limits or barrier geometry.
 
 Comparison uses the same projection for two complete valid laps from the same
 simulator, track, and layout. Each lap has an independent session selector, so a
