@@ -310,10 +310,10 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
       onDeleted(result.sessionId);
       showToast(result.cleanupWarning
         ? { kind: "error", title: "Deleted with cleanup warning", message: result.cleanupWarning, timeoutMs: 9_000 }
-        : { kind: "success", title: "Recording deleted", message: `${session.track} was deleted from your session library.`, timeoutMs: 4_500 });
+        : { kind: "success", title: "Session deleted", message: `${session.track} was removed from your session library.`, timeoutMs: 4_500 });
       return true;
     } catch (error) {
-      showToast({ kind: "error", title: "Could not delete recording", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+      showToast({ kind: "error", title: "Could not delete session", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
       return false;
     }
   }
@@ -335,8 +335,8 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
       <div className="flex items-end justify-between gap-6">
         <div>
           <SectionHeading index="02">SESSION LIBRARY</SectionHeading>
-          <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">YOUR RECORDED SESSIONS</h1>
-          <p className="mt-2 text-[13px] text-trace-muted">Find a drive or replay, review its laps, export the telemetry, or remove recordings you no longer need.</p>
+          <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">SESSIONS</h1>
+          <p className="mt-2 text-[13px] text-trace-muted">Browse drives and replays, then open one to review every lap and its telemetry.</p>
         </div>
         <span className="font-mono text-[11px] text-trace-faint">
           {visibleSessions.length} shown · {sessions.length} total
@@ -366,7 +366,7 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated }: { sessions: Record
         >
           <option value="all">All sources</option>
           <option value="replay">Replays</option>
-          <option value="native">Recorded drives</option>
+          <option value="native">Drives</option>
           <option value="imported">Imports</option>
         </select>
         {simulators.length > 1 && (
@@ -519,7 +519,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
             <strong className="mt-1 block text-[12px] text-trace-soft">{session.laps.length}</strong>
           </div>
           <div className="font-mono max-[1050px]:hidden">
-            <span className="block text-[9px] tracking-[.08em] text-trace-dim">BEST RECORDED</span>
+            <span className="block text-[9px] tracking-[.08em] text-trace-dim">FASTEST LAP</span>
             <strong className="mt-1 block text-[12px] text-trace-soft">{bestLap?.time ?? "—"}</strong>
           </div>
         </button>
@@ -562,13 +562,13 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
                     </button>
                     {exportMenuOpen && session.exportable && (
                       <div className="ml-2 border-l border-trace-divider bg-trace-deep pl-1">
-                        <ExportOption label="Full recording" detail="Arrow IPC · all captured channels" disabled={exporting} onClick={() => void exportTelemetry("arrow")} />
+                        <ExportOption label="Full session" detail="Arrow IPC · all captured channels" disabled={exporting} onClick={() => void exportTelemetry("arrow")} />
                         <ExportOption label="Spreadsheet" detail="CSV · core channels" disabled={exporting} onClick={() => void exportTelemetry("csv")} />
                       </div>
                     )}
                     {!session.exportable && <p className="px-2 py-2 text-[10px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>}
                     <div className="my-1 border-t border-trace-divider" />
-                    <button type="button" disabled={!session.deletable} onClick={() => { setExportMenuOpen(false); setConfirmingDelete(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent">{session.deletable ? "Delete recording…" : "Recording in progress"}</button>
+                    <button type="button" disabled={!session.deletable} onClick={() => { setExportMenuOpen(false); setConfirmingDelete(true); }} className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent">{session.deletable ? "Delete session…" : "Session in progress"}</button>
                   </>
                 )}
               </div>
@@ -663,7 +663,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
           <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRES USED</span><span className="text-right">RESULT</span>
         </div>
         {session.laps.length === 0 ? (
-          <div className="p-8 text-center text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
+          <div className="p-8 text-center text-[12px] text-trace-dim">No complete laps are available.</div>
         ) : session.laps.map((lap) => {
           const lapMetrics = metricsByLap.get(lap.index);
           const invalid = lapIsInvalid(lap);
@@ -809,7 +809,7 @@ function ExportOption({ label, detail, disabled, onClick }: { label: string; det
 function DeleteConfirmation({ session, deleting, onCancel, onConfirm }: { session: RecordedSessionSummary; deleting: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
     <div className="p-2">
-      <strong className="block text-[13px] text-trace-text">Delete this recording?</strong>
+      <strong className="block text-[13px] text-trace-text">Delete this session?</strong>
       <p className="mt-2 text-[11px] leading-5 text-trace-faint">
         {session.track} and its saved telemetry will be permanently removed. This cannot be undone.
       </p>
@@ -833,7 +833,7 @@ function SessionDetailsEditor({ title, driver, ownership, tags, saving, onTitleC
       </label>
       <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
         DRIVER / AUTHOR
-        <input maxLength={80} value={driver} onChange={(event) => onDriverChange(event.target.value)} placeholder="Who drove this recording?" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
+        <input maxLength={80} value={driver} onChange={(event) => onDriverChange(event.target.value)} placeholder="Who drove this session?" className="mt-1.5 h-10 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-purple" />
       </label>
       <label className="mt-3 block text-[10px] font-bold tracking-[.08em] text-trace-dim">
         OWNERSHIP
@@ -892,7 +892,7 @@ function sessionSourceLabel(session: RecordedSessionSummary) {
   const source = sessionSourceGroup(session);
   if (source === "replay") return "Replay capture";
   if (source === "imported") return "Imported telemetry";
-  return "Recorded drive";
+  return "Drive";
 }
 
 function friendlySessionType(session: RecordedSessionSummary) {
