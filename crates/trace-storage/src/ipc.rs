@@ -58,6 +58,7 @@ pub struct TelemetryColumns {
 pub struct LapTelemetryMetrics {
     pub fuel_start_litres: Option<f32>,
     pub fuel_end_litres: Option<f32>,
+    pub fuel_capacity_litres: Option<f32>,
     pub max_speed_mps: Option<f32>,
     pub tyre_wear_start: [Option<f32>; 4],
     pub tyre_wear_end: [Option<f32>; 4],
@@ -724,6 +725,12 @@ fn observe_lap_metrics(
             metrics.max_speed_mps = Some(metrics.max_speed_mps.map_or(value, |max| max.max(value)));
         }
         if let Some(native) = native {
+            if let Some(value) = native_float_value(native, row, "static.max_fuel_litres")
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .map(narrow_native_float)
+            {
+                metrics.fuel_capacity_litres.get_or_insert(value);
+            }
             for corner in 0..4 {
                 let key = format!("physics.tyre_wear.{corner}");
                 if let Some(value) = native_float_value(native, row, &key)
@@ -1417,6 +1424,7 @@ mod tests {
                                     f64::from(100.0 - value),
                                 )
                             })
+                            .chain([("static.max_fuel_litres".into(), 30.0)])
                             .collect(),
                         ..NativeTelemetrySample::default()
                     })),
@@ -1429,6 +1437,7 @@ mod tests {
         let metrics = read_lap_metrics(Cursor::new(bytes), 1, 3).expect("metrics");
         assert_eq!(metrics.fuel_start_litres, Some(9.0));
         assert_eq!(metrics.fuel_end_litres, Some(7.0));
+        assert_eq!(metrics.fuel_capacity_litres, Some(30.0));
         assert_eq!(metrics.max_speed_mps, Some(3.0));
         assert_eq!(metrics.tyre_wear_start, [Some(99.0); 4]);
         assert_eq!(metrics.tyre_wear_end, [Some(97.0); 4]);

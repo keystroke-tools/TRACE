@@ -747,7 +747,7 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
           </div>
           <span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
         </div>
-        <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
+        <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_132px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
           <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRE WEAR</span><span className="text-right">RESULT</span>
         </div>
         {session.laps.length === 0 ? (
@@ -758,13 +758,13 @@ function SessionDetail({ session }: { session: RecordedSessionSummary }) {
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
+              className={`grid min-h-[90px] grid-cols-[64px_86px_minmax(180px,1fr)_132px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
               key={lap.index}
             >
               <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
               <strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
               {hasSectorTiming ? <SectorBars lap={lap} laps={session.laps} sectorCount={sectorCount} /> : <span className="text-[12px] text-trace-dim">UNAVAILABLE</span>}
-              <LapMetricValue state={metricsState} value={formatFuelUsed(lapMetrics)} detail={fuelDetail(lapMetrics)} />
+              <FuelUsage state={metricsState} metrics={lapMetrics} />
               <LapMetricValue state={metricsState} value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null} />
               <TyreWearGrid state={metricsState} metrics={lapMetrics} />
               <LapValidity lap={lap} />
@@ -796,6 +796,30 @@ function fuelDetail(metrics?: RecordedLapMetrics) {
   return metrics?.fuelStartLitres != null && metrics.fuelEndLitres != null
     ? `${metrics.fuelStartLitres.toFixed(2)} L → ${metrics.fuelEndLitres.toFixed(2)} L`
     : null;
+}
+
+function FuelUsage({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
+  const used = formatFuelUsed(metrics);
+  const capacity = metrics?.fuelCapacityLitres;
+  const remaining = metrics?.fuelEndLitres;
+  if (state === "loading") return <span className="text-[12px] text-trace-dim">LOADING…</span>;
+  if (capacity == null || remaining == null || !Number.isFinite(capacity) || !Number.isFinite(remaining) || capacity <= 0) {
+    return <LapMetricValue state={state} value={used} detail={fuelDetail(metrics)} />;
+  }
+  const percentage = Math.min(100, Math.max(0, remaining / capacity * 100));
+  const fill = percentage <= 10 ? "bg-trace-danger" : percentage <= 25 ? "bg-trace-warning" : "bg-trace-accent";
+  const detail = `${remaining.toFixed(2)} L of ${capacity.toFixed(2)} L remaining${used ? ` · ${used} consumed this lap` : ""}`;
+  return (
+    <Tooltip className="flex min-w-0 flex-col" content={detail}>
+      <span className="flex w-full items-center justify-between gap-2 text-[12px]">
+        <span className="truncate text-trace-soft">{used ? `${used} USED` : "—"}</span>
+        <span className="shrink-0 text-trace-faint">{Math.round(percentage)}%</span>
+      </span>
+      <span className="mt-2 block h-1.5 w-full bg-trace-divider" aria-hidden="true">
+        <span className={`block h-full ${fill}`} style={{ width: `${percentage}%` }} />
+      </span>
+    </Tooltip>
+  );
 }
 
 function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {

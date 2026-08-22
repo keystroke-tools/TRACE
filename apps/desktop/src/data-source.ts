@@ -56,6 +56,7 @@ export interface RecordedLapMetrics {
   fuelStartLitres?: number | null;
   fuelEndLitres?: number | null;
   fuelUsedLitres?: number | null;
+  fuelCapacityLitres?: number | null;
   maxSpeedKmh?: number | null;
   tyreWearStart: Array<number | null>;
   tyreWearEnd: Array<number | null>;
@@ -209,8 +210,8 @@ export const fixtureDataSource: TelemetryDataSource = {
   },
   async getSessionLapMetrics(_sessionId) {
     return [
-      { lapIndex: 1, fuelStartLitres: 22, fuelEndLitres: 21.2, fuelUsedLitres: 0.8, maxSpeedKmh: 226.4, tyreWearStart: [100, 100, 100, 100], tyreWearEnd: [99.6, 99.6, 99.8, 99.8], tyreWearMinimum: [99.6, 99.6, 99.8, 99.8] },
-      { lapIndex: 2, fuelStartLitres: 21.2, fuelEndLitres: 20.4, fuelUsedLitres: 0.8, maxSpeedKmh: 231.1, tyreWearStart: [99.6, 99.6, 99.8, 99.8], tyreWearEnd: [99.2, 99.2, 99.6, 99.6], tyreWearMinimum: [99.2, 99.2, 99.6, 99.6] },
+      { lapIndex: 1, fuelStartLitres: 22, fuelEndLitres: 21.2, fuelUsedLitres: 0.8, fuelCapacityLitres: 30, maxSpeedKmh: 226.4, tyreWearStart: [100, 100, 100, 100], tyreWearEnd: [99.6, 99.6, 99.8, 99.8], tyreWearMinimum: [99.6, 99.6, 99.8, 99.8] },
+      { lapIndex: 2, fuelStartLitres: 21.2, fuelEndLitres: 20.4, fuelUsedLitres: 0.8, fuelCapacityLitres: 30, maxSpeedKmh: 231.1, tyreWearStart: [99.6, 99.6, 99.8, 99.8], tyreWearEnd: [99.2, 99.2, 99.6, 99.6], tyreWearMinimum: [99.2, 99.2, 99.6, 99.6] },
     ];
   },
   async getGameInstallDirectories() {
