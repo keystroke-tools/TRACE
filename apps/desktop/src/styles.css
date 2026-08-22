@@ -115,7 +115,6 @@
     appearance: none;
     border: 2px solid var(--color-trace-black);
     background: var(--color-trace-accent);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--color-trace-accent) 55%, transparent);
   }
 
   .trace-seek:focus-visible {
