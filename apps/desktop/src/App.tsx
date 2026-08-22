@@ -221,6 +221,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
   const [error, setError] = useState<string | null>(null);
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [sector, setSector] = useState<number | null>(null);
+  const mapPip = useTrackMapPip(trace != null);
 
   useEffect(() => {
     let active = true;
@@ -267,7 +268,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
           </div>
           <div className="mt-3 pb-32">
             <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
-              <TrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} height={556} />
+              <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} height={556} /></div>
               <div className="grid gap-3">
                 <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceSpeedKmh", channelColours.speed)} />
                 <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={singleSeries("referenceGear", channelColours.gear)} />
@@ -278,6 +279,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
               <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent", channelColours.brake)} />
             </div>
           </div>
+          {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} />}
           <TelemetryHud session={session} lapIndex={lapIndex} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </div>
       )}
@@ -296,6 +298,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const [error, setError] = useState<string | null>(null);
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [sector, setSector] = useState<number | null>(null);
+  const mapPip = useTrackMapPip(comparison != null && state === "ready");
   const skipReferenceDefaults = useRef(false);
   const skipComparisonDefaults = useRef(false);
   const referenceSession = eligibleSessions.find((candidate) => candidate.id === referenceSessionId) ?? null;
@@ -387,7 +390,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
               </div>
               <div className="mt-3 pb-48">
                 <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
-                  <TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} />
+                  <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} /></div>
                   <div className="grid gap-3">
                     <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed)} />
                     <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear)} />
@@ -402,6 +405,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "COMPARISON VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                 </div>
               </div>
+              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison trackMap={comparison.trackMap} />}
             </div>
           )}
           <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
@@ -550,6 +554,28 @@ function formatTemperature(value?: number | null) {
   return value == null ? "—" : `${value.toFixed(1)}°C`;
 }
 
+function useTrackMapPip(active: boolean) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const element = anchor.current;
+    if (!active || !element) {
+      setVisible(false);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => setVisible(!entry.isIntersecting), { rootMargin: "-56px 0px 0px", threshold: 0.08 });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [active]);
+
+  return { anchor, visible };
+}
+
+function FloatingTrackMap({ samples, cursorIndex, comparison = false, trackMap }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; trackMap?: TrackMapAsset | null }) {
+  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} height={260} trackMap={trackMap} /></aside>;
+}
+
 function TrackMap({ samples, cursorIndex, comparison = false, height: requestedHeight, trackMap }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; height?: number; trackMap?: TrackMapAsset | null }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -654,8 +680,8 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
   const tooltipTransform = cursorX == null
     ? undefined
     : cursorX < 100
-      ? "translateX(10px)"
-      : "translateX(calc(-100% - 10px))";
+      ? "translateX(5px)"
+      : "translateX(calc(-100% - 5px))";
   const tooltipValues = cursorSample ? series.flatMap((item) => {
     const value = item.value(cursorSample);
     return value == null || !Number.isFinite(value) ? [] : [{ item, value, chartY: y(value) }];

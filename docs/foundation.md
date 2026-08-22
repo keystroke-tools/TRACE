@@ -293,6 +293,9 @@ The map supports zooming and panning and marks the start and current cursor posi
 Above the full-track zoom level it follows the active lap cursor automatically; during
 comparison it centres the midpoint between Reference and Comparison so both targets
 remain visible. Manual panning is retained as an offset from that followed position.
+When the primary map scrolls out of view, the visualizer and comparison workspace show
+a smaller fixed PiP map in the upper-right corner. It consumes the same filtered samples
+and shared cursor, then disappears automatically when the primary map returns.
 For Assetto Corsa, TRACE reads the selected layout's version-7 `ai/fast_lane.ai`
 spline and constructs a road ribbon from its world-space centre points and left/right
 AI boundary distances. Recorded world positions therefore share the same coordinate
