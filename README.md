@@ -13,8 +13,6 @@ questions:
 Assetto Corsa is the first supported simulator. Other simulators will be added
 through independent adapters without coupling the analysis engine to any one game.
 
-![TRACE desktop application showing the live Assetto Corsa capture screen](docs/assets/trace-desktop.png)
-
 > [!IMPORTANT]
 > TRACE is being developed with substantial assistance from large language models.
 > LLMs are used as software-development tools for research, planning, code generation,
@@ -25,6 +23,20 @@ LLM-assisted development does **not** mean telemetry conclusions are generated b
 LLM. TRACE v0.1 uses deterministic, tested mathematics for normalization, lap delta,
 corner analysis, comparisons, confidence, and evidence. LLM coaching and provider
 integrations are explicitly outside the v0.1 product scope.
+
+## Screenshots
+
+### Lap comparison
+
+![TRACE comparing the saved Zand Ismail one-second lap pair](docs/assets/trace-comparison.png)
+
+### Session overview
+
+![TRACE session overview showing lap times, sectors, fuel, speed, and tyre data](docs/assets/trace-session-overview.png)
+
+### Session library
+
+![TRACE session library with search, filters, ownership, and best laps](docs/assets/trace-sessions.png)
 
 ## Project status
 
