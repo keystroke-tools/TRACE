@@ -579,9 +579,10 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
               type="button"
               aria-label={`View ${session.track} session`}
               onClick={onOpen}
-              className="grid h-full w-12 place-items-center border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+              className="flex h-full w-16 items-center justify-center gap-1.5 border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
             >
-              <svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+              <span className="font-mono text-[9px] font-bold tracking-[.08em]">VIEW</span>
+              <svg className="size-3 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m6 4 4 4-4 4" />
               </svg>
             </button>
@@ -623,7 +624,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
       </button>
       <div className="mt-3 flex items-end justify-between gap-6">
         <div className="min-w-0">
-          <SectionHeading index="02">SESSION DETAIL</SectionHeading>
+          <SectionHeading index="02">SESSION OVERVIEW</SectionHeading>
           <h1 className="mt-3 truncate text-2xl font-black tracking-[-.02em]">{session.title ?? session.track}</h1>
           <p className="mt-2 text-[13px] text-trace-muted">{session.car} · {friendlySessionType(session)} · {formatSessionDate(session.startedAt)}</p>
         </div>
@@ -634,8 +635,8 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
       </div>
 
       <div className="mt-6 grid grid-cols-4 border border-trace-divider bg-trace-surface">
-        <Metric label="LAPS CAPTURED" value={String(session.laps.length)} accent />
-        <Metric label="BEST CLEAN" value={bestLap?.time ?? "—"} />
+        <Metric label="LAPS" value={String(session.laps.length)} accent />
+        <Metric label="FASTEST LAP" value={bestLap?.time ?? "—"} />
         <Metric label="SOURCE" value={sessionSourceLabel(session).toUpperCase()} />
         <Metric label="SIMULATOR" value={session.simulatorName.toUpperCase()} />
       </div>
@@ -646,9 +647,20 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
         </div>
       )}
 
+      {metricsState === "error" && (
+        <div className="mt-4 border border-trace-warning/40 bg-trace-warning/10 px-4 py-3 text-[12px] text-trace-warning">Lap times are available, but the additional fuel, speed, and tyre summaries could not be loaded.</div>
+      )}
+
       <div className="mt-4 border border-trace-divider bg-trace-surface">
+        <div className="flex items-center justify-between border-b border-trace-divider px-4 py-3">
+          <div>
+            <h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
+            <p className="mt-1 text-[11px] text-trace-dim">Red rows are incomplete or contain track-limit evidence. Everything else stays visually neutral.</p>
+          </div>
+          <span className="font-mono text-[10px] text-trace-faint">{session.laps.length} TOTAL</span>
+        </div>
         <div className="grid grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider bg-trace-deep px-4 py-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim">
-          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL USED</span><span>MAX SPEED</span><span>TYRE WEAR</span><span className="text-right">STATUS</span>
+          <span>LAP</span><span>TIME</span><span>SECTORS</span><span>FUEL</span><span>TOP SPEED</span><span>TYRES USED</span><span className="text-right">RESULT</span>
         </div>
         {session.laps.length === 0 ? (
           <div className="p-8 text-center text-[12px] text-trace-dim">No completed lap boundaries were recorded.</div>
@@ -658,7 +670,7 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
           const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
           return (
             <div
-              className={`grid min-h-[74px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-trace-divider px-4 font-mono text-[10px] last:border-b-0 ${invalid ? "border-l-2 border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-2 border-l-trace-purple bg-trace-purple-wash" : "hover:bg-trace-raised/50"}`}
+              className={`grid min-h-[74px] grid-cols-[64px_86px_minmax(180px,1fr)_88px_100px_112px_96px] items-center gap-3 border-b border-l-2 border-b-trace-divider px-4 font-mono text-[10px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple" : "border-l-transparent"}`}
               key={lap.index}
             >
               <span className={invalid ? "text-red-300" : fastest ? "text-trace-purple" : "text-trace-faint"}>{String(lap.index).padStart(2, "0")}</span>
@@ -676,9 +688,8 @@ function SessionDetail({ session, onBack }: { session: RecordedSessionSummary; o
         <SectorLegend colour="bg-trace-purple" label="Session best" />
         <SectorLegend colour="bg-trace-accent" label="Improved" />
         <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
-        <SectorLegend colour="bg-trace-danger" label="Invalid / track limit" />
       </div>
-      <p className="mt-3 text-[11px] leading-5 text-trace-dim">Fuel, speed, and tyre wear are derived on demand from each lap's recorded sample range. Tyre wear is the average of the four AC wheel values; hover it for the per-corner readings.</p>
+      <p className="mt-3 text-[11px] leading-5 text-trace-dim">Fuel, speed, and tyre use come directly from each lap's recorded telemetry. Hover fuel or tyre values for more detail.</p>
     </>
   );
 }
@@ -856,22 +867,18 @@ function EmptySessions({ title, children }: { title: string; children: ReactNode
 }
 
 function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
+  if (!lapIsInvalid(lap)) return <span aria-label="No invalidity detected" />;
   const partial = lap.validityReason?.includes("partial") ?? false;
-  const hasTrackLimitWarning = lap.maxTyresOut != null && lap.maxTyresOut >= 3;
-  const label = partial
-    ? "PARTIAL"
-    : hasTrackLimitWarning
-    ? "TRACK LIMIT"
-    : lap.validity === "unknown"
-      ? "RECORDED"
-      : lap.validity.toUpperCase();
-  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${hasTrackLimitWarning || lap.validity === "invalid" ? "text-red-300" : lap.validity === "valid" ? "text-trace-accent" : "text-trace-soft"}`;
-  const detail = !partial && lap.maxTyresOut != null && lap.maxTyresOut > 0 && lap.maxTyresOut < 3
-    ? `Up to ${lap.maxTyresOut} ${lap.maxTyresOut === 1 ? "tyre was" : "tyres were"} outside; at least two remained within the track, so TRACE does not show a track-limit warning.`
-    : lap.validityReason;
-  return detail
-    ? <Tooltip className={className} content={detail}>{label}</Tooltip>
-    : <span className={className}>{label}</span>;
+  const detail = partial
+    ? "TRACE joined after this lap began, so it is incomplete and excluded from comparisons."
+    : lap.maxTyresOut != null && lap.maxTyresOut >= 3
+      ? "Three or more tyres were observed outside the track; this lap is excluded from comparisons."
+      : lap.validityReason ?? "The simulator marked this lap invalid.";
+  return (
+    <Tooltip className="justify-self-end border border-trace-danger/50 bg-trace-danger/20 px-2 py-1 text-[8px] font-bold tracking-[.08em] text-red-200" content={detail}>
+      INVALID
+    </Tooltip>
+  );
 }
 
 function sessionSourceGroup(session: RecordedSessionSummary) {
