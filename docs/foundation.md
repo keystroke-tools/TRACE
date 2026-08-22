@@ -289,6 +289,19 @@ simulator-reported sector controls filter both charts and the path; TRACE does n
 guess sector boundaries when sector telemetry is absent. Invalid and incomplete laps
 remain viewable because their telemetry can still diagnose a mistake.
 
+The `+`/`−` controls on any telemetry graph zoom a shared distance window, so every
+graph, the seek range, HUD, and track map continue to describe the same samples. Zoom
+is anchored at the shared cursor, or the visible midpoint when there is no cursor, and
+can be reset from the active-range control. Ordinary wheel scrolling over a graph still
+scrolls the page. Track-map scrolling and `+`/`−` controls use the shared window while
+**Zoom linked** is enabled.
+Switching the map to **Map only** preserves the graph window and makes map zoom spatial
+and independent; the map reset control affects only that spatial pan/zoom state.
+
+TRACE's Analysis panel is a deterministic, rule-based telemetry comparison rather than
+AI coaching. Its suggestions are heuristic and may be incorrect; drivers should verify
+them against the graphs and track map before treating them as actionable advice.
+
 The map supports zooming and panning and marks the start and current cursor position.
 Comparison driving lines remain distance-aligned, but the two car markers are placed
 at the same aligned elapsed time. Their separation therefore represents the real gap
