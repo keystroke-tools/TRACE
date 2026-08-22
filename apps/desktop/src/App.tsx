@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   telemetryDataSource,
+  type CornerAnalysis,
   type GameInstallDirectory,
   type LapComparison,
   type LapComparisonSample,
@@ -300,6 +301,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const [error, setError] = useState<string | null>(null);
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [sector, setSector] = useState<number | null>(null);
+  const [cornerIndex, setCornerIndex] = useState<number | null>(null);
   const mapPip = useTrackMapPip(comparison != null && state === "ready");
   const skipReferenceDefaults = useRef(false);
   const skipComparisonDefaults = useRef(false);
@@ -352,6 +354,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
       if (!active) return;
       setComparison(value);
       setSector(null);
+      setCornerIndex(null);
       setCursorIndex(null);
       setState("ready");
     }).catch((reason) => {
@@ -363,7 +366,13 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
     return () => { active = false; };
   }, [comparisonLap, comparisonSessionId, referenceLap, referenceSessionId]);
 
-  const samples = comparison ? filterSamplesBySector(comparison.samples, sector) : [];
+  const corners = comparison?.cornerAnalysis.value?.corners ?? [];
+  const selectedCorner = corners.find((corner) => corner.index === cornerIndex) ?? null;
+  const samples = comparison
+    ? selectedCorner
+      ? filterSamplesByDistance(comparison.samples, selectedCorner.startDistanceM, selectedCorner.endDistanceM)
+      : filterSamplesBySector(comparison.samples, sector)
+    : [];
 
   return (
     <>
@@ -382,12 +391,13 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
             <div>
               <div className="pb-56">
                 <div className="grid grid-cols-[minmax(560px,1.2fr)_minmax(460px,.8fr)] gap-3">
-                  <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} focusSelection={sector != null} /></div>
+                  <div ref={mapPip.anchor}><TrackMap samples={samples} cursorIndex={cursorIndex} comparison height={512} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} /></div>
                   <div className="grid gap-3">
                     <ComparisonChart label="SPEED" unit="km/h" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed)} />
                     <ComparisonChart label="GEAR" unit="" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[-1, 8]} series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear)} />
                   </div>
                 </div>
+                <CornerOpportunities corners={corners} selectedCornerIndex={cornerIndex} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setCursorIndex(null); }} />
                 <div className="mt-3 grid gap-3">
                   <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle)} />
                   <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake)} />
@@ -398,10 +408,10 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "COMPARISON VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                 </div>
               </div>
-              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison trackMap={comparison.trackMap} focusSelection={sector != null} onDismiss={mapPip.dismiss} />}
+              {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} onDismiss={mapPip.dismiss} />}
             </div>
           )}
-          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
+          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </>
       )}
     </>
@@ -444,6 +454,65 @@ function singleSeries(key: ComparisonValueKey, colour: string): ComparisonChartS
 
 function filterSamplesBySector(samples: LapComparisonSample[], sector: number | null) {
   return sector == null ? samples : samples.filter((sample) => sample.sectorIndex === sector);
+}
+
+function filterSamplesByDistance(samples: LapComparisonSample[], startDistanceM: number, endDistanceM: number) {
+  return samples.filter((sample) => sample.distanceM >= startDistanceM && sample.distanceM <= endDistanceM);
+}
+
+function CornerOpportunities({ corners, selectedCornerIndex, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; onSelect: (index: number) => void }) {
+  const opportunities = corners
+    .filter((corner) => corner.totalLossSeconds != null && corner.totalLossSeconds > 0.005)
+    .slice()
+    .sort((left, right) => (right.totalLossSeconds ?? 0) - (left.totalLossSeconds ?? 0))
+    .slice(0, 4);
+  return (
+    <section className="mt-3 border border-trace-divider bg-trace-surface" aria-label="Biggest corner opportunities">
+      <div className="flex h-11 items-center justify-between border-b border-trace-divider px-4">
+        <div><strong className="font-mono text-[12px] tracking-[.1em] text-trace-soft">BIGGEST OPPORTUNITIES</strong><span className="ml-3 text-[11px] text-trace-dim">Comparison loss relative to Reference</span></div>
+        {selectedCornerIndex != null && <button type="button" onClick={() => onSelect(selectedCornerIndex)} className="font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent hover:text-trace-text">SHOW FULL LAP</button>}
+      </div>
+      {opportunities.length === 0 ? (
+        <p className="px-4 py-4 text-[12px] text-trace-dim">No reliable corner losses were detected for this comparison.</p>
+      ) : (
+        <div className="grid grid-cols-4 divide-x divide-trace-divider">
+          {opportunities.map((corner) => {
+            const selected = selectedCornerIndex === corner.index;
+            const dominant = dominantCornerPhase(corner);
+            return (
+              <button type="button" onClick={() => onSelect(corner.index)} className={`min-w-0 px-4 py-3 text-left transition-colors ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : "hover:bg-trace-deep"}`} aria-pressed={selected} key={corner.index}>
+                <span className="flex items-baseline justify-between gap-3 font-mono"><strong className="text-[15px] text-trace-text">{corner.label}</strong><strong className="text-[15px] tabular-nums text-[#ff5263]">+{corner.totalLossSeconds?.toFixed(3)}s</strong></span>
+                <span className="mt-2 block truncate text-[10px] font-black tracking-[.08em] text-trace-dim">MOST LOSS · {dominant}</span>
+                <span className="mt-1 block truncate text-[11px] text-trace-muted">{cornerSummary(corner, dominant)}</span>
+                <span className="mt-3 flex h-1.5 gap-px overflow-hidden bg-trace-divider" aria-label={`${corner.label} phase loss distribution`}>
+                  {corner.phases.map((phase) => <span className="h-full flex-1" style={{ backgroundColor: phase.lossSeconds == null ? "var(--color-trace-divider)" : phase.lossSeconds > 0 ? "#ff5263" : "#42db76", opacity: phase.lossSeconds == null ? 0.4 : Math.min(1, 0.35 + Math.abs(phase.lossSeconds) / Math.max(corner.totalLossSeconds ?? 0.001, 0.001)) }} key={phase.phase} />)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function dominantCornerPhase(corner: CornerAnalysis) {
+  return corner.phases
+    .filter((phase) => phase.lossSeconds != null)
+    .reduce((dominant, phase) => (phase.lossSeconds ?? Number.NEGATIVE_INFINITY) > (dominant?.lossSeconds ?? Number.NEGATIVE_INFINITY) ? phase : dominant, null as CornerAnalysis["phases"][number] | null)
+    ?.phase.toUpperCase() ?? "UNAVAILABLE";
+}
+
+function cornerSummary(corner: CornerAnalysis, dominantPhase: string) {
+  const minimumSpeedDifference = corner.metrics.comparisonMinimumSpeedKmh != null && corner.metrics.referenceMinimumSpeedKmh != null
+    ? corner.metrics.comparisonMinimumSpeedKmh - corner.metrics.referenceMinimumSpeedKmh
+    : null;
+  if (minimumSpeedDifference != null && minimumSpeedDifference < -1) return `${Math.round(Math.abs(minimumSpeedDifference))} km/h lower minimum speed`;
+  const throttleDifference = corner.metrics.comparisonThrottlePointM != null && corner.metrics.referenceThrottlePointM != null
+    ? corner.metrics.comparisonThrottlePointM - corner.metrics.referenceThrottlePointM
+    : null;
+  if (throttleDifference != null && throttleDifference > 3) return `Throttle applied ${Math.round(throttleDifference)} m later`;
+  return `Loss develops through ${dominantPhase.toLowerCase()}`;
 }
 
 function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSample[]; value: number | null; onChange: (value: number | null) => void }) {
@@ -671,11 +740,11 @@ function useTrackMapPip(active: boolean) {
   return { anchor, visible: visible && !dismissed, dismiss: () => setDismissed(true) };
 }
 
-function FloatingTrackMap({ samples, cursorIndex, comparison = false, trackMap, focusSelection = false, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; onDismiss: () => void }) {
-  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} height={260} trackMap={trackMap} focusSelection={focusSelection} onDismiss={onDismiss} /></aside>;
+function FloatingTrackMap({ samples, cursorIndex, comparison = false, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss: () => void }) {
+  return <aside className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]" aria-label="Floating synchronized track map"><TrackMap samples={samples} cursorIndex={cursorIndex} comparison={comparison} height={260} trackMap={trackMap} focusSelection={focusSelection} corners={corners} selectedCornerIndex={selectedCornerIndex} onDismiss={onDismiss} /></aside>;
 }
 
-function TrackMap({ samples, cursorIndex, comparison = false, height: requestedHeight, trackMap, focusSelection = false, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; onDismiss?: () => void }) {
+function TrackMap({ samples, cursorIndex, comparison = false, height: requestedHeight, trackMap, focusSelection = false, corners = [], selectedCornerIndex = null, onDismiss }: { samples: LapComparisonSample[]; cursorIndex: number | null; comparison?: boolean; height?: number; trackMap?: TrackMapAsset | null; focusSelection?: boolean; corners?: CornerAnalysis[]; selectedCornerIndex?: number | null; onDismiss?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -728,6 +797,20 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
     }, "");
     return close && result ? `${result}Z` : result;
   };
+  const brakeSegments = (prefix: string, xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM", brakeKey: "referenceBrakePercent" | "comparisonBrakePercent", strokeWidth: number) => samples.slice(1).flatMap((sample, offset) => {
+    const previous = samples[offset];
+    const brake = Math.max(previous[brakeKey] ?? 0, sample[brakeKey] ?? 0);
+    const x1 = previous[xKey]; const z1 = previous[zKey]; const x2 = sample[xKey]; const z2 = sample[zKey];
+    if (brake < 2 || x1 == null || z1 == null || x2 == null || z2 == null || ![x1, z1, x2, z2].every(Number.isFinite)) return [];
+    const start = project(x1, z1); const end = project(x2, z2);
+    return [<line x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]} stroke="#ff334f" strokeWidth={strokeWidth} strokeLinecap="round" opacity={Math.min(1, 0.18 + brake / 100 * 0.82)} vectorEffect="non-scaling-stroke" key={`${prefix}-${offset}`} />];
+  });
+  const visibleCornerLabels = corners.flatMap((corner) => {
+    if (corner.apexDistanceM < (samples[0]?.distanceM ?? 0) || corner.apexDistanceM > (samples.at(-1)?.distanceM ?? 0)) return [];
+    const sample = samples.reduce((closest, candidate) => Math.abs(candidate.distanceM - corner.apexDistanceM) < Math.abs(closest.distanceM - corner.apexDistanceM) ? candidate : closest, samples[0]);
+    if (!sample || sample.referencePositionXM == null || sample.referencePositionZM == null) return [];
+    return [{ corner, point: project(sample.referencePositionXM, sample.referencePositionZM) }];
+  });
   const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
   const cursor = cursorIndex == null ? null : samples[cursorIndex] ?? null;
   const referenceCursor = cursor?.referencePositionXM != null && cursor.referencePositionZM != null ? project(cursor.referencePositionXM, cursor.referencePositionZM) : null;
@@ -746,7 +829,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
     <div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
       {onDismiss
         ? <div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
-        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div>{comparison && <div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted"><span className="flex items-center gap-2"><span className="block w-6 border-t-2" style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className="block w-6 border-t-2 border-dashed" style={{ borderColor: comparisonColour }} />COMPARISON</span></div>}{mapControls}</div>}
+        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className="block w-6 border-t-2" style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className="block w-6 border-t-2 border-dashed" style={{ borderColor: comparisonColour }} />COMPARISON</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6 bg-[#ff334f]" />BRAKE</span></div>{mapControls}</div>}
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
@@ -755,6 +838,9 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
           {trackMap && <path d={geometryPath(trackMap.centreLine)} fill="none" stroke="var(--color-trace-divider)" strokeWidth="1" strokeDasharray="5 8" vectorEffect="non-scaling-stroke" />}
           <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
           {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3" strokeDasharray="9 7" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+          {brakeSegments("reference-brake", "referencePositionXM", "referencePositionZM", "referenceBrakePercent", 6)}
+          {comparison && brakeSegments("comparison-brake", "comparisonPositionXM", "comparisonPositionZM", "comparisonBrakePercent", 3.5)}
+          {visibleCornerLabels.map(({ corner, point }) => <g transform={`translate(${point[0]} ${point[1]})`} pointerEvents="none" key={corner.index}><circle r="12" fill={corner.index === selectedCornerIndex ? "var(--color-trace-accent)" : "var(--color-trace-black)"} stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /><text y="3.5" textAnchor="middle" fill={corner.index === selectedCornerIndex ? "var(--color-trace-black)" : "var(--color-trace-text)"} fontFamily="monospace" fontSize="10" fontWeight="900">{corner.label}</text></g>)}
           {startPoint && <g transform={`translate(${startPoint[0]} ${startPoint[1]})`}><line x1="-7" y1="-7" x2="7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><line x1="7" y1="-7" x2="-7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></g>}
           {referenceCursor && <circle cx={referenceCursor[0]} cy={referenceCursor[1]} r="6" fill={referenceColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
           {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="4.5" fill={comparisonColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}

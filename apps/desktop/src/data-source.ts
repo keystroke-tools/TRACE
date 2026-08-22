@@ -111,6 +111,45 @@ export interface LapComparisonSample {
   comparisonTrackTemperatureC?: number | null;
 }
 
+export type CornerPhase = "entry" | "mid" | "exit";
+
+export interface CornerPhaseAnalysis {
+  phase: CornerPhase;
+  startDistanceM: number;
+  endDistanceM: number;
+  lossSeconds?: number | null;
+}
+
+export interface CornerMetrics {
+  referenceBrakingPointM?: number | null;
+  comparisonBrakingPointM?: number | null;
+  referenceMinimumSpeedKmh?: number | null;
+  comparisonMinimumSpeedKmh?: number | null;
+  referenceThrottlePointM?: number | null;
+  comparisonThrottlePointM?: number | null;
+}
+
+export interface CornerAnalysis {
+  index: number;
+  label: string;
+  startDistanceM: number;
+  apexDistanceM: number;
+  endDistanceM: number;
+  totalLossSeconds?: number | null;
+  phases: CornerPhaseAnalysis[];
+  metrics: CornerMetrics;
+}
+
+export interface CornerComparisonAnalysis {
+  corners: CornerAnalysis[];
+}
+
+export interface StructuredAnalysisResult<T> {
+  availability: unknown;
+  value?: T | null;
+  confidence: number;
+}
+
 export interface LapTraceSample {
   distanceM: number;
   sectorIndex?: number | null;
@@ -163,6 +202,7 @@ export interface LapComparison {
   comparisonLapIndex: number;
   comparisonLapTime: string;
   lapLengthM: number;
+  cornerAnalysis: StructuredAnalysisResult<CornerComparisonAnalysis>;
   samples: LapComparisonSample[];
 }
 
@@ -341,7 +381,17 @@ export const fixtureDataSource: TelemetryDataSource = {
         comparisonTrackTemperatureC: 31.5,
       };
     });
-    return { referenceSessionId, referenceSessionTitle: "Sunday practice", referenceTrack: "MUGELLO", referenceCar: "TATUUS FA01", comparisonSessionId, comparisonSessionTitle: "Evening run", comparisonTrack: "MUGELLO", comparisonCar: "TATUUS FA01", referenceLapIndex, referenceLapTime: "1:50.906", comparisonLapIndex, comparisonLapTime: "1:51.328", lapLengthM: 5_000, samples };
+    const cornerAnalysis: StructuredAnalysisResult<CornerComparisonAnalysis> = {
+      availability: "Available",
+      confidence: 0.82,
+      value: {
+        corners: [
+          { index: 1, label: "T1", startDistanceM: 425, apexDistanceM: 575, endDistanceM: 750, totalLossSeconds: 0.184, phases: [{ phase: "entry", startDistanceM: 425, endDistanceM: 525, lossSeconds: 0.021 }, { phase: "mid", startDistanceM: 525, endDistanceM: 625, lossSeconds: 0.069 }, { phase: "exit", startDistanceM: 625, endDistanceM: 750, lossSeconds: 0.094 }], metrics: { referenceBrakingPointM: 450, comparisonBrakingPointM: 475, referenceMinimumSpeedKmh: 91, comparisonMinimumSpeedKmh: 84, referenceThrottlePointM: 625, comparisonThrottlePointM: 650 } },
+          { index: 2, label: "T2", startDistanceM: 1_675, apexDistanceM: 1_825, endDistanceM: 2_025, totalLossSeconds: 0.112, phases: [{ phase: "entry", startDistanceM: 1_675, endDistanceM: 1_775, lossSeconds: -0.008 }, { phase: "mid", startDistanceM: 1_775, endDistanceM: 1_875, lossSeconds: 0.047 }, { phase: "exit", startDistanceM: 1_875, endDistanceM: 2_025, lossSeconds: 0.073 }], metrics: { referenceBrakingPointM: 1_700, comparisonBrakingPointM: 1_725, referenceMinimumSpeedKmh: 118, comparisonMinimumSpeedKmh: 114, referenceThrottlePointM: 1_875, comparisonThrottlePointM: 1_900 } },
+        ],
+      },
+    };
+    return { referenceSessionId, referenceSessionTitle: "Sunday practice", referenceTrack: "MUGELLO", referenceCar: "TATUUS FA01", comparisonSessionId, comparisonSessionTitle: "Evening run", comparisonTrack: "MUGELLO", comparisonCar: "TATUUS FA01", referenceLapIndex, referenceLapTime: "1:50.906", comparisonLapIndex, comparisonLapTime: "1:51.328", lapLengthM: 5_000, cornerAnalysis, samples };
   },
   async visualizeSessionLap(sessionId, lapIndex) {
     const comparison = await this.compareSessionLaps(sessionId, lapIndex, sessionId, lapIndex + 1);
