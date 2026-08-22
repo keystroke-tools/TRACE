@@ -141,9 +141,11 @@ pub struct SavedComparison {
     pub reference_session_id: String,
     pub reference_lap_index: u32,
     pub reference_duration_ns: u64,
+    pub reference_started_at: String,
     pub analysed_session_id: String,
     pub analysed_lap_index: u32,
     pub analysed_duration_ns: u64,
+    pub analysed_started_at: String,
     pub simulator_key: String,
     pub track: String,
     pub car: String,
@@ -408,7 +410,8 @@ impl MetadataStore {
                 "SELECT sc.id, sc.name,
                         rs.id, rl.lap_index, rl.duration_ns,
                         ass.id, al.lap_index, al.duration_ns,
-                        sim.key, t.display_name, c.display_name, sc.created_at
+                        sim.key, t.display_name, c.display_name,
+                        rs.started_at, ass.started_at, sc.created_at
                  FROM saved_comparisons sc
                  JOIN laps rl ON rl.id = sc.reference_lap_id
                  JOIN sessions rs ON rs.id = rl.session_id
@@ -434,7 +437,9 @@ impl MetadataStore {
                     simulator_key: row.get(8)?,
                     track: row.get(9)?,
                     car: row.get(10)?,
-                    created_at: row.get(11)?,
+                    reference_started_at: row.get(11)?,
+                    analysed_started_at: row.get(12)?,
+                    created_at: row.get(13)?,
                 })
             })
             .map_err(MetadataError::from)?;
@@ -1393,6 +1398,8 @@ mod tests {
         assert_eq!(saved[0].reference_lap_index, 1);
         assert_eq!(saved[0].analysed_lap_index, 2);
         assert_eq!(saved[0].name, "Race setup");
+        assert_eq!(saved[0].reference_started_at, "2026-08-21T14:32:00Z");
+        assert_eq!(saved[0].analysed_started_at, "2026-08-21T14:32:00Z");
 
         store
             .delete_saved_comparison("saved-1")

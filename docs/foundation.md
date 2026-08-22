@@ -315,7 +315,8 @@ simulator, track, car, and layout. The faster benchmark is labelled **Reference*
 lap being reviewed is labelled **Analysed Lap**. Each lap has an independent session selector, so a
 driver can compare separate visits, imported drivers, or two laps from one run. The
 compact selectors live in the persistent comparison HUD rather than consuming the
-analysis canvas. A collapsed attachment above the Analysed Lap side of the HUD lists
+analysis canvas. Their labels always retain the session date and time alongside any
+driver or custom name, so repeated runs remain distinguishable. A collapsed attachment above the Analysed Lap side of the HUD lists
 only clean, exactly compatible laps that beat it. Imported laps rank before locally
 captured or replay laps, then candidates sort by lap time; choosing one replaces the
 Reference without changing the Analysed Lap. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
@@ -343,6 +344,8 @@ normalises the faster selected lap as Reference when saving, so reopening a shor
 preserves the benchmark-first workflow. Saved comparisons contain only local lap
 references; deleting one does not delete either session, while deleting a referenced
 session removes the now-unusable shortcut through foreign-key cascading.
+Saved-comparison options display both underlying session timestamps rather than only
+the shortcut name, track, and car.
 
 The Live page's “What TRACE records” inventory separates portable analysis-ready
 channels from the complete AC-native tyre, powertrain, chassis, session, and static

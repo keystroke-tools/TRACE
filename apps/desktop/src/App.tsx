@@ -577,7 +577,7 @@ function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster,
             <div className="flex gap-2">
               <select value={selectedSavedId} onChange={(event) => { const id = event.target.value; setSelectedSavedId(id); const saved = savedComparisons.find((item) => item.id === id); if (saved) onOpenSaved(saved); }} className="min-w-0 flex-1 border border-trace-divider bg-trace-deep px-2 py-2 font-mono text-[10px] font-bold text-trace-muted outline-none focus:border-trace-accent" aria-label="Open a saved comparison">
                 <option value="">SAVED COMPARISONS</option>
-                {savedComparisons.map((saved) => <option value={saved.id} key={saved.id}>{saved.name} · {saved.track} · {saved.car}</option>)}
+                {savedComparisons.map((saved) => <option value={saved.id} key={saved.id}>{saved.name} · REF {formatSessionDate(saved.referenceStartedAt)} · ANALYSED {formatSessionDate(saved.analysedStartedAt)} · {saved.track} · {saved.car}</option>)}
               </select>
               <button type="button" disabled={!canSave} onClick={() => setSaveOpen(true)} className="border border-trace-divider px-3 font-mono text-[10px] font-bold text-trace-muted hover:border-trace-accent hover:text-trace-text disabled:cursor-not-allowed disabled:opacity-30">SAVE</button>
               <button type="button" disabled={!selectedSavedId} onClick={async () => { await onDeleteSaved(selectedSavedId); setSelectedSavedId(""); }} className="grid size-8 shrink-0 place-items-center border border-trace-divider text-trace-muted hover:border-[#ff5263] hover:text-[#ff5263] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Delete selected saved comparison">
@@ -787,7 +787,7 @@ function SuggestedReferencesAttachment({ suggestions, open, currentSessionId, cu
           const identity = suggestion.session.driver ?? suggestion.session.title ?? formatSessionDate(suggestion.session.startedAt);
           const current = suggestion.session.id === currentSessionId && suggestion.lap.index === currentLapIndex;
           return <button type="button" onClick={() => onSelect(suggestion)} className={`grid w-full grid-cols-[minmax(0,1fr)_100px_82px] items-center gap-4 border-b border-trace-divider px-4 py-3 text-left last:border-b-0 ${current ? "bg-trace-purple-wash" : "hover:bg-trace-deep"}`} aria-current={current ? "true" : undefined} key={`${suggestion.session.id}-${suggestion.lap.index}`}>
-            <span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{identity}</strong><span className="mt-1 flex items-center gap-2 font-mono text-[9px] font-bold tracking-[.07em] text-trace-dim">{suggestion.imported && <span className="text-trace-purple">IMPORTED</span>}<span>{suggestion.session.sessionType}</span>{current && <span className="text-trace-accent">CURRENT</span>}</span></span>
+            <span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{identity}</strong><span className="mt-1 flex items-center gap-2 font-mono text-[9px] font-bold tracking-[.07em] text-trace-dim">{suggestion.imported && <span className="text-trace-purple">IMPORTED</span>}<span>{suggestion.session.sessionType}</span><span>{formatSessionDate(suggestion.session.startedAt)}</span>{current && <span className="text-trace-accent">CURRENT</span>}</span></span>
             <span className="font-mono text-right"><strong className="block text-[12px] text-trace-soft">{suggestion.lap.time}</strong><span className="mt-1 block text-[9px] text-trace-dim">LAP {suggestion.lap.index}</span></span>
             <strong className="font-mono text-right text-[12px] tabular-nums text-trace-purple">−{suggestion.gainSeconds.toFixed(3)}s</strong>
           </button>;
@@ -857,8 +857,8 @@ function HudLapChoice({ label, role, colour, sessions, sessionId, onSession, lap
 }
 
 function comparisonSessionLabel(session: RecordedSessionSummary) {
-  const identity = session.driver ?? session.title ?? formatSessionDate(session.startedAt);
-  return `${session.car} · ${session.track} · ${identity}`;
+  const identity = session.driver ?? session.title;
+  return `${session.car} · ${session.track}${identity ? ` · ${identity}` : ""} · ${formatSessionDate(session.startedAt)}`;
 }
 
 function formatComparisonGap(seconds?: number | null) {

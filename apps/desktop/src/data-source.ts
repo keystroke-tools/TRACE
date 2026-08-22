@@ -244,9 +244,11 @@ export interface SavedComparison {
   referenceSessionId: string;
   referenceLapIndex: number;
   referenceDurationNs: number;
+  referenceStartedAt: string;
   analysedSessionId: string;
   analysedLapIndex: number;
   analysedDurationNs: number;
+  analysedStartedAt: string;
   simulatorKey: string;
   track: string;
   car: string;
@@ -447,7 +449,7 @@ export const fixtureDataSource: TelemetryDataSource = {
     return fixtureSavedComparisons;
   },
   async saveComparison(name, referenceSessionId, referenceLapIndex, analysedSessionId, analysedLapIndex) {
-    fixtureSavedComparisons = [{ id: `comparison-${Date.now()}`, name, referenceSessionId, referenceLapIndex, referenceDurationNs: 110_906_000_000, analysedSessionId, analysedLapIndex, analysedDurationNs: 111_328_000_000, simulatorKey: "assetto-corsa", track: "MUGELLO", car: "TATUUS FA01", createdAt: new Date().toISOString() }, ...fixtureSavedComparisons];
+    fixtureSavedComparisons = [{ id: `comparison-${Date.now()}`, name, referenceSessionId, referenceLapIndex, referenceDurationNs: 110_906_000_000, referenceStartedAt: "2026-08-21T14:32:00Z", analysedSessionId, analysedLapIndex, analysedDurationNs: 111_328_000_000, analysedStartedAt: "2026-08-21T16:18:00Z", simulatorKey: "assetto-corsa", track: "MUGELLO", car: "TATUUS FA01", createdAt: new Date().toISOString() }, ...fixtureSavedComparisons];
     return fixtureSavedComparisons;
   },
   async deleteSavedComparison(comparisonId) {
