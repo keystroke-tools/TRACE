@@ -478,7 +478,7 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
 function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { session: RecordedSessionSummary; lapIndex: number; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(210px,1fr)_105px_135px_100px_140px_140px_80px_80px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] grid-cols-[minmax(210px,1fr)_105px_135px_100px_140px_140px_80px_80px] grid-rows-[48px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="min-w-0"><span className="block truncate text-[13px] font-black">{session.track} · {session.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {lapIndex} · {friendlySessionType(session)}</span></div>
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
@@ -515,7 +515,7 @@ type ComparisonHudProps = {
 function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_110px_110px_minmax(150px,1fr)_minmax(150px,1fr)] items-center gap-x-4 gap-y-2 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[157px] grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_110px_110px_minmax(150px,1fr)_minmax(150px,1fr)] grid-rows-[45px_44px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
         <div className="flex items-center justify-center gap-3"><HudValue label="FINISH" value={comparison?.samples.at(-1)?.deltaSeconds == null ? "—" : formatDelta(comparison.samples.at(-1)?.deltaSeconds ?? 0)} colour={channelColours.delta} /><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
@@ -541,7 +541,7 @@ function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapCompariso
   const start = samples[0]?.distanceM ?? 0;
   const end = samples.at(-1)?.distanceM ?? 0;
   return (
-    <label className="col-span-full grid grid-cols-[72px_1fr_76px] items-center gap-3 border-t border-trace-divider pt-2 font-mono text-[10px] text-trace-dim">
+    <label className="col-span-full grid h-7 grid-cols-[72px_1fr_76px] items-end gap-3 border-t border-trace-divider pt-2 font-mono text-[10px] tabular-nums text-trace-dim">
       <span>{Math.round(start)} M</span>
       <input className="trace-seek w-full" type="range" min="0" max={Math.max(samples.length - 1, 0)} step="1" value={index} disabled={samples.length < 2} onChange={(event) => onSeek(Number(event.target.value))} aria-label="Seek through lap distance" />
       <span className="text-right">{Math.round(end)} M</span>
@@ -550,13 +550,13 @@ function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapCompariso
 }
 
 function HudValue({ label, value, unit, colour }: { label: string; value: string; unit?: string; colour?: string }) {
-  return <div className="min-w-0 font-mono"><span className="block text-[10px] font-bold tracking-[.1em] text-trace-dim">{label}</span><strong className="mt-1 block truncate text-[15px]" style={{ color: colour }}>{value}{unit && <small className="ml-1 text-[9px] text-trace-dim">{unit}</small>}</strong></div>;
+  return <div className="h-10 min-w-0 overflow-hidden font-mono"><span className="block truncate whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.1em] text-trace-dim">{label}</span><strong className="mt-1 block truncate whitespace-nowrap text-[15px] leading-5 tabular-nums" style={{ color: colour }}>{value}{unit && <small className="ml-1 text-[9px] text-trace-dim">{unit}</small>}</strong></div>;
 }
 
 function HudProgress({ label, value, secondary, colour, secondaryColour }: { label: string; value?: number | null; secondary?: number | null; colour: string; secondaryColour?: string }) {
   const primary = Math.min(100, Math.max(0, value ?? 0));
   const second = Math.min(100, Math.max(0, secondary ?? 0));
-  return <div className="font-mono"><span className="flex justify-between text-[10px] font-bold tracking-[.08em] text-trace-dim"><span>{label}</span><span>{Math.round(primary)}%</span></span><span className="mt-2 block h-2 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${primary}%`, backgroundColor: colour }} /></span>{secondaryColour && <span className="mt-1 block h-1.5 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${second}%`, backgroundColor: secondaryColour }} /></span>}</div>;
+  return <div className="h-10 overflow-hidden font-mono"><span className="flex h-3 justify-between whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.08em] tabular-nums text-trace-dim"><span className="truncate">{label}</span><span>{Math.round(primary)}%</span></span><span className="mt-2 block h-2 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${primary}%`, backgroundColor: colour }} /></span>{secondaryColour && <span className="mt-1 block h-1.5 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${second}%`, backgroundColor: secondaryColour }} /></span>}</div>;
 }
 
 function formatTemperature(value?: number | null) {
