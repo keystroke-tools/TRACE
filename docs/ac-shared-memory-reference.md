@@ -194,7 +194,9 @@ adds a key, not another top-level Arrow schema version. The opaque page envelope
 also retained so a later decoder can recover fields that were unknown when recorded.
 
 TRACE promotes `physics.number_of_tyres_out` into a per-lap maximum in SQLite for
-quick archive display. This is track-limit evidence, not a validity verdict: the
+quick archive display. The UI warns only for a maximum of three or four; one or two
+tyres outside are retained without being presented as an invalidation. This is
+track-limit evidence, not a validity verdict: the
 published pages contain no final lap-valid flag or invalidation threshold. Penalty
 time, penalty flags, and `penaltiesEnabled` remain available in the native maps for
 future analysis without another Arrow schema revision.

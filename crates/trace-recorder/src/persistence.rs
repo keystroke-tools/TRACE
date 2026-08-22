@@ -190,6 +190,9 @@ fn lap_validity_reason(lap: &crate::RecordedLap) -> String {
         Some(0) => {
             "no tyres-out excursion observed; simulator does not expose final lap validity".into()
         }
+        Some(count @ 1..=2) => format!(
+            "up to {count} tyres outside observed; at least two tyres remained within the track, so no track-limit warning is inferred; simulator does not expose final lap validity"
+        ),
         Some(count) => format!(
             "track-limit evidence: up to {count} tyres outside the track; simulator does not expose final lap validity"
         ),
@@ -340,6 +343,18 @@ mod tests {
             summaries[0].laps[0].validity_reason.as_deref(),
             Some("capture began after lap start; partial lap or outlap")
         );
+    }
+
+    #[test]
+    fn warns_only_when_fewer_than_two_tyres_remain_within_the_track() {
+        let mut lap = recording().laps.remove(0);
+
+        lap.max_tyres_out = Some(2);
+        assert!(lap_validity_reason(&lap).starts_with("up to 2 tyres outside observed"));
+        assert!(!lap_validity_reason(&lap).starts_with("track-limit evidence"));
+
+        lap.max_tyres_out = Some(3);
+        assert!(lap_validity_reason(&lap).starts_with("track-limit evidence"));
     }
 
     #[test]

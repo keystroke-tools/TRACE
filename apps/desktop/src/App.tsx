@@ -777,17 +777,21 @@ function EmptySessions({ title, children }: { title: string; children: ReactNode
 }
 
 function LapValidity({ lap }: { lap: RecordedSessionSummary["laps"][number] }) {
-  const hasTrackLimitEvidence = lap.maxTyresOut != null && lap.maxTyresOut > 0;
-  const label = hasTrackLimitEvidence
+  const partial = lap.validityReason?.includes("partial") ?? false;
+  const hasTrackLimitWarning = lap.maxTyresOut != null && lap.maxTyresOut >= 3;
+  const label = partial
+    ? "PARTIAL"
+    : hasTrackLimitWarning
     ? `${lap.maxTyresOut} ${lap.maxTyresOut === 1 ? "TYRE" : "TYRES"} OUT`
     : lap.validity === "unknown"
       ? "RECORDED"
-    : lap.validityReason?.includes("partial")
-      ? "PARTIAL"
       : lap.validity.toUpperCase();
-  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${hasTrackLimitEvidence || lap.validity === "invalid" ? "text-trace-warning" : lap.validity === "valid" ? "text-trace-accent" : "text-trace-soft"}`;
-  return lap.validityReason
-    ? <Tooltip className={className} content={lap.validityReason}>{label}</Tooltip>
+  const className = `justify-end text-right text-[9px] font-bold tracking-[.08em] ${hasTrackLimitWarning || lap.validity === "invalid" ? "text-trace-warning" : lap.validity === "valid" ? "text-trace-accent" : "text-trace-soft"}`;
+  const detail = !partial && lap.maxTyresOut != null && lap.maxTyresOut > 0 && lap.maxTyresOut < 3
+    ? `Up to ${lap.maxTyresOut} ${lap.maxTyresOut === 1 ? "tyre was" : "tyres were"} outside; at least two remained within the track, so TRACE does not show a track-limit warning.`
+    : lap.validityReason;
+  return detail
+    ? <Tooltip className={className} content={detail}>{label}</Tooltip>
     : <span className={className}>{label}</span>;
 }
 

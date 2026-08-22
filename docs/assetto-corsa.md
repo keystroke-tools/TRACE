@@ -172,7 +172,9 @@ before this metadata was available remain readable and show unavailable sector b
 Counter regression or a jump larger than one is rejected as ambiguous rather than
 silently producing incorrect sample ranges. TRACE aggregates AC's documented
 `numberOfTyresOut` samples into a per-lap maximum and shows an orange tyres-out marker
-when it observed an excursion. AC also exposes penalty time, penalty flags, and
+only when three or four tyres were observed outside. One or two tyres outside retain
+at least two tyres within the track and are kept as raw evidence without raising a
+track-limit warning. AC also exposes penalty time, penalty flags, and
 whether penalties are enabled; all remain in the native telemetry maps. Vanilla
 shared memory does not expose a final lap-valid boolean or a documented invalidation
 threshold, so TRACE deliberately does not turn this evidence into a false verdict.
