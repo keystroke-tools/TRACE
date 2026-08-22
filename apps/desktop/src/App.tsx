@@ -593,39 +593,34 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
 
   return (
     <article className="relative border-b border-trace-divider last:border-b-0">
-      <div className="flex min-h-[76px] items-stretch">
+      <div className="flex items-stretch">
         <button
           type="button"
           aria-label={`View ${session.track} session`}
           onClick={onOpen}
-          className="group grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px_20px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px_20px]"
+          className="group grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_88px_124px_20px] items-center gap-6 border-0 bg-transparent px-5 py-5 text-left hover:bg-trace-raised"
         >
           <div className="min-w-0">
-            <span className="block truncate text-[12px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
-            <h2 className="mt-1.5 truncate text-base font-black tracking-[.03em]">{session.title ?? session.track}</h2>
-            <Tooltip className="mt-1 flex min-w-0 font-mono text-[12px] text-trace-dim" content={session.startedAt}>
-              <span className="truncate">{session.title ? `${session.track} · ` : ""}{formatSessionDate(session.startedAt)}</span>
-            </Tooltip>
-          </div>
-          <div className="min-w-0">
-            <span className="block truncate text-[12px] text-trace-soft">{session.car}</span>
-            <span className="mt-1 flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate text-[12px] text-trace-dim">{session.simulatorName} · {sessionSourceLabel(session)}{session.driver ? ` · ${session.driver}` : ""}</span>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 font-mono text-[12px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
+              <h2 className="min-w-0 truncate text-base font-black tracking-[.02em]">{session.title ?? session.track}</h2>
               {session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
-              {session.tags.length > 0 && (
-                <Tooltip className="min-w-0 truncate font-mono text-[12px] text-trace-purple" content={session.tags.map((tag) => `#${tag}`).join("  ")}>
-                  {session.tags.slice(0, 3).map((tag) => `#${tag}`).join("  ")}
-                </Tooltip>
-              )}
+            </div>
+            <span className="mt-2 flex min-w-0 items-center gap-2 text-[12px] text-trace-dim">
+              <span className="shrink-0 text-trace-soft">{session.car}</span>
+              {session.title && <><span aria-hidden="true">·</span><span className="min-w-0 truncate">{session.track}</span></>}
+              <span aria-hidden="true">·</span>
+              <Tooltip className="shrink-0" content={session.startedAt}>{formatSessionDate(session.startedAt)}</Tooltip>
+              {session.driver && <><span aria-hidden="true">·</span><span className="min-w-0 truncate text-trace-muted">{session.driver}</span></>}
             </span>
           </div>
-          <div className="font-mono">
-            <span className="block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
-            <strong className="mt-1 block text-[12px] text-trace-soft">{session.laps.length}</strong>
+          <div className="font-mono text-right">
+            <strong className="block text-sm text-trace-soft">{session.laps.length}</strong>
+            <span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
           </div>
-          <div className="font-mono max-[1050px]:hidden">
-            <span className="block text-[12px] tracking-[.08em] text-trace-dim">FASTEST LAP</span>
-            <strong className="mt-1 block text-[12px] text-trace-soft">{bestLap?.time ?? "—"}</strong>
+          <div className="font-mono text-right">
+            <strong className="block text-sm text-trace-soft">{bestLap?.time ?? "—"}</strong>
+            <span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">BEST LAP</span>
           </div>
           <svg className="size-4 fill-none stroke-current text-trace-muted transition-transform group-hover:translate-x-0.5 group-hover:text-trace-text" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m6 4 4 4-4 4" />
