@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   telemetryDataSource,
@@ -636,54 +637,52 @@ function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave
     if (!saveOpen) setDraftName(defaultName);
   }, [defaultName, saveOpen]);
   const currentSaved = savedComparisons.some((saved) => saved.referenceSessionId === currentReferenceSessionId && saved.referenceLapIndex === currentReferenceLap && saved.analysedSessionId === currentAnalysedSessionId && saved.analysedLapIndex === currentAnalysedLap);
+  const titlebarActions = typeof document === "undefined" ? null : document.getElementById("trace-titlebar-actions");
   return (
     <>
-      <Tooltip content={canSave ? "Save the current lap comparison" : "Choose two laps before saving a comparison"} className="fixed right-[352px] top-0 z-[70] h-12">
+      {titlebarActions && createPortal(<Tooltip content={canSave ? "Save the current lap comparison" : "Choose two laps before saving a comparison"} className="h-12">
         <button type="button" disabled={!canSave} onClick={() => setSaveOpen((value) => !value)} className={`grid size-12 place-items-center border-l border-trace-divider bg-trace-black ${saveOpen ? "text-trace-accent" : "text-trace-muted hover:bg-trace-raised hover:text-trace-text"} disabled:cursor-not-allowed disabled:text-trace-dim`} aria-label="Save current comparison" aria-expanded={saveOpen}>
           <svg className={`size-4 stroke-current ${currentSaved ? "fill-trace-accent" : "fill-none"}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1.5 1.9 3.85 4.25.62-3.08 3 .73 4.23L8 11.2l-3.8 2 .73-4.23-3.08-3 4.25-.62Z" /></svg>
         </button>
-      </Tooltip>
-      {saveOpen && <form onSubmit={async (event) => { event.preventDefault(); if (!draftName.trim()) return; setSaving(true); const saved = await onSave(draftName); setSaving(false); if (saved) setSaveOpen(false); }} className="fixed right-[352px] top-12 z-[70] flex w-[380px] items-end gap-3 border border-trace-divider bg-trace-black p-3 shadow-[0_18px_45px_rgba(0,0,0,.6)]">
+      </Tooltip>, titlebarActions)}
+      {saveOpen && <form onSubmit={async (event) => { event.preventDefault(); if (!draftName.trim()) return; setSaving(true); const saved = await onSave(draftName); setSaving(false); if (saved) setSaveOpen(false); }} className="fixed right-[232px] top-12 z-[70] flex w-[380px] items-end gap-3 border border-trace-divider bg-trace-black p-3 shadow-[0_18px_45px_rgba(0,0,0,.6)]">
         <label className="min-w-0 flex-1 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim" htmlFor="saved-comparison-name">COMPARISON NAME<input id="saved-comparison-name" value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={80} autoFocus className="mt-1.5 h-9 w-full border border-trace-divider bg-trace-deep px-3 text-[12px] font-sans font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" /></label>
         <button type="button" onClick={() => setSaveOpen(false)} className="h-9 px-2 font-mono text-[10px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button>
         <button type="submit" disabled={saving || !draftName.trim()} className="h-9 bg-trace-accent px-4 font-mono text-[10px] font-black text-trace-black disabled:opacity-40">{saving ? "SAVING…" : "SAVE"}</button>
       </form>}
-      <aside className={`fixed bottom-[252px] right-6 top-16 z-50 flex max-w-[calc(100vw-240px)] flex-col overflow-hidden border border-trace-divider bg-trace-surface shadow-[0_18px_55px_rgba(0,0,0,.45)] transition-[width] ${dockCollapsed ? "w-11" : "w-[420px]"}`} aria-label="Favourite comparisons">
-        <div className={`flex shrink-0 border-b border-trace-divider ${dockCollapsed ? "h-11 items-center justify-center" : "h-14 items-center justify-between gap-3 px-3"}`}>
-          {!dockCollapsed && <span className="min-w-0 font-mono"><strong className="block truncate text-[11px] tracking-[.1em] text-trace-soft">FAVOURITE COMPARISONS</strong><span className="mt-1 block text-[9px] font-black text-trace-accent">{savedComparisons.length} SAVED</span></span>}
-          <button type="button" onClick={() => { setDockCollapsed((value) => !value); setMenuId(null); }} className="grid size-8 shrink-0 place-items-center text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label={dockCollapsed ? "Show favourite comparisons" : "Hide favourite comparisons"} aria-expanded={!dockCollapsed}><svg className={`size-4 fill-none stroke-current transition-transform ${dockCollapsed ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button>
-        </div>
-        {dockCollapsed ? <button type="button" onClick={() => setDockCollapsed(false)} className="flex w-full items-center justify-center py-4 font-mono text-[10px] font-bold tracking-[.12em] text-trace-dim hover:text-trace-text" aria-label="Show favourite comparisons"><span className="[writing-mode:vertical-rl]">FAVOURITES</span></button> : <div className="min-h-0 flex-1 overflow-y-auto">
-        {savedComparisons.length === 0 ? <div className="px-5 py-8 text-center"><strong className="block text-[13px] text-trace-soft">No favourite comparisons yet</strong><p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-trace-dim">Choose a useful Reference and Analysed Lap, then save the pair here for quick access later.</p></div> : <div className="grid gap-3 p-3">
+      {dockCollapsed ? <button type="button" onClick={() => setDockCollapsed(false)} className="fixed bottom-[204px] left-[200px] z-[31] flex h-10 w-72 items-center justify-between border border-trace-divider bg-trace-black/95 px-4 font-mono shadow-[0_-10px_30px_rgba(0,0,0,.35)] hover:bg-trace-deep" aria-label="Show favourite comparisons"><span className="flex items-center gap-2"><svg className="size-3.5 fill-trace-accent stroke-trace-accent" viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1.5 1.9 3.85 4.25.62-3.08 3 .73 4.23L8 11.2l-3.8 2 .73-4.23-3.08-3 4.25-.62Z" /></svg><strong className="text-[10px] tracking-[.1em] text-trace-soft">FAVOURITES</strong><span className="text-[9px] font-black text-trace-accent">{savedComparisons.length}</span></span><svg className="size-3 fill-none stroke-trace-dim" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 7.5 3.5-3.5 3.5 3.5" /></svg></button> : <aside className="fixed bottom-12 left-[200px] right-6 z-[60] flex h-[192px] flex-col overflow-hidden border border-trace-divider bg-trace-black/98 shadow-[0_-18px_50px_rgba(0,0,0,.55)] backdrop-blur" aria-label="Favourite comparisons">
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-trace-divider px-4"><span className="min-w-0 font-mono"><strong className="text-[11px] tracking-[.1em] text-trace-soft">FAVOURITE COMPARISONS</strong><span className="ml-2 text-[9px] font-black text-trace-accent">{savedComparisons.length} SAVED</span></span><button type="button" onClick={() => { setDockCollapsed(true); setMenuId(null); }} className="grid size-8 shrink-0 place-items-center text-lg text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label="Hide favourite comparisons">×</button></div>
+        <div className="min-h-0 flex-1 overflow-auto">
+        {savedComparisons.length === 0 ? <div className="px-5 py-8 text-center"><strong className="block text-[13px] text-trace-soft">No favourite comparisons yet</strong><p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-trace-dim">Choose a useful Reference and Analysed Lap, then use the title-bar star to save it here.</p></div> : <div className="flex items-start gap-3 p-3">
           {savedComparisons.map((saved) => {
             const referenceSession = sessions.find((session) => session.id === saved.referenceSessionId);
             const analysedSession = sessions.find((session) => session.id === saved.analysedSessionId);
             const referenceDriver = savedComparisonDriver(referenceSession);
             const analysedDriver = savedComparisonDriver(analysedSession);
             const current = saved.referenceSessionId === currentReferenceSessionId && saved.referenceLapIndex === currentReferenceLap && saved.analysedSessionId === currentAnalysedSessionId && saved.analysedLapIndex === currentAnalysedLap;
-            return <article className={`relative min-w-0 border bg-trace-surface ${current ? "border-trace-accent/70 outline outline-1 -outline-offset-1 outline-trace-accent/30" : "border-trace-divider hover:border-trace-soft"}`} key={saved.id}>
+            return <article className={`relative w-[420px] shrink-0 border bg-trace-surface ${current ? "border-trace-accent/70 outline outline-1 -outline-offset-1 outline-trace-accent/30" : "border-trace-divider hover:border-trace-soft"}`} key={saved.id}>
               <button type="button" onClick={() => { onOpen(saved); setDockCollapsed(true); }} className="block w-full text-left">
-              <div className="flex items-start justify-between gap-3 border-b border-trace-divider px-3 py-2.5 pr-12"><span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{saved.name}</strong><span className="mt-1 block truncate font-mono text-[9px] font-bold text-trace-dim">{saved.track} · {saved.car}</span></span>{current && <span className="shrink-0 border border-trace-accent/40 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[8px] font-black text-trace-accent">CURRENT</span>}</div>
-              <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 px-3 py-3">
+              <div className="flex items-start justify-between gap-3 border-b border-trace-divider px-3 py-1.5 pr-12"><span className="min-w-0"><strong className="block truncate text-[13px] leading-4 text-trace-text">{saved.name}</strong><span className="mt-0.5 block truncate font-mono text-[10px] font-bold leading-4 text-trace-dim">{saved.track} · {saved.car}</span></span>{current && <span className="shrink-0 border border-trace-accent/40 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[9px] font-black text-trace-accent">CURRENT</span>}</div>
+              <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 px-3 py-1.5">
                 <SavedComparisonLap role="REFERENCE" driver={referenceDriver} lapIndex={saved.referenceLapIndex} durationNs={saved.referenceDurationNs} startedAt={saved.referenceStartedAt} accent="text-trace-purple" />
                 <span className="self-center font-mono text-[9px] font-black text-trace-dim">VS</span>
                 <SavedComparisonLap role="ANALYSED" driver={analysedDriver} lapIndex={saved.analysedLapIndex} durationNs={saved.analysedDurationNs} startedAt={saved.analysedStartedAt} accent="text-trace-accent" alignRight />
               </div>
-              <div className="border-t border-trace-divider px-3 py-2 font-mono text-[8px] font-bold text-trace-dim">SAVED {formatSessionDate(saved.createdAt)}</div>
+              <div className="border-t border-trace-divider px-3 py-1 font-mono text-[9px] font-bold leading-4 text-trace-dim">SAVED {formatCompactSessionDate(saved.createdAt)}</div>
               </button>
               <div className="absolute right-2 top-2 z-10"><button type="button" onClick={() => setMenuId((value) => value === saved.id ? null : saved.id)} className="grid size-7 place-items-center border border-transparent font-mono text-base leading-none text-trace-dim hover:border-trace-divider hover:bg-trace-deep hover:text-trace-text" aria-label={`Actions for ${saved.name}`} aria-expanded={menuId === saved.id}>•••</button>{menuId === saved.id && <div className="absolute right-0 top-8 w-28 border border-trace-divider bg-trace-black p-1 shadow-[0_10px_25px_rgba(0,0,0,.55)]"><button type="button" onClick={() => { setRenameId(saved.id); setRenameDraft(saved.name); setMenuId(null); }} className="block w-full px-2 py-2 text-left font-mono text-[9px] font-bold text-trace-muted hover:bg-trace-deep hover:text-trace-text">RENAME</button><button type="button" onClick={() => { setMenuId(null); void onDelete(saved.id); }} className="block w-full px-2 py-2 text-left font-mono text-[9px] font-bold text-[#ff5263] hover:bg-trace-danger/20">DELETE</button></div>}</div>
               {renameId === saved.id && <form onSubmit={async (event) => { event.preventDefault(); if (!renameDraft.trim()) return; setRenaming(true); const renamed = await onRename(saved.id, renameDraft); setRenaming(false); if (renamed) setRenameId(null); }} className="flex items-end gap-2 border-t border-trace-divider bg-trace-deep p-2" onClick={(event) => event.stopPropagation()}><label className="min-w-0 flex-1 font-mono text-[8px] font-bold text-trace-dim" htmlFor={`rename-${saved.id}`}>NEW NAME<input id={`rename-${saved.id}`} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} maxLength={80} autoFocus className="mt-1 h-8 w-full border border-trace-divider bg-trace-black px-2 font-sans text-[11px] font-normal text-trace-text outline-none focus:border-trace-accent" /></label><button type="button" onClick={() => setRenameId(null)} className="h-8 px-2 font-mono text-[9px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button><button type="submit" disabled={renaming || !renameDraft.trim()} className="h-8 bg-trace-accent px-3 font-mono text-[9px] font-black text-trace-black disabled:opacity-40">{renaming ? "…" : "SAVE"}</button></form>}
             </article>;
           })}
         </div>}
-        </div>}
-      </aside>
+        </div>
+      </aside>}
     </>
   );
 }
 
 function SavedComparisonLap({ role, driver, lapIndex, durationNs, startedAt, accent, alignRight = false }: { role: string; driver: string; lapIndex: number; durationNs: number; startedAt: string; accent: string; alignRight?: boolean }) {
-  return <div className={`min-w-0 font-mono ${alignRight ? "text-right" : ""}`}><span className={`block text-[8px] font-black tracking-[.08em] ${accent}`}>{role}</span><strong className="mt-1 block min-h-5 whitespace-normal break-words font-sans text-[12px] leading-5 text-trace-text">{driver}</strong><strong className="mt-1 block text-[14px] tabular-nums text-trace-soft">{formatLapDurationNs(durationNs)}</strong><span className="mt-1 block whitespace-normal text-[8px] font-bold leading-3 text-trace-dim">LAP {lapIndex}<br />{formatSessionDate(startedAt)}</span></div>;
+  return <div className={`min-w-0 font-mono ${alignRight ? "text-right" : ""}`}><span className={`block text-[10px] font-black leading-3 tracking-[.08em] ${accent}`}>{role}</span><strong className="mt-0.5 block truncate font-sans text-[13px] leading-4 text-trace-text">{driver}</strong><strong className="mt-0.5 block text-[15px] leading-5 tabular-nums text-trace-soft">{formatLapDurationNs(durationNs)}</strong><span className="block truncate text-[10px] font-bold leading-4 text-trace-dim">LAP {lapIndex} · {formatCompactSessionDate(startedAt)}</span></div>;
 }
 
 function savedComparisonDriver(session?: RecordedSessionSummary) {
@@ -2320,6 +2319,18 @@ function formatSessionDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(date);
+}
+
+function formatCompactSessionDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(date);
 }
 
