@@ -51,6 +51,14 @@ pub struct TelemetryColumns {
     pub speed_mps: Vec<Option<f32>>,
     pub engine_rpm: Vec<Option<f32>>,
     pub lap_position: Vec<Option<f32>>,
+    pub lap_time_ns: Vec<Option<u64>>,
+    pub steering_angle_rad: Vec<Option<f32>>,
+    pub position_x_m: Vec<Option<f64>>,
+    pub position_z_m: Vec<Option<f64>>,
+    pub gear_kind: Vec<Option<i8>>,
+    pub gear_value: Vec<Option<i16>>,
+    pub sector_index: Vec<Option<u32>>,
+    pub track_length_m: Option<f64>,
 }
 
 /// Bounded summary derived from one lap's immutable telemetry sample range.
@@ -82,6 +90,42 @@ impl TelemetryColumns {
                 .iter()
                 .map(|frame| frame.lap.normalized_position)
                 .collect(),
+            lap_time_ns: frames
+                .iter()
+                .map(|frame| frame.lap.current_lap_time_ns)
+                .collect(),
+            steering_angle_rad: frames
+                .iter()
+                .map(|frame| frame.inputs.steering_angle_rad)
+                .collect(),
+            position_x_m: frames
+                .iter()
+                .map(|frame| frame.motion.position_m.map(|position| position.x))
+                .collect(),
+            position_z_m: frames
+                .iter()
+                .map(|frame| frame.motion.position_m.map(|position| position.z))
+                .collect(),
+            gear_kind: frames
+                .iter()
+                .map(|frame| frame.vehicle.gear.map(gear_kind))
+                .collect(),
+            gear_value: frames
+                .iter()
+                .map(|frame| frame.vehicle.gear.map(gear_value))
+                .collect(),
+            sector_index: frames
+                .iter()
+                .map(|frame| frame.lap.current_sector_index)
+                .collect(),
+            track_length_m: frames.iter().find_map(|frame| {
+                frame
+                    .native
+                    .as_deref()
+                    .and_then(|native| native.float_fields.get("static.track_spline_length_m"))
+                    .copied()
+                    .filter(|value| value.is_finite() && *value > 0.0)
+            }),
         }
     }
 
@@ -104,6 +148,14 @@ impl TelemetryColumns {
             speed_mps: Vec::new(),
             engine_rpm: Vec::new(),
             lap_position: Vec::new(),
+            lap_time_ns: Vec::new(),
+            steering_angle_rad: Vec::new(),
+            position_x_m: Vec::new(),
+            position_z_m: Vec::new(),
+            gear_kind: Vec::new(),
+            gear_value: Vec::new(),
+            sector_index: Vec::new(),
+            track_length_m: None,
         }
     }
 }
@@ -795,7 +847,100 @@ fn extend_projection(
     decoded
         .lap_position
         .extend(nullable_f32(batch, 6)?.into_iter().skip(start).take(length));
+    decoded.lap_time_ns.extend(
+        optional_u64(batch, "lap_current_time_ns")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.steering_angle_rad.extend(
+        optional_f32(batch, "steering_angle_rad")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.position_x_m.extend(
+        optional_f64(batch, "position_x_m")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.position_z_m.extend(
+        optional_f64(batch, "position_z_m")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.gear_kind.extend(
+        optional_i8(batch, "gear_kind")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.gear_value.extend(
+        optional_i16(batch, "gear_value")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.sector_index.extend(
+        optional_u32(batch, "lap_current_sector_index")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    if decoded.track_length_m.is_none()
+        && let Ok(index) = batch.schema().index_of("native_float_fields")
+        && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
+    {
+        decoded.track_length_m = (start..start + length).find_map(|row| {
+            native_float_value(native, row, "static.track_spline_length_m")
+                .filter(|value| value.is_finite() && *value > 0.0)
+        });
+    }
     Ok(())
+}
+
+fn optional_f32(batch: &RecordBatch, name: &str) -> Result<Vec<Option<f32>>, IpcError> {
+    batch.schema().index_of(name).map_or_else(
+        |_| Ok(vec![None; batch.num_rows()]),
+        |index| nullable_f32(batch, index),
+    )
+}
+
+fn optional_u64(batch: &RecordBatch, name: &str) -> Result<Vec<Option<u64>>, IpcError> {
+    batch.schema().index_of(name).map_or_else(
+        |_| Ok(vec![None; batch.num_rows()]),
+        |index| nullable_u64(batch, index),
+    )
+}
+
+fn optional_f64(batch: &RecordBatch, name: &str) -> Result<Vec<Option<f64>>, IpcError> {
+    batch.schema().index_of(name).map_or_else(
+        |_| Ok(vec![None; batch.num_rows()]),
+        |index| nullable_f64(batch, index),
+    )
+}
+
+fn optional_u32(batch: &RecordBatch, name: &str) -> Result<Vec<Option<u32>>, IpcError> {
+    batch.schema().index_of(name).map_or_else(
+        |_| Ok(vec![None; batch.num_rows()]),
+        |index| nullable_u32(batch, index),
+    )
+}
+
+fn optional_i8(batch: &RecordBatch, name: &str) -> Result<Vec<Option<i8>>, IpcError> {
+    batch.schema().index_of(name).map_or_else(
+        |_| Ok(vec![None; batch.num_rows()]),
+        |index| nullable_i8(batch, index),
+    )
+}
+
+fn optional_i16(batch: &RecordBatch, name: &str) -> Result<Vec<Option<i16>>, IpcError> {
+    batch.schema().index_of(name).map_or_else(
+        |_| Ok(vec![None; batch.num_rows()]),
+        |index| nullable_i16(batch, index),
+    )
 }
 
 fn schema_v2() -> Schema {
@@ -989,7 +1134,6 @@ fn nullable_f32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<f32>>, I
     Ok(array.iter().collect())
 }
 
-#[cfg(test)]
 fn nullable_f64(batch: &RecordBatch, index: usize) -> Result<Vec<Option<f64>>, IpcError> {
     let array = batch
         .column(index)
@@ -999,7 +1143,6 @@ fn nullable_f64(batch: &RecordBatch, index: usize) -> Result<Vec<Option<f64>>, I
     Ok(array.iter().collect())
 }
 
-#[cfg(test)]
 fn nullable_u32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u32>>, IpcError> {
     let array = batch
         .column(index)
@@ -1009,7 +1152,6 @@ fn nullable_u32(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u32>>, I
     Ok(array.iter().collect())
 }
 
-#[cfg(test)]
 fn nullable_u64(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u64>>, IpcError> {
     let array = batch
         .column(index)
@@ -1019,7 +1161,6 @@ fn nullable_u64(batch: &RecordBatch, index: usize) -> Result<Vec<Option<u64>>, I
     Ok(array.iter().collect())
 }
 
-#[cfg(test)]
 fn nullable_i8(batch: &RecordBatch, index: usize) -> Result<Vec<Option<i8>>, IpcError> {
     let array = batch
         .column(index)
@@ -1029,7 +1170,6 @@ fn nullable_i8(batch: &RecordBatch, index: usize) -> Result<Vec<Option<i8>>, Ipc
     Ok(array.iter().collect())
 }
 
-#[cfg(test)]
 fn nullable_i16(batch: &RecordBatch, index: usize) -> Result<Vec<Option<i16>>, IpcError> {
     let array = batch
         .column(index)

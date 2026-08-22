@@ -3956,6 +3956,7 @@ dependencies = [
  "time",
  "trace-ac",
  "trace-adapter",
+ "trace-core",
  "trace-domain",
  "trace-recorder",
  "trace-storage",

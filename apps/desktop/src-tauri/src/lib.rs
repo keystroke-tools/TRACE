@@ -8,8 +8,12 @@ use serde::Serialize;
 use tauri::Manager;
 use trace_ac::AcAdapter;
 use trace_adapter::SimulatorAdapter;
+use trace_core::{
+    delta::{ElapsedTimeSeries, calculate_delta},
+    distance::{DistanceSample, DistanceSeries, InterpolationMethod, uniform_grid},
+};
 use trace_storage::{
-    ipc::{export_core_csv, read_lap_metrics},
+    ipc::{TelemetryColumns, export_core_csv, read_columns_range, read_lap_metrics},
     metadata::MetadataStore,
 };
 
@@ -92,6 +96,71 @@ struct RecordedLapMetrics {
     tyre_wear_start: [Option<f32>; 4],
     tyre_wear_end: [Option<f32>; 4],
     tyre_wear_minimum: [Option<f32>; 4],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LapComparison {
+    session_id: String,
+    track: String,
+    car: String,
+    reference_lap_index: u32,
+    reference_lap_time: String,
+    comparison_lap_index: u32,
+    comparison_lap_time: String,
+    lap_length_m: f64,
+    samples: Vec<LapComparisonSample>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LapComparisonSample {
+    distance_m: f64,
+    delta_seconds: Option<f64>,
+    reference_speed_kmh: Option<f64>,
+    comparison_speed_kmh: Option<f64>,
+    reference_throttle_percent: Option<f64>,
+    comparison_throttle_percent: Option<f64>,
+    reference_brake_percent: Option<f64>,
+    comparison_brake_percent: Option<f64>,
+    reference_steering_degrees: Option<f64>,
+    comparison_steering_degrees: Option<f64>,
+    reference_rpm: Option<f64>,
+    comparison_rpm: Option<f64>,
+    sector_index: Option<u32>,
+    reference_gear: Option<i16>,
+    comparison_gear: Option<i16>,
+    reference_position_x_m: Option<f64>,
+    reference_position_z_m: Option<f64>,
+    comparison_position_x_m: Option<f64>,
+    comparison_position_z_m: Option<f64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LapTrace {
+    session_id: String,
+    lap_index: u32,
+    lap_time: String,
+    track: String,
+    car: String,
+    lap_length_m: f64,
+    samples: Vec<LapTraceSample>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LapTraceSample {
+    distance_m: f64,
+    sector_index: Option<u32>,
+    speed_kmh: Option<f64>,
+    throttle_percent: Option<f64>,
+    brake_percent: Option<f64>,
+    steering_degrees: Option<f64>,
+    rpm: Option<f64>,
+    gear: Option<i16>,
+    position_x_m: Option<f64>,
+    position_z_m: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -341,6 +410,436 @@ fn session_lap_metrics(
         });
     }
     Ok(result)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
+fn compare_session_laps(
+    app: tauri::AppHandle,
+    session_id: String,
+    reference_lap_index: u32,
+    comparison_lap_index: u32,
+) -> Result<LapComparison, String> {
+    if reference_lap_index == comparison_lap_index {
+        return Err("choose two different laps to compare".into());
+    }
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let session = store
+        .recent_sessions(1_000)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "recorded session was not found".to_owned())?;
+    let reference = session
+        .laps
+        .iter()
+        .find(|lap| lap.index == reference_lap_index)
+        .ok_or_else(|| "reference lap was not found".to_owned())?;
+    let comparison = session
+        .laps
+        .iter()
+        .find(|lap| lap.index == comparison_lap_index)
+        .ok_or_else(|| "comparison lap was not found".to_owned())?;
+    if lap_is_invalid_for_comparison(reference.validity.as_str(), reference.max_tyres_out)
+        || lap_is_invalid_for_comparison(comparison.validity.as_str(), comparison.max_tyres_out)
+    {
+        return Err("invalid or incomplete laps cannot be compared".into());
+    }
+
+    let reference_columns = read_recorded_lap(&directory, &store, &reference.id)?;
+    let comparison_columns = read_recorded_lap(&directory, &store, &comparison.id)?;
+    let lap_length_m = shared_track_length(&reference_columns, &comparison_columns)?;
+    let reference_channels = AlignedLapChannels::new(&reference_columns, lap_length_m)?;
+    let comparison_channels = AlignedLapChannels::new(&comparison_columns, lap_length_m)?;
+    let common_end_m = reference_channels
+        .elapsed
+        .samples()
+        .last()
+        .zip(comparison_channels.elapsed.samples().last())
+        .map(|(reference, comparison)| reference.distance_m.min(comparison.distance_m))
+        .ok_or_else(|| "laps do not contain a common distance range".to_owned())?;
+    let grid = uniform_grid(common_end_m, 5.0)
+        .map_err(|error| format!("comparison grid is unavailable: {error:?}"))?;
+    let delta = calculate_delta(
+        &reference_channels.elapsed,
+        &comparison_channels.elapsed,
+        &grid,
+        30.0,
+    )
+    .map_err(|error| format!("lap delta is unavailable: {error:?}"))?;
+
+    let reference_speed = interpolate_channel(reference_channels.speed.as_ref(), &grid, 3.6)?;
+    let comparison_speed = interpolate_channel(comparison_channels.speed.as_ref(), &grid, 3.6)?;
+    let reference_throttle =
+        interpolate_channel(reference_channels.throttle.as_ref(), &grid, 100.0)?;
+    let comparison_throttle =
+        interpolate_channel(comparison_channels.throttle.as_ref(), &grid, 100.0)?;
+    let reference_brake = interpolate_channel(reference_channels.brake.as_ref(), &grid, 100.0)?;
+    let comparison_brake = interpolate_channel(comparison_channels.brake.as_ref(), &grid, 100.0)?;
+    let degrees_per_radian = 180.0 / std::f64::consts::PI;
+    let reference_steering = interpolate_channel(
+        reference_channels.steering.as_ref(),
+        &grid,
+        degrees_per_radian,
+    )?;
+    let comparison_steering = interpolate_channel(
+        comparison_channels.steering.as_ref(),
+        &grid,
+        degrees_per_radian,
+    )?;
+    let reference_rpm = interpolate_channel(reference_channels.rpm.as_ref(), &grid, 1.0)?;
+    let comparison_rpm = interpolate_channel(comparison_channels.rpm.as_ref(), &grid, 1.0)?;
+    let sectors = interpolate_discrete(reference_channels.sector.as_ref(), &grid)?;
+    let reference_gear = interpolate_discrete(reference_channels.gear.as_ref(), &grid)?;
+    let comparison_gear = interpolate_discrete(comparison_channels.gear.as_ref(), &grid)?;
+    let reference_position_x =
+        interpolate_channel(reference_channels.position_x.as_ref(), &grid, 1.0)?;
+    let reference_position_z =
+        interpolate_channel(reference_channels.position_z.as_ref(), &grid, 1.0)?;
+    let comparison_position_x =
+        interpolate_channel(comparison_channels.position_x.as_ref(), &grid, 1.0)?;
+    let comparison_position_z =
+        interpolate_channel(comparison_channels.position_z.as_ref(), &grid, 1.0)?;
+
+    let samples = grid
+        .into_iter()
+        .enumerate()
+        .map(|(index, distance_m)| LapComparisonSample {
+            distance_m,
+            delta_seconds: delta.samples[index].delta_s,
+            reference_speed_kmh: reference_speed[index],
+            comparison_speed_kmh: comparison_speed[index],
+            reference_throttle_percent: reference_throttle[index],
+            comparison_throttle_percent: comparison_throttle[index],
+            reference_brake_percent: reference_brake[index],
+            comparison_brake_percent: comparison_brake[index],
+            reference_steering_degrees: reference_steering[index],
+            comparison_steering_degrees: comparison_steering[index],
+            reference_rpm: reference_rpm[index],
+            comparison_rpm: comparison_rpm[index],
+            sector_index: sectors[index].map(|value| value.round() as u32),
+            reference_gear: reference_gear[index].map(|value| value.round() as i16),
+            comparison_gear: comparison_gear[index].map(|value| value.round() as i16),
+            reference_position_x_m: reference_position_x[index],
+            reference_position_z_m: reference_position_z[index],
+            comparison_position_x_m: comparison_position_x[index],
+            comparison_position_z_m: comparison_position_z[index],
+        })
+        .collect();
+
+    Ok(LapComparison {
+        session_id,
+        track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
+        car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        reference_lap_index,
+        reference_lap_time: format_optional_lap_time(reference.duration_ns),
+        comparison_lap_index,
+        comparison_lap_time: format_optional_lap_time(comparison.duration_ns),
+        lap_length_m,
+        samples,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn visualize_session_lap(
+    app: tauri::AppHandle,
+    session_id: String,
+    lap_index: u32,
+) -> Result<LapTrace, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let session = store
+        .recent_sessions(1_000)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "recorded session was not found".to_owned())?;
+    let lap = session
+        .laps
+        .iter()
+        .find(|lap| lap.index == lap_index)
+        .ok_or_else(|| "lap was not found".to_owned())?;
+    let columns = read_recorded_lap(&directory, &store, &lap.id)?;
+    let lap_length_m = columns
+        .track_length_m
+        .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value))
+        .ok_or_else(|| "the simulator did not report a usable track length".to_owned())?;
+    let channels = AlignedLapChannels::new(&columns, lap_length_m)?;
+    let end_m = channels
+        .elapsed
+        .samples()
+        .last()
+        .map(|sample| sample.distance_m)
+        .ok_or_else(|| "lap does not contain a usable distance range".to_owned())?;
+    let grid =
+        uniform_grid(end_m, 5.0).map_err(|error| format!("lap grid is unavailable: {error:?}"))?;
+    let speed = interpolate_channel(channels.speed.as_ref(), &grid, 3.6)?;
+    let throttle = interpolate_channel(channels.throttle.as_ref(), &grid, 100.0)?;
+    let brake = interpolate_channel(channels.brake.as_ref(), &grid, 100.0)?;
+    let steering = interpolate_channel(
+        channels.steering.as_ref(),
+        &grid,
+        180.0 / std::f64::consts::PI,
+    )?;
+    let rpm = interpolate_channel(channels.rpm.as_ref(), &grid, 1.0)?;
+    let sector = interpolate_discrete(channels.sector.as_ref(), &grid)?;
+    let gear = interpolate_discrete(channels.gear.as_ref(), &grid)?;
+    let position_x = interpolate_channel(channels.position_x.as_ref(), &grid, 1.0)?;
+    let position_z = interpolate_channel(channels.position_z.as_ref(), &grid, 1.0)?;
+    let samples = grid
+        .into_iter()
+        .enumerate()
+        .map(|(index, distance_m)| LapTraceSample {
+            distance_m,
+            sector_index: sector[index].map(|value| value.round() as u32),
+            speed_kmh: speed[index],
+            throttle_percent: throttle[index],
+            brake_percent: brake[index],
+            steering_degrees: steering[index],
+            rpm: rpm[index],
+            gear: gear[index].map(|value| value.round() as i16),
+            position_x_m: position_x[index],
+            position_z_m: position_z[index],
+        })
+        .collect();
+    Ok(LapTrace {
+        session_id,
+        lap_index,
+        lap_time: format_optional_lap_time(lap.duration_ns),
+        track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
+        car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        lap_length_m,
+        samples,
+    })
+}
+
+fn lap_is_invalid_for_comparison(validity: &str, max_tyres_out: Option<u8>) -> bool {
+    validity == "invalid" || max_tyres_out.is_some_and(|value| value >= 3)
+}
+
+fn format_optional_lap_time(duration_ns: Option<u64>) -> String {
+    duration_ns.map_or_else(|| "—".into(), format_lap_time)
+}
+
+fn read_recorded_lap(
+    directory: &Path,
+    store: &MetadataStore,
+    lap_id: &str,
+) -> Result<TelemetryColumns, String> {
+    let locator = store
+        .lap_telemetry(lap_id)
+        .map_err(|error| format!("lap telemetry was not found: {error:?}"))?;
+    let path = directory.join("telemetry").join(locator.blob_path.as_str());
+    let file =
+        File::open(path).map_err(|error| format!("failed to open lap telemetry: {error}"))?;
+    read_columns_range(file, locator.sample_start, locator.sample_count)
+        .map_err(|error| format!("failed to read lap telemetry: {error:?}"))
+}
+
+fn shared_track_length(
+    reference: &TelemetryColumns,
+    comparison: &TelemetryColumns,
+) -> Result<f64, String> {
+    let reference_length = reference
+        .track_length_m
+        .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value));
+    let comparison_length = comparison
+        .track_length_m
+        .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value));
+    match (reference_length, comparison_length) {
+        (Some(reference), Some(comparison)) if (reference - comparison).abs() <= 5.0 => {
+            Ok((reference + comparison) / 2.0)
+        }
+        (Some(value), None) | (None, Some(value)) => Ok(value),
+        (Some(_), Some(_)) => Err("laps report incompatible track lengths".into()),
+        (None, None) => Err("the simulator did not report a usable track length".into()),
+    }
+}
+
+struct AlignedLapChannels {
+    elapsed: ElapsedTimeSeries,
+    speed: Option<DistanceSeries>,
+    throttle: Option<DistanceSeries>,
+    brake: Option<DistanceSeries>,
+    steering: Option<DistanceSeries>,
+    rpm: Option<DistanceSeries>,
+    sector: Option<DistanceSeries>,
+    gear: Option<DistanceSeries>,
+    position_x: Option<DistanceSeries>,
+    position_z: Option<DistanceSeries>,
+}
+
+impl AlignedLapChannels {
+    fn new(columns: &TelemetryColumns, lap_length_m: f64) -> Result<Self, String> {
+        let use_lap_clock = columns.lap_time_ns.iter().flatten().count() >= 2;
+        let elapsed_origin = columns.elapsed_ns.first().copied().unwrap_or_default();
+        let elapsed_values = columns
+            .elapsed_ns
+            .iter()
+            .zip(&columns.lap_time_ns)
+            .map(|(elapsed, lap_time)| {
+                if use_lap_clock {
+                    lap_time.map(|value| std::time::Duration::from_nanos(value).as_secs_f64())
+                } else {
+                    Some(
+                        std::time::Duration::from_nanos(elapsed.saturating_sub(elapsed_origin))
+                            .as_secs_f64(),
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
+        let elapsed_samples = distance_samples(
+            &columns.lap_position,
+            elapsed_values.into_iter(),
+            lap_length_m,
+        );
+        let elapsed = ElapsedTimeSeries::new(elapsed_samples)
+            .map_err(|error| format!("lap time cannot be aligned by distance: {error:?}"))?;
+        Ok(Self {
+            elapsed,
+            speed: continuous_series(&columns.lap_position, &columns.speed_mps, lap_length_m),
+            throttle: continuous_series(&columns.lap_position, &columns.throttle, lap_length_m),
+            brake: continuous_series(&columns.lap_position, &columns.brake, lap_length_m),
+            steering: continuous_series(
+                &columns.lap_position,
+                &columns.steering_angle_rad,
+                lap_length_m,
+            ),
+            rpm: continuous_series(&columns.lap_position, &columns.engine_rpm, lap_length_m),
+            sector: numeric_series(
+                &columns.lap_position,
+                columns
+                    .sector_index
+                    .iter()
+                    .map(|value| value.map(|value| f64::from(value + 1))),
+                lap_length_m,
+            ),
+            gear: numeric_series(
+                &columns.lap_position,
+                columns
+                    .gear_kind
+                    .iter()
+                    .zip(&columns.gear_value)
+                    .map(|(kind, value)| resolved_gear(*kind, *value).map(f64::from)),
+                lap_length_m,
+            ),
+            position_x: numeric_series(
+                &columns.lap_position,
+                columns.position_x_m.iter().copied(),
+                lap_length_m,
+            ),
+            position_z: numeric_series(
+                &columns.lap_position,
+                columns.position_z_m.iter().copied(),
+                lap_length_m,
+            ),
+        })
+    }
+}
+
+fn continuous_series(
+    positions: &[Option<f32>],
+    values: &[Option<f32>],
+    lap_length_m: f64,
+) -> Option<DistanceSeries> {
+    let samples = distance_samples(
+        positions,
+        values.iter().map(|value| value.map(f64::from)),
+        lap_length_m,
+    );
+    (samples.len() >= 2)
+        .then(|| DistanceSeries::new(samples).ok())
+        .flatten()
+}
+
+fn numeric_series(
+    positions: &[Option<f32>],
+    values: impl Iterator<Item = Option<f64>>,
+    lap_length_m: f64,
+) -> Option<DistanceSeries> {
+    let samples = distance_samples(positions, values, lap_length_m);
+    (samples.len() >= 2)
+        .then(|| DistanceSeries::new(samples).ok())
+        .flatten()
+}
+
+fn resolved_gear(kind: Option<i8>, value: Option<i16>) -> Option<i16> {
+    match kind? {
+        -1 => Some(-1),
+        0 => Some(0),
+        1 => value,
+        _ => None,
+    }
+}
+
+fn distance_samples(
+    positions: &[Option<f32>],
+    values: impl Iterator<Item = Option<f64>>,
+    lap_length_m: f64,
+) -> Vec<DistanceSample> {
+    let mut last_distance = None;
+    positions
+        .iter()
+        .zip(values)
+        .filter_map(|(position, value)| {
+            let position = f64::from((*position)?);
+            let value = value?;
+            if !position.is_finite() || !(0.0..=1.0).contains(&position) || !value.is_finite() {
+                return None;
+            }
+            let distance_m = position * lap_length_m;
+            if last_distance.is_some_and(|last| distance_m <= last) {
+                return None;
+            }
+            last_distance = Some(distance_m);
+            Some(DistanceSample { distance_m, value })
+        })
+        .collect()
+}
+
+fn interpolate_channel(
+    series: Option<&DistanceSeries>,
+    grid: &[f64],
+    scale: f64,
+) -> Result<Vec<Option<f64>>, String> {
+    series.map_or_else(
+        || Ok(vec![None; grid.len()]),
+        |series| {
+            series
+                .interpolate(grid, InterpolationMethod::Linear, 30.0)
+                .map(|values| {
+                    values
+                        .into_iter()
+                        .map(|value| value.map(|value| value * scale))
+                        .collect()
+                })
+                .map_err(|error| format!("telemetry interpolation failed: {error:?}"))
+        },
+    )
+}
+
+fn interpolate_discrete(
+    series: Option<&DistanceSeries>,
+    grid: &[f64],
+) -> Result<Vec<Option<f64>>, String> {
+    series.map_or_else(
+        || Ok(vec![None; grid.len()]),
+        |series| {
+            series
+                .interpolate(grid, InterpolationMethod::HoldPrevious, 30.0)
+                .map_err(|error| format!("telemetry interpolation failed: {error:?}"))
+        },
+    )
 }
 
 #[tauri::command]
@@ -867,6 +1366,8 @@ pub fn run() {
             select_simulator,
             recent_sessions,
             session_lap_metrics,
+            visualize_session_lap,
+            compare_session_laps,
             game_install_directories,
             set_game_install_directory,
             export_session,
