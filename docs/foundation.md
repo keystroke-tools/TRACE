@@ -290,10 +290,11 @@ guess sector boundaries when sector telemetry is absent. Invalid and incomplete 
 remain viewable because their telemetry can still diagnose a mistake.
 
 The map supports zooming and panning and marks the start and current cursor position.
-It is deliberately labelled as a driven line: telemetry contains car position but no
-authoritative circuit edges. TRACE must load simulator circuit geometry before it can
-show a racing line relative to track boundaries, and must not render a wide stroke
-that could be mistaken for measured track limits.
+For Assetto Corsa, TRACE loads the installed circuit `map.png` and its `data/map.ini`
+coordinate transform when both are present, then overlays recorded world positions on
+the game's road outline. Missing, oversized, malformed, or unsafe asset paths fall
+back to the driven line and are labelled as lacking road edges; TRACE does not invent
+track limits.
 
 Comparison uses the same projection for two complete valid laps from the same
 simulator, track, and layout. Each lap has an independent session selector, so a
@@ -306,7 +307,9 @@ plain language; detailed speed, pedal, gear, and RPM traces live behind an optio
 Telemetry view. It
 calculates `comparison - reference` elapsed-time delta on their common distance domain
 and overlays both channel sets and track lines. Positive delta therefore means the
-comparison lap is behind. Missing values and gaps longer than 30 m remain unavailable
+comparison lap is behind. Both traces are solid: the faster lap is consistently purple
+in every graph and on the map, while the other lap uses the channel colour. Missing
+values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
 The Live page's “What TRACE records” inventory separates portable analysis-ready
