@@ -3,9 +3,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
+use serde::Serialize;
 
 const MAX_UI_METADATA_BYTES: u64 = 1_048_576;
+const MAX_TRACK_MAP_BYTES: u64 = 8 * 1_048_576;
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AcTrackMap {
+    pub(crate) data_url: String,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+    pub(crate) scale_factor: f64,
+    pub(crate) x_offset: f64,
+    pub(crate) z_offset: f64,
+}
 
 #[derive(Debug, Deserialize)]
 struct UiMetadata {
@@ -59,6 +73,59 @@ impl AcContentNames {
             .and_then(|path| read_name(&path))
             .unwrap_or_else(|| source_id.to_owned())
     }
+
+    pub(crate) fn track_map(&self, source_id: &str, layout_id: Option<&str>) -> Option<AcTrackMap> {
+        let root = self.root.as_deref()?.join("content/tracks").join(source_id);
+        if !safe_content_id(source_id) {
+            return None;
+        }
+        let mut candidates = Vec::new();
+        if let Some(layout) = layout_id.filter(|value| safe_content_id(value) && !value.is_empty())
+        {
+            let layout_root = root.join(layout);
+            candidates.push((
+                layout_root.join("map.png"),
+                layout_root.join("data/map.ini"),
+            ));
+        }
+        candidates.push((root.join("map.png"), root.join("data/map.ini")));
+        candidates
+            .into_iter()
+            .find_map(|(image, parameters)| read_track_map(&image, &parameters))
+    }
+}
+
+fn read_track_map(image_path: &Path, parameters_path: &Path) -> Option<AcTrackMap> {
+    let image_metadata = fs::metadata(image_path).ok()?;
+    if image_metadata.len() == 0 || image_metadata.len() > MAX_TRACK_MAP_BYTES {
+        return None;
+    }
+    let parameters = fs::read_to_string(parameters_path).ok()?;
+    if parameters.len() > 64 * 1024 {
+        return None;
+    }
+    let value = |name: &str| {
+        parameters.lines().find_map(|line| {
+            let (key, value) = line.trim().split_once('=')?;
+            (key.trim() == name)
+                .then(|| value.trim().parse::<f64>().ok())
+                .flatten()
+        })
+    };
+    let width = value("WIDTH").filter(|value| (1.0..=8_192.0).contains(value))?;
+    let height = value("HEIGHT").filter(|value| (1.0..=8_192.0).contains(value))?;
+    let scale_factor = value("SCALE_FACTOR").filter(|value| value.is_finite() && *value > 0.0)?;
+    let x_offset = value("X_OFFSET").filter(|value| value.is_finite())?;
+    let z_offset = value("Z_OFFSET").filter(|value| value.is_finite())?;
+    let encoded = STANDARD.encode(fs::read(image_path).ok()?);
+    Some(AcTrackMap {
+        data_url: format!("data:image/png;base64,{encoded}"),
+        width,
+        height,
+        scale_factor,
+        x_offset,
+        z_offset,
+    })
 }
 
 fn discover_install_root() -> Option<PathBuf> {

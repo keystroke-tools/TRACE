@@ -122,6 +122,15 @@ export interface LapTraceSample {
   trackTemperatureC?: number | null;
 }
 
+export interface TrackMapAsset {
+  dataUrl: string;
+  width: number;
+  height: number;
+  scaleFactor: number;
+  xOffset: number;
+  zOffset: number;
+}
+
 export interface LapTrace {
   sessionId: string;
   lapIndex: number;
@@ -129,6 +138,7 @@ export interface LapTrace {
   track: string;
   car: string;
   lapLengthM: number;
+  trackMap?: TrackMapAsset | null;
   samples: LapTraceSample[];
 }
 
@@ -141,6 +151,7 @@ export interface LapComparison {
   comparisonSessionTitle?: string | null;
   comparisonTrack: string;
   comparisonCar: string;
+  trackMap?: TrackMapAsset | null;
   referenceLapIndex: number;
   referenceLapTime: string;
   comparisonLapIndex: number;

@@ -14,13 +14,13 @@ use trace_core::{
 };
 use trace_storage::{
     ipc::{TelemetryColumns, export_core_csv, read_columns_range, read_lap_metrics},
-    metadata::MetadataStore,
+    metadata::{MetadataStore, SessionSummary},
 };
 
 mod ac_content;
 mod capture;
 
-use ac_content::AcContentNames;
+use ac_content::{AcContentNames, AcTrackMap};
 use capture::{CaptureStatus, SharedCaptureStatus};
 
 #[derive(Serialize)]
@@ -109,6 +109,7 @@ struct LapComparison {
     comparison_session_title: Option<String>,
     comparison_track: String,
     comparison_car: String,
+    track_map: Option<AcTrackMap>,
     reference_lap_index: u32,
     reference_lap_time: String,
     comparison_lap_index: u32,
@@ -154,6 +155,7 @@ struct LapTrace {
     track: String,
     car: String,
     lap_length_m: f64,
+    track_map: Option<AcTrackMap>,
     samples: Vec<LapTraceSample>,
 }
 
@@ -566,6 +568,9 @@ fn compare_session_laps(
         })
         .collect();
 
+    let reference_lap_time = format_optional_lap_time(reference.duration_ns);
+    let comparison_lap_time = format_optional_lap_time(comparison.duration_ns);
+    let track_map = track_map_for_session(&store, &reference_session)?;
     Ok(LapComparison {
         reference_session_id,
         reference_session_title: reference_session.user_title,
@@ -583,10 +588,11 @@ fn compare_session_laps(
         comparison_car: comparison_session
             .car
             .unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        track_map,
         reference_lap_index,
-        reference_lap_time: format_optional_lap_time(reference.duration_ns),
+        reference_lap_time,
         comparison_lap_index,
-        comparison_lap_time: format_optional_lap_time(comparison.duration_ns),
+        comparison_lap_time,
         lap_length_m,
         samples,
     })
@@ -678,15 +684,36 @@ fn visualize_session_lap(
             track_temperature_c: track_temperature[index],
         })
         .collect();
+    let lap_time = format_optional_lap_time(lap.duration_ns);
+    let track_map = track_map_for_session(&store, &session)?;
     Ok(LapTrace {
         session_id,
         lap_index,
-        lap_time: format_optional_lap_time(lap.duration_ns),
+        lap_time,
         track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
         car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
         lap_length_m,
+        track_map,
         samples,
     })
+}
+
+fn track_map_for_session(
+    store: &MetadataStore,
+    session: &SessionSummary,
+) -> Result<Option<AcTrackMap>, String> {
+    if session.simulator_key != "assetto-corsa" {
+        return Ok(None);
+    }
+    let Some(source_track_id) = session.source_track_id.as_deref() else {
+        return Ok(None);
+    };
+    let configured_path = store
+        .simulator_install_path("assetto-corsa")
+        .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
+        .map(PathBuf::from);
+    Ok(AcContentNames::discover(configured_path.as_deref())
+        .track_map(source_track_id, session.layout_id.as_deref()))
 }
 
 fn lap_is_invalid_for_comparison(validity: &str, max_tyres_out: Option<u8>) -> bool {
