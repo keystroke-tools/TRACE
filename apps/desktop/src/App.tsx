@@ -393,8 +393,8 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
       ) : (
         <>
           {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
-          {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose two clean laps below</strong><p className="mt-2 text-[13px] text-trace-muted">The comparison lap can come from this run or any other compatible session.</p></div>}
-          {state === "error" && <div className="border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Comparison unavailable.</strong> {error}</div>}
+          {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose a Reference and an Analysed Lap below</strong><p className="mt-2 text-[13px] text-trace-muted">Use a faster clean lap as the Reference, then choose the compatible lap you want to improve.</p></div>}
+          {state === "error" && <div className="border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Lap analysis unavailable.</strong> {error}</div>}
           {comparison && state === "ready" && (
             <div>
               <div className="pb-56">
@@ -417,7 +417,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm, comparisonIsFaster)} />
-                      <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "COMPARISON VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
+                      <ComparisonChart label="TIME DIFFERENCE" unit="s" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={deltaRange(samples)} series={[{ label: "ANALYSED LAP VS REFERENCE", colour: channelColours.delta, value: (sample) => sample.deltaSeconds }]} zeroLine />
                     </div>
                   </div>
                 </div>
@@ -439,7 +439,7 @@ function validComparisonLaps(session: RecordedSessionSummary) {
 function comparisonOutcome(delta?: number | null) {
   if (delta == null) return "NOT ENOUGH DATA";
   if (Math.abs(delta) < 0.001) return "LAPS ARE EVEN";
-  return `COMPARISON ${Math.abs(delta).toFixed(3)}s ${delta > 0 ? "SLOWER" : "FASTER"}`;
+  return `ANALYSED LAP ${Math.abs(delta).toFixed(3)}s ${delta > 0 ? "SLOWER" : "FASTER"}`;
 }
 
 type ComparisonValueKey = keyof Pick<LapComparisonSample, "referenceSpeedKmh" | "comparisonSpeedKmh" | "referenceThrottlePercent" | "comparisonThrottlePercent" | "referenceBrakePercent" | "comparisonBrakePercent" | "referenceSteeringPercent" | "comparisonSteeringPercent" | "referenceRpm" | "comparisonRpm" | "referenceGear" | "comparisonGear">;
@@ -452,13 +452,14 @@ const channelColours = {
   gear: "#5394ff",
   steering: "#f2f3f5",
   rpm: "#ffb84d",
-  delta: "var(--color-trace-purple)",
+  faster: "var(--color-trace-purple)",
+  delta: "#e8eaed",
 };
 
 function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey, colour: string, comparisonIsFaster: boolean): ComparisonChartSeries[] {
   return [
-    { label: "REFERENCE", colour: comparisonIsFaster ? colour : channelColours.delta, value: (sample) => sample[reference] },
-    { label: "COMPARISON", colour: comparisonIsFaster ? channelColours.delta : colour, value: (sample) => sample[comparison] },
+    { label: "REFERENCE", colour: comparisonIsFaster ? colour : channelColours.faster, value: (sample) => sample[reference] },
+    { label: "ANALYSED LAP", colour: comparisonIsFaster ? channelColours.faster : colour, value: (sample) => sample[comparison] },
   ];
 }
 
@@ -483,7 +484,7 @@ function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster,
   return (
     <section className={`fixed bottom-[252px] left-[200px] top-16 z-50 overflow-y-auto border border-trace-divider bg-trace-surface shadow-[0_18px_55px_rgba(0,0,0,.45)] transition-[width] ${collapsed ? "w-11" : "w-72"}`} aria-label="Rule-based lap analysis">
       <div className={`flex border-b border-trace-divider ${collapsed ? "h-11 items-center justify-center" : "min-h-16 items-start justify-between gap-3 p-3"}`}>
-        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">ANALYSIS</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Rule-based comparison · No AI</span><span className="mt-1 block text-[10px] leading-4 text-trace-faint">{comparisonIsFaster ? "Comparison is faster than Reference" : "Slower Comparison against faster Reference"}</span></div>}
+        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">ANALYSIS</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Rule-based comparison · No AI</span><span className="mt-1 block text-[10px] leading-4 text-trace-faint">{comparisonIsFaster ? "Analysed Lap is faster than Reference" : "Analysed Lap against faster Reference"}</span></div>}
         <button type="button" onClick={() => onCollapsed(!collapsed)} className="grid size-8 shrink-0 place-items-center text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label={collapsed ? "Show analysis" : "Hide analysis"} aria-expanded={!collapsed}>
           <svg className={`size-4 fill-none stroke-current transition-transform ${collapsed ? "" : "rotate-180"}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
         </button>
@@ -622,6 +623,7 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   const showConditions = referenceHasConditions || comparisonHasConditions;
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
   const referenceSuggestions = fasterReferenceSuggestions(sessions, comparisonSession, comparisonLaps.find((lap) => lap.index === comparisonLap) ?? null, comparisonSessionId, comparisonLap);
+  const gapTone = sample?.deltaSeconds == null || Math.abs(sample.deltaSeconds) < 0.0005 ? "text-trace-text" : sample.deltaSeconds > 0 ? "text-[#ff5263]" : "text-[#42db76]";
   return (
     <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px]" : "grid-cols-[120px_72px_minmax(160px,1fr)_82px_82px_minmax(160px,1fr)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
@@ -630,26 +632,26 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER BASELINE"} colour={comparisonIsFaster ? "text-trace-accent" : "text-trace-purple"} sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
         <div className="flex min-w-0 items-center justify-center gap-2">
-          <button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button>
-          <select value="" disabled={referenceSuggestions.length === 0} onChange={(event) => { const suggestion = referenceSuggestions[Number(event.target.value)]; if (suggestion) onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); }} className="trace-select h-9 min-w-0 flex-1 border border-trace-divider bg-trace-deep pl-2 font-mono text-[9px] font-bold text-trace-soft outline-none disabled:text-trace-dim" aria-label="Choose a suggested faster reference lap">
+          <button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap Reference and Analysed Lap"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button>
+          <select value="" disabled={referenceSuggestions.length === 0} onChange={(event) => { const suggestion = referenceSuggestions[Number(event.target.value)]; if (suggestion) onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); }} className="trace-select h-9 min-w-0 flex-1 border border-trace-divider bg-trace-deep pl-2 font-mono text-[9px] font-bold text-trace-soft outline-none disabled:text-trace-dim" aria-label="Choose a faster Reference for the Analysed Lap">
             <option value="">{referenceSuggestions.length === 0 ? "NO FASTER LAP" : "FASTER REFERENCES"}</option>
             {referenceSuggestions.map((suggestion, index) => <option value={index} key={`${suggestion.session.id}-${suggestion.lap.index}`}>{referenceSuggestionLabel(suggestion)}</option>)}
           </select>
         </div>
-        <HudLapChoice label="COMPARISON" role={comparisonIsFaster ? "FASTER LAP" : "LAP BEING REVIEWED"} colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"} sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
+        <HudLapChoice label="ANALYSED LAP" role={comparisonIsFaster ? "FASTER SELECTED LAP" : "LAP TO IMPROVE"} colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"} sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
-      <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta} />
-      <HudSteering value={sample?.referenceSteeringPercent} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta} />
+      <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster} />
+      <HudSteering value={sample?.referenceSteeringPercent} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster} />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
       {showConditions && (referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
       <div className="col-span-2 h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
         <span className="block truncate text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">{comparisonOutcome(finalDelta)}</span>
-        <strong className="mt-1 block truncate text-[13px] leading-5 tabular-nums text-trace-purple">{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${formatComparisonGap(sample.deltaSeconds)}`}</strong>
+        <strong className={`mt-1 block truncate text-[13px] leading-5 tabular-nums ${gapTone}`}>{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${formatComparisonGap(sample.deltaSeconds)}`}</strong>
       </div>
       {showConditions && (comparisonHasConditions ? <HudConditions air={comparisonAirTemperature} track={comparisonTrackTemperature} /> : <div aria-hidden="true" />)}
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
-      <HudSteering value={sample?.comparisonSteeringPercent} colour={comparisonIsFaster ? channelColours.delta : "var(--color-trace-accent)"} />
-      <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={comparisonIsFaster ? channelColours.delta : "var(--color-trace-accent)"} />
+      <HudSteering value={sample?.comparisonSteeringPercent} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
+      <HudValue label="ANALYSED SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
       <div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
         <ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} />
       </div>
@@ -721,7 +723,7 @@ function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDe
           ? `Sector ${sector.index} timing is unavailable.`
           : Math.abs(sector.seconds) < 0.0005
             ? `Sector ${sector.index} was even with the reference.`
-            : `The comparison ${gaining ? "gained" : "lost"} ${Math.abs(sector.seconds).toFixed(3)} seconds in sector ${sector.index}.`;
+            : `The Analysed Lap ${gaining ? "gained" : "lost"} ${Math.abs(sector.seconds).toFixed(3)} seconds against the Reference in sector ${sector.index}.`;
         return (
           <Tooltip content={explanation} key={sector.index}>
             <button type="button" onClick={() => onChange(sector.index)} className={`flex shrink-0 items-center gap-1.5 border px-2 text-[10px] font-bold tabular-nums ${tone} ${selected}`} aria-pressed={value === sector.index}>
@@ -931,14 +933,14 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
   const start = samples.find((sample) => sample.referencePositionXM != null && sample.referencePositionZM != null);
   const startPoint = start?.referencePositionXM != null && start.referencePositionZM != null ? project(start.referencePositionXM, start.referencePositionZM) : null;
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
-  const referenceColour = !comparison || comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta;
-  const comparisonColour = comparisonIsFaster ? channelColours.delta : "var(--color-trace-accent)";
+  const referenceColour = !comparison || comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster;
+  const comparisonColour = comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)";
   const mapControls = <div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text" aria-label="Reset map view">RESET</button>{onDismiss && <button type="button" onClick={onDismiss} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-lg leading-none text-trace-muted hover:border-trace-accent/50 hover:text-trace-text" aria-label="Dismiss floating track map">×</button>}</div>;
   return (
     <div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
       {onDismiss
         ? <div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
-        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />COMPARISON</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6 bg-[#ff334f]" />BRAKE</span></div>{mapControls}</div>}
+        : <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{focusSelection ? selectedCornerIndex != null ? `CORNER T${selectedCornerIndex}` : "SECTOR VIEW" : trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span>{zoom > 1 && followedTarget && <span className="ml-3 font-mono text-[9px] font-bold tracking-[.08em] text-trace-accent">FOLLOWING CURSOR</span>}</div><div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">{comparison && <><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`} style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`} style={{ borderColor: comparisonColour }} />ANALYSED LAP</span></>}<span className="flex items-center gap-2"><span className="block h-1.5 w-6 bg-[#ff334f]" />BRAKE</span></div>{mapControls}</div>}
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
@@ -1021,7 +1023,7 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
         <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
         <div className="flex items-center gap-4 font-mono text-[11px] font-bold">{series.map((item) => <span className="flex items-center gap-1.5" key={item.label}><span className="size-1.5 rounded-full" style={{ backgroundColor: item.colour }} /><span style={{ color: item.colour }}>{item.label}</span></span>)}</div>
       </div>
-      <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseMove={(event) => {
+      <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} telemetry by lap distance`} onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
         const pointerX = (event.clientX - bounds.left) / bounds.width * width;
         const ratio = Math.min(1, Math.max(0, (pointerX - plot.left) / (width - plot.left - plot.right)));

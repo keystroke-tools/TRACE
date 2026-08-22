@@ -4,7 +4,12 @@ Status: Phase 4 initial implementation.
 
 TRACE detects corners and explains time loss with deterministic distance-domain
 analysis. The implementation lives in `trace-core`; it has no simulator, storage,
-desktop, or presentation dependencies.
+desktop, or presentation dependencies. It is rule-based analysis, not AI-generated
+coaching.
+
+The UI calls the faster benchmark the **Reference** and the lap being reviewed the
+**Analysed Lap**. Core and storage fields retain `comparison` as the mathematical
+second operand for compatibility; in the equations below it means the Analysed Lap.
 
 ## Inputs and availability
 
@@ -37,7 +42,7 @@ as a conservative boundary.
 
 ## Loss decomposition
 
-Positive delta means Comparison is behind Reference. Corner loss is:
+Positive delta means the Analysed Lap is behind the Reference. Corner loss is:
 
 ```text
 delta(corner end) - delta(corner start)
@@ -53,16 +58,17 @@ one input difference caused the complete time loss.
 
 ## Desktop presentation
 
-The comparison workspace ranks positive corner losses and shows at most four biggest
-opportunities at once. Selecting a card filters every synchronized graph and the map to
-that corner. The strongest positive phase is labelled as the area where most loss
-developed, accompanied by an available measured difference such as minimum speed or
-throttle-pickup distance.
+The comparison workspace places a collapsible **Analysis** dock on the left. It ranks
+positive corner losses and shows at most four at once. Selecting a card filters every
+synchronized graph and the map to that corner. The strongest positive phase is labelled
+as the area where most loss developed, accompanied by an available measured difference
+such as minimum speed or throttle-pickup distance. The dock explicitly identifies the
+result as rule-based and non-AI.
 
 Track maps draw recorded brake applications over the driving line in red. Segment
 opacity follows recorded brake percentage, producing a brake-intensity gradient rather
-than a binary braking marker. Reference uses the wider overlay; Comparison uses the
-narrower overlay.
+than a binary braking marker. Reference uses the wider overlay; the Analysed Lap uses
+the narrower overlay.
 
 ## Current limitations
 

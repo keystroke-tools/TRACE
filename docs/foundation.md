@@ -291,7 +291,7 @@ remain viewable because their telemetry can still diagnose a mistake.
 
 The map supports zooming and panning and marks the start and current cursor position.
 Above the full-track zoom level it follows the active lap cursor automatically; during
-comparison it centres the midpoint between Reference and Comparison so both targets
+comparison it centres the midpoint between Reference and the Analysed Lap so both targets
 remain visible. Manual panning is retained as an offset from that followed position.
 When the primary map scrolls out of view, the visualizer and comparison workspace show
 a smaller fixed PiP map in the upper-right corner. It consumes the same filtered samples
@@ -308,23 +308,27 @@ driven path and is labelled as lacking road edges. AI boundaries provide spatial
 context, not authoritative legal track limits or barrier geometry.
 
 Comparison uses the same projection for two complete valid laps from the same
-simulator, track, and layout. Each lap has an independent session selector, so a
+simulator, track, car, and layout. The faster benchmark is labelled **Reference**; the
+lap being reviewed is labelled **Analysed Lap**. Each lap has an independent session selector, so a
 driver can compare separate visits, imported drivers, or two laps from one run. The
 compact selectors live in the persistent comparison HUD rather than consuming the
-analysis canvas. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
+analysis canvas. A faster-reference picker lists only clean, exactly compatible laps
+that beat the Analysed Lap. Imported laps rank before locally captured or replay laps,
+then candidates sort by lap time; choosing one replaces the Reference without changing
+the Analysed Lap. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
 presenting noisy precision that does not help the driver. Throttle and brake use
 separate side-by-side meters with independent percentages in both halves of the HUD.
-Reference and Comparison also have independent steering indicators and air/track
+Reference and the Analysed Lap also have independent steering indicators and air/track
 condition readouts, so sessions recorded under different conditions remain explicit.
 The analysis canvas keeps every channel visible in one scrollable workspace: speed and
 gear sit beside the map, full-width throttle and brake follow, then RPM and time
 difference. It
-calculates `comparison - reference` elapsed-time delta on their common distance domain
-and overlays both channel sets and track lines. Positive delta therefore means the
-comparison lap is behind. Colour consistently represents identity: reference telemetry
-uses the channel colour and comparison telemetry is purple, regardless of which lap is
-faster. Graph traces remain solid; on the map, Reference is solid and Comparison is
-dashed. Custom value badges follow each series at the shared cursor, using the line
+calculates `analysed lap - reference` elapsed-time delta on their common distance domain
+(the internal schema retains the name `comparison`). Positive delta therefore means the
+Analysed Lap is behind. Purple consistently identifies whichever selected lap is actually
+faster; the other lap retains the channel colour. The time-difference trace is neutral so
+it cannot be mistaken for lap identity. Graph traces remain solid; on the map, the faster
+purple trace is dashed. Custom value badges follow each series at the shared cursor, using the line
 colour as their background and omitting redundant identity and distance labels. They
 sit just left of the cursor with a small gap and do not intercept pointer input. Missing
 values and gaps longer than 30 m remain unavailable
