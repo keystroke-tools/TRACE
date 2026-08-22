@@ -821,7 +821,8 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const scale = Math.min((width - padding * 2) / Math.max(maxX - minX, 1), (height - padding * 2) / Math.max(maxZ - minZ, 1));
   const offsetX = (width - (maxX - minX) * scale) / 2;
   const offsetZ = (height - (maxZ - minZ) * scale) / 2;
-  const project = (x: number, z: number) => [offsetX + (x - minX) * scale, height - offsetZ - (z - minZ) * scale] as const;
+  // AC's map projection uses world Z directly as downward screen Y (see map.ini).
+  const project = (x: number, z: number) => [offsetX + (x - minX) * scale, offsetZ + (z - minZ) * scale] as const;
   const path = (xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM") => samples.reduce((result, sample) => {
     const x = sample[xKey]; const z = sample[zKey];
     if (x == null || z == null || !Number.isFinite(x) || !Number.isFinite(z)) return result;
