@@ -576,7 +576,7 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
           type="button"
           aria-label={`View ${session.track} session`}
           onClick={onOpen}
-          className="grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px]"
+          className="group grid min-w-0 flex-1 grid-cols-[minmax(170px,1.3fr)_minmax(145px,1fr)_100px_120px_20px] items-center gap-5 border-0 bg-transparent px-5 text-left hover:bg-trace-raised max-[1050px]:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_90px_20px]"
         >
           <div className="min-w-0">
             <span className="block truncate text-[12px] font-extrabold tracking-[.1em] text-trace-accent">{friendlySessionType(session)}</span>
@@ -604,6 +604,9 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
             <span className="block text-[12px] tracking-[.08em] text-trace-dim">FASTEST LAP</span>
             <strong className="mt-1 block text-[12px] text-trace-soft">{bestLap?.time ?? "—"}</strong>
           </div>
+          <svg className="size-4 fill-none stroke-current text-trace-muted transition-transform group-hover:translate-x-0.5 group-hover:text-trace-text" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m6 4 4 4-4 4" />
+          </svg>
         </button>
         <div className="flex shrink-0 items-stretch border-l border-trace-divider">
           <div className="relative flex" ref={actionsMenu}>
@@ -656,19 +659,6 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
               </div>
             )}
           </div>
-          <Tooltip className="h-full" content="View session">
-            <button
-              type="button"
-              aria-label={`View ${session.track} session`}
-              onClick={onOpen}
-              className="flex h-full w-16 items-center justify-center gap-1.5 border-0 border-l border-trace-divider bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
-            >
-              <span className="font-mono text-[12px] font-bold tracking-[.08em]">VIEW</span>
-              <svg className="size-3 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m6 4 4 4-4 4" />
-              </svg>
-            </button>
-          </Tooltip>
         </div>
       </div>
     </article>
