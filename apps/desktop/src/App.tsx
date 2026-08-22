@@ -431,7 +431,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
     if (referenceLap == null || comparisonLap == null) return false;
     try {
       setSavedComparisons(await telemetryDataSource.saveComparison(name, referenceSessionId, referenceLap, comparisonSessionId, comparisonLap));
-      showToast({ kind: "success", title: "Comparison saved", message: "You can restore this lap pair from the Analysis dock.", timeoutMs: 4_500 });
+      showToast({ kind: "success", title: "Comparison saved", message: "You can restore this lap pair from Saved Comparisons.", timeoutMs: 4_500 });
       return true;
     } catch (reason) {
       showToast({ kind: "error", title: "Could not save comparison", message: reason instanceof Error ? reason.message : String(reason), timeoutMs: 8_000 });
@@ -494,10 +494,11 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
         </div>
       ) : (
         <>
-          <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} savedComparisons={savedComparisons} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} onOpenSaved={openSavedComparison} onSave={saveCurrentComparison} onDeleteSaved={deleteSavedComparison} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setTelemetryWindow(null); setCursorIndex(null); }} />
+          <SavedComparisonsDock savedComparisons={savedComparisons} sessions={sessions} defaultName={defaultComparisonName} canSave={comparison != null && state === "ready"} currentReferenceSessionId={referenceSessionId} currentReferenceLap={referenceLap} currentAnalysedSessionId={comparisonSessionId} currentAnalysedLap={comparisonLap} onOpen={openSavedComparison} onSave={saveCurrentComparison} onDelete={deleteSavedComparison} />
+          <CornerAnalysisPanel corners={corners} selectedCornerIndex={cornerIndex} comparisonIsFaster={comparisonIsFaster} collapsed={analysisCollapsed} onCollapsed={setAnalysisCollapsed} onSelect={(value) => { setCornerIndex(value === cornerIndex ? null : value); setSector(null); setTelemetryWindow(null); setCursorIndex(null); }} />
           <div className={analysisCollapsed ? "ml-14" : "ml-[300px]"}>
             {state === "loading" && <div className="border border-trace-divider bg-trace-surface p-8 font-mono text-[12px] text-trace-dim">ALIGNING RECORDED TELEMETRY…</div>}
-            {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose a Reference and an Analysed Lap below</strong><p className="mt-2 text-[13px] text-trace-muted">Use a faster clean lap as the Reference, then choose the compatible lap you want to improve—or reopen a saved comparison from Analysis.</p></div>}
+            {state === "idle" && <div className="border border-trace-divider bg-trace-surface p-10 text-center"><strong className="text-base">Choose a Reference and an Analysed Lap below</strong><p className="mt-2 text-[13px] text-trace-muted">Use a faster clean lap as the Reference, then choose the compatible lap you want to improve—or reopen a saved comparison from the top-right dock.</p></div>}
             {state === "error" && <div className="border border-trace-warning/50 bg-trace-warning/10 p-5 text-[13px] text-trace-warning"><strong>Lap analysis unavailable.</strong> {error}</div>}
           </div>
           {comparison && state === "ready" && (
@@ -611,14 +612,62 @@ function nextTelemetryWindow(samples: LapComparisonSample[], current: TelemetryW
   return { startM: nextStart, endM: nextEnd };
 }
 
-function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, savedComparisons, defaultName, canSave, onOpenSaved, onSave, onDeleteSaved, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; savedComparisons: SavedComparison[]; defaultName: string; canSave: boolean; onOpenSaved: (comparison: SavedComparison) => void; onSave: (name: string) => Promise<boolean>; onDeleteSaved: (id: string) => Promise<void>; onSelect: (index: number) => void }) {
+function SavedComparisonsDock({ savedComparisons, sessions, defaultName, canSave, currentReferenceSessionId, currentReferenceLap, currentAnalysedSessionId, currentAnalysedLap, onOpen, onSave, onDelete }: { savedComparisons: SavedComparison[]; sessions: RecordedSessionSummary[]; defaultName: string; canSave: boolean; currentReferenceSessionId: string; currentReferenceLap: number | null; currentAnalysedSessionId: string; currentAnalysedLap: number | null; onOpen: (comparison: SavedComparison) => void; onSave: (name: string) => Promise<boolean>; onDelete: (id: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [draftName, setDraftName] = useState(defaultName);
-  const [selectedSavedId, setSelectedSavedId] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!saveOpen) setDraftName(defaultName);
   }, [defaultName, saveOpen]);
+  return (
+    <aside className="fixed right-[232px] top-12 z-[60] w-[720px] max-w-[calc(100vw-456px)] border border-t-0 border-trace-divider bg-trace-black/98 shadow-[0_18px_45px_rgba(0,0,0,.55)] backdrop-blur" aria-label="Saved comparisons">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="flex h-10 w-full items-center justify-between gap-4 px-4 hover:bg-trace-deep" aria-expanded={open}>
+        <span className="flex min-w-0 items-center gap-2 font-mono"><svg className="size-3.5 fill-trace-accent stroke-trace-accent" viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1.5 1.9 3.85 4.25.62-3.08 3 .73 4.23L8 11.2l-3.8 2 .73-4.23-3.08-3 4.25-.62Z" /></svg><strong className="truncate text-[10px] tracking-[.1em] text-trace-soft">SAVED COMPARISONS</strong><span className="border border-trace-accent/40 px-1.5 py-0.5 text-[9px] font-black text-trace-accent">{savedComparisons.length}</span></span>
+        <span className="flex shrink-0 items-center gap-2 font-mono text-[9px] font-bold text-trace-dim"><span>{open ? "CLOSE" : savedComparisons.length ? "OPEN FAVOURITES" : "SAVE A LAP PAIR"}</span><svg className={`size-3 fill-none stroke-current transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg></span>
+      </button>
+      {open && <div className="max-h-[460px] overflow-y-auto border-t border-trace-divider">
+        <div className="flex items-center justify-between gap-4 border-b border-trace-divider bg-trace-surface px-4 py-3">
+          <p className="text-[11px] leading-4 text-trace-dim">Favourite lap pairs keep their roles, drivers, and session context together.</p>
+          <button type="button" disabled={!canSave} onClick={() => setSaveOpen(true)} className="shrink-0 border border-trace-accent/50 bg-trace-accent-wash px-3 py-2 font-mono text-[10px] font-black text-trace-accent hover:border-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-not-allowed disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">SAVE CURRENT</button>
+        </div>
+        {saveOpen && <form onSubmit={async (event) => { event.preventDefault(); if (!draftName.trim()) return; setSaving(true); const saved = await onSave(draftName); setSaving(false); if (saved) setSaveOpen(false); }} className="flex items-end gap-3 border-b border-trace-divider bg-trace-deep p-3">
+          <label className="min-w-0 flex-1 font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim" htmlFor="saved-comparison-name">COMPARISON NAME<input id="saved-comparison-name" value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={80} autoFocus className="mt-1.5 h-9 w-full border border-trace-divider bg-trace-black px-3 text-[12px] font-sans font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" /></label>
+          <button type="button" onClick={() => setSaveOpen(false)} className="h-9 px-3 font-mono text-[10px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button>
+          <button type="submit" disabled={saving || !draftName.trim()} className="h-9 bg-trace-accent px-4 font-mono text-[10px] font-black text-trace-black disabled:opacity-40">{saving ? "SAVING…" : "SAVE"}</button>
+        </form>}
+        {savedComparisons.length === 0 ? <div className="px-5 py-8 text-center"><strong className="block text-[13px] text-trace-soft">No favourite comparisons yet</strong><p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-trace-dim">Choose a useful Reference and Analysed Lap, then save the pair here for quick access later.</p></div> : <div className="grid gap-3 p-3">
+          {savedComparisons.map((saved) => {
+            const referenceSession = sessions.find((session) => session.id === saved.referenceSessionId);
+            const analysedSession = sessions.find((session) => session.id === saved.analysedSessionId);
+            const referenceDriver = savedComparisonDriver(referenceSession);
+            const analysedDriver = savedComparisonDriver(analysedSession);
+            const current = saved.referenceSessionId === currentReferenceSessionId && saved.referenceLapIndex === currentReferenceLap && saved.analysedSessionId === currentAnalysedSessionId && saved.analysedLapIndex === currentAnalysedLap;
+            return <article className={`min-w-0 border bg-trace-surface ${current ? "border-trace-accent/70 outline outline-1 -outline-offset-1 outline-trace-accent/30" : "border-trace-divider"}`} key={saved.id}>
+              <div className="flex items-start justify-between gap-3 border-b border-trace-divider px-3 py-2.5"><span className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{saved.name}</strong><span className="mt-1 block truncate font-mono text-[9px] font-bold text-trace-dim">{saved.track} · {saved.car}</span></span>{current && <span className="shrink-0 border border-trace-accent/40 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[8px] font-black text-trace-accent">CURRENT</span>}</div>
+              <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 px-3 py-3">
+                <SavedComparisonLap role="REFERENCE" driver={referenceDriver} lapIndex={saved.referenceLapIndex} durationNs={saved.referenceDurationNs} startedAt={saved.referenceStartedAt} accent="text-trace-purple" />
+                <span className="self-center font-mono text-[9px] font-black text-trace-dim">VS</span>
+                <SavedComparisonLap role="ANALYSED" driver={analysedDriver} lapIndex={saved.analysedLapIndex} durationNs={saved.analysedDurationNs} startedAt={saved.analysedStartedAt} accent="text-trace-accent" alignRight />
+              </div>
+              <div className="flex items-center justify-between border-t border-trace-divider px-3 py-2"><span className="font-mono text-[8px] font-bold text-trace-dim">SAVED {formatSessionDate(saved.createdAt)}</span><span className="flex items-center gap-1"><button type="button" onClick={() => { onOpen(saved); setOpen(false); }} className="px-2.5 py-1.5 font-mono text-[9px] font-black text-trace-accent hover:bg-trace-accent-wash">OPEN</button><Tooltip content="Remove this favourite without deleting either session"><button type="button" onClick={() => void onDelete(saved.id)} className="grid size-7 place-items-center text-trace-dim hover:bg-trace-danger/20 hover:text-[#ff5263]" aria-label={`Delete saved comparison ${saved.name}`}><svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M6 4V2h4v2m2 0-.5 10h-7L4 4m3 3v4m2-4v4" /></svg></button></Tooltip></span></div>
+            </article>;
+          })}
+        </div>}
+      </div>}
+    </aside>
+  );
+}
+
+function SavedComparisonLap({ role, driver, lapIndex, durationNs, startedAt, accent, alignRight = false }: { role: string; driver: string; lapIndex: number; durationNs: number; startedAt: string; accent: string; alignRight?: boolean }) {
+  return <div className={`min-w-0 font-mono ${alignRight ? "text-right" : ""}`}><span className={`block text-[8px] font-black tracking-[.08em] ${accent}`}>{role}</span><strong className="mt-1 block min-h-5 whitespace-normal break-words font-sans text-[12px] leading-5 text-trace-text">{driver}</strong><strong className="mt-1 block text-[14px] tabular-nums text-trace-soft">{formatLapDurationNs(durationNs)}</strong><span className="mt-1 block whitespace-normal text-[8px] font-bold leading-3 text-trace-dim">LAP {lapIndex}<br />{formatSessionDate(startedAt)}</span></div>;
+}
+
+function savedComparisonDriver(session?: RecordedSessionSummary) {
+  return session?.driver?.trim() || session?.title?.trim() || "Unknown driver";
+}
+
+function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster, collapsed, onCollapsed, onSelect }: { corners: CornerAnalysis[]; selectedCornerIndex: number | null; comparisonIsFaster: boolean; collapsed: boolean; onCollapsed: (collapsed: boolean) => void; onSelect: (index: number) => void }) {
   const opportunities = corners
     .filter((corner) => corner.totalLossSeconds != null && corner.totalLossSeconds > 0.005)
     .slice()
@@ -641,23 +690,6 @@ function CornerAnalysisPanel({ corners, selectedCornerIndex, comparisonIsFaster,
           <p className="border-b border-trace-divider bg-trace-warning/5 px-3 py-2 text-[10px] leading-4 text-trace-dim">
             This analysis uses simple telemetry rules and may be incorrect. Verify its suggestions against the graphs and track map.
           </p>
-          <div className="space-y-2 border-b border-trace-divider p-3">
-            <div className="flex gap-2">
-              <select value={selectedSavedId} onChange={(event) => { const id = event.target.value; setSelectedSavedId(id); const saved = savedComparisons.find((item) => item.id === id); if (saved) onOpenSaved(saved); }} className="min-w-0 flex-1 border border-trace-divider bg-trace-deep px-2 py-2 font-mono text-[10px] font-bold text-trace-muted outline-none focus:border-trace-accent" aria-label="Open a saved comparison">
-                <option value="">SAVED COMPARISONS</option>
-                {savedComparisons.map((saved) => <option value={saved.id} key={saved.id}>{saved.name} · REF {formatSessionDate(saved.referenceStartedAt)} · ANALYSED {formatSessionDate(saved.analysedStartedAt)} · {saved.track} · {saved.car}</option>)}
-              </select>
-              <button type="button" disabled={!canSave} onClick={() => setSaveOpen(true)} className="border border-trace-divider px-3 font-mono text-[10px] font-bold text-trace-muted hover:border-trace-accent hover:text-trace-text disabled:cursor-not-allowed disabled:opacity-30">SAVE</button>
-              <button type="button" disabled={!selectedSavedId} onClick={async () => { await onDeleteSaved(selectedSavedId); setSelectedSavedId(""); }} className="grid size-8 shrink-0 place-items-center border border-trace-divider text-trace-muted hover:border-[#ff5263] hover:text-[#ff5263] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Delete selected saved comparison">
-                <svg className="size-3.5 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M6 4V2h4v2m2 0-.5 10h-7L4 4m3 3v4m2-4v4" /></svg>
-              </button>
-            </div>
-            {saveOpen && <form onSubmit={async (event) => { event.preventDefault(); if (!draftName.trim()) return; setSaving(true); const saved = await onSave(draftName); setSaving(false); if (saved) setSaveOpen(false); }} className="space-y-2 border border-trace-divider bg-trace-deep p-2">
-              <label className="block font-mono text-[9px] font-bold tracking-[.08em] text-trace-dim" htmlFor="comparison-name">COMPARISON NAME</label>
-              <input id="comparison-name" value={draftName} onChange={(event) => setDraftName(event.target.value)} maxLength={80} autoFocus className="w-full border border-trace-divider bg-trace-black px-2 py-2 text-[12px] text-trace-text outline-none focus:border-trace-accent" />
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setSaveOpen(false)} className="px-2 py-1 font-mono text-[10px] font-bold text-trace-dim hover:text-trace-text">CANCEL</button><button type="submit" disabled={saving || !draftName.trim()} className="bg-trace-accent px-3 py-1 font-mono text-[10px] font-black text-trace-black disabled:opacity-40">{saving ? "SAVING…" : "SAVE"}</button></div>
-            </form>}
-          </div>
           {opportunities.length === 0 ? <p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">The rule-based comparison did not detect any meaningful corner losses.</p> : <div className="divide-y divide-trace-divider">
           {selectedCornerIndex != null && <button type="button" onClick={() => onSelect(selectedCornerIndex)} className="w-full px-4 py-3 text-left font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent hover:bg-trace-deep hover:text-trace-text">SHOW FULL LAP</button>}
           {opportunities.map((corner) => {
@@ -2213,6 +2245,14 @@ function lapTimeMs(value: string) {
   const match = /^(\d+):(\d{2})\.(\d{3})$/.exec(value);
   if (!match) return Number.POSITIVE_INFINITY;
   return Number(match[1]) * 60_000 + Number(match[2]) * 1_000 + Number(match[3]);
+}
+
+function formatLapDurationNs(durationNs: number) {
+  const totalMilliseconds = Math.max(0, Math.round(durationNs / 1_000_000));
+  const minutes = Math.floor(totalMilliseconds / 60_000);
+  const seconds = Math.floor((totalMilliseconds % 60_000) / 1_000);
+  const milliseconds = totalMilliseconds % 1_000;
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
 }
 
 function formatSessionDate(value: string) {

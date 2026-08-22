@@ -352,13 +352,16 @@ values and gaps longer than 30 m remain unavailable
 rather than being extrapolated or connected with false precision.
 
 Named comparisons persist the exact compatible lap pair in SQLite and can be restored
-from the Analysis dock without rebuilding the selection from timestamps. Storage
+from a dedicated sticky Saved Comparisons dock without rebuilding the selection from
+timestamps. The dock presents each favourite as a structured card with both drivers,
+lap times, session timestamps, track, car, and save time instead of compressing that
+context into a selector option. Storage
 normalises the faster selected lap as Reference when saving, so reopening a shortcut
 preserves the benchmark-first workflow. Saved comparisons contain only local lap
 references; deleting one does not delete either session, while deleting a referenced
 session removes the now-unusable shortcut through foreign-key cascading.
-Saved-comparison options display both underlying session timestamps rather than only
-the shortcut name, track, and car.
+The dock resolves current driver attribution from each referenced session and clearly
+marks the lap pair that is already open.
 
 The Live page's “What TRACE records” inventory separates portable analysis-ready
 channels from the complete AC-native tyre, powertrain, chassis, session, and static
