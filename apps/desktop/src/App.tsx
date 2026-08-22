@@ -610,15 +610,15 @@ function TrackMap({ samples, cursorIndex, comparison = false, height: requestedH
   const comparisonColour = faster === "comparison" ? channelColours.delta : "var(--color-trace-accent)";
   return (
     <div className="border border-trace-divider bg-trace-surface">
-      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span></div><div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button></div></div>
+      <div className="flex h-12 items-center justify-between border-b border-trace-divider px-4"><div><span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">TRACK POSITION</span><span className="ml-3 font-mono text-[10px] text-trace-dim">{trackMap ? "AC AI-SPLINE ROAD EDGES" : "ROAD EDGES UNAVAILABLE"}</span></div>{comparison && <div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted"><span className="flex items-center gap-2"><span className="block w-6 border-t-2" style={{ borderColor: referenceColour }} />REFERENCE</span><span className="flex items-center gap-2"><span className="block w-6 border-t-2 border-dashed" style={{ borderColor: comparisonColour }} />COMPARISON</span></div>}<div className="flex items-center gap-1"><button type="button" onClick={() => setZoom((value) => Math.min(8, value * 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom in">+</button><button type="button" onClick={() => setZoom((value) => Math.max(1, value / 1.4))} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-trace-text" aria-label="Zoom out">−</button><button type="button" onClick={resetView} className="h-8 border border-trace-divider bg-trace-deep px-2 font-mono text-[10px] text-trace-muted hover:text-trace-text">RESET</button></div></div>
       <svg className="block w-full cursor-grab touch-none active:cursor-grabbing" style={{ height: displayHeight }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Recorded path around the track" onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.min(8, Math.max(1, value * (event.deltaY < 0 ? 1.15 : 0.87)))); }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y }; }} onPointerMove={(event) => { if (!drag.current) return; const bounds = event.currentTarget.getBoundingClientRect(); setPan({ x: drag.current.panX + (event.clientX - drag.current.x) * width / bounds.width, y: drag.current.panY + (event.clientY - drag.current.y) * height / bounds.height }); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
         <g transform={`translate(${pan.x} ${pan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
           {trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
           {trackMap && <path d={geometryPath(trackMap.leftBoundary)} fill="none" stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
           {trackMap && <path d={geometryPath(trackMap.rightBoundary)} fill="none" stroke="var(--color-trace-soft)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
           {trackMap && <path d={geometryPath(trackMap.centreLine)} fill="none" stroke="var(--color-trace-divider)" strokeWidth="1" strokeDasharray="5 8" vectorEffect="non-scaling-stroke" />}
-          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3.5" strokeDasharray="1 8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3.5" strokeDasharray="1 8" strokeDashoffset="4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+          <path d={path("referencePositionXM", "referencePositionZM")} fill="none" stroke={referenceColour} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {comparison && <path d={path("comparisonPositionXM", "comparisonPositionZM")} fill="none" stroke={comparisonColour} strokeWidth="3" strokeDasharray="9 7" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
           {startPoint && <g transform={`translate(${startPoint[0]} ${startPoint[1]})`}><line x1="-7" y1="-7" x2="7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><line x1="7" y1="-7" x2="-7" y2="7" stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></g>}
           {referenceCursor && <path d={`M${referenceCursor[0]},${referenceCursor[1] - 8} l6,14 h-12 z`} fill={referenceColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
           {comparisonCursor && <circle cx={comparisonCursor[0]} cy={comparisonCursor[1]} r="5" fill={comparisonColour} stroke="#101010" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
@@ -659,11 +659,19 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
   const x = (distance: number) => plot.left + (distance - firstDistance) / distanceRange * (width - plot.left - plot.right);
   const y = (value: number) => plot.top + (maximum - value) / range * (height - plot.top - plot.bottom);
   const cursorSample = cursorIndex == null ? null : samples[cursorIndex] ?? null;
+  const cursorX = cursorSample ? x(cursorSample.distanceM) : null;
+  const tooltipTransform = cursorX == null
+    ? undefined
+    : cursorX < 230
+      ? "translateX(10px)"
+      : cursorX > width - 230
+        ? "translateX(calc(-100% - 10px))"
+        : "translateX(-50%)";
   return (
-    <div className="border border-trace-divider bg-trace-surface">
+    <div className="relative overflow-hidden border border-trace-divider bg-trace-surface">
       <div className={`flex items-center justify-between border-b border-trace-divider px-4 ${compact ? "h-9" : "min-h-12"}`}>
         <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
-        <div className="flex items-center gap-4 font-mono text-[12px]">{series.map((item) => <span style={{ color: item.colour }} key={item.label}>{item.label} {cursorSample && item.value(cursorSample) != null ? `${formatChartValue(item.value(cursorSample) ?? 0, unit)} ${unit}` : "—"}</span>)}</div>
+        <div className="flex items-center gap-4 font-mono text-[11px] font-bold">{series.map((item) => <span className="flex items-center gap-1.5" key={item.label}><span className="size-1.5 rounded-full" style={{ backgroundColor: item.colour }} /><span style={{ color: item.colour }}>{item.label}</span></span>)}</div>
       </div>
       <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
@@ -680,6 +688,17 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
         <text x={plot.left} y={height - 8} className="fill-trace-dim font-mono text-[12px]">{Math.round(firstDistance)} M</text>
         <text x={width - plot.right} y={height - 8} textAnchor="end" className="fill-trace-dim font-mono text-[12px]">{Math.round(lastDistance)} M</text>
       </svg>
+      {cursorSample && cursorX != null && (
+        <div className={`pointer-events-none absolute z-20 min-w-40 border border-trace-soft/40 bg-trace-black/95 px-3 py-2 font-mono shadow-[0_8px_24px_rgba(0,0,0,.5)] backdrop-blur ${compact ? "top-10" : "top-14"}`} style={{ left: `${cursorX / width * 100}%`, transform: tooltipTransform }} role="status" aria-live="off">
+          <span className="block border-b border-trace-divider pb-1 text-[10px] font-bold tabular-nums text-trace-dim">{Math.round(cursorSample.distanceM)} M</span>
+          <span className="mt-1.5 grid gap-1.5">
+            {series.map((item) => {
+              const value = item.value(cursorSample);
+              return <span className="flex items-center justify-between gap-5 text-[11px]" key={item.label}><span className="flex items-center gap-1.5 font-bold" style={{ color: item.colour }}><span className="size-1.5 rounded-full" style={{ backgroundColor: item.colour }} />{item.label}</span><strong className="tabular-nums text-trace-text">{value == null || !Number.isFinite(value) ? "—" : `${formatChartValue(value, unit)}${unit ? ` ${unit}` : ""}`}</strong></span>;
+            })}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
