@@ -274,7 +274,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
               <ComparisonChart compact label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={singleSeries("referenceRpm", channelColours.rpm)} />
             </div>
           </div>
-          <TelemetryHud session={session} lapIndex={lapIndex} sample={cursor ?? samples[0] ?? null} />
+          <TelemetryHud session={session} lapIndex={lapIndex} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </div>
       )}
     </>
@@ -330,7 +330,6 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
 
   const finalDelta = comparison?.samples.slice().reverse().find((sample) => sample.deltaSeconds != null)?.deltaSeconds;
   const samples = comparison ? filterSamplesBySector(comparison.samples, sector) : [];
-  const cursorSample = cursorIndex == null ? null : samples[cursorIndex] ?? null;
 
   return (
     <>
@@ -382,7 +381,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                   <ComparisonChart compact label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm)} />
                 </div>
               </div>
-              <ComparisonHud comparison={comparison} sample={cursorSample ?? samples[0] ?? null} />
+              <ComparisonHud comparison={comparison} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
             </div>
           )}
         </>
@@ -438,7 +437,8 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
   );
 }
 
-function TelemetryHud({ session, lapIndex, sample }: { session: RecordedSessionSummary; lapIndex: number; sample: LapComparisonSample | null }) {
+function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { session: RecordedSessionSummary; lapIndex: number; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
+  const sample = samples[cursorIndex ?? 0] ?? null;
   return (
     <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(240px,1fr)_120px_100px_110px_150px_150px_90px_90px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="min-w-0"><span className="block truncate text-[13px] font-black">{session.track} · {session.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {lapIndex} · {friendlySessionType(session)}</span></div>
@@ -449,11 +449,13 @@ function TelemetryHud({ session, lapIndex, sample }: { session: RecordedSessionS
       <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
       <HudValue label="AIR" value={formatTemperature(sample?.referenceAirTemperatureC)} />
       <HudValue label="TRACK" value={formatTemperature(sample?.referenceTrackTemperatureC)} />
+      <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
     </div>
   );
 }
 
-function ComparisonHud({ comparison, sample }: { comparison: LapComparison; sample: LapComparisonSample | null }) {
+function ComparisonHud({ comparison, samples, cursorIndex, onSeek }: { comparison: LapComparison; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
+  const sample = samples[cursorIndex ?? 0] ?? null;
   return (
     <div className="fixed bottom-12 left-[200px] right-6 z-30 grid grid-cols-[minmax(250px,1fr)_110px_110px_170px_170px_90px_90px] items-center gap-4 border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="min-w-0"><span className="block truncate text-[13px] font-black">{comparison.track} · {comparison.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {comparison.referenceLapIndex} REF · LAP {comparison.comparisonLapIndex} COMPARE</span></div>
@@ -463,7 +465,21 @@ function ComparisonHud({ comparison, sample }: { comparison: LapComparison; samp
       <HudProgress label="COMPARE THROTTLE / BRAKE" value={sample?.comparisonThrottlePercent} secondary={sample?.comparisonBrakePercent} colour={channelColours.throttle} secondaryColour={channelColours.brake} />
       <HudValue label="REF GEAR" value={formatGear(sample?.referenceGear)} colour={channelColours.gear} />
       <HudValue label="CMP GEAR" value={formatGear(sample?.comparisonGear)} colour={channelColours.gear} />
+      <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
     </div>
+  );
+}
+
+function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
+  const index = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
+  const start = samples[0]?.distanceM ?? 0;
+  const end = samples.at(-1)?.distanceM ?? 0;
+  return (
+    <label className="col-span-full grid grid-cols-[72px_1fr_76px] items-center gap-3 border-t border-trace-divider pt-2 font-mono text-[10px] text-trace-dim">
+      <span>{Math.round(start)} M</span>
+      <input className="trace-seek w-full" type="range" min="0" max={Math.max(samples.length - 1, 0)} step="1" value={index} disabled={samples.length < 2} onChange={(event) => onSeek(Number(event.target.value))} aria-label="Seek through lap distance" />
+      <span className="text-right">{Math.round(end)} M</span>
+    </label>
   );
 }
 
@@ -566,7 +582,7 @@ function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, 
         <span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
         <div className="flex items-center gap-4 font-mono text-[12px]">{series.map((item) => <span style={{ color: item.colour }} key={item.label}>{item.label} {cursorSample && item.value(cursorSample) != null ? `${formatChartValue(item.value(cursorSample) ?? 0)} ${unit}` : "—"}</span>)}</div>
       </div>
-      <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseLeave={() => onCursor(null)} onMouseMove={(event) => {
+      <svg className={`block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label} comparison by lap distance`} onMouseMove={(event) => {
         const bounds = event.currentTarget.getBoundingClientRect();
         const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
         onCursor(Math.round(ratio * (samples.length - 1)));

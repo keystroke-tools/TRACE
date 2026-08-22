@@ -282,8 +282,9 @@ interpolation so discrete states are not blended into values that never existed.
 The visualizer displays compact, channel-coloured speed, throttle, brake, RPM, and
 gear charts alongside the car's recorded world-space path. A fixed telemetry HUD
 keeps pedal positions, speed, gear, distance, session identity, and recorded air and
-track temperatures visible without turning every value into another graph. Every
-graph shares a cursor. Full-lap and
+track temperatures visible without turning every value into another graph. Its seek
+bar scrubs the shared distance cursor across every chart and the map; chart hover
+updates the same persistent cursor. Full-lap and
 simulator-reported sector controls filter both charts and the path; TRACE does not
 guess sector boundaries when sector telemetry is absent. Invalid and incomplete laps
 remain viewable because their telemetry can still diagnose a mistake.
