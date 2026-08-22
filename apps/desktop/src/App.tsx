@@ -429,8 +429,8 @@ function validComparisonLaps(session: RecordedSessionSummary) {
 
 function comparisonOutcome(delta?: number | null) {
   if (delta == null) return "NOT ENOUGH DATA";
-  if (Math.abs(delta) < 0.001) return "DEAD EVEN";
-  return delta > 0 ? "REFERENCE FASTER" : "COMPARISON FASTER";
+  if (Math.abs(delta) < 0.001) return "LAPS ARE EVEN";
+  return `COMPARISON ${Math.abs(delta).toFixed(3)}s ${delta > 0 ? "SLOWER" : "FASTER"}`;
 }
 
 type ComparisonValueKey = keyof Pick<LapComparisonSample, "referenceSpeedKmh" | "comparisonSpeedKmh" | "referenceThrottlePercent" | "comparisonThrottlePercent" | "referenceBrakePercent" | "comparisonBrakePercent" | "referenceSteeringPercent" | "comparisonSteeringPercent" | "referenceRpm" | "comparisonRpm" | "referenceGear" | "comparisonGear">;
@@ -474,7 +474,7 @@ function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollap
   return (
     <section className="sticky top-0 max-h-[calc(100vh-190px)] overflow-y-auto border border-trace-divider bg-trace-surface" aria-label="Biggest corner opportunities">
       <div className={`flex border-b border-trace-divider ${collapsed ? "h-11 items-center justify-center" : "min-h-16 items-start justify-between gap-3 p-3"}`}>
-        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">OPPORTUNITIES</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Comparison loss by corner</span></div>}
+        {!collapsed && <div className="min-w-0"><strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">COMPARISON OPPORTUNITIES</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Purple lap measured against Reference</span></div>}
         <button type="button" onClick={() => onCollapsed(!collapsed)} className="grid size-8 shrink-0 place-items-center text-trace-muted hover:bg-trace-deep hover:text-trace-text" aria-label={collapsed ? "Show corner opportunities" : "Hide corner opportunities"} aria-expanded={!collapsed}>
           <svg className={`size-4 fill-none stroke-current transition-transform ${collapsed ? "rotate-180" : ""}`} viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg>
         </button>
@@ -493,7 +493,7 @@ function CornerOpportunities({ corners, selectedCornerIndex, collapsed, onCollap
             const dominant = dominantCornerPhase(corner);
             return (
               <button type="button" onClick={() => onSelect(corner.index)} className={`block w-full min-w-0 px-4 py-3 text-left transition-colors ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : "hover:bg-trace-deep"}`} aria-pressed={selected} key={corner.index}>
-                <span className="flex items-baseline justify-between gap-3 font-mono"><strong className="text-[15px] text-trace-text">{corner.label}</strong><strong className="text-[15px] tabular-nums text-[#ff5263]">+{corner.totalLossSeconds?.toFixed(3)}s</strong></span>
+                <span className="flex items-baseline justify-between gap-3 font-mono"><strong className="text-[15px] text-trace-text">{corner.label}</strong><strong className="text-[12px] tabular-nums text-[#ff5263]">LOSES {corner.totalLossSeconds?.toFixed(3)}s</strong></span>
                 <span className="mt-2 block truncate text-[10px] font-black tracking-[.08em] text-trace-dim">MOST LOSS · {dominant}</span>
                 <span className="mt-1 block truncate text-[11px] text-trace-muted">{cornerSummary(corner, dominant)}</span>
                 <span className="mt-3 grid grid-cols-3 gap-1 border-t border-trace-divider pt-2" aria-label={`${corner.label} time difference by phase`}>
@@ -519,7 +519,8 @@ function cornerPhaseLabel(phase: CornerAnalysis["phases"][number]["phase"]) {
 
 function formatPhaseDelta(seconds: number | null | undefined) {
   if (seconds == null) return "—";
-  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(3)}s`;
+  if (Math.abs(seconds) < 0.0005) return "EVEN";
+  return `${seconds > 0 ? "LOSES" : "GAINS"} ${Math.abs(seconds).toFixed(3)}s`;
 }
 
 function dominantCornerPhase(corner: CornerAnalysis) {
@@ -615,9 +616,9 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
         <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
       </div>
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
-        <HudLapChoice label="REFERENCE" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
+        <HudLapChoice label="REFERENCE" role="BASELINE LAP" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
         <div className="flex items-center justify-center"><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
-        <HudLapChoice label="COMPARISON" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
+        <HudLapChoice label="COMPARISON" role="LAP BEING REVIEWED" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
       <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
       <HudSteering value={sample?.referenceSteeringPercent} colour="var(--color-trace-accent)" />
@@ -625,7 +626,7 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       {showConditions && (referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
       <div className="col-span-2 h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
         <span className="block truncate text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">{comparisonOutcome(finalDelta)}</span>
-        <strong className="mt-1 block truncate text-[13px] leading-5 tabular-nums text-trace-purple">{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${sample.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)}`}</strong>
+        <strong className="mt-1 block truncate text-[13px] leading-5 tabular-nums text-trace-purple">{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${formatComparisonGap(sample.deltaSeconds)}`}</strong>
       </div>
       {showConditions && (comparisonHasConditions ? <HudConditions air={comparisonAirTemperature} track={comparisonTrackTemperature} /> : <div aria-hidden="true" />)}
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
@@ -684,7 +685,7 @@ function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDe
           <Tooltip content={explanation} key={sector.index}>
             <button type="button" onClick={() => onChange(sector.index)} className={`flex shrink-0 items-center gap-1.5 border px-2 text-[10px] font-bold tabular-nums ${tone} ${selected}`} aria-pressed={value === sector.index}>
               <span className="text-[9px] opacity-75">S{sector.index}</span>
-              <strong>{sector.seconds == null ? "—" : `${sector.seconds >= 0 ? "+" : "−"}${Math.abs(sector.seconds).toFixed(3)}`}</strong>
+              <strong>{sector.seconds == null ? "—" : Math.abs(sector.seconds) < 0.0005 ? "EVEN" : `${sector.seconds > 0 ? "LOSS" : "GAIN"} ${Math.abs(sector.seconds).toFixed(3)}`}</strong>
             </button>
           </Tooltip>
         );
@@ -693,8 +694,19 @@ function ComparisonSectorStrip({ sectors, value, onChange }: { sectors: SectorDe
   );
 }
 
-function HudLapChoice({ label, colour, sessions, sessionId, onSession, laps, lapIndex, onLap, disabledLap = null }: { label: string; colour: string; sessions: RecordedSessionSummary[]; sessionId: string; onSession: (value: string) => void; laps: RecordedSessionSummary["laps"]; lapIndex: number | null; onLap: (value: number) => void; disabledLap?: number | null }) {
-  return <div className="grid min-w-0 grid-cols-[100px_minmax(150px,1fr)_150px] items-center gap-2"><span className={`font-mono text-[10px] font-black tracking-[.1em] ${colour}`}>{label}</span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} session`}>{sessions.map((session) => <option value={session.id} key={session.id}>{session.title ?? `${session.track} · ${formatSessionDate(session.startedAt)}`}</option>)}</select><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} lap`}>{lapIndex == null && <option value="" disabled>No clean lap</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}</select></div>;
+function HudLapChoice({ label, role, colour, sessions, sessionId, onSession, laps, lapIndex, onLap, disabledLap = null }: { label: string; role: string; colour: string; sessions: RecordedSessionSummary[]; sessionId: string; onSession: (value: string) => void; laps: RecordedSessionSummary["laps"]; lapIndex: number | null; onLap: (value: number) => void; disabledLap?: number | null }) {
+  return <div className="grid min-w-0 grid-cols-[112px_minmax(150px,1fr)_150px] items-center gap-2"><span className="min-w-0 font-mono"><strong className={`block truncate text-[10px] font-black tracking-[.1em] ${colour}`}>{label}</strong><span className="mt-0.5 block truncate text-[8px] font-bold tracking-[.07em] text-trace-dim">{role}</span></span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} session`}>{sessions.map((session) => <option value={session.id} key={session.id}>{comparisonSessionLabel(session)}</option>)}</select><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} lap`}>{lapIndex == null && <option value="" disabled>No clean lap</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}</select></div>;
+}
+
+function comparisonSessionLabel(session: RecordedSessionSummary) {
+  const sessionLabel = session.title ?? `${session.track} · ${formatSessionDate(session.startedAt)}`;
+  return session.driver ? `${session.driver} · ${sessionLabel}` : sessionLabel;
+}
+
+function formatComparisonGap(seconds?: number | null) {
+  if (seconds == null) return "GAP —";
+  if (Math.abs(seconds) < 0.0005) return "EVEN";
+  return `${Math.abs(seconds).toFixed(3)}s ${seconds > 0 ? "BEHIND" : "AHEAD"}`;
 }
 
 function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
