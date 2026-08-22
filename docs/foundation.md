@@ -295,7 +295,12 @@ authoritative circuit edges. TRACE must load simulator circuit geometry before i
 show a racing line relative to track boundaries, and must not render a wide stroke
 that could be mistaken for measured track limits.
 
-Comparison uses the same projection for two complete valid laps from one session. It
+Comparison uses the same projection for two complete valid laps from the same
+simulator, track, and layout. Each lap has an independent session selector, so a
+driver can compare separate visits, imported drivers, or two laps from one run. The
+default Overview keeps the track lines, finish result, and time-difference chart in
+plain language; detailed speed, pedal, gear, and RPM traces live behind an optional
+Telemetry view. It
 calculates `comparison - reference` elapsed-time delta on their common distance domain
 and overlays both channel sets and track lines. Positive delta therefore means the
 comparison lap is behind. Missing values and gaps longer than 30 m remain unavailable
