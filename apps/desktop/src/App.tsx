@@ -307,7 +307,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   const skipReferenceDefaults = useRef(false);
   const skipComparisonDefaults = useRef(false);
   const referenceSession = eligibleSessions.find((candidate) => candidate.id === referenceSessionId) ?? null;
-  const compatibleSessions = useMemo(() => referenceSession == null ? eligibleSessions : eligibleSessions.filter((candidate) => candidate.simulatorId === referenceSession.simulatorId && candidate.track === referenceSession.track), [eligibleSessions, referenceSession]);
+  const compatibleSessions = useMemo(() => referenceSession == null ? eligibleSessions : eligibleSessions.filter((candidate) => candidate.simulatorId === referenceSession.simulatorId && candidate.track === referenceSession.track && candidate.car === referenceSession.car), [eligibleSessions, referenceSession]);
   const comparisonSession = compatibleSessions.find((candidate) => candidate.id === comparisonSessionId) ?? null;
   const referenceLaps = useMemo(() => referenceSession ? validComparisonLaps(referenceSession) : [], [referenceSession]);
   const comparisonLaps = useMemo(() => comparisonSession ? validComparisonLaps(comparisonSession) : [], [comparisonSession]);
@@ -315,7 +315,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
   useEffect(() => {
     if (!referenceSessionId && eligibleSessions[0]) {
       const seed = eligibleSessions[0];
-      const compatible = eligibleSessions.filter((candidate) => candidate.simulatorId === seed.simulatorId && candidate.track === seed.track);
+      const compatible = eligibleSessions.filter((candidate) => candidate.simulatorId === seed.simulatorId && candidate.track === seed.track && candidate.car === seed.car);
       const fastest = compatible.slice().sort((left, right) => lapDuration(validComparisonLaps(left)[0]) - lapDuration(validComparisonLaps(right)[0]))[0] ?? seed;
       setReferenceSessionId(fastest.id);
     }
@@ -425,7 +425,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
               {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} comparison comparisonIsFaster={comparisonIsFaster} trackMap={comparison.trackMap} focusSelection={sector != null || selectedCorner != null} corners={corners} selectedCornerIndex={cornerIndex} onDismiss={mapPip.dismiss} />}
             </div>
           )}
-          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
+          <ComparisonHud comparison={comparison} sessions={eligibleSessions} compatibleSessions={compatibleSessions} referenceSessionId={referenceSessionId} onReferenceSession={setReferenceSessionId} referenceLaps={referenceLaps} referenceLap={referenceLap} onReferenceLap={(value) => { setReferenceLap(value); if (comparisonSessionId === referenceSessionId && comparisonLap === value) setComparisonLap(referenceLaps.find((lap) => lap.index !== value)?.index ?? null); }} onReferenceSuggestion={(sessionId, lapIndex) => { skipReferenceDefaults.current = true; setReferenceSessionId(sessionId); setReferenceLap(lapIndex); setComparison(null); setCornerIndex(null); setCursorIndex(null); }} comparisonSessionId={comparisonSessionId} onComparisonSession={setComparisonSessionId} comparisonLaps={comparisonLaps} comparisonLap={comparisonLap} onComparisonLap={setComparisonLap} onSwap={() => { if (referenceLap == null || comparisonLap == null) return; skipReferenceDefaults.current = true; skipComparisonDefaults.current = true; setReferenceSessionId(comparisonSessionId); setReferenceLap(comparisonLap); setComparisonSessionId(referenceSessionId); setComparisonLap(referenceLap); }} samples={samples} sector={sector} onSector={(value) => { setSector(value); setCornerIndex(null); setCursorIndex(null); }} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
         </>
       )}
     </>
@@ -593,6 +593,7 @@ type ComparisonHudProps = {
   referenceLaps: RecordedSessionSummary["laps"];
   referenceLap: number | null;
   onReferenceLap: (value: number) => void;
+  onReferenceSuggestion: (sessionId: string, lapIndex: number) => void;
   comparisonSessionId: string;
   onComparisonSession: (value: string) => void;
   comparisonLaps: RecordedSessionSummary["laps"];
@@ -606,7 +607,7 @@ type ComparisonHudProps = {
   onSeek: (index: number) => void;
 };
 
-function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
+function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, onReferenceSuggestion, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, sector, onSector, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   const finalDelta = comparison?.samples.slice().reverse().find((candidate) => candidate.deltaSeconds != null)?.deltaSeconds;
   const comparisonIsFaster = finalDelta != null && finalDelta < -0.0005;
@@ -620,6 +621,7 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
   const comparisonHasConditions = hasHudConditions(comparisonAirTemperature, comparisonTrackTemperature);
   const showConditions = referenceHasConditions || comparisonHasConditions;
   const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
+  const referenceSuggestions = fasterReferenceSuggestions(sessions, comparisonSession, comparisonLaps.find((lap) => lap.index === comparisonLap) ?? null, comparisonSessionId, comparisonLap);
   return (
     <div className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(130px,1fr)_112px_82px_82px_112px_minmax(130px,1fr)_72px_120px]" : "grid-cols-[120px_72px_minmax(160px,1fr)_82px_82px_minmax(160px,1fr)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}>
       <div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
@@ -627,7 +629,13 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       </div>
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER BASELINE"} colour={comparisonIsFaster ? "text-trace-accent" : "text-trace-purple"} sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
-        <div className="flex items-center justify-center"><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
+        <div className="flex min-w-0 items-center justify-center gap-2">
+          <button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button>
+          <select value="" disabled={referenceSuggestions.length === 0} onChange={(event) => { const suggestion = referenceSuggestions[Number(event.target.value)]; if (suggestion) onReferenceSuggestion(suggestion.session.id, suggestion.lap.index); }} className="trace-select h-9 min-w-0 flex-1 border border-trace-divider bg-trace-deep pl-2 font-mono text-[9px] font-bold text-trace-soft outline-none disabled:text-trace-dim" aria-label="Choose a suggested faster reference lap">
+            <option value="">{referenceSuggestions.length === 0 ? "NO FASTER LAP" : "FASTER REFERENCES"}</option>
+            {referenceSuggestions.map((suggestion, index) => <option value={index} key={`${suggestion.session.id}-${suggestion.lap.index}`}>{referenceSuggestionLabel(suggestion)}</option>)}
+          </select>
+        </div>
         <HudLapChoice label="COMPARISON" role={comparisonIsFaster ? "FASTER LAP" : "LAP BEING REVIEWED"} colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"} sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
       <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.delta} />
@@ -647,6 +655,29 @@ function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSess
       </div>
     </div>
   );
+}
+
+type ReferenceSuggestion = {
+  session: RecordedSessionSummary;
+  lap: RecordedSessionSummary["laps"][number];
+  imported: boolean;
+};
+
+function fasterReferenceSuggestions(sessions: RecordedSessionSummary[], targetSession: RecordedSessionSummary | undefined, targetLap: RecordedSessionSummary["laps"][number] | null, targetSessionId: string, targetLapIndex: number | null) {
+  if (!targetSession || !targetLap) return [];
+  const targetDuration = lapDuration(targetLap);
+  return sessions
+    .filter((session) => session.simulatorId === targetSession.simulatorId && session.track === targetSession.track && session.car === targetSession.car)
+    .flatMap((session) => validComparisonLaps(session)
+      .filter((lap) => lapDuration(lap) < targetDuration && (session.id !== targetSessionId || lap.index !== targetLapIndex))
+      .map((lap): ReferenceSuggestion => ({ session, lap, imported: sessionSourceGroup(session) === "imported" })))
+    .sort((left, right) => Number(right.imported) - Number(left.imported) || lapDuration(left.lap) - lapDuration(right.lap))
+    .slice(0, 10);
+}
+
+function referenceSuggestionLabel(suggestion: ReferenceSuggestion) {
+  const identity = suggestion.session.driver ?? suggestion.session.title ?? formatSessionDate(suggestion.session.startedAt);
+  return `${suggestion.imported ? "IMPORTED · " : ""}${identity} · LAP ${suggestion.lap.index} · ${suggestion.lap.time}`;
 }
 
 type SectorDelta = { index: number; seconds: number | null };
@@ -709,8 +740,8 @@ function HudLapChoice({ label, role, colour, sessions, sessionId, onSession, lap
 }
 
 function comparisonSessionLabel(session: RecordedSessionSummary) {
-  const sessionLabel = session.title ?? `${session.track} · ${formatSessionDate(session.startedAt)}`;
-  return session.driver ? `${session.driver} · ${sessionLabel}` : sessionLabel;
+  const identity = session.driver ?? session.title ?? formatSessionDate(session.startedAt);
+  return `${session.car} · ${session.track} · ${identity}`;
 }
 
 function formatComparisonGap(seconds?: number | null) {
