@@ -279,10 +279,10 @@ turns normalized position into metres using the simulator-reported track length,
 interpolates continuous channels onto a 5 m grid. Gear and sector use hold-previous
 interpolation so discrete states are not blended into values that never existed.
 
-The visualizer displays compact, channel-coloured speed, throttle, brake, RPM, and
+The visualizer displays channel-coloured speed, throttle, brake, steering angle, and
 gear charts alongside the car's recorded world-space path. A fixed telemetry HUD
-keeps pedal positions, speed, gear, distance, session identity, and recorded air and
-track temperatures visible without turning every value into another graph. Its seek
+keeps pedal positions, speed, gear, RPM, distance, session identity, a circular steering
+indicator, and recorded air/track temperatures visible. Its seek
 bar scrubs the shared distance cursor across every chart and the map; chart hover
 updates the same persistent cursor. Full-lap and
 simulator-reported sector controls filter both charts and the path; TRACE does not
@@ -314,6 +314,8 @@ compact selectors live in the persistent comparison HUD rather than consuming th
 analysis canvas. Percentage, speed, RPM, and gear readouts use whole numbers to avoid
 presenting noisy precision that does not help the driver. Throttle and brake use
 separate side-by-side meters with independent percentages in both halves of the HUD.
+Reference and Comparison also have independent steering indicators and air/track
+condition readouts, so sessions recorded under different conditions remain explicit.
 The analysis canvas keeps every channel visible in one scrollable workspace: speed and
 gear sit beside the map, full-width throttle and brake follow, then RPM and time
 difference. It

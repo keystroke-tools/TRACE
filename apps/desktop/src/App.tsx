@@ -277,6 +277,7 @@ function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary;
             <div className="mt-3 grid gap-3">
               <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceThrottlePercent", channelColours.throttle)} />
               <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={singleSeries("referenceBrakePercent", channelColours.brake)} />
+              <ComparisonChart label="STEERING ANGLE" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringRange(samples)} zeroLine series={singleSeries("referenceSteeringDegrees", channelColours.steering)} />
             </div>
           </div>
           {mapPip.visible && <FloatingTrackMap samples={samples} cursorIndex={cursorIndex} trackMap={trace.trackMap} />}
@@ -399,6 +400,7 @@ function Compare({ sessions }: { sessions: RecordedSessionSummary[] }) {
                 <div className="mt-3 grid gap-3">
                   <ComparisonChart label="THROTTLE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle)} />
                   <ComparisonChart label="BRAKE" unit="%" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={[0, 100]} series={comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake)} />
+                  <ComparisonChart label="STEERING ANGLE" unit="°" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} fixedRange={steeringRange(samples)} zeroLine series={comparisonSeries("referenceSteeringDegrees", "comparisonSteeringDegrees", channelColours.steering)} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <ComparisonChart label="ENGINE SPEED" unit="rpm" samples={samples} cursorIndex={cursorIndex} onCursor={setCursorIndex} series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm)} />
@@ -433,6 +435,7 @@ const channelColours = {
   throttle: "#42db76",
   brake: "#ff5263",
   gear: "#5394ff",
+  steering: "#f2f3f5",
   rpm: "#ffb84d",
   delta: "var(--color-trace-purple)",
 };
@@ -466,15 +469,15 @@ function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSamp
 function TelemetryHud({ session, lapIndex, samples, cursorIndex, onSeek }: { session: RecordedSessionSummary; lapIndex: number; samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] grid-cols-[minmax(210px,1fr)_105px_135px_100px_140px_140px_80px_80px] grid-rows-[48px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px] grid-rows-[48px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="min-w-0"><span className="block truncate text-[13px] font-black">{session.track} · {session.car}</span><span className="font-mono text-[11px] text-trace-dim">LAP {lapIndex} · {friendlySessionType(session)}</span></div>
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
       <HudValue label="RPM" value={sample?.referenceRpm == null ? "—" : String(Math.round(sample.referenceRpm))} colour={channelColours.rpm} />
+      <HudSteering value={sample?.referenceSteeringDegrees} colour={channelColours.steering} />
       <HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
       <HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
-      <HudValue label="AIR" value={formatTemperature(sample?.referenceAirTemperatureC)} />
-      <HudValue label="TRACK" value={formatTemperature(sample?.referenceTrackTemperatureC)} />
+      <HudConditions air={sample?.referenceAirTemperatureC} track={sample?.referenceTrackTemperatureC} />
       <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
     </div>
   );
@@ -503,18 +506,22 @@ type ComparisonHudProps = {
 function ComparisonHud({ comparison, sessions, compatibleSessions, referenceSessionId, onReferenceSession, referenceLaps, referenceLap, onReferenceLap, comparisonSessionId, onComparisonSession, comparisonLaps, comparisonLap, onComparisonLap, onSwap, samples, cursorIndex, onSeek }: ComparisonHudProps) {
   const sample = samples[cursorIndex ?? 0] ?? null;
   return (
-    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[157px] grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_110px_110px_minmax(150px,1fr)_minmax(150px,1fr)] grid-rows-[45px_44px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
+    <div className="fixed bottom-12 left-[200px] right-6 z-30 grid h-[157px] grid-cols-[125px_80px_minmax(140px,1fr)_120px_90px_90px_120px_minmax(140px,1fr)_80px_125px] grid-rows-[45px_44px_28px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur">
       <div className="col-span-full grid grid-cols-[1fr_160px_1fr] gap-3 border-b border-trace-divider pb-2">
         <HudLapChoice label="REFERENCE" colour="text-trace-accent" sessions={sessions} sessionId={referenceSessionId} onSession={onReferenceSession} laps={referenceLaps} lapIndex={referenceLap} onLap={onReferenceLap} />
         <div className="flex items-center justify-center gap-3"><HudValue label="FINISH" value={comparison?.samples.at(-1)?.deltaSeconds == null ? "—" : formatDelta(comparison.samples.at(-1)?.deltaSeconds ?? 0)} colour={channelColours.delta} /><button type="button" disabled={referenceLap == null || comparisonLap == null} onClick={onSwap} className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim" aria-label="Swap reference and comparison"><svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" /></svg></button></div>
         <HudLapChoice label="COMPARISON" colour="text-trace-purple" sessions={compatibleSessions} sessionId={comparisonSessionId} onSession={onComparisonSession} laps={comparisonLaps} lapIndex={comparisonLap} onLap={onComparisonLap} disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null} />
       </div>
       <HudValue label="REFERENCE SPEED / GEAR" value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`} colour={channelColours.speed} />
+      <HudSteering value={sample?.referenceSteeringDegrees} colour="var(--color-trace-accent)" />
       <HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
+      <HudConditions air={sample?.referenceAirTemperatureC} track={sample?.referenceTrackTemperatureC} />
       <HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
       <HudValue label="DELTA" value={sample?.deltaSeconds == null ? "—" : formatDelta(sample.deltaSeconds)} colour={channelColours.delta} />
-      <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
+      <HudConditions air={sample?.comparisonAirTemperatureC} track={sample?.comparisonTrackTemperatureC} />
       <HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
+      <HudSteering value={sample?.comparisonSteeringDegrees} colour={channelColours.delta} />
+      <HudValue label="COMPARISON SPEED / GEAR" value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`} colour={channelColours.speed} />
       <TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
     </div>
   );
@@ -541,6 +548,15 @@ function HudValue({ label, value, unit, colour }: { label: string; value: string
   return <div className="h-10 min-w-0 overflow-hidden font-mono"><span className="block truncate whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.1em] text-trace-dim">{label}</span><strong className="mt-1 block truncate whitespace-nowrap text-[15px] leading-5 tabular-nums" style={{ color: colour }}>{value}{unit && <small className="ml-1 text-[9px] text-trace-dim">{unit}</small>}</strong></div>;
 }
 
+function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
+  const degrees = value == null || !Number.isFinite(value) ? 0 : value;
+  return <div className="flex h-10 min-w-0 items-center gap-2 font-mono"><svg className="size-9 shrink-0" viewBox="0 0 36 36" role="img" aria-label={value == null ? "Steering unavailable" : `Steering ${Math.round(value)} degrees`}><circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" /><g transform={`rotate(${degrees} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="18" x2="18" y2="5" /><line x1="7" y1="19" x2="29" y2="19" /></g><circle cx="18" cy="18" r="2.5" fill={colour} /></svg><span className="min-w-0"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span><strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>{value == null ? "—" : `${Math.round(value)}°`}</strong></span></div>;
+}
+
+function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
+  return <div className="h-10 min-w-0 overflow-hidden font-mono"><span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">CONDITIONS</span><span className="mt-1 flex items-center gap-2 whitespace-nowrap text-[10px] leading-4 tabular-nums"><span className="text-trace-dim">AIR <strong className="text-trace-text">{formatHudTemperature(air)}</strong></span><span className="text-trace-dim">TRACK <strong className="text-trace-text">{formatHudTemperature(track)}</strong></span></span></div>;
+}
+
 function HudProgress({ label, value, colour }: { label: string; value?: number | null; colour: string }) {
   const primary = Math.min(100, Math.max(0, value ?? 0));
   return <div className="h-10 overflow-hidden font-mono"><span className="flex h-3 justify-between whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.08em] tabular-nums text-trace-dim"><span className="truncate">{label}</span><span>{Math.round(primary)}%</span></span><span className="mt-2 block h-2 overflow-hidden bg-trace-divider"><span className="block h-full transition-[width] duration-75" style={{ width: `${primary}%`, backgroundColor: colour }} /></span></div>;
@@ -550,8 +566,8 @@ function HudPedals({ throttle, brake }: { throttle?: number | null; brake?: numb
   return <div className="grid h-10 min-w-0 grid-cols-2 gap-3"><HudProgress label="THROTTLE" value={throttle} colour={channelColours.throttle} /><HudProgress label="BRAKE" value={brake} colour={channelColours.brake} /></div>;
 }
 
-function formatTemperature(value?: number | null) {
-  return value == null ? "—" : `${value.toFixed(1)}°C`;
+function formatHudTemperature(value?: number | null) {
+  return value == null ? "—" : `${Math.round(value)}°C`;
 }
 
 function useTrackMapPip(active: boolean) {
@@ -657,6 +673,12 @@ function deltaRange(samples: LapComparisonSample[]): [number, number] {
   return [-maximum, maximum];
 }
 
+function steeringRange(samples: LapComparisonSample[]): [number, number] {
+  const maximum = Math.max(90, ...samples.flatMap((sample) => [sample.referenceSteeringDegrees, sample.comparisonSteeringDegrees].flatMap((value) => value == null || !Number.isFinite(value) ? [] : [Math.abs(value)])));
+  const bound = Math.ceil(maximum / 10) * 10;
+  return [-bound, bound];
+}
+
 function ComparisonChart({ label, unit, samples, series, cursorIndex, onCursor, fixedRange, zeroLine = false, compact = false }: { label: string; unit: string; samples: LapComparisonSample[]; series: ComparisonChartSeries[]; cursorIndex: number | null; onCursor: (index: number | null) => void; fixedRange?: [number, number]; zeroLine?: boolean; compact?: boolean }) {
   const width = 1_000;
   const height = compact ? 82 : 220;
@@ -732,7 +754,7 @@ function comparisonPath(samples: LapComparisonSample[], value: (sample: LapCompa
 }
 
 function formatChartValue(value: number, unit: string) {
-  if (unit === "%" || unit === "" || unit === "rpm" || unit === "km/h") return String(Math.round(value));
+  if (unit === "%" || unit === "" || unit === "rpm" || unit === "km/h" || unit === "°") return String(Math.round(value));
   if (unit === "s") return value.toFixed(3);
   const magnitude = Math.abs(value);
   return magnitude >= 100 ? value.toFixed(0) : magnitude >= 10 ? value.toFixed(1) : value.toFixed(3);
