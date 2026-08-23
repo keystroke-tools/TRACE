@@ -1424,7 +1424,7 @@ function Setups() {
   return (
     <>
       <PageIntro index="04" eyebrow="CAR SETUPS" title="CONNECT CHANGES TO LAP PERFORMANCE" description="Store setup snapshots beside sessions so a faster lap can be traced back to the car configuration that produced it." />
-      <FeaturePreview label="PLANNED / PHASE 5" title="Setup workspace">
+      <FeaturePreview label="PLANNED" title="Setup workspace">
         <div className="grid gap-px bg-trace-divider md:grid-cols-3">
           <PreviewStep number="01" title="Save a snapshot" detail="Capture or import the setup used for a session." />
           <PreviewStep number="02" title="See what changed" detail="Compare values without hunting through setup screens." />
