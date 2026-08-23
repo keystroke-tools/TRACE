@@ -2259,44 +2259,18 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
         </div>
       )}
 
-      <div className="mt-3 border border-trace-divider bg-trace-surface">
-        <div className="flex items-center justify-between gap-4 border-b border-trace-divider px-5 py-3">
-          <div><strong className="text-[12px] tracking-[.06em] text-trace-soft">COMPATIBLE SETUPS</strong><p className="mt-1 text-[11px] leading-4 text-trace-dim">Exact simulator, car, track, and layout matches. Mark one as used only when you know it was loaded for this session.</p></div>
-          <span className="shrink-0 font-mono text-[10px] text-trace-dim">{setupsState === "loading" ? "CHECKING…" : setupsState === "error" ? "UNAVAILABLE" : `${compatibleSetups.length} FOUND`}</span>
-        </div>
-        {setupsState === "ready" && compatibleSetups.length > 0 ? (
-          <div className="grid gap-px bg-trace-divider md:grid-cols-2 xl:grid-cols-3">
-            {compatibleSetups.map((setup) => (
-              <article className={`min-w-0 px-4 py-3 ${setup.confirmed ? "bg-trace-accent-wash" : "bg-trace-deep"}`} key={setup.id}>
-                <div className="flex items-start justify-between gap-3"><strong className="truncate text-[12px] text-trace-text">{setup.name}</strong><span className={`shrink-0 border px-1.5 py-0.5 font-mono text-[9px] font-bold ${setup.confirmed ? "border-trace-accent/50 bg-trace-accent/15 text-trace-accent" : "border-trace-divider text-trace-dim"}`}>{setup.confirmed ? setup.confirmationSource === "package_confirmed" ? "SHARED AS USED" : "USED FOR SESSION" : "COMPATIBLE"}</span></div>
-                <p className="mt-1 truncate text-[11px] text-trace-muted">{setup.sourceArchive ?? "Local setup"}</p>
-                <Tooltip content={setup.installedPath}><p className="mt-2 truncate font-mono text-[10px] text-trace-dim">IMPORTED {formatSessionDate(setup.importedAt)}</p></Tooltip>
-                <button type="button" disabled={savingSetupId != null} onClick={() => setup.confirmed ? void clearSetup() : void confirmSetup(setup)} className={`mt-3 h-8 w-full border font-mono text-[10px] font-bold tracking-[.06em] disabled:text-trace-dim ${setup.confirmed ? "border-trace-divider bg-trace-deep text-trace-muted hover:text-white" : "border-trace-accent/40 bg-trace-accent-wash text-trace-accent hover:border-trace-accent"}`}>{savingSetupId === setup.id || (setup.confirmed && savingSetupId === "clear") ? "SAVING…" : setup.confirmed ? "CLEAR CONFIRMATION" : "MARK AS USED"}</button>
-                {!setup.confirmed && confirmedSetup && <button type="button" disabled={comparingSetupId != null} onClick={() => void compareSetup(confirmedSetup, setup)} className="mt-1 h-8 w-full border border-trace-divider bg-transparent font-mono text-[10px] font-bold tracking-[.06em] text-trace-muted hover:bg-trace-raised hover:text-white disabled:text-trace-dim">{comparingSetupId === setup.id ? "COMPARING…" : "COMPARE TO USED"}</button>}
-              </article>
-            ))}
-          </div>
-        ) : setupsState === "ready" ? (
-          <p className="px-5 py-4 text-[11px] leading-5 text-trace-dim">No imported setup matches this session yet. Import a compatible setup from the Setups page and it will appear here.</p>
-        ) : setupsState === "error" ? (
-          <p className="px-5 py-4 text-[11px] leading-5 text-trace-warning">TRACE could not read the local setup library.</p>
-        ) : null}
-        {setupComparison && (
-          <div className="border-t border-trace-divider bg-trace-black/30">
-            <div className="flex items-center justify-between gap-4 border-b border-trace-divider px-5 py-3">
-              <div><strong className="text-[12px] text-trace-text">SETUP DIFFERENCES</strong><p className="mt-1 text-[11px] text-trace-dim"><span className="text-trace-accent">{setupComparison.baselineName}</span> used for session <span className="mx-1">→</span> <span className="text-trace-purple">{setupComparison.alternativeName}</span></p></div>
-              <div className="flex items-center gap-4"><span className="font-mono text-[10px] text-trace-dim">{setupComparison.changedValues} CHANGED · {setupComparison.unchangedValues} SAME</span><button type="button" onClick={() => setSetupComparison(null)} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-white" aria-label="Close setup comparison">×</button></div>
-            </div>
-            {setupComparison.sections.length > 0 ? <div className="grid gap-px bg-trace-divider lg:grid-cols-2">
-              {setupComparison.sections.map((section) => <section className="bg-trace-surface" key={section.name}>
-                <h3 className="border-b border-trace-divider px-4 py-2.5 font-mono text-[10px] font-black tracking-[.1em] text-trace-soft">{friendlySetupLabel(section.name)}</h3>
-                {section.changes.map((change) => <div className="grid grid-cols-[minmax(120px,1fr)_minmax(80px,.7fr)_20px_minmax(80px,.7fr)] items-center gap-3 border-b border-trace-divider px-4 py-2.5 text-[11px] last:border-b-0" key={change.key}><span className="truncate text-trace-muted">{friendlySetupLabel(change.key)}</span><code className="truncate text-right text-trace-accent">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="truncate text-trace-purple">{change.alternativeValue ?? "—"}</code></div>)}
-              </section>)}
-            </div> : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
-            <p className="border-t border-trace-divider px-5 py-3 text-[10px] leading-4 text-trace-dim">This is a literal INI difference, not performance analysis. A changed value does not prove why either lap was faster.</p>
-          </div>
-        )}
-      </div>
+      <CompatibleSetupsDock
+        setups={compatibleSetups}
+        state={setupsState}
+        confirmedSetup={confirmedSetup}
+        savingSetupId={savingSetupId}
+        comparingSetupId={comparingSetupId}
+        comparison={setupComparison}
+        onConfirm={confirmSetup}
+        onClear={clearSetup}
+        onCompare={compareSetup}
+        onCloseComparison={() => setSetupComparison(null)}
+      />
 
       {!hasSectorTiming && (
         <div className="mt-4 border border-trace-divider bg-trace-surface px-4 py-3 text-[12px] leading-5 text-trace-muted">
@@ -2350,6 +2324,96 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
         <SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
       </div>
     </>
+  );
+}
+
+function CompatibleSetupsDock({ setups, state, confirmedSetup, savingSetupId, comparingSetupId, comparison, onConfirm, onClear, onCompare, onCloseComparison }: { setups: CompatibleSetup[]; state: "loading" | "ready" | "error"; confirmedSetup: CompatibleSetup | null; savingSetupId: string | null; comparingSetupId: string | null; comparison: SetupComparison | null; onConfirm: (setup: CompatibleSetup) => Promise<void>; onClear: () => Promise<void>; onCompare: (baseline: CompatibleSetup, alternative: CompatibleSetup) => Promise<void>; onCloseComparison: () => void }) {
+  const [open, setOpen] = useState(false);
+  const dock = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!dock.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [open]);
+
+  const count = state === "loading" ? "…" : state === "error" ? "!" : String(setups.length);
+
+  return (
+    <div className="pointer-events-none sticky top-0 z-40 mt-3 flex h-10 justify-end" ref={dock}>
+      <div className="pointer-events-auto relative">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className={`flex h-10 max-w-[460px] items-center gap-2 border bg-trace-black px-3 font-mono text-[10px] font-bold tracking-[.08em] shadow-[0_8px_20px_rgba(0,0,0,.28)] hover:bg-trace-raised ${open ? "border-trace-accent/60 text-white" : "border-trace-divider text-trace-soft"}`}
+          aria-expanded={open}
+          aria-controls="compatible-setups-dock"
+        >
+          <span>COMPATIBLE SETUPS</span>
+          <span className={setups.length > 0 ? "text-trace-accent" : state === "error" ? "text-trace-warning" : "text-trace-dim"}>[{count}]</span>
+          {confirmedSetup && <span className="min-w-0 truncate border-l border-trace-divider pl-2 font-sans text-[11px] font-semibold normal-case tracking-normal text-white">{confirmedSetup.name}</span>}
+          <svg className={`size-3 shrink-0 fill-none stroke-current transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4 3.5 3.5L9.5 4" /></svg>
+        </button>
+
+        {open && (
+          <aside id="compatible-setups-dock" className="absolute right-0 top-[calc(100%+.5rem)] flex max-h-[calc(100vh-150px)] w-[min(520px,calc(100vw-232px))] flex-col overflow-hidden border border-trace-divider bg-trace-black shadow-[0_18px_48px_rgba(0,0,0,.62)]" aria-label="Compatible setups">
+            <div className="flex items-start justify-between gap-4 border-b border-trace-divider px-4 py-3">
+              <div><strong className="font-mono text-[11px] tracking-[.08em] text-white">SETUPS FOR THIS SESSION</strong><p className="mt-1 text-[11px] leading-4 text-trace-dim">Exact simulator, car, track, and layout matches. Only mark one as used when you know it was loaded.</p></div>
+              <button type="button" onClick={() => setOpen(false)} className="grid size-8 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-base leading-none text-trace-muted hover:text-white" aria-label="Close compatible setups">×</button>
+            </div>
+            <div className="overflow-y-auto">
+              {state === "ready" && setups.length > 0 ? (
+                <div className="divide-y divide-trace-divider">
+                  {setups.map((setup) => (
+                    <article className={`border-l-2 px-4 py-3 ${setup.confirmed ? "border-l-trace-accent bg-trace-black" : "border-l-transparent bg-trace-deep"}`} key={setup.id}>
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0"><strong className={`block truncate text-[12px] ${setup.confirmed ? "text-white" : "text-trace-soft"}`}>{setup.name}</strong><p className={`mt-0.5 truncate text-[11px] ${setup.confirmed ? "text-trace-soft" : "text-trace-muted"}`}>{setup.sourceArchive ?? "Local setup"} · imported {formatCompactSessionDate(setup.importedAt)}</p></div>
+                        <span className={`shrink-0 border px-1.5 py-1 font-mono text-[9px] font-black leading-none ${setup.confirmed ? "border-trace-accent/70 bg-trace-black text-trace-accent" : "border-trace-divider bg-trace-surface text-trace-muted"}`}>{setup.confirmed ? setup.confirmationSource === "package_confirmed" ? "SHARED AS USED" : "USED FOR SESSION" : "COMPATIBLE"}</span>
+                      </div>
+                      <Tooltip content={setup.installedPath}><p className="mt-1.5 truncate font-mono text-[9px] leading-4 text-trace-dim">{setup.installedPath}</p></Tooltip>
+                      <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                        {!setup.confirmed && confirmedSetup && <button type="button" disabled={comparingSetupId != null} onClick={() => void onCompare(confirmedSetup, setup)} className="h-7 border border-trace-divider bg-transparent px-2.5 font-mono text-[9px] font-bold tracking-[.05em] text-trace-soft hover:border-trace-soft hover:text-white disabled:text-trace-dim">{comparingSetupId === setup.id ? "COMPARING…" : "COMPARE TO USED"}</button>}
+                        <button type="button" disabled={savingSetupId != null} onClick={() => setup.confirmed ? void onClear() : void onConfirm(setup)} className={`h-7 border px-2.5 font-mono text-[9px] font-black tracking-[.05em] disabled:text-trace-dim ${setup.confirmed ? "border-trace-divider bg-trace-deep text-white hover:border-trace-soft" : "border-trace-accent bg-trace-accent text-trace-black hover:bg-white"}`}>{savingSetupId === setup.id || (setup.confirmed && savingSetupId === "clear") ? "SAVING…" : setup.confirmed ? "CLEAR" : "MARK AS USED"}</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : state === "ready" ? (
+                <p className="px-5 py-6 text-[11px] leading-5 text-trace-dim">No imported setup matches this session. Import one from the Setups page and it will appear here.</p>
+              ) : state === "error" ? (
+                <p className="px-5 py-6 text-[11px] leading-5 text-trace-warning">TRACE could not read the local setup library.</p>
+              ) : (
+                <p className="px-5 py-6 font-mono text-[10px] text-trace-dim">CHECKING SETUP LIBRARY…</p>
+              )}
+
+              {comparison && (
+                <div className="border-t border-trace-divider bg-trace-surface">
+                  <div className="flex items-start justify-between gap-4 border-b border-trace-divider px-4 py-3">
+                    <div><strong className="text-[11px] text-white">SETUP DIFFERENCES</strong><p className="mt-1 text-[10px] leading-4 text-trace-dim"><span className="text-trace-accent">{comparison.baselineName}</span> used <span className="mx-1">→</span> <span className="text-trace-purple">{comparison.alternativeName}</span></p></div>
+                    <div className="flex shrink-0 items-center gap-2"><span className="font-mono text-[9px] text-trace-dim">{comparison.changedValues} CHANGED</span><button type="button" onClick={onCloseComparison} className="grid size-7 place-items-center border border-trace-divider bg-trace-deep text-sm text-trace-muted hover:text-white" aria-label="Close setup comparison">×</button></div>
+                  </div>
+                  {comparison.sections.length > 0 ? comparison.sections.map((section) => <section className="border-b border-trace-divider last:border-b-0" key={section.name}>
+                    <h3 className="bg-trace-deep px-4 py-2 font-mono text-[9px] font-black tracking-[.1em] text-trace-soft">{friendlySetupLabel(section.name)}</h3>
+                    {section.changes.map((change) => <div className="grid grid-cols-[minmax(100px,1fr)_minmax(72px,.65fr)_16px_minmax(72px,.65fr)] items-center gap-2 border-t border-trace-divider px-4 py-2 text-[10px]" key={change.key}><span className="truncate text-trace-muted">{friendlySetupLabel(change.key)}</span><code className="truncate text-right text-trace-accent">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="truncate text-trace-purple">{change.alternativeValue ?? "—"}</code></div>)}
+                  </section>) : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
+                  <p className="border-t border-trace-divider px-4 py-3 text-[10px] leading-4 text-trace-dim">Literal INI differences only. A changed value does not prove why either lap was faster.</p>
+                </div>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
   );
 }
 
