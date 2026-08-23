@@ -133,6 +133,10 @@ img { display: block; max-width: 100%; }
 .principles div { min-height: 150px; border-right: 1px solid rgb(0 0 0 / .25); border-bottom: 1px solid rgb(0 0 0 / .25); padding: 1.5rem; }
 .principles dt { font-family: ui-monospace, monospace; font-size: .65rem; font-weight: 900; letter-spacing: .12em; }
 .principles dd { margin: 1rem 0 0; font-size: .82rem; line-height: 1.6; }
+.development-disclosure { position: relative; z-index: 1; display: grid; grid-column: 1 / -1; grid-template-columns: auto 1fr; gap: 1.5rem; align-items: start; border: 1px solid rgb(0 0 0 / .28); background: rgb(255 255 255 / .18); padding: 1.5rem; }
+.development-disclosure > span { display: grid; min-width: 64px; height: 64px; place-items: center; background: #101010; color: var(--acid); font-family: ui-monospace, monospace; font-size: .72rem; font-weight: 900; letter-spacing: .08em; }
+.development-disclosure h3 { margin: 0 0 .55rem; font-size: 1rem; letter-spacing: -.015em; }
+.development-disclosure p { max-width: 920px; margin: 0; font-size: .82rem; line-height: 1.65; }
 
 .download-section { position: relative; overflow: hidden; padding: clamp(7rem, 12vw, 12rem) clamp(1.25rem, 10vw, 12rem); background: #101010; }
 .download-section > div:not(.download-mark) { position: relative; z-index: 2; max-width: 760px; }
@@ -188,6 +192,8 @@ dialog button:hover { border-color: var(--acid); color: var(--acid); }
   .steps { grid-template-columns: 1fr; }
   .steps article, .steps article:last-child { border-right: 1px solid var(--line); padding: 1.4rem; }
   .principles { grid-template-columns: 1fr; }
+  .development-disclosure { grid-template-columns: 1fr; }
+  .development-disclosure > span { width: 64px; }
   .download-section .hero-actions { align-items: stretch; flex-direction: column; }
   footer { grid-template-columns: 1fr auto; gap: 1rem; }
   footer p { display: none; }
