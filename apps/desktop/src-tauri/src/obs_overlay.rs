@@ -29,7 +29,7 @@ fn serve(status: &SharedCaptureStatus) {
     };
     for connection in listener.incoming() {
         match connection {
-            Ok(stream) => respond(stream, &status),
+            Ok(stream) => respond(stream, status),
             Err(error) => eprintln!("TRACE OBS overlay request failed: {error}"),
         }
     }
