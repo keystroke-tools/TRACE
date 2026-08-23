@@ -949,7 +949,7 @@ function ComparisonSectorStrip({ sectors, value, onChange, trackCarLabel }: { se
     <div className="flex h-6 min-w-0 items-stretch gap-3 font-mono" aria-label="Sector comparison and telemetry range">
       <div className="flex min-w-0 flex-1 items-stretch gap-1.5 overflow-x-auto">
         <span className="flex w-28 shrink-0 items-center text-[9px] font-black tracking-[.08em] text-trace-accent">{value == null ? "VIEWING FULL LAP" : `VIEWING SECTOR ${value}`}</span>
-        <button type="button" onClick={() => onChange(null)} className={`shrink-0 border px-2 text-[9px] font-black tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
+        <button type="button" onClick={() => onChange(null)} className={`shrink-0 border px-2 text-[9px] font-black leading-none tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}>LAP</button>
         {sectors.map((sector) => {
         const gaining = sector.seconds != null && sector.seconds < -0.0005;
         const losing = sector.seconds != null && sector.seconds > 0.0005;
@@ -966,7 +966,7 @@ function ComparisonSectorStrip({ sectors, value, onChange, trackCarLabel }: { se
             : `The Analysed Lap ${gaining ? "gained" : "lost"} ${Math.abs(sector.seconds).toFixed(3)} seconds against the Reference in sector ${sector.index}.`;
         return (
           <Tooltip content={explanation} key={sector.index}>
-            <button type="button" onClick={() => onChange(sector.index)} className={`flex shrink-0 items-center gap-1.5 border px-2 text-[10px] font-bold tabular-nums ${tone} ${selected}`} aria-pressed={value === sector.index}>
+            <button type="button" onClick={() => onChange(sector.index)} className={`flex shrink-0 items-center gap-1.5 border px-2 text-[10px] font-bold leading-none tabular-nums ${tone} ${selected}`} aria-pressed={value === sector.index}>
               <span className="text-[9px] opacity-75">S{sector.index}</span>
               <strong>{sector.seconds == null ? "—" : Math.abs(sector.seconds) < 0.0005 ? "0.000" : `${sector.seconds > 0 ? "+" : "−"}${Math.abs(sector.seconds).toFixed(3)}`}</strong>
             </button>
@@ -982,12 +982,12 @@ function ComparisonSectorStrip({ sectors, value, onChange, trackCarLabel }: { se
 }
 
 function HudLapChoice({ label, role, colour, sessions, sessionId, onSession, laps, lapIndex, onLap, disabledLap = null }: { label: string; role: string; colour: string; sessions: RecordedSessionSummary[]; sessionId: string; onSession: (value: string) => void; laps: RecordedSessionSummary["laps"]; lapIndex: number | null; onLap: (value: number) => void; disabledLap?: number | null }) {
-  return <div className="grid min-w-0 grid-cols-[112px_minmax(150px,1fr)_150px] items-center gap-2"><span className="min-w-0 font-mono"><strong className={`block truncate text-[10px] font-black tracking-[.1em] ${colour}`}>{label}</strong><span className="mt-0.5 block truncate text-[8px] font-bold tracking-[.07em] text-trace-dim">{role}</span></span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} session`}>{sessions.map((session) => <option value={session.id} key={session.id}>{comparisonSessionLabel(session)}</option>)}</select><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold text-trace-text outline-none" aria-label={`${label} lap`}>{lapIndex == null && <option value="" disabled>No clean lap</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}</select></div>;
+  return <div className="grid min-w-0 grid-cols-[112px_minmax(150px,1fr)_150px] items-center gap-2"><span className="min-w-0 font-mono"><strong className={`block truncate text-[10px] font-black leading-3 tracking-[.1em] ${colour}`}>{label}</strong><span className="mt-0.5 block truncate text-[8px] font-bold leading-3 tracking-[.07em] text-trace-dim">{role}</span></span><select value={sessionId} onChange={(event) => onSession(event.target.value)} className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold leading-none text-trace-text outline-none" aria-label={`${label} session`}>{sessions.map((session) => <option value={session.id} key={session.id}>{comparisonSessionLabel(session)}</option>)}</select><select value={lapIndex?.toString() ?? ""} onChange={(event) => onLap(Number(event.target.value))} className="trace-select h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[11px] font-bold leading-none text-trace-text outline-none" aria-label={`${label} lap`}>{lapIndex == null && <option value="" disabled>No clean lap</option>}{laps.map((lap) => <option value={lap.index} disabled={lap.index === disabledLap} key={lap.index}>Lap {lap.index} · {lap.time}</option>)}</select></div>;
 }
 
 function comparisonSessionLabel(session: RecordedSessionSummary) {
   const identity = session.driver ?? session.title ?? "Unnamed session";
-  return `${identity} · ${formatSessionDate(session.startedAt)}`;
+  return `${session.car} @ ${session.track} · ${identity} · ${friendlySessionType(session)} · ${formatCompactSessionDate(session.startedAt)}`;
 }
 
 function formatComparisonGap(seconds?: number | null) {
