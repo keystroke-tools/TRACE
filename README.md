@@ -92,7 +92,8 @@ Currently implemented:
 - Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
 - Settings page for driver identity and reviewing auto-detected game folders or saving local overrides
 - Simulator-aware setup importer boundary, with native Assetto Corsa ZIP detection,
-  drag and drop, bounded extraction, and opt-in replacement of existing files
+  drag and drop, bounded extraction, opt-in replacement, and exact session-compatible
+  setup suggestions
 - AC car and track names read from installed `ui_car.json`/`ui_track.json` metadata, with exact source IDs preserved as the fallback
 - Track-map braking zones rendered as red intensity gradients over recorded driving lines
 - Transactional SQLite session/lap writes and bounded native session-browser queries

@@ -258,7 +258,16 @@ export interface SetupImportResult {
   destination?: string | null;
   skipped: string[];
   error?: string | null;
+  indexWarning?: string | null;
   success: boolean;
+}
+
+export interface CompatibleSetup {
+  id: string;
+  name: string;
+  installedPath: string;
+  sourceArchive?: string | null;
+  importedAt: string;
 }
 
 export interface DriverProfile {
@@ -299,6 +308,7 @@ export interface TelemetryDataSource {
   getSetupImporters(): Promise<SetupImporterDescriptor[]>;
   detectSetupFolder(simulatorId: string): Promise<SetupFolder>;
   importSetupArchives(simulatorId: string, archivePaths: string[], setupsFolder: string, overwrite: boolean): Promise<SetupImportResult[]>;
+  getCompatibleSetups(sessionId: string): Promise<CompatibleSetup[]>;
   getDriverProfile(): Promise<DriverProfile>;
   setDriverProfile(name: string | null): Promise<DriverProfile>;
   getLiveSettings(): Promise<LiveSettings>;
@@ -494,6 +504,12 @@ export const fixtureDataSource: TelemetryDataSource = {
       success: true,
     }));
   },
+  async getCompatibleSetups(_sessionId) {
+    return [
+      { id: "setup-race", name: "shared-race.ini", installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\shared-race.ini", sourceArchive: "team-zandvoort.zip", importedAt: "2026-08-23T08:00:00Z" },
+      { id: "setup-qualifying", name: "qualifying.ini", installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\qualifying.ini", sourceArchive: "sprint-pack.zip", importedAt: "2026-08-22T18:30:00Z" },
+    ];
+  },
   async getDriverProfile() {
     return fixtureDriverProfile;
   },
@@ -565,6 +581,9 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   importSetupArchives(simulatorId, archivePaths, setupsFolder, overwrite) {
     return invoke<SetupImportResult[]>("import_setup_archives", { simulatorId, archivePaths, setupsFolder, overwrite });
+  },
+  getCompatibleSetups(sessionId) {
+    return invoke<CompatibleSetup[]>("compatible_setups", { sessionId });
   },
   getDriverProfile() {
     return invoke<DriverProfile>("driver_profile");

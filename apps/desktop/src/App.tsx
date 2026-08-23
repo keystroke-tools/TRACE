@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import desktopPackage from "../package.json";
 import {
   telemetryDataSource,
+  type CompatibleSetup,
   type CornerAnalysis,
   type GameInstallDirectory,
   type LapComparison,
@@ -1489,11 +1490,12 @@ function Setups() {
       const installed = nextResults.reduce((total, result) => total + result.files.length, 0);
       const skipped = nextResults.reduce((total, result) => total + result.skipped.length, 0);
       const failures = nextResults.filter((result) => !result.success).length;
+      const warnings = nextResults.filter((result) => result.indexWarning).length;
       showToast({
-        kind: failures > 0 ? "error" : "success",
-        title: failures > 0 ? "Some setups could not be imported" : "Setups imported",
-        message: `${installed} file${installed === 1 ? "" : "s"} installed${skipped > 0 ? ` · ${skipped} kept because they already exist` : ""}.`,
-        timeoutMs: failures > 0 ? 8_000 : 5_000,
+        kind: failures > 0 || warnings > 0 ? "error" : "success",
+        title: failures > 0 ? "Some setups could not be imported" : warnings > 0 ? "Setups installed but not indexed" : "Setups imported",
+        message: `${installed} file${installed === 1 ? "" : "s"} installed${skipped > 0 ? ` · ${skipped} kept because they already exist` : ""}${warnings > 0 ? " · Review the setup-library warning." : ""}.`,
+        timeoutMs: failures > 0 || warnings > 0 ? 8_000 : 5_000,
       });
     } catch (error) {
       showToast({ kind: "error", title: "Setup import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
@@ -1580,7 +1582,7 @@ function Setups() {
             {results.map((result, index) => (
               <article className="grid gap-4 border-b border-trace-divider px-5 py-4 last:border-b-0 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.5fr)_auto] md:items-center" key={`${result.archiveName}-${index}`}>
                 <div className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{result.archiveName}</strong><span className={`mt-1 block font-mono text-[10px] ${result.success ? "text-trace-accent" : "text-trace-warning"}`}>{result.success ? `${result.car ?? "UNKNOWN CAR"} / ${result.track ?? "UNKNOWN TRACK"}` : "NOT IMPORTED"}</span></div>
-                <div className="min-w-0 text-[11px] leading-5 text-trace-dim">{result.error ?? result.destination ?? "No destination reported"}</div>
+                <div className="min-w-0 text-[11px] leading-5 text-trace-dim"><span className="block truncate">{result.error ?? result.destination ?? "No destination reported"}</span>{result.indexWarning && <span className="block text-trace-warning">{result.indexWarning}</span>}</div>
                 <div className="font-mono text-[10px] leading-5 text-right text-trace-muted"><span className="block">{result.files.length} INSTALLED</span>{result.skipped.length > 0 && <span className="block text-trace-dim">{result.skipped.length} SKIPPED</span>}</div>
               </article>
             ))}
@@ -2145,6 +2147,8 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
 function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary; onOpenLap: (lapIndex: number) => void }) {
   const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
   const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
+  const [compatibleSetups, setCompatibleSetups] = useState<CompatibleSetup[]>([]);
+  const [setupsState, setSetupsState] = useState<"loading" | "ready" | "error">("loading");
   const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
   const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
   const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
@@ -2162,6 +2166,19 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
       setMetricsState("ready");
     }).catch(() => {
       if (active) setMetricsState("error");
+    });
+    return () => { active = false; };
+  }, [session.id]);
+
+  useEffect(() => {
+    let active = true;
+    setSetupsState("loading");
+    void telemetryDataSource.getCompatibleSetups(session.id).then((values) => {
+      if (!active) return;
+      setCompatibleSetups(values);
+      setSetupsState("ready");
+    }).catch(() => {
+      if (active) setSetupsState("error");
     });
     return () => { active = false; };
   }, [session.id]);
@@ -2197,6 +2214,28 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
           {session.weatherName && <span>WEATHER <strong className="text-trace-text">{friendlyConditionName(session.weatherName)}</strong></span>}
         </div>
       )}
+
+      <div className="mt-3 border border-trace-divider bg-trace-surface">
+        <div className="flex items-center justify-between gap-4 border-b border-trace-divider px-5 py-3">
+          <div><strong className="text-[12px] tracking-[.06em] text-trace-soft">COMPATIBLE SETUPS</strong><p className="mt-1 text-[11px] leading-4 text-trace-dim">Exact simulator, car, track, and layout matches from your imported setup library. TRACE cannot confirm one was used for this session.</p></div>
+          <span className="shrink-0 font-mono text-[10px] text-trace-dim">{setupsState === "loading" ? "CHECKING…" : setupsState === "error" ? "UNAVAILABLE" : `${compatibleSetups.length} FOUND`}</span>
+        </div>
+        {setupsState === "ready" && compatibleSetups.length > 0 ? (
+          <div className="grid gap-px bg-trace-divider md:grid-cols-2 xl:grid-cols-3">
+            {compatibleSetups.map((setup) => (
+              <article className="min-w-0 bg-trace-deep px-4 py-3" key={setup.id}>
+                <div className="flex items-start justify-between gap-3"><strong className="truncate text-[12px] text-trace-text">{setup.name}</strong><span className="shrink-0 border border-trace-accent/30 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[9px] font-bold text-trace-accent">MATCH</span></div>
+                <p className="mt-1 truncate text-[11px] text-trace-muted">{setup.sourceArchive ?? "Local setup"}</p>
+                <Tooltip content={setup.installedPath}><p className="mt-2 truncate font-mono text-[10px] text-trace-dim">IMPORTED {formatSessionDate(setup.importedAt)}</p></Tooltip>
+              </article>
+            ))}
+          </div>
+        ) : setupsState === "ready" ? (
+          <p className="px-5 py-4 text-[11px] leading-5 text-trace-dim">No imported setup matches this session yet. Import a compatible setup from the Setups page and it will appear here.</p>
+        ) : setupsState === "error" ? (
+          <p className="px-5 py-4 text-[11px] leading-5 text-trace-warning">TRACE could not read the local setup library.</p>
+        ) : null}
+      </div>
 
       {!hasSectorTiming && (
         <div className="mt-4 border border-trace-divider bg-trace-surface px-4 py-3 text-[12px] leading-5 text-trace-muted">

@@ -31,6 +31,25 @@ prototype's local HTTP server.
 Existing setup files are preserved by default. Enable **Replace existing files** only
 when the archive should overwrite files with the same names.
 
+## Setup library and session suggestions
+
+Every installed or deliberately skipped existing setup is indexed in TRACE's local
+SQLite setup library with its simulator ID, source car ID, source track ID, layout ID,
+filename, installed path, source archive, content digest, and import time. Setup file
+contents remain in the simulator's setup directory; the database stores metadata and a
+SHA-256 digest, not a second copy.
+
+The session overview queries this library using the session's preserved source
+identities. A setup is suggested only when simulator, car, track, and layout all match
+exactly (case-insensitively for simulator-provided identifiers). Friendly display names
+are not used for matching. This intentionally prefers an empty result over suggesting
+a setup for the wrong car or layout.
+
+The UI calls these entries **compatible setups**. Compatibility means the setup is
+installed in the right simulator content folder; it is not evidence that the driver
+loaded it for that recording. Existing `setup_snapshots` remain a separate provenance
+concept for future active-setup capture and explicit session association.
+
 ### Expected archive layout
 
 The archive must contain at least one Assetto Corsa/MoTeC log name in this form:
@@ -78,7 +97,7 @@ Imports are bounded to protect the desktop process and the user's setup tree:
 
 ## Not implemented yet
 
-TRACE does not yet parse setup values for comparison, attach a setup snapshot to a
-session or `.trace` package, identify the setup currently loaded by a simulator, or
+TRACE does not yet parse setup values for comparison, attach a proven setup snapshot to
+a session or `.trace` package, identify the setup currently loaded by a simulator, or
 recommend setup changes. Those require a separate provenance model so the app does not
 attribute a lap to a setup without evidence.
