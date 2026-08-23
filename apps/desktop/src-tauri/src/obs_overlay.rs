@@ -15,11 +15,11 @@ const OVERLAY_HTML: &str = include_str!("pedal-overlay.html");
 pub fn spawn(status: SharedCaptureStatus) {
     thread::Builder::new()
         .name("trace-obs-overlay".into())
-        .spawn(move || serve(status))
+        .spawn(move || serve(&status))
         .expect("failed to start TRACE OBS overlay worker");
 }
 
-fn serve(status: SharedCaptureStatus) {
+fn serve(status: &SharedCaptureStatus) {
     let listener = match TcpListener::bind(OBS_OVERLAY_ADDRESS) {
         Ok(listener) => listener,
         Err(error) => {
