@@ -2402,10 +2402,7 @@ function CompatibleSetupsDock({ setups, state, confirmedSetup, savingSetupId, co
                   <div className="min-w-0 flex-1"><strong className="text-[11px] text-white">SETUP DIFFERENCES</strong><div className="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-[10px] leading-4"><span className="min-w-0 break-words text-trace-accent"><small className="block font-mono text-[8px] font-bold tracking-[.08em] text-trace-dim">USED</small>{comparison.baselineName}</span><span className="pt-4 text-center text-trace-dim">→</span><span className="min-w-0 break-words text-trace-purple"><small className="block font-mono text-[8px] font-bold tracking-[.08em] text-trace-dim">COMPARED</small>{comparison.alternativeName}</span></div></div>
                   <div className="flex shrink-0 items-center gap-2"><span className="font-mono text-[9px] text-trace-dim">{comparison.changedValues} CHANGED</span><button type="button" onClick={onCloseComparison} className="grid size-7 place-items-center border border-trace-divider bg-trace-deep text-sm text-trace-muted hover:text-white" aria-label="Close setup comparison">×</button></div>
                 </div>
-                {comparison.sections.length > 0 ? comparison.sections.map((section) => <section className="border-b border-trace-divider last:border-b-0" key={section.name}>
-                  <h3 className="bg-trace-deep px-4 py-2 font-mono text-[9px] font-black tracking-[.1em] text-trace-soft">{friendlySetupLabel(section.name)}</h3>
-                  {section.changes.map((change) => <div className="flex min-w-0 items-start justify-between gap-5 border-t border-trace-divider px-4 py-2.5 text-[10px]" key={change.key}><span className="min-w-0 flex-1 break-words leading-4 text-trace-muted">{friendlySetupLabel(change.key)}</span><span className="grid w-52 max-w-[60%] min-w-0 shrink grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-start gap-1 font-mono leading-4"><code className="min-w-0 text-right text-trace-accent [overflow-wrap:anywhere]">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="min-w-0 text-left text-trace-purple [overflow-wrap:anywhere]">{change.alternativeValue ?? "—"}</code></span></div>)}
-                </section>) : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
+                {comparison.sections.length > 0 ? comparison.sections.flatMap((section) => section.changes.map((change) => ({ section: section.name, change }))).map(({ section, change }) => <div className="flex min-w-0 items-start justify-between gap-5 border-b border-trace-divider px-4 py-2.5 text-[10px]" key={`${section}:${change.key}`}><span className="min-w-0 flex-1 break-words font-mono font-bold leading-4 text-trace-soft">{setupDifferenceLabel(section, change.key)}</span><span className="grid w-52 max-w-[60%] min-w-0 shrink grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-start gap-1 font-mono leading-4"><code className="min-w-0 text-right text-trace-accent [overflow-wrap:anywhere]">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="min-w-0 text-left text-trace-purple [overflow-wrap:anywhere]">{change.alternativeValue ?? "—"}</code></span></div>) : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
                 <p className="border-t border-trace-divider px-4 py-3 text-[10px] leading-4 text-trace-dim">Literal INI differences only. A changed value does not prove why either lap was faster.</p>
               </aside>
             )}
@@ -2742,6 +2739,13 @@ function friendlyConditionName(value: string) {
 
 function friendlySetupLabel(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function setupDifferenceLabel(section: string, key: string) {
+  const sectionLabel = friendlySetupLabel(section);
+  return key.trim().toUpperCase() === "VALUE"
+    ? sectionLabel
+    : `${sectionLabel} · ${friendlySetupLabel(key)}`;
 }
 
 function Footer({ status }: { status: TelemetryStatus | null }) {
