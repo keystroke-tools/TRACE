@@ -225,6 +225,7 @@ export interface SessionImport {
   sessionId: string;
   lapCount: number;
   sampleCount: number;
+  setupName?: string | null;
 }
 
 export interface GameInstallDirectory {
@@ -268,6 +269,28 @@ export interface CompatibleSetup {
   installedPath: string;
   sourceArchive?: string | null;
   importedAt: string;
+  confirmed: boolean;
+  confirmedAt?: string | null;
+  confirmationSource?: "user_confirmed" | "package_confirmed" | null;
+}
+
+export interface SetupValueChange {
+  key: string;
+  baselineValue?: string | null;
+  alternativeValue?: string | null;
+}
+
+export interface SetupComparisonSection {
+  name: string;
+  changes: SetupValueChange[];
+}
+
+export interface SetupComparison {
+  baselineName: string;
+  alternativeName: string;
+  changedValues: number;
+  unchangedValues: number;
+  sections: SetupComparisonSection[];
 }
 
 export interface DriverProfile {
@@ -309,6 +332,9 @@ export interface TelemetryDataSource {
   detectSetupFolder(simulatorId: string): Promise<SetupFolder>;
   importSetupArchives(simulatorId: string, archivePaths: string[], setupsFolder: string, overwrite: boolean): Promise<SetupImportResult[]>;
   getCompatibleSetups(sessionId: string): Promise<CompatibleSetup[]>;
+  confirmSessionSetup(sessionId: string, setupId: string): Promise<CompatibleSetup[]>;
+  clearSessionSetup(sessionId: string): Promise<CompatibleSetup[]>;
+  compareSetups(baselineSetupId: string, alternativeSetupId: string): Promise<SetupComparison>;
   getDriverProfile(): Promise<DriverProfile>;
   setDriverProfile(name: string | null): Promise<DriverProfile>;
   getLiveSettings(): Promise<LiveSettings>;
@@ -422,7 +448,7 @@ export const fixtureDataSource: TelemetryDataSource = {
     };
   },
   async importSession(_path) {
-    return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600 };
+    return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600, setupName: "shared-race.ini" };
   },
   async getSessionLapMetrics(_sessionId) {
     return [
@@ -506,9 +532,19 @@ export const fixtureDataSource: TelemetryDataSource = {
   },
   async getCompatibleSetups(_sessionId) {
     return [
-      { id: "setup-race", name: "shared-race.ini", installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\shared-race.ini", sourceArchive: "team-zandvoort.zip", importedAt: "2026-08-23T08:00:00Z" },
-      { id: "setup-qualifying", name: "qualifying.ini", installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\qualifying.ini", sourceArchive: "sprint-pack.zip", importedAt: "2026-08-22T18:30:00Z" },
+      { id: "setup-race", name: "shared-race.ini", installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\shared-race.ini", sourceArchive: "team-zandvoort.zip", importedAt: "2026-08-23T08:00:00Z", confirmed: true, confirmedAt: "2026-08-23T08:05:00Z", confirmationSource: "user_confirmed" },
+      { id: "setup-qualifying", name: "qualifying.ini", installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\qualifying.ini", sourceArchive: "sprint-pack.zip", importedAt: "2026-08-22T18:30:00Z", confirmed: false },
     ];
+  },
+  async confirmSessionSetup(sessionId, setupId) {
+    const setups = await this.getCompatibleSetups(sessionId);
+    return setups.map((setup) => ({ ...setup, confirmed: setup.id === setupId, confirmedAt: setup.id === setupId ? new Date().toISOString() : null, confirmationSource: setup.id === setupId ? "user_confirmed" : null }));
+  },
+  async clearSessionSetup(sessionId) {
+    return (await this.getCompatibleSetups(sessionId)).map((setup) => ({ ...setup, confirmed: false, confirmedAt: null, confirmationSource: null }));
+  },
+  async compareSetups(_baselineSetupId, _alternativeSetupId) {
+    return { baselineName: "shared-race.ini", alternativeName: "qualifying.ini", changedValues: 3, unchangedValues: 18, sections: [{ name: "TYRES", changes: [{ key: "PRESSURE_LF", baselineValue: "20", alternativeValue: "21" }, { key: "PRESSURE_RF", baselineValue: "20", alternativeValue: "21" }] }, { name: "ARB", changes: [{ key: "FRONT", baselineValue: "3", alternativeValue: "4" }] }] };
   },
   async getDriverProfile() {
     return fixtureDriverProfile;
@@ -584,6 +620,15 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   getCompatibleSetups(sessionId) {
     return invoke<CompatibleSetup[]>("compatible_setups", { sessionId });
+  },
+  confirmSessionSetup(sessionId, setupId) {
+    return invoke<CompatibleSetup[]>("confirm_session_setup", { sessionId, setupId });
+  },
+  clearSessionSetup(sessionId) {
+    return invoke<CompatibleSetup[]>("clear_session_setup", { sessionId });
+  },
+  compareSetups(baselineSetupId, alternativeSetupId) {
+    return invoke<SetupComparison>("compare_setups", { baselineSetupId, alternativeSetupId });
   },
   getDriverProfile() {
     return invoke<DriverProfile>("driver_profile");

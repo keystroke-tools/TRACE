@@ -94,6 +94,8 @@ Currently implemented:
 - Simulator-aware setup importer boundary, with native Assetto Corsa ZIP detection,
   drag and drop, bounded extraction, opt-in replacement, and exact session-compatible
   setup suggestions
+- User-confirmed session setups, portable setup payloads in `.trace`, and readable
+  Assetto Corsa INI differences without causal performance claims
 - AC car and track names read from installed `ui_car.json`/`ui_track.json` metadata, with exact source IDs preserved as the fallback
 - Track-map braking zones rendered as red intensity gradients over recorded driving lines
 - Transactional SQLite session/lap writes and bounded native session-browser queries

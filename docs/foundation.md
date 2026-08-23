@@ -434,9 +434,10 @@ canonical telemetry publishing, spectator fan-out, the browser spectator page, a
 reconnect/end behavior. A simulator-aware setup importer boundary and its first
 Assetto Corsa installer are available independently of session capture. Imported files
 are indexed by simulator/source car/source track/layout identity and exact matches are
-shown on session overviews as compatible setups. Setup snapshots, setup comparison,
-and proven session linking remain planned, but are intentionally scheduled after the
-live path rather than blocking it.
+shown on session overviews as compatible setups. Users can explicitly associate one,
+carry its checksum-verified payload through `.trace`, and inspect literal AC INI
+differences. Automatic active-setup capture and performance-aware setup analysis remain
+planned, but are intentionally scheduled after the live path rather than blocking it.
 
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so

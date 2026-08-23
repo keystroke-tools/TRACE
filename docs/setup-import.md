@@ -45,10 +45,28 @@ exactly (case-insensitively for simulator-provided identifiers). Friendly displa
 are not used for matching. This intentionally prefers an empty result over suggesting
 a setup for the wrong car or layout.
 
-The UI calls these entries **compatible setups**. Compatibility means the setup is
-installed in the right simulator content folder; it is not evidence that the driver
-loaded it for that recording. Existing `setup_snapshots` remain a separate provenance
-concept for future active-setup capture and explicit session association.
+The UI calls these entries **compatible setups**. Compatibility is not evidence that
+the driver loaded one. A user may explicitly mark one setup as **used for session**;
+that confirmation is stored separately from matching and can be cleared or replaced.
+Setups restored from another driver's `.trace` package are labelled **shared as used**
+so TRACE preserves the sender's statement without presenting it as a claim made by the
+recipient.
+
+An explicitly associated setup is checksum-verified and embedded in `.trace` exports.
+Import restores the file beneath TRACE's private setup library, recreates its metadata,
+and associates it with the new local session. It does not silently install the shared
+file into a simulator's live setup folder.
+
+## Assetto Corsa setup differences
+
+When a session has a confirmed setup and another compatible AC setup is available,
+**Compare to used** parses both bounded INI files and shows changed values grouped by
+section. Unchanged values are counted but hidden to reduce noise. Missing keys remain
+visible as unavailable on the relevant side.
+
+This is a literal configuration diff. TRACE does not infer whether a change helped,
+hurt, or caused a lap-time difference. Other simulators can add their own parser behind
+the same comparison command without treating their formats as Assetto Corsa INIs.
 
 ### Expected archive layout
 
@@ -97,7 +115,7 @@ Imports are bounded to protect the desktop process and the user's setup tree:
 
 ## Not implemented yet
 
-TRACE does not yet parse setup values for comparison, attach a proven setup snapshot to
-a session or `.trace` package, identify the setup currently loaded by a simulator, or
-recommend setup changes. Those require a separate provenance model so the app does not
-attribute a lap to a setup without evidence.
+TRACE does not yet identify the setup currently loaded by a simulator, automatically
+capture active setup snapshots, install a setup restored from `.trace` into the game,
+or recommend setup changes. Those require stronger provenance and simulator-specific
+behavior so the app does not attribute a lap to a setup without evidence.

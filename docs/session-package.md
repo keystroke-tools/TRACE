@@ -21,7 +21,9 @@ compact Zstandard-compressed Arrow IPC telemetry file:
 The manifest carries simulator, track, layout and car source identities; the session
 type and start time; custom title, driver and tags; every lap's duration, validity,
 track-limit evidence and telemetry sample range; sector times; and the telemetry
-schema version. The Arrow payload retains all canonical channels used by lap review,
+schema version. When the user explicitly confirms a setup for the session, the
+manifest also carries its simulator/content identities, filename, original source,
+confirmation time, SHA-256 digest, and bounded base64 content. The Arrow payload retains all canonical channels used by lap review,
 visualisation, comparison and future cross-simulator analysis. It also retains the
 source-native values currently required for tyre wear, fuel capacity and track
 geometry/configuration.
@@ -42,13 +44,19 @@ SQLite rows are not copied directly. They are local implementation details and c
 identities that could collide on another machine. Import validates the package and
 Arrow stream, assigns fresh local session/lap/blob identities, recreates the relevant
 metadata rows, and marks ownership as `other`. The supplied driver attribution, title,
-tags, lap evidence and simulator source identities are retained.
+tags, lap evidence and simulator source identities are retained. A confirmed setup is
+checksum-verified, restored beneath TRACE's local setup library, indexed against the
+fresh session identity, and labelled as a confirmation supplied by the package—not a
+new claim made by the recipient.
 
 ## Validation and limits
 
 - Unknown package versions and telemetry schemas newer than the running app are
   rejected.
-- The manifest is limited to 1 MiB and telemetry to 2 GiB.
+- The manifest is limited to 6 MiB, an optional setup to 4 MiB, and telemetry to 2 GiB.
+- Setup payloads require matching simulator/car/track/layout identities, a valid
+  SHA-256 digest, and a portable filename that cannot traverse or target Windows device
+  names.
 - Every lap must have a non-empty, in-bounds sample range.
 - Arrow is streamed and validated to establish the exact sample count before any
   imported session becomes visible.
@@ -56,4 +64,7 @@ tags, lap evidence and simulator source identities are retained.
 
 Raw `.arrow` and `.csv` exports remain available for specialist tools. They are data
 exports, not complete session exchange files. Existing package version 1 files remain
-readable because compact telemetry uses the same Arrow schema and package framing.
+readable because the setup field is optional and compact telemetry uses the same Arrow
+schema and package framing. Older readers ignore the additive setup field when the
+manifest remains within their legacy size limit; unusually large bundled setups require
+a current TRACE build.

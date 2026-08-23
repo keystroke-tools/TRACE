@@ -17,6 +17,7 @@ import {
   type SavedComparison,
   type SetupImporterDescriptor,
   type SetupImportResult,
+  type SetupComparison,
   type SessionExportFormat,
   type TelemetryStatus,
 } from "./data-source";
@@ -1883,7 +1884,7 @@ function Sessions({ sessions, onOpen, onDeleted, onUpdated, onImported }: { sess
     try {
       const result = await telemetryDataSource.importSession(selected);
       await onImported();
-      showToast({ kind: "success", title: "Session imported", message: `${result.lapCount} laps and ${result.sampleCount.toLocaleString()} telemetry samples are ready to review.`, timeoutMs: 6_000 });
+      showToast({ kind: "success", title: "Session imported", message: `${result.lapCount} laps and ${result.sampleCount.toLocaleString()} telemetry samples are ready${result.setupName ? ` · ${result.setupName} was restored to the setup library` : ""}.`, timeoutMs: 6_000 });
     } catch (error) {
       showToast({ kind: "error", title: "Import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
     } finally {
@@ -2145,10 +2146,14 @@ function SessionRow({ session, onOpen, onDelete, onUpdate }: { session: Recorded
 }
 
 function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary; onOpenLap: (lapIndex: number) => void }) {
+  const showToast = useToast();
   const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
   const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
   const [compatibleSetups, setCompatibleSetups] = useState<CompatibleSetup[]>([]);
   const [setupsState, setSetupsState] = useState<"loading" | "ready" | "error">("loading");
+  const [savingSetupId, setSavingSetupId] = useState<string | null>(null);
+  const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
+  const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
   const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
   const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
   const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
@@ -2156,6 +2161,7 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
   const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
   const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
   const theoreticalBest = theoreticalBestLap(session.laps, sectorIndices);
+  const confirmedSetup = compatibleSetups.find((value) => value.confirmed) ?? null;
 
   useEffect(() => {
     let active = true;
@@ -2169,6 +2175,44 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
     });
     return () => { active = false; };
   }, [session.id]);
+
+  async function confirmSetup(setup: CompatibleSetup) {
+    setSavingSetupId(setup.id);
+    try {
+      const values = await telemetryDataSource.confirmSessionSetup(session.id, setup.id);
+      setCompatibleSetups(values);
+      setSetupComparison(null);
+      showToast({ kind: "success", title: "Session setup confirmed", message: `${setup.name} will be included when this session is exported as .trace.`, timeoutMs: 5_000 });
+    } catch (error) {
+      showToast({ kind: "error", title: "Could not confirm setup", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setSavingSetupId(null);
+    }
+  }
+
+  async function clearSetup() {
+    setSavingSetupId("clear");
+    try {
+      setCompatibleSetups(await telemetryDataSource.clearSessionSetup(session.id));
+      setSetupComparison(null);
+      showToast({ kind: "success", title: "Session setup cleared", message: "Future .trace exports will not include a setup until another is confirmed.", timeoutMs: 5_000 });
+    } catch (error) {
+      showToast({ kind: "error", title: "Could not clear setup", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setSavingSetupId(null);
+    }
+  }
+
+  async function compareSetup(baseline: CompatibleSetup, alternative: CompatibleSetup) {
+    setComparingSetupId(alternative.id);
+    try {
+      setSetupComparison(await telemetryDataSource.compareSetups(baseline.id, alternative.id));
+    } catch (error) {
+      showToast({ kind: "error", title: "Could not compare setups", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setComparingSetupId(null);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -2217,16 +2261,18 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
 
       <div className="mt-3 border border-trace-divider bg-trace-surface">
         <div className="flex items-center justify-between gap-4 border-b border-trace-divider px-5 py-3">
-          <div><strong className="text-[12px] tracking-[.06em] text-trace-soft">COMPATIBLE SETUPS</strong><p className="mt-1 text-[11px] leading-4 text-trace-dim">Exact simulator, car, track, and layout matches from your imported setup library. TRACE cannot confirm one was used for this session.</p></div>
+          <div><strong className="text-[12px] tracking-[.06em] text-trace-soft">COMPATIBLE SETUPS</strong><p className="mt-1 text-[11px] leading-4 text-trace-dim">Exact simulator, car, track, and layout matches. Mark one as used only when you know it was loaded for this session.</p></div>
           <span className="shrink-0 font-mono text-[10px] text-trace-dim">{setupsState === "loading" ? "CHECKING…" : setupsState === "error" ? "UNAVAILABLE" : `${compatibleSetups.length} FOUND`}</span>
         </div>
         {setupsState === "ready" && compatibleSetups.length > 0 ? (
           <div className="grid gap-px bg-trace-divider md:grid-cols-2 xl:grid-cols-3">
             {compatibleSetups.map((setup) => (
-              <article className="min-w-0 bg-trace-deep px-4 py-3" key={setup.id}>
-                <div className="flex items-start justify-between gap-3"><strong className="truncate text-[12px] text-trace-text">{setup.name}</strong><span className="shrink-0 border border-trace-accent/30 bg-trace-accent-wash px-1.5 py-0.5 font-mono text-[9px] font-bold text-trace-accent">MATCH</span></div>
+              <article className={`min-w-0 px-4 py-3 ${setup.confirmed ? "bg-trace-accent-wash" : "bg-trace-deep"}`} key={setup.id}>
+                <div className="flex items-start justify-between gap-3"><strong className="truncate text-[12px] text-trace-text">{setup.name}</strong><span className={`shrink-0 border px-1.5 py-0.5 font-mono text-[9px] font-bold ${setup.confirmed ? "border-trace-accent/50 bg-trace-accent/15 text-trace-accent" : "border-trace-divider text-trace-dim"}`}>{setup.confirmed ? setup.confirmationSource === "package_confirmed" ? "SHARED AS USED" : "USED FOR SESSION" : "COMPATIBLE"}</span></div>
                 <p className="mt-1 truncate text-[11px] text-trace-muted">{setup.sourceArchive ?? "Local setup"}</p>
                 <Tooltip content={setup.installedPath}><p className="mt-2 truncate font-mono text-[10px] text-trace-dim">IMPORTED {formatSessionDate(setup.importedAt)}</p></Tooltip>
+                <button type="button" disabled={savingSetupId != null} onClick={() => setup.confirmed ? void clearSetup() : void confirmSetup(setup)} className={`mt-3 h-8 w-full border font-mono text-[10px] font-bold tracking-[.06em] disabled:text-trace-dim ${setup.confirmed ? "border-trace-divider bg-trace-deep text-trace-muted hover:text-white" : "border-trace-accent/40 bg-trace-accent-wash text-trace-accent hover:border-trace-accent"}`}>{savingSetupId === setup.id || (setup.confirmed && savingSetupId === "clear") ? "SAVING…" : setup.confirmed ? "CLEAR CONFIRMATION" : "MARK AS USED"}</button>
+                {!setup.confirmed && confirmedSetup && <button type="button" disabled={comparingSetupId != null} onClick={() => void compareSetup(confirmedSetup, setup)} className="mt-1 h-8 w-full border border-trace-divider bg-transparent font-mono text-[10px] font-bold tracking-[.06em] text-trace-muted hover:bg-trace-raised hover:text-white disabled:text-trace-dim">{comparingSetupId === setup.id ? "COMPARING…" : "COMPARE TO USED"}</button>}
               </article>
             ))}
           </div>
@@ -2235,6 +2281,21 @@ function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary
         ) : setupsState === "error" ? (
           <p className="px-5 py-4 text-[11px] leading-5 text-trace-warning">TRACE could not read the local setup library.</p>
         ) : null}
+        {setupComparison && (
+          <div className="border-t border-trace-divider bg-trace-black/30">
+            <div className="flex items-center justify-between gap-4 border-b border-trace-divider px-5 py-3">
+              <div><strong className="text-[12px] text-trace-text">SETUP DIFFERENCES</strong><p className="mt-1 text-[11px] text-trace-dim"><span className="text-trace-accent">{setupComparison.baselineName}</span> used for session <span className="mx-1">→</span> <span className="text-trace-purple">{setupComparison.alternativeName}</span></p></div>
+              <div className="flex items-center gap-4"><span className="font-mono text-[10px] text-trace-dim">{setupComparison.changedValues} CHANGED · {setupComparison.unchangedValues} SAME</span><button type="button" onClick={() => setSetupComparison(null)} className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base text-trace-muted hover:text-white" aria-label="Close setup comparison">×</button></div>
+            </div>
+            {setupComparison.sections.length > 0 ? <div className="grid gap-px bg-trace-divider lg:grid-cols-2">
+              {setupComparison.sections.map((section) => <section className="bg-trace-surface" key={section.name}>
+                <h3 className="border-b border-trace-divider px-4 py-2.5 font-mono text-[10px] font-black tracking-[.1em] text-trace-soft">{friendlySetupLabel(section.name)}</h3>
+                {section.changes.map((change) => <div className="grid grid-cols-[minmax(120px,1fr)_minmax(80px,.7fr)_20px_minmax(80px,.7fr)] items-center gap-3 border-b border-trace-divider px-4 py-2.5 text-[11px] last:border-b-0" key={change.key}><span className="truncate text-trace-muted">{friendlySetupLabel(change.key)}</span><code className="truncate text-right text-trace-accent">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="truncate text-trace-purple">{change.alternativeValue ?? "—"}</code></div>)}
+              </section>)}
+            </div> : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
+            <p className="border-t border-trace-divider px-5 py-3 text-[10px] leading-4 text-trace-dim">This is a literal INI difference, not performance analysis. A changed value does not prove why either lap was faster.</p>
+          </div>
+        )}
       </div>
 
       {!hasSectorTiming && (
@@ -2614,6 +2675,10 @@ function formatCompactSessionDate(value: string) {
 
 function friendlyConditionName(value: string) {
   return value.replace(/^\d+_/, "").replaceAll("_", " ").toUpperCase();
+}
+
+function friendlySetupLabel(value: string) {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function Footer({ status }: { status: TelemetryStatus | null }) {
