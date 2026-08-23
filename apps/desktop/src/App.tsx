@@ -2366,21 +2366,20 @@ function CompatibleSetupsDock({ setups, state, confirmedSetup, savingSetupId, co
         </button>
 
         {open && (
-          <aside id="compatible-setups-dock" className="absolute right-0 top-[calc(100%+.5rem)] flex max-h-[calc(100vh-150px)] w-[min(520px,calc(100vw-232px))] flex-col overflow-hidden border border-trace-divider bg-trace-black shadow-[0_18px_48px_rgba(0,0,0,.62)]" aria-label="Compatible setups">
+          <aside id="compatible-setups-dock" className="absolute right-0 top-[calc(100%+.5rem)] flex max-h-[calc(100vh-150px)] w-[min(520px,calc(100vw-232px))] min-w-0 flex-col border border-trace-divider bg-trace-black shadow-[0_18px_48px_rgba(0,0,0,.62)]" aria-label="Compatible setups">
             <div className="flex items-start justify-between gap-4 border-b border-trace-divider px-4 py-3">
               <div><strong className="font-mono text-[11px] tracking-[.08em] text-white">SETUPS FOR THIS SESSION</strong><p className="mt-1 text-[11px] leading-4 text-trace-dim">Exact simulator, car, track, and layout matches. Only mark one as used when you know it was loaded.</p></div>
               <button type="button" onClick={() => setOpen(false)} className="grid size-8 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-base leading-none text-trace-muted hover:text-white" aria-label="Close compatible setups">×</button>
             </div>
-            <div className="overflow-y-auto">
+            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
               {state === "ready" && setups.length > 0 ? (
                 <div className="divide-y divide-trace-divider">
                   {setups.map((setup) => (
-                    <article className={`border-l-2 px-4 py-3 ${setup.confirmed ? "border-l-trace-accent bg-trace-black" : "border-l-transparent bg-trace-deep"}`} key={setup.id}>
+                    <article className={`min-w-0 border-l-2 px-4 py-3 ${setup.confirmed ? "border-l-trace-accent bg-trace-black" : "border-l-transparent bg-trace-deep"}`} key={setup.id}>
                       <div className="flex min-w-0 items-start justify-between gap-3">
                         <div className="min-w-0"><strong className={`block break-words text-[12px] leading-4 ${setup.confirmed ? "text-white" : "text-trace-soft"}`}>{setup.name}</strong><p className={`mt-0.5 break-words text-[11px] leading-4 ${setup.confirmed ? "text-trace-soft" : "text-trace-muted"}`}>{setup.sourceArchive ?? "Local setup"} · imported {formatCompactSessionDate(setup.importedAt)}</p></div>
                         <span className={`shrink-0 border px-1.5 py-1 font-mono text-[9px] font-black leading-none ${setup.confirmed ? "border-trace-accent/70 bg-trace-black text-trace-accent" : "border-trace-divider bg-trace-surface text-trace-muted"}`}>{setup.confirmed ? setup.confirmationSource === "package_confirmed" ? "SHARED AS USED" : "USED FOR SESSION" : "COMPATIBLE"}</span>
                       </div>
-                      <Tooltip content={setup.installedPath}><p className="mt-1.5 truncate font-mono text-[9px] leading-4 text-trace-dim">{setup.installedPath}</p></Tooltip>
                       <div className="mt-2 flex flex-wrap justify-end gap-1.5">
                         {!setup.confirmed && confirmedSetup && <button type="button" disabled={comparingSetupId != null} onClick={() => void onCompare(confirmedSetup, setup)} className="h-7 border border-trace-divider bg-transparent px-2.5 font-mono text-[9px] font-bold tracking-[.05em] text-trace-soft hover:border-trace-soft hover:text-white disabled:text-trace-dim">{comparingSetupId === setup.id ? "COMPARING…" : "COMPARE TO USED"}</button>}
                         <button type="button" disabled={savingSetupId != null} onClick={() => setup.confirmed ? void onClear() : void onConfirm(setup)} className={`h-7 border px-2.5 font-mono text-[9px] font-black tracking-[.05em] disabled:text-trace-dim ${setup.confirmed ? "border-trace-divider bg-trace-deep text-white hover:border-trace-soft" : "border-trace-accent bg-trace-accent text-trace-black hover:bg-white"}`}>{savingSetupId === setup.id || (setup.confirmed && savingSetupId === "clear") ? "SAVING…" : setup.confirmed ? "CLEAR" : "MARK AS USED"}</button>
@@ -2396,20 +2395,20 @@ function CompatibleSetupsDock({ setups, state, confirmedSetup, savingSetupId, co
                 <p className="px-5 py-6 font-mono text-[10px] text-trace-dim">CHECKING SETUP LIBRARY…</p>
               )}
 
-              {comparison && (
-                <div className="border-t border-trace-divider bg-trace-surface">
-                  <div className="flex items-start justify-between gap-4 border-b border-trace-divider px-4 py-3">
-                    <div className="min-w-0 flex-1"><strong className="text-[11px] text-white">SETUP DIFFERENCES</strong><div className="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-[10px] leading-4"><span className="min-w-0 break-words text-trace-accent"><small className="block font-mono text-[8px] font-bold tracking-[.08em] text-trace-dim">USED</small>{comparison.baselineName}</span><span className="pt-4 text-center text-trace-dim">→</span><span className="min-w-0 break-words text-trace-purple"><small className="block font-mono text-[8px] font-bold tracking-[.08em] text-trace-dim">COMPARED</small>{comparison.alternativeName}</span></div></div>
-                    <div className="flex shrink-0 items-center gap-2"><span className="font-mono text-[9px] text-trace-dim">{comparison.changedValues} CHANGED</span><button type="button" onClick={onCloseComparison} className="grid size-7 place-items-center border border-trace-divider bg-trace-deep text-sm text-trace-muted hover:text-white" aria-label="Close setup comparison">×</button></div>
-                  </div>
-                  {comparison.sections.length > 0 ? comparison.sections.map((section) => <section className="border-b border-trace-divider last:border-b-0" key={section.name}>
-                    <h3 className="bg-trace-deep px-4 py-2 font-mono text-[9px] font-black tracking-[.1em] text-trace-soft">{friendlySetupLabel(section.name)}</h3>
-                    {section.changes.map((change) => <div className="flex items-start justify-between gap-5 border-t border-trace-divider px-4 py-2.5 text-[10px]" key={change.key}><span className="min-w-0 flex-1 break-words leading-4 text-trace-muted">{friendlySetupLabel(change.key)}</span><span className="grid max-w-[60%] shrink-0 grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-start gap-1 font-mono leading-4"><code className="break-words text-right text-trace-accent">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="break-words text-left text-trace-purple">{change.alternativeValue ?? "—"}</code></span></div>)}
-                  </section>) : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
-                  <p className="border-t border-trace-divider px-4 py-3 text-[10px] leading-4 text-trace-dim">Literal INI differences only. A changed value does not prove why either lap was faster.</p>
-                </div>
-              )}
             </div>
+            {comparison && (
+              <aside className="absolute right-full top-0 flex max-h-[calc(100vh-150px)] w-[min(480px,calc(100vw-760px))] min-w-0 flex-col overflow-x-hidden overflow-y-auto border border-r-0 border-trace-divider bg-trace-surface shadow-[-14px_18px_48px_rgba(0,0,0,.5)]" aria-label="Setup differences">
+                <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-trace-divider bg-trace-surface px-4 py-3">
+                  <div className="min-w-0 flex-1"><strong className="text-[11px] text-white">SETUP DIFFERENCES</strong><div className="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-[10px] leading-4"><span className="min-w-0 break-words text-trace-accent"><small className="block font-mono text-[8px] font-bold tracking-[.08em] text-trace-dim">USED</small>{comparison.baselineName}</span><span className="pt-4 text-center text-trace-dim">→</span><span className="min-w-0 break-words text-trace-purple"><small className="block font-mono text-[8px] font-bold tracking-[.08em] text-trace-dim">COMPARED</small>{comparison.alternativeName}</span></div></div>
+                  <div className="flex shrink-0 items-center gap-2"><span className="font-mono text-[9px] text-trace-dim">{comparison.changedValues} CHANGED</span><button type="button" onClick={onCloseComparison} className="grid size-7 place-items-center border border-trace-divider bg-trace-deep text-sm text-trace-muted hover:text-white" aria-label="Close setup comparison">×</button></div>
+                </div>
+                {comparison.sections.length > 0 ? comparison.sections.map((section) => <section className="border-b border-trace-divider last:border-b-0" key={section.name}>
+                  <h3 className="bg-trace-deep px-4 py-2 font-mono text-[9px] font-black tracking-[.1em] text-trace-soft">{friendlySetupLabel(section.name)}</h3>
+                  {section.changes.map((change) => <div className="flex min-w-0 items-start justify-between gap-5 border-t border-trace-divider px-4 py-2.5 text-[10px]" key={change.key}><span className="min-w-0 flex-1 break-words leading-4 text-trace-muted">{friendlySetupLabel(change.key)}</span><span className="grid w-52 max-w-[60%] min-w-0 shrink grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-start gap-1 font-mono leading-4"><code className="min-w-0 text-right text-trace-accent [overflow-wrap:anywhere]">{change.baselineValue ?? "—"}</code><span className="text-center text-trace-dim">→</span><code className="min-w-0 text-left text-trace-purple [overflow-wrap:anywhere]">{change.alternativeValue ?? "—"}</code></span></div>)}
+                </section>) : <p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>}
+                <p className="border-t border-trace-divider px-4 py-3 text-[10px] leading-4 text-trace-dim">Literal INI differences only. A changed value does not prove why either lap was faster.</p>
+              </aside>
+            )}
           </aside>
         )}
       </div>
