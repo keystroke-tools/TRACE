@@ -107,26 +107,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 						</div>
 					</div>
 					<div className="mt-3 pb-32">
-						<div className="grid grid-cols-[minmax(560px,604px)_minmax(460px,1fr)] gap-3">
-							<div ref={mapPip.anchor}>
-								<TrackMap
-									samples={samples}
-									cursorIndex={cursorIndex}
-									trackMap={trace.trackMap}
-									height={556}
-									focusSelection={sector != null || telemetryWindow != null}
-									rangeLabel={
-										sector != null
-											? `SECTOR ${sector}`
-											: telemetryWindow
-												? `${Math.round(telemetryWindow.startM)}–${Math.round(telemetryWindow.endM)} M`
-												: undefined
-									}
-									onRangeZoom={zoomTelemetry}
-									rangeZoomLinked={mapZoomLinked}
-									onRangeZoomLinked={setMapZoomLinked}
-								/>
-							</div>
+						<div className="grid grid-cols-[minmax(0,3fr)_minmax(380px,1fr)] gap-3">
 							<div className="grid gap-3">
 								<ComparisonChart
 									label="SPEED"
@@ -146,6 +127,25 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 									onZoom={zoomTelemetry}
 									fixedRange={[-1, 8]}
 									series={singleSeries("referenceGear", channelColours.gear)}
+								/>
+							</div>
+							<div ref={mapPip.anchor} className="min-w-0">
+								<TrackMap
+									samples={samples}
+									cursorIndex={cursorIndex}
+									trackMap={trace.trackMap}
+									height={508}
+									focusSelection={sector != null || telemetryWindow != null}
+									rangeLabel={
+										sector != null
+											? `SECTOR ${sector}`
+											: telemetryWindow
+												? `${Math.round(telemetryWindow.startM)}–${Math.round(telemetryWindow.endM)} M`
+												: undefined
+									}
+									onRangeZoom={zoomTelemetry}
+									rangeZoomLinked={mapZoomLinked}
+									onRangeZoomLinked={setMapZoomLinked}
 								/>
 							</div>
 						</div>

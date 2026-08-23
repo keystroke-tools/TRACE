@@ -388,8 +388,41 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 												</button>
 											</div>
 										)}
-										<div className="grid grid-cols-[minmax(480px,560px)_minmax(360px,1fr)] gap-3">
-											<div ref={mapPip.anchor}>
+										<div className="grid grid-cols-[minmax(0,3fr)_minmax(380px,1fr)] gap-3">
+											<div className="grid gap-3">
+												<ComparisonChart
+													label="SPEED"
+													unit="km/h"
+													samples={samples}
+													cursorIndex={cursorIndex}
+													onCursor={setCursorIndex}
+													onZoom={zoomTelemetry}
+													series={comparisonSeries(
+														"referenceSpeedKmh",
+														"comparisonSpeedKmh",
+														channelColours.speed,
+														comparisonIsFaster,
+													)}
+												/>
+												<ComparisonChart
+													label="TIME DIFFERENCE"
+													unit="s"
+													samples={samples}
+													cursorIndex={cursorIndex}
+													onCursor={setCursorIndex}
+													onZoom={zoomTelemetry}
+													fixedRange={deltaRange(samples)}
+													series={[
+														{
+															label: "ANALYSED LAP VS REFERENCE",
+															colour: channelColours.delta,
+															value: (sample) => sample.deltaSeconds,
+														},
+													]}
+													zeroLine
+												/>
+											</div>
+											<div ref={mapPip.anchor} className="min-w-0">
 												<TrackMap
 													samples={samples}
 													cursorIndex={cursorIndex}
@@ -411,32 +444,6 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 													onRangeZoom={zoomTelemetry}
 													rangeZoomLinked={mapZoomLinked}
 													onRangeZoomLinked={setMapZoomLinked}
-												/>
-											</div>
-											<div className="grid gap-3">
-												<ComparisonChart
-													label="SPEED"
-													unit="km/h"
-													samples={samples}
-													cursorIndex={cursorIndex}
-													onCursor={setCursorIndex}
-													onZoom={zoomTelemetry}
-													series={comparisonSeries(
-														"referenceSpeedKmh",
-														"comparisonSpeedKmh",
-														channelColours.speed,
-														comparisonIsFaster,
-													)}
-												/>
-												<ComparisonChart
-													label="GEAR"
-													unit=""
-													samples={samples}
-													cursorIndex={cursorIndex}
-													onCursor={setCursorIndex}
-													onZoom={zoomTelemetry}
-													fixedRange={[-1, 8]}
-													series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear, comparisonIsFaster)}
 												/>
 											</div>
 										</div>
@@ -499,21 +506,14 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 												series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm, comparisonIsFaster)}
 											/>
 											<ComparisonChart
-												label="TIME DIFFERENCE"
-												unit="s"
+												label="GEAR"
+												unit=""
 												samples={samples}
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
-												fixedRange={deltaRange(samples)}
-												series={[
-													{
-														label: "ANALYSED LAP VS REFERENCE",
-														colour: channelColours.delta,
-														value: (sample) => sample.deltaSeconds,
-													},
-												]}
-												zeroLine
+												fixedRange={[-1, 8]}
+												series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear, comparisonIsFaster)}
 											/>
 										</div>
 									</div>

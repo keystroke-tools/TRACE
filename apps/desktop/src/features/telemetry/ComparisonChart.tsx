@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import type { LapComparisonSample } from "../../data-source";
 
 type ComparisonValueKey = keyof Pick<
@@ -93,7 +94,8 @@ export function ComparisonChart({
 	zeroLine?: boolean;
 	compact?: boolean;
 }) {
-	const width = 1_000;
+	const chart = useRef<HTMLDivElement>(null);
+	const [width, setWidth] = useState(1_000);
 	const height = compact ? 82 : 220;
 	const plot = { left: 58, right: 18, top: compact ? 10 : 24, bottom: compact ? 20 : 30 };
 	const values = series.flatMap((item) =>
@@ -131,8 +133,17 @@ export function ComparisonChart({
 		tooltipTops[0] = midpoint + (firstIsHigher ? -16 : 16);
 		tooltipTops[1] = midpoint + (firstIsHigher ? 16 : -16);
 	}
+	useLayoutEffect(() => {
+		const element = chart.current;
+		if (!element) return;
+		const updateWidth = () => setWidth(Math.max(320, Math.round(element.clientWidth)));
+		updateWidth();
+		const observer = new ResizeObserver(updateWidth);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, []);
 	return (
-		<div className="relative overflow-hidden border border-trace-divider bg-trace-surface">
+		<div ref={chart} className="relative min-w-0 overflow-hidden border border-trace-divider bg-trace-surface">
 			<div className={`flex items-center justify-between gap-3 overflow-hidden border-b border-trace-divider px-4 ${compact ? "h-9" : "h-12"}`}>
 				<span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">{label}</span>
 				<div className="flex min-w-0 items-center gap-4 overflow-hidden font-mono text-[11px] font-bold">
