@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
+import desktopPackage from "../package.json";
 import {
   telemetryDataSource,
   type CornerAnalysis,
@@ -2446,7 +2447,7 @@ function Footer({ status }: { status: TelemetryStatus | null }) {
       <span>TRACE ENGINE <b className="ml-1 text-trace-accent">READY</b></span>
       <span>{status?.simulatorShortName ?? "SIM"} MODULE <b className="ml-1 text-trace-accent">LIFECYCLE</b></span>
       <span>STORAGE <b className="ml-1 text-trace-accent">LOCAL</b></span>
-      <span className="ml-auto">V0.1.0 / PHASE 2</span>
+      <span className="ml-auto">V{desktopPackage.version}</span>
     </footer>
   );
 }
