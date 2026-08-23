@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.17.0",
   "scripts": {
-    "build": "pnpm --filter @trace/desktop build",
-    "check": "pnpm --filter @trace/desktop check"
+    "build": "pnpm --filter @trace/desktop --filter @trace/web build",
+    "check": "pnpm --filter @trace/desktop --filter @trace/web check"
   }
 }

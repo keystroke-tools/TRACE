@@ -4,11 +4,11 @@ TRACE uses Mise as the single toolchain entry point. `mise.toml` pins Rust, Node
 and pnpm; `pnpm-lock.yaml` and `Cargo.lock` pin resolved dependencies. Do not install
 project dependency versions ad hoc when they belong in these files.
 
-The desktop frontend uses Tailwind CSS 4 through the official Vite plugin. TRACE
-tokens are defined with Tailwind's CSS-first `@theme` directive in
-`apps/desktop/src/styles.css`; there is intentionally no legacy JavaScript Tailwind
-configuration file. Prefer named TRACE utilities and restrained arbitrary values over
-reintroducing a parallel component-class styling system.
+The desktop frontend and static product site use Tailwind CSS 4 through the official
+Vite plugin. Desktop tokens are defined with Tailwind's CSS-first `@theme` directive
+in `apps/desktop/src/styles.css`; the website's standalone presentation lives in
+`apps/web/src/styles.css`. There is intentionally no legacy JavaScript Tailwind
+configuration file.
 
 References: [Tailwind's Vite installation](https://tailwindcss.com/docs/installation/using-vite)
 and [theme-variable documentation](https://tailwindcss.com/docs/theme).
@@ -99,6 +99,7 @@ telemetry through named shared-memory mappings. Phase 1 does not open those mapp
 
 ```text
 apps/desktop/             React UI and Tauri composition root
+apps/web/                 static simtrace.run product and download site
 crates/trace-domain/      canonical simulator-independent types
 crates/trace-adapter/     acquisition lifecycle and deterministic replay
 crates/trace-core/        deterministic telemetry mathematics

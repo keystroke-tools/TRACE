@@ -81,6 +81,7 @@ Currently implemented:
 - Compact self-contained `.trace` sharing exports with measured ~90% size reduction
 - Minimal Tauri 2 and React desktop shell with TRACE design tokens
 - Tailwind CSS 4 utility styling with CSS-first TRACE theme tokens
+- Responsive static `simtrace.run` product site backed by real application screenshots and GitHub release downloads
 - Compact searchable/filterable session library with dedicated full-session review and safe recording deletion
 - Lazy per-lap fuel use, maximum speed, and four-corner tyre-wear summaries derived from recorded telemetry
 - User-managed session/replay names, driver attribution, ownership, and searchable tags
