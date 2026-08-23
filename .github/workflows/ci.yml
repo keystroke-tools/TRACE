@@ -61,7 +61,7 @@ jobs:
 
   windows-ac-boundary:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: "0"
       RUSTC_WRAPPER: sccache
@@ -117,4 +117,11 @@ jobs:
         run: cargo test -p trace-storage -p trace-recorder -p trace-ac
 
       - name: Check Windows desktop shell
+        if: github.event_name == 'pull_request'
         run: cargo check -p trace-desktop
+
+      - name: Warm Windows release compiler cache
+        if: github.event_name == 'push'
+        run: |
+          cargo build --release -p trace-desktop --bin trace
+          cargo build --release -p trace-ac --example capture_fixture
