@@ -34,6 +34,16 @@ pub struct CaptureStatus {
     pub sample_rate_hz: u16,
     pub session: String,
     pub active_session_id: Option<String>,
+    pub live_inputs: LiveInputs,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LiveInputs {
+    pub sequence: u64,
+    pub throttle: Option<f32>,
+    pub brake: Option<f32>,
+    pub clutch: Option<f32>,
+    pub steering_angle_rad: Option<f32>,
 }
 
 impl Default for CaptureStatus {
@@ -55,6 +65,7 @@ impl CaptureStatus {
             sample_rate_hz: 0,
             session: "NO ACTIVE SESSION".into(),
             active_session_id: None,
+            live_inputs: LiveInputs::default(),
         }
     }
 }
@@ -208,8 +219,10 @@ fn handle_output(
                 seed: seed.clone(),
             });
             update_status(status, "recording", 60, &session_label(&seed));
+            clear_live_inputs(status);
         }
         RecorderOutput::FrameAccepted(frame) => {
+            update_live_inputs(status, &frame);
             if matches!(active, Some(ActivePersistence::Pending { .. })) {
                 let Some(ActivePersistence::Pending { source, seed }) = active.take() else {
                     unreachable!("pending persistence was checked above")
@@ -470,12 +483,33 @@ fn update_status(
         value.connection = connection.into();
         value.sample_rate_hz = sample_rate_hz;
         value.session = session.into();
+        if !matches!(connection, "recording" | "replay") {
+            value.live_inputs = LiveInputs::default();
+        }
     }
 }
 
 fn set_active_session(status: &SharedCaptureStatus, session_id: Option<String>) {
     if let Ok(mut value) = status.lock() {
         value.active_session_id = session_id;
+    }
+}
+
+fn update_live_inputs(status: &SharedCaptureStatus, frame: &trace_domain::TelemetryFrame) {
+    if let Ok(mut value) = status.lock() {
+        value.live_inputs = LiveInputs {
+            sequence: frame.sequence.0,
+            throttle: frame.inputs.throttle,
+            brake: frame.inputs.brake,
+            clutch: frame.inputs.clutch,
+            steering_angle_rad: frame.inputs.steering_angle_rad,
+        };
+    }
+}
+
+fn clear_live_inputs(status: &SharedCaptureStatus) {
+    if let Ok(mut value) = status.lock() {
+        value.live_inputs = LiveInputs::default();
     }
 }
 

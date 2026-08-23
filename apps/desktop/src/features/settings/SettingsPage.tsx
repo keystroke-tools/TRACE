@@ -156,7 +156,7 @@ export function SettingsPage() {
 	return (
 		<>
 			<PageIntro
-				index="05"
+				index="06"
 				eyebrow="PREFERENCES"
 				title="SETTINGS"
 				description="Control how TRACE connects to your simulators and works with their data. Recording, storage, analysis, and appearance preferences will also live here as those features become configurable."

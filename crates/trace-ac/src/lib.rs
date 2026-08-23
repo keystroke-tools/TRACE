@@ -87,7 +87,7 @@ pub fn map_frame(
         inputs: DriverInputs {
             throttle: ratio(physics.gas()),
             brake: ratio(physics.brake()),
-            clutch: None,
+            clutch: physics.clutch().and_then(ratio),
             steering_angle_rad: finite(physics.steering_angle_rad()),
         },
         vehicle: VehicleState {
@@ -333,5 +333,20 @@ mod tests {
         assert_eq!(frame.inputs.throttle, None);
         assert_eq!(frame.vehicle.speed_mps, None);
         assert_eq!(frame.environment, None);
+    }
+
+    #[test]
+    fn maps_the_documented_clutch_input_when_the_full_page_is_available() {
+        let mut physics = vec![0; pages::PHYSICS_PAGE_LENGTH];
+        put_f32(&mut physics, 364, 0.42);
+        let frame = map_frame(
+            &physics,
+            &[0; pages::GRAPHICS_PREFIX_LENGTH],
+            FrameSequence(0),
+            ElapsedNanoseconds(0),
+        )
+        .expect("valid page lengths");
+
+        assert_eq!(frame.inputs.clutch, Some(0.42));
     }
 }

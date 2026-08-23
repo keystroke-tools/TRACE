@@ -369,6 +369,7 @@ fn capabilities() -> ChannelCapabilities {
     for (id, unit, source_field) in [
         ("inputs.throttle", Unit::Ratio, "gas"),
         ("inputs.brake", Unit::Ratio, "brake"),
+        ("inputs.clutch", Unit::Ratio, "clutch"),
         ("vehicle.speed", Unit::MetresPerSecond, "speedKmh"),
         ("vehicle.engine_rpm", Unit::RevolutionsPerMinute, "rpms"),
         ("vehicle.gear", Unit::Unitless, "gear"),

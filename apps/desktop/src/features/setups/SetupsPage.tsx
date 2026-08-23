@@ -166,7 +166,7 @@ export function SetupsPage() {
 	return (
 		<>
 			<PageIntro
-				index="04"
+				index="05"
 				eyebrow="CAR SETUPS"
 				title="INSTALL SHARED SETUPS"
 				description="Choose a simulator-aware importer and let TRACE put shared setup files in the layout that simulator expects."

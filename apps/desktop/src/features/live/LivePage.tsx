@@ -85,13 +85,15 @@ export function LivePage({
 							End normally, then open Sessions to inspect laps or export data.
 						</WorkflowStep>
 					</ol>
-					<button
-						type="button"
-						onClick={onOpenSessions}
-						className="mx-5 mb-5 border border-trace-accent-muted bg-trace-accent-wash px-4 py-3 text-[12px] font-black tracking-[.1em] text-trace-accent hover:border-trace-accent"
-					>
-						OPEN SESSIONS
-					</button>
+					<div className="mx-5 mb-5 flex flex-wrap gap-2">
+						<button
+							type="button"
+							onClick={onOpenSessions}
+							className="border border-trace-accent-muted bg-trace-accent-wash px-4 py-3 text-[12px] font-black tracking-[.1em] text-trace-accent hover:border-trace-accent"
+						>
+							OPEN SESSIONS
+						</button>
+					</div>
 				</div>
 			</div>
 

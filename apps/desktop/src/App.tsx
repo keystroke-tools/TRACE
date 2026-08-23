@@ -5,6 +5,7 @@ import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
 import { ComparePage } from "./features/compare/ComparePage";
 import { LivePage } from "./features/live/LivePage";
+import { OverlaysPage } from "./features/overlays/OverlaysPage";
 import { LapVisualizer } from "./features/sessions/LapVisualizer";
 import { SessionDetail } from "./features/sessions/SessionDetail";
 import { SessionsPage } from "./features/sessions/SessionsPage";
@@ -36,7 +37,7 @@ export function App() {
 	useEffect(() => {
 		const timer = window.setInterval(() => {
 			void telemetryDataSource.getStatus().then(setStatus);
-			if (section === "SESSIONS") void telemetryDataSource.getSessions().then(setSessions);
+			if (section === "SESSIONS" || section === "OVERLAYS") void telemetryDataSource.getSessions().then(setSessions);
 		}, 1_000);
 		return () => window.clearInterval(timer);
 	}, [section]);
@@ -88,6 +89,7 @@ export function App() {
 						/>
 					))}
 				{section === "COMPARE" && <ComparePage sessions={sessions} />}
+				{section === "OVERLAYS" && <OverlaysPage sessions={sessions} status={status} />}
 				{section === "SETUPS" && <SetupsPage />}
 				{section === "SETTINGS" && <SettingsPage />}
 			</section>

@@ -6,24 +6,25 @@ behaviour, while `SPEC.md` defines intended product direction.
 
 ## Start here
 
-| Document | Purpose |
-| --- | --- |
-| [README](../README.md) | Product overview, principles, installation, and quick start |
-| [Specification](../SPEC.md) | Product and implementation direction |
-| [Implemented foundation](foundation.md) | Foundational implementation and acceptance evidence |
-| [Development guide](development.md) | Toolchains, commands, native prerequisites, and troubleshooting |
-| [Contributing](../CONTRIBUTING.md) | Change quality, commit, safety, and LLM-assistance expectations |
+| Document                                | Purpose                                                         |
+| --------------------------------------- | --------------------------------------------------------------- |
+| [README](../README.md)                  | Product overview, principles, installation, and quick start     |
+| [Specification](../SPEC.md)             | Product and implementation direction                            |
+| [Implemented foundation](foundation.md) | Foundational implementation and acceptance evidence             |
+| [Development guide](development.md)     | Toolchains, commands, native prerequisites, and troubleshooting |
+| [Contributing](../CONTRIBUTING.md)      | Change quality, commit, safety, and LLM-assistance expectations |
 
 ## Architecture and boundaries
 
-| Document | Scope |
-| --- | --- |
-| [Phase 1 architecture review](phase-1-architecture.md) | Decisions, research, risks, dependency rules, and original implementation plan |
-| [Assetto Corsa boundary](assetto-corsa.md) | Implemented vanilla AC byte readers, mappings, omissions, and Phase 2 acquisition requirements |
-| [Corner analysis](corner-analysis.md) | Implemented deterministic corner detection, phase loss decomposition, opportunity ranking, and current limitations |
-| [Assetto Corsa API reference](ac-shared-memory-reference.md) | Mapping names, page layouts, enums, fields, offsets, units, and TRACE storage keys |
-| [Live protocol v1](protocol-v1.md) | Implemented bounded DTO/validation model; transport remains future work |
-| [Arrow IPC storage benchmark](storage-benchmark.md) | Reproducible 60–333 Hz codec benchmark and compression decision |
-| [TRACE session package](session-package.md) | Versioned `.trace` sharing format, contents, import behavior, and safety limits |
-| [Setup imports](setup-import.md) | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds |
-| [Asset provenance](assets.md) | Origin and processing history for generated project assets |
+| Document                                                     | Scope                                                                                                              |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| [Phase 1 architecture review](phase-1-architecture.md)       | Decisions, research, risks, dependency rules, and original implementation plan                                     |
+| [Assetto Corsa boundary](assetto-corsa.md)                   | Implemented vanilla AC byte readers, mappings, omissions, and Phase 2 acquisition requirements                     |
+| [Corner analysis](corner-analysis.md)                        | Implemented deterministic corner detection, phase loss decomposition, opportunity ranking, and current limitations |
+| [Assetto Corsa API reference](ac-shared-memory-reference.md) | Mapping names, page layouts, enums, fields, offsets, units, and TRACE storage keys                                 |
+| [Live protocol v1](protocol-v1.md)                           | Implemented bounded DTO/validation model; transport remains future work                                            |
+| [Arrow IPC storage benchmark](storage-benchmark.md)          | Reproducible 60–333 Hz codec benchmark and compression decision                                                    |
+| [TRACE session package](session-package.md)                  | Versioned `.trace` sharing format, contents, import behavior, and safety limits                                    |
+| [Setup imports](setup-import.md)                             | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds                         |
+| [Live pedal overlay](pedal-overlay.md)                       | Standalone overlay controls, customisation, OBS capture, and data flow                                             |
+| [Asset provenance](assets.md)                                | Origin and processing history for generated project assets                                                         |

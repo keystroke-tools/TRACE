@@ -33,6 +33,7 @@ use trace_storage::{
 
 mod ac_content;
 mod capture;
+mod obs_overlay;
 mod setup_analysis;
 mod setup_import;
 
@@ -78,6 +79,19 @@ struct FoundationStatus {
     sample_rate_hz: u16,
     session: String,
     channels: Vec<ChannelCapability>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LivePedalTelemetry {
+    connection: String,
+    simulator_name: String,
+    session: String,
+    sequence: u64,
+    throttle_percent: Option<f32>,
+    brake_percent: Option<f32>,
+    clutch_percent: Option<f32>,
+    steering_degrees: Option<f32>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -199,11 +213,14 @@ struct LapTrace {
 #[serde(rename_all = "camelCase")]
 struct LapTraceSample {
     distance_m: f64,
+    elapsed_seconds: Option<f64>,
     sector_index: Option<u32>,
     speed_kmh: Option<f64>,
     throttle_percent: Option<f64>,
     brake_percent: Option<f64>,
+    clutch_percent: Option<f64>,
     steering_percent: Option<f64>,
+    steering_degrees: Option<f64>,
     rpm: Option<f64>,
     gear: Option<i16>,
     position_x_m: Option<f64>,
@@ -993,6 +1010,8 @@ fn visualize_session_lap(
         .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value))
         .ok_or_else(|| "the simulator did not report a usable track length".to_owned())?;
     let channels = AlignedLapChannels::new(&columns, lap_length_m)?;
+    let elapsed_series = DistanceSeries::new(channels.elapsed.samples().to_vec())
+        .map_err(|error| format!("lap time cannot be interpolated: {error:?}"))?;
     let end_m = channels
         .elapsed
         .samples()
@@ -1004,7 +1023,14 @@ fn visualize_session_lap(
     let speed = interpolate_channel(channels.speed.as_ref(), &grid, 3.6)?;
     let throttle = interpolate_channel(channels.throttle.as_ref(), &grid, 100.0)?;
     let brake = interpolate_channel(channels.brake.as_ref(), &grid, 100.0)?;
+    let clutch = interpolate_channel(channels.clutch.as_ref(), &grid, 100.0)?;
+    let elapsed = interpolate_channel(Some(&elapsed_series), &grid, 1.0)?;
     let steering = interpolate_channel(channels.steering.as_ref(), &grid, 100.0)?;
+    let steering_degrees = interpolate_channel(
+        channels.steering.as_ref(),
+        &grid,
+        180.0 / std::f64::consts::PI,
+    )?;
     let rpm = interpolate_channel(channels.rpm.as_ref(), &grid, 1.0)?;
     let sector = interpolate_discrete(channels.sector.as_ref(), &grid)?;
     let gear = interpolate_discrete(channels.gear.as_ref(), &grid)?;
@@ -1017,11 +1043,14 @@ fn visualize_session_lap(
         .enumerate()
         .map(|(index, distance_m)| LapTraceSample {
             distance_m,
+            elapsed_seconds: elapsed[index],
             sector_index: sector[index].and_then(rounded_u32),
             speed_kmh: speed[index],
             throttle_percent: throttle[index],
             brake_percent: brake[index],
+            clutch_percent: clutch[index],
             steering_percent: steering[index],
+            steering_degrees: steering_degrees[index],
             rpm: rpm[index],
             gear: gear[index].and_then(rounded_i16),
             position_x_m: position_x[index],
@@ -1116,6 +1145,7 @@ struct AlignedLapChannels {
     speed: Option<DistanceSeries>,
     throttle: Option<DistanceSeries>,
     brake: Option<DistanceSeries>,
+    clutch: Option<DistanceSeries>,
     steering: Option<DistanceSeries>,
     rpm: Option<DistanceSeries>,
     sector: Option<DistanceSeries>,
@@ -1128,21 +1158,15 @@ struct AlignedLapChannels {
 
 impl AlignedLapChannels {
     fn new(columns: &TelemetryColumns, lap_length_m: f64) -> Result<Self, String> {
-        let use_lap_clock = columns.lap_time_ns.iter().flatten().count() >= 2;
         let elapsed_origin = columns.elapsed_ns.first().copied().unwrap_or_default();
         let elapsed_values = columns
             .elapsed_ns
             .iter()
-            .zip(&columns.lap_time_ns)
-            .map(|(elapsed, lap_time)| {
-                if use_lap_clock {
-                    lap_time.map(|value| std::time::Duration::from_nanos(value).as_secs_f64())
-                } else {
-                    Some(
-                        std::time::Duration::from_nanos(elapsed.saturating_sub(elapsed_origin))
-                            .as_secs_f64(),
-                    )
-                }
+            .map(|elapsed| {
+                Some(
+                    std::time::Duration::from_nanos(elapsed.saturating_sub(elapsed_origin))
+                        .as_secs_f64(),
+                )
             })
             .collect::<Vec<_>>();
         let elapsed_samples = distance_samples(
@@ -1157,6 +1181,7 @@ impl AlignedLapChannels {
             speed: continuous_series(&columns.lap_position, &columns.speed_mps, lap_length_m),
             throttle: continuous_series(&columns.lap_position, &columns.throttle, lap_length_m),
             brake: continuous_series(&columns.lap_position, &columns.brake, lap_length_m),
+            clutch: continuous_series(&columns.lap_position, &columns.clutch, lap_length_m),
             steering: continuous_series(
                 &columns.lap_position,
                 &columns.steering_angle_rad,
@@ -1865,6 +1890,35 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri injects State as a command argument.
+fn live_pedal_telemetry(status: tauri::State<'_, SharedCaptureStatus>) -> LivePedalTelemetry {
+    let snapshot = status
+        .lock()
+        .map_or_else(|_| CaptureStatus::default(), |value| value.clone());
+    let simulator_name = simulator_name(&snapshot.simulator_id);
+    LivePedalTelemetry {
+        connection: snapshot.connection,
+        simulator_name,
+        session: snapshot.session,
+        sequence: snapshot.live_inputs.sequence,
+        throttle_percent: percentage(snapshot.live_inputs.throttle),
+        brake_percent: percentage(snapshot.live_inputs.brake),
+        clutch_percent: percentage(snapshot.live_inputs.clutch),
+        steering_degrees: snapshot
+            .live_inputs
+            .steering_angle_rad
+            .filter(|value| value.is_finite())
+            .map(f32::to_degrees),
+    }
+}
+
+fn percentage(value: Option<f32>) -> Option<f32> {
+    value
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(0.0, 1.0) * 100.0)
+}
+
+#[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
 fn select_simulator(
     status: tauri::State<'_, SharedCaptureStatus>,
@@ -1916,6 +1970,13 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
     (
         "inputs.brake",
         "Brake",
+        "DRIVER INPUTS",
+        "Pedal position",
+        true,
+    ),
+    (
+        "inputs.clutch",
+        "Clutch",
         "DRIVER INPUTS",
         "Pedal position",
         true,
@@ -2007,9 +2068,9 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
     ),
     (
         "native.inputs",
-        "Clutch & steering source values",
+        "Signed steering source value",
         "AC-NATIVE · INPUTS",
-        "Exact AC clutch and signed source steering values",
+        "Exact AC signed source steering value",
         true,
     ),
     (
@@ -2165,6 +2226,7 @@ pub fn run() {
                 .ok()
                 .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
             let status = app.state::<SharedCaptureStatus>().inner().clone();
+            obs_overlay::spawn(status.clone());
             capture::spawn(
                 directory,
                 ac_race_config,
@@ -2176,6 +2238,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             foundation_status,
+            live_pedal_telemetry,
             select_simulator,
             recent_sessions,
             compatible_setups,

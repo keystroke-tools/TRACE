@@ -40,10 +40,11 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 7] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 8] = [
     "static.max_fuel_litres",
     "static.track_spline_length_m",
     "physics.steer_angle",
+    "physics.clutch",
     "physics.tyre_wear.0",
     "physics.tyre_wear.1",
     "physics.tyre_wear.2",
@@ -59,6 +60,7 @@ pub struct TelemetryColumns {
     pub elapsed_ns: Vec<u64>,
     pub throttle: Vec<Option<f32>>,
     pub brake: Vec<Option<f32>>,
+    pub clutch: Vec<Option<f32>>,
     pub speed_mps: Vec<Option<f32>>,
     pub engine_rpm: Vec<Option<f32>>,
     pub lap_position: Vec<Option<f32>>,
@@ -95,6 +97,7 @@ impl TelemetryColumns {
             elapsed_ns: frames.iter().map(|frame| frame.elapsed.0).collect(),
             throttle: frames.iter().map(|frame| frame.inputs.throttle).collect(),
             brake: frames.iter().map(|frame| frame.inputs.brake).collect(),
+            clutch: frames.iter().map(|frame| frame.inputs.clutch).collect(),
             speed_mps: frames.iter().map(|frame| frame.vehicle.speed_mps).collect(),
             engine_rpm: frames
                 .iter()
@@ -183,6 +186,7 @@ impl TelemetryColumns {
             elapsed_ns: Vec::new(),
             throttle: Vec::new(),
             brake: Vec::new(),
+            clutch: Vec::new(),
             speed_mps: Vec::new(),
             engine_rpm: Vec::new(),
             lap_position: Vec::new(),
@@ -1029,6 +1033,12 @@ fn extend_projection(
     decoded
         .brake
         .extend(nullable_f32(batch, 3)?.into_iter().skip(start).take(length));
+    decoded.clutch.extend(
+        optional_f32(batch, "clutch")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
     decoded
         .speed_mps
         .extend(nullable_f32(batch, 4)?.into_iter().skip(start).take(length));
@@ -1103,6 +1113,12 @@ fn extend_projection(
                 native,
                 source_row,
                 "physics.steer_angle",
+            );
+            backfill_native_float(
+                &mut decoded.clutch[projected_row],
+                native,
+                source_row,
+                "physics.clutch",
             );
             backfill_native_float(
                 &mut decoded.ambient_temperature_c[projected_row],
@@ -1551,6 +1567,7 @@ mod tests {
                     payload: vec![u8::try_from(sequence).expect("byte"); 1_500],
                     float_fields: BTreeMap::from([
                         ("physics.steer_angle".into(), 0.4),
+                        ("physics.clutch".into(), 0.3),
                         ("physics.tyre_wear.0".into(), 98.0),
                         ("static.max_fuel_litres".into(), 60.0),
                         ("physics.unused".into(), 123.0),
@@ -1575,6 +1592,7 @@ mod tests {
         let projected = read_columns_range(Cursor::new(&compact), 0, 8).expect("projection");
         assert_eq!(projected.throttle, vec![Some(0.75); 8]);
         assert_eq!(projected.steering_angle_rad, vec![Some(0.4); 8]);
+        assert_eq!(projected.clutch, vec![Some(0.3); 8]);
         assert_eq!(projected.track_configuration.as_deref(), Some("gp"));
         let metrics = read_lap_metrics(Cursor::new(&compact), 0, 8).expect("metrics");
         assert_eq!(metrics.fuel_capacity_litres, Some(60.0));

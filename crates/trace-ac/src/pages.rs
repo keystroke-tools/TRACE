@@ -73,6 +73,9 @@ impl<'a> PhysicsPage<'a> {
     pub(crate) fn road_temperature_c(&self) -> Option<f32> {
         read_optional_f32(self.0, 292)
     }
+    pub(crate) fn clutch(&self) -> Option<f32> {
+        read_optional_f32(self.0, 364)
+    }
 }
 
 pub(crate) struct GraphicsPage<'a>(&'a [u8]);

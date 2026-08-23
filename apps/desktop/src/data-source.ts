@@ -27,6 +27,17 @@ export interface TelemetryStatus {
 	channels: ChannelCapability[];
 }
 
+export interface LivePedalTelemetry {
+	connection: ConnectionState;
+	simulatorName: string;
+	session: string;
+	sequence: number;
+	throttlePercent?: number | null;
+	brakePercent?: number | null;
+	clutchPercent?: number | null;
+	steeringDegrees?: number | null;
+}
+
 export interface RecordedLapSummary {
 	index: number;
 	time: string;
@@ -147,11 +158,14 @@ export interface StructuredAnalysisResult<T> {
 
 export interface LapTraceSample {
 	distanceM: number;
+	elapsedSeconds?: number | null;
 	sectorIndex?: number | null;
 	speedKmh?: number | null;
 	throttlePercent?: number | null;
 	brakePercent?: number | null;
+	clutchPercent?: number | null;
 	steeringPercent?: number | null;
+	steeringDegrees?: number | null;
 	rpm?: number | null;
 	gear?: number | null;
 	positionXM?: number | null;
@@ -313,6 +327,7 @@ export interface SavedComparison {
 
 export interface TelemetryDataSource {
 	getStatus(): Promise<TelemetryStatus>;
+	getLivePedalTelemetry(): Promise<LivePedalTelemetry>;
 	selectSimulator(simulatorId: string): Promise<void>;
 	getSessions(): Promise<RecordedSessionSummary[]>;
 	getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
@@ -376,6 +391,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			channels: [
 				{ id: "inputs.throttle", label: "Throttle", category: "DRIVER INPUTS", detail: "Pedal position", available: true },
 				{ id: "inputs.brake", label: "Brake", category: "DRIVER INPUTS", detail: "Pedal position", available: true },
+				{ id: "inputs.clutch", label: "Clutch", category: "DRIVER INPUTS", detail: "Pedal position", available: true },
 				{ id: "vehicle.speed", label: "Speed", category: "VEHICLE", detail: "Metres per second", available: true },
 				{ id: "vehicle.engine_rpm", label: "Engine RPM", category: "VEHICLE", detail: "Revolutions per minute", available: true },
 				{ id: "vehicle.gear", label: "Gear", category: "VEHICLE", detail: "Reverse, neutral, or forward gear", available: true },
@@ -397,9 +413,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 				{ id: "wheels.suspension_travel", label: "Suspension travel", category: "WHEELS", detail: "Metres at all four corners", available: true },
 				{
 					id: "native.inputs",
-					label: "Clutch & steering source values",
+					label: "Signed steering source value",
 					category: "AC-NATIVE · INPUTS",
-					detail: "Exact AC source fields",
+					detail: "Exact AC source steering field",
 					available: true,
 				},
 				{
@@ -508,6 +524,19 @@ export const fixtureDataSource: TelemetryDataSource = {
 					available: true,
 				},
 			],
+		};
+	},
+	async getLivePedalTelemetry() {
+		const phase = performance.now() / 1_000;
+		return {
+			connection: "replay",
+			simulatorName: "Assetto Corsa",
+			session: "MUGELLO / TATUUS FA01",
+			sequence: Math.floor(performance.now() / 16),
+			throttlePercent: Math.max(0, Math.sin(phase) * 76 + 22),
+			brakePercent: Math.max(0, Math.sin(phase + Math.PI) * 88),
+			clutchPercent: Math.max(0, Math.sin(phase * 0.45 + 2) * 35),
+			steeringDegrees: Math.sin(phase * 0.8) * 155,
 		};
 	},
 	async selectSimulator(simulatorId) {
@@ -878,6 +907,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 export const tauriDataSource: TelemetryDataSource = {
 	getStatus() {
 		return invoke<TelemetryStatus>("foundation_status");
+	},
+	getLivePedalTelemetry() {
+		return invoke<LivePedalTelemetry>("live_pedal_telemetry");
 	},
 	selectSimulator(simulatorId) {
 		return invoke<void>("select_simulator", { simulatorId });

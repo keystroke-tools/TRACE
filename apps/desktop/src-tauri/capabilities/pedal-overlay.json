@@ -1,0 +1,14 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "pedal-overlay",
+	"description": "Window controls for the standalone live pedal overlay",
+	"windows": ["pedal-overlay"],
+	"permissions": [
+		"core:default",
+		"core:window:allow-close",
+		"core:window:allow-start-dragging",
+		"core:window:allow-is-always-on-top",
+		"core:window:allow-set-always-on-top",
+		"core:window:allow-set-size"
+	]
+}

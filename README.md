@@ -39,20 +39,20 @@ tested code.
 
 ## Documentation
 
-| Document | Contents |
-| --- | --- |
-| [Documentation index](docs/README.md) | Guide to all technical documentation |
-| [Specification](SPEC.md) | Product and implementation direction |
-| [Development guide](docs/development.md) | Toolchains, commands, repository layout, and troubleshooting |
-| [Architecture review](docs/phase-1-architecture.md) | Boundaries, dependency rules, risks, and design decisions |
-| [Assetto Corsa integration](docs/assetto-corsa.md) | Capture boundary, mappings, and known omissions |
-| [Assetto Corsa API reference](docs/ac-shared-memory-reference.md) | Shared-memory pages, fields, offsets, units, and storage keys |
-| [Corner analysis](docs/corner-analysis.md) | Deterministic corner detection and time-loss analysis |
-| [Session package](docs/session-package.md) | Portable `.trace` format and import safety limits |
-| [Setup imports](docs/setup-import.md) | Simulator-aware setup archive handling |
-| [Live protocol](docs/protocol-v1.md) | Versioned live telemetry messages and validation |
-| [Storage benchmark](docs/storage-benchmark.md) | Arrow IPC compression measurements and decisions |
-| [Contributing](CONTRIBUTING.md) | Change quality, testing, safety, and LLM-assistance expectations |
+| Document                                                          | Contents                                                         |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [Documentation index](docs/README.md)                             | Guide to all technical documentation                             |
+| [Specification](SPEC.md)                                          | Product and implementation direction                             |
+| [Development guide](docs/development.md)                          | Toolchains, commands, repository layout, and troubleshooting     |
+| [Architecture review](docs/phase-1-architecture.md)               | Boundaries, dependency rules, risks, and design decisions        |
+| [Assetto Corsa integration](docs/assetto-corsa.md)                | Capture boundary, mappings, and known omissions                  |
+| [Assetto Corsa API reference](docs/ac-shared-memory-reference.md) | Shared-memory pages, fields, offsets, units, and storage keys    |
+| [Corner analysis](docs/corner-analysis.md)                        | Deterministic corner detection and time-loss analysis            |
+| [Session package](docs/session-package.md)                        | Portable `.trace` format and import safety limits                |
+| [Setup imports](docs/setup-import.md)                             | Simulator-aware setup archive handling                           |
+| [Live protocol](docs/protocol-v1.md)                              | Versioned live telemetry messages and validation                 |
+| [Storage benchmark](docs/storage-benchmark.md)                    | Arrow IPC compression measurements and decisions                 |
+| [Contributing](CONTRIBUTING.md)                                   | Change quality, testing, safety, and LLM-assistance expectations |
 
 ## Principles
 
@@ -88,18 +88,18 @@ Simulator / Import / Replay
 
 The workspace components are:
 
-| Component | Responsibility |
-| --- | --- |
-| `apps/desktop` | React interface and Tauri application composition |
-| `apps/web` | Static `simtrace.run` product and download site |
-| `trace-domain` | Canonical telemetry, units, capabilities, and session metadata |
-| `trace-adapter` | Simulator lifecycle and replay-source contracts |
-| `trace-core` | Simulator-agnostic telemetry mathematics and structured analysis |
-| `trace-recorder` | Session/lap state and persistence orchestration |
-| `trace-storage` | SQLite metadata, Arrow telemetry, and portable session packages |
-| `trace-protocol` | Bounded live telemetry messages and validation |
-| `trace-ac` | Assetto Corsa capture, decoding, and canonical mapping |
-| `trace-windows-shmem` | Audited Win32 shared-memory boundary |
+| Component             | Responsibility                                                   |
+| --------------------- | ---------------------------------------------------------------- |
+| `apps/desktop`        | React interface and Tauri application composition                |
+| `apps/web`            | Static `simtrace.run` product and download site                  |
+| `trace-domain`        | Canonical telemetry, units, capabilities, and session metadata   |
+| `trace-adapter`       | Simulator lifecycle and replay-source contracts                  |
+| `trace-core`          | Simulator-agnostic telemetry mathematics and structured analysis |
+| `trace-recorder`      | Session/lap state and persistence orchestration                  |
+| `trace-storage`       | SQLite metadata, Arrow telemetry, and portable session packages  |
+| `trace-protocol`      | Bounded live telemetry messages and validation                   |
+| `trace-ac`            | Assetto Corsa capture, decoding, and canonical mapping           |
+| `trace-windows-shmem` | Audited Win32 shared-memory boundary                             |
 
 `trace-core` must remain independent of Assetto Corsa, Tauri, storage engines,
 networking, user interfaces, and LLM providers.
@@ -120,6 +120,11 @@ Installed builds check GitHub Releases shortly after startup. When a newer signe
 version is available, TRACE offers to download, install, and restart into it. Portable
 `trace.exe` builds remain available for diagnostics, but the installer is the supported
 path for automatic updates.
+
+The Overlays page previews a resizable pedal-input HUD against generated, live, or
+recorded telemetry before opening it as an always-on-top window. Its live graph, pedal
+bars, steering display, colours, and background are customisable. TRACE also provides
+a local URL for OBS Browser Source capture while the app is running.
 
 ## Development
 
