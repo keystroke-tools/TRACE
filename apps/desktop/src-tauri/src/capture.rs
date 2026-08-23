@@ -68,7 +68,7 @@ enum ActivePersistence {
     },
     Recording {
         descriptor: CompletionDescriptor,
-        writer: Option<TelemetryIpcWriter<FileBlobWriter>>,
+        writer: Option<Box<TelemetryIpcWriter<FileBlobWriter>>>,
     },
 }
 
@@ -252,7 +252,7 @@ fn handle_output(
                 .take()
                 .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
             if recording.laps.is_empty() {
-                let (writer, _) = writer
+                let (writer, _) = (*writer)
                     .finish()
                     .map_err(|error| format!("Arrow stream discard failed: {error:?}"))?;
                 blobs
@@ -267,7 +267,7 @@ fn handle_output(
             }
             descriptor.ended_at = now_rfc3339()?;
             let result =
-                persist_streamed_recording(blobs, metadata, &recording, &descriptor, writer);
+                persist_streamed_recording(blobs, metadata, &recording, &descriptor, *writer);
             set_active_session(status, None);
             result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
             update_status(status, "waiting", 0, "NO ACTIVE SESSION");
@@ -323,7 +323,7 @@ fn begin_recording(
             blob_path: path,
             lap_id_prefix: format!("{session_id}-lap"),
         },
-        writer: Some(writer),
+        writer: Some(Box::new(writer)),
     })
 }
 
