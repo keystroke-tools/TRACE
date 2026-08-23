@@ -22,7 +22,7 @@ use trace_storage::{
         TELEMETRY_SCHEMA_VERSION, TelemetryColumns, export_core_csv, read_columns_range,
         read_lap_metrics, sample_count,
     },
-    metadata::{MetadataStore, SavedComparison, SessionSummary},
+    metadata::{CompatibleSetup, MetadataStore, SavedComparison, SessionSummary},
     package::{
         PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest, imported_records, read_package,
         write_compact_package,
@@ -370,6 +370,23 @@ fn recent_sessions(
             }
         })
         .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn compatible_setups(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<Vec<CompatibleSetup>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .compatible_setups(&session_id, 12)
+        .map_err(|error| format!("failed to find compatible setups: {error:?}"))
 }
 
 #[tauri::command]
@@ -2005,6 +2022,7 @@ pub fn run() {
             foundation_status,
             select_simulator,
             recent_sessions,
+            compatible_setups,
             session_lap_metrics,
             visualize_session_lap,
             compare_session_laps,

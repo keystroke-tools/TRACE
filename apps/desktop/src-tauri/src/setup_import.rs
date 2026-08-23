@@ -9,6 +9,10 @@ use std::{
 };
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+use tauri::Manager;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use trace_storage::metadata::{MetadataStore, NewSetupImport};
 use zip::ZipArchive;
 
 const MAX_ARCHIVES: usize = 32;
@@ -62,6 +66,7 @@ pub(crate) struct SetupImportResult {
     destination: Option<String>,
     skipped: Vec<String>,
     error: Option<String>,
+    index_warning: Option<String>,
     success: bool,
 }
 
@@ -78,6 +83,7 @@ impl SetupImportResult {
             destination: None,
             skipped: Vec::new(),
             error: None,
+            index_warning: None,
             success: false,
         }
     }
@@ -116,6 +122,7 @@ pub(crate) fn detect_setup_folder(simulator_id: String) -> Result<SetupFolder, S
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri IPC owns deserialized strings.
 pub(crate) fn import_setup_archives(
+    app: tauri::AppHandle,
     simulator_id: String,
     archive_paths: Vec<String>,
     setups_folder: String,
@@ -148,11 +155,107 @@ pub(crate) fn import_setup_archives(
                 .fail("choose an Assetto Corsa setups folder"),
         ];
     }
-    archive_paths
+    let mut results: Vec<_> = archive_paths
         .into_iter()
         .map(PathBuf::from)
         .map(|path| import_archive(&path, &destination, overwrite))
-        .collect()
+        .collect();
+    index_imported_setups(&app, &simulator_id, &mut results);
+    results
+}
+
+fn index_imported_setups(
+    app: &tauri::AppHandle,
+    simulator_id: &str,
+    results: &mut [SetupImportResult],
+) {
+    let app_data = match app.path().app_data_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            set_index_warning(results, &format!("could not locate TRACE data: {error}"));
+            return;
+        }
+    };
+    if let Err(error) = fs::create_dir_all(&app_data) {
+        set_index_warning(results, &format!("could not prepare TRACE data: {error}"));
+        return;
+    }
+    let mut store = match MetadataStore::open(&app_data.join("trace.sqlite")) {
+        Ok(store) => store,
+        Err(error) => {
+            set_index_warning(results, &format!("could not open setup library: {error:?}"));
+            return;
+        }
+    };
+    let imported_at = match OffsetDateTime::now_utc().format(&Rfc3339) {
+        Ok(value) => value,
+        Err(error) => {
+            set_index_warning(
+                results,
+                &format!("could not timestamp setup import: {error}"),
+            );
+            return;
+        }
+    };
+    for result in results.iter_mut().filter(|result| result.success) {
+        if let Err(error) = index_import_result(&mut store, simulator_id, result, &imported_at) {
+            result.index_warning = Some(error);
+        }
+    }
+}
+
+fn index_import_result(
+    store: &mut MetadataStore,
+    simulator_id: &str,
+    result: &SetupImportResult,
+    imported_at: &str,
+) -> Result<(), String> {
+    let car = result
+        .car
+        .as_deref()
+        .ok_or("car identity was not retained")?;
+    let track = result
+        .track
+        .as_deref()
+        .ok_or("track identity was not retained")?;
+    let destination = result
+        .destination
+        .as_deref()
+        .map(Path::new)
+        .ok_or("setup destination was not retained")?;
+    for name in result.files.iter().chain(&result.skipped) {
+        let installed_path = destination.join(name);
+        let contents = File::open(&installed_path)
+            .and_then(|mut file| read_bounded(&mut file, MAX_SETUP_BYTES))
+            .map_err(|error| format!("setup was installed but could not be indexed: {error}"))?;
+        let content_sha256: [u8; 32] = Sha256::digest(&contents).into();
+        let mut identity = Sha256::new();
+        identity.update(simulator_id.as_bytes());
+        identity.update([0]);
+        identity.update(installed_path.to_string_lossy().as_bytes());
+        let id = format!("setup-{:x}", identity.finalize());
+        store
+            .save_setup_import(&NewSetupImport {
+                id,
+                simulator_key: simulator_id.into(),
+                source_car_id: car.into(),
+                source_track_id: track.into(),
+                layout_id: None,
+                name: name.clone(),
+                installed_path: installed_path.to_string_lossy().into_owned(),
+                source_archive: Some(result.archive_name.clone()),
+                content_sha256,
+                imported_at: imported_at.into(),
+            })
+            .map_err(|error| format!("setup was installed but could not be indexed: {error:?}"))?;
+    }
+    Ok(())
+}
+
+fn set_index_warning(results: &mut [SetupImportResult], warning: &str) {
+    for result in results.iter_mut().filter(|result| result.success) {
+        result.index_warning = Some(warning.to_owned());
+    }
 }
 
 fn setup_folder_candidates() -> Vec<PathBuf> {

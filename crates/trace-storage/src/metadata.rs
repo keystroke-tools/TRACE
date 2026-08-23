@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 7;
+const SCHEMA_VERSION: u32 = 8;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
@@ -15,6 +15,7 @@ const MIGRATION_4: &str = include_str!("../migrations/0004_session_attribution.s
 const MIGRATION_5: &str = include_str!("../migrations/0005_lap_track_limits.sql");
 const MIGRATION_6: &str = include_str!("../migrations/0006_simulator_install_paths.sql");
 const MIGRATION_7: &str = include_str!("../migrations/0007_profile_and_saved_comparisons.sql");
+const MIGRATION_8: &str = include_str!("../migrations/0008_setup_library.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -152,6 +153,32 @@ pub struct SavedComparison {
     pub created_at: String,
 }
 
+/// One setup file discovered or installed by a simulator-specific importer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NewSetupImport {
+    pub id: String,
+    pub simulator_key: String,
+    pub source_car_id: String,
+    pub source_track_id: String,
+    pub layout_id: Option<String>,
+    pub name: String,
+    pub installed_path: String,
+    pub source_archive: Option<String>,
+    pub content_sha256: [u8; 32],
+    pub imported_at: String,
+}
+
+/// A setup whose source identities exactly match a recorded session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibleSetup {
+    pub id: String,
+    pub name: String,
+    pub installed_path: String,
+    pub source_archive: Option<String>,
+    pub imported_at: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SavedLapIdentity {
     lap_id: String,
@@ -267,6 +294,16 @@ impl MetadataStore {
                 .map_err(MetadataError::from)?;
             transaction
                 .pragma_update(None, "user_version", 7)
+                .map_err(MetadataError::from)?;
+            transaction.commit().map_err(MetadataError::from)?;
+        }
+        if current < 8 {
+            let transaction = connection.transaction().map_err(MetadataError::from)?;
+            transaction
+                .execute_batch(MIGRATION_8)
+                .map_err(MetadataError::from)?;
+            transaction
+                .pragma_update(None, "user_version", 8)
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
@@ -536,6 +573,105 @@ impl MetadataStore {
                     reference_started_at: row.get(11)?,
                     analysed_started_at: row.get(12)?,
                     created_at: row.get(13)?,
+                })
+            })
+            .map_err(MetadataError::from)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(MetadataError::from)
+    }
+
+    /// Adds or refreshes one imported setup in the local setup library.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when setup metadata is invalid or cannot be stored.
+    pub fn save_setup_import(&mut self, setup: &NewSetupImport) -> Result<(), MetadataError> {
+        validate_setup_import(setup)?;
+        self.connection
+            .execute(
+                "INSERT INTO setup_library
+                 (id, simulator_key, source_car_id, source_track_id, layout_id, name,
+                  installed_path, source_archive, content_sha256, imported_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(simulator_key, installed_path) DO UPDATE SET
+                    source_car_id = excluded.source_car_id,
+                    source_track_id = excluded.source_track_id,
+                    layout_id = excluded.layout_id,
+                    name = excluded.name,
+                    source_archive = excluded.source_archive,
+                    content_sha256 = excluded.content_sha256,
+                    imported_at = excluded.imported_at",
+                params![
+                    setup.id,
+                    setup.simulator_key,
+                    setup.source_car_id,
+                    setup.source_track_id,
+                    setup.layout_id.as_deref().unwrap_or(""),
+                    setup.name,
+                    setup.installed_path,
+                    setup.source_archive,
+                    setup.content_sha256.as_slice(),
+                    setup.imported_at,
+                ],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
+    /// Returns imported setups whose simulator, source car, source track, and layout
+    /// identities exactly match the requested session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] for an invalid limit, unknown session, or query error.
+    pub fn compatible_setups(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<CompatibleSetup>, MetadataError> {
+        if limit == 0 || limit > 50 {
+            return Err(MetadataError::InvalidRecord(
+                "compatible setup limit must be between 1 and 50".into(),
+            ));
+        }
+        let session_exists = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?1)",
+                [session_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(MetadataError::from)?;
+        if !session_exists {
+            return Err(MetadataError::RecordNotFound);
+        }
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT sl.id, sl.name, sl.installed_path, sl.source_archive, sl.imported_at
+                 FROM sessions s
+                 JOIN simulators sim ON sim.id = s.simulator_id
+                 JOIN tracks t ON t.id = s.track_id
+                 JOIN cars c ON c.id = s.car_id
+                 JOIN setup_library sl
+                   ON sl.simulator_key = sim.key
+                  AND sl.source_track_id = t.source_track_id COLLATE NOCASE
+                  AND sl.layout_id = t.layout_id COLLATE NOCASE
+                  AND sl.source_car_id = c.source_car_id COLLATE NOCASE
+                 WHERE s.id = ?1
+                 ORDER BY sl.imported_at DESC, sl.name COLLATE NOCASE, sl.id
+                 LIMIT ?2",
+            )
+            .map_err(MetadataError::from)?;
+        let limit = i64::try_from(limit).map_err(|_| MetadataError::IntegerOverflow)?;
+        let rows = statement
+            .query_map(params![session_id, limit], |row| {
+                Ok(CompatibleSetup {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    installed_path: row.get(2)?,
+                    source_archive: row.get(3)?,
+                    imported_at: row.get(4)?,
                 })
             })
             .map_err(MetadataError::from)?;
@@ -1222,6 +1358,37 @@ fn validate_service_endpoint<'a>(endpoint: &'a str, label: &str) -> Result<&'a s
     Ok(endpoint)
 }
 
+fn validate_setup_import(setup: &NewSetupImport) -> Result<(), MetadataError> {
+    let required = [
+        (&setup.id, 160_usize),
+        (&setup.simulator_key, 128),
+        (&setup.source_car_id, 256),
+        (&setup.source_track_id, 256),
+        (&setup.name, 255),
+        (&setup.installed_path, 2_048),
+        (&setup.imported_at, 64),
+    ];
+    let required_valid = required.iter().all(|(value, maximum)| {
+        !value.trim().is_empty()
+            && value.chars().count() <= *maximum
+            && !value.chars().any(char::is_control)
+    });
+    let optional_valid =
+        setup.layout_id.as_deref().is_none_or(|value| {
+            value.chars().count() <= 256 && !value.chars().any(char::is_control)
+        }) && setup.source_archive.as_deref().is_none_or(|value| {
+            !value.trim().is_empty()
+                && value.chars().count() <= 255
+                && !value.chars().any(char::is_control)
+        });
+    if !required_valid || !optional_valid {
+        return Err(MetadataError::InvalidRecord(
+            "invalid imported setup metadata".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_session(session: &NewSession) -> Result<(), MetadataError> {
     if session.id.is_empty()
         || session.simulator_id.is_empty()
@@ -1429,7 +1596,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 7);
+        assert_eq!(store.schema_version().expect("schema version"), 8);
 
         let mut statement = store
             .connection
@@ -1449,6 +1616,7 @@ mod tests {
         assert!(tables.contains(&"simulator_install_paths".to_owned()));
         assert!(tables.contains(&"app_settings".to_owned()));
         assert!(tables.contains(&"saved_comparisons".to_owned()));
+        assert!(tables.contains(&"setup_library".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
     }
 
@@ -1478,6 +1646,56 @@ mod tests {
     }
 
     #[test]
+    fn imported_setups_are_suggested_only_for_exact_session_identity() {
+        let mut store = MetadataStore::open_in_memory().expect("metadata");
+        store
+            .create_session(&session("session-1"))
+            .expect("session");
+        store
+            .save_setup_import(&NewSetupImport {
+                id: "setup-race".into(),
+                simulator_key: "assetto-corsa".into(),
+                source_car_id: "tatuusfa1".into(),
+                source_track_id: "mugello".into(),
+                layout_id: None,
+                name: "race.ini".into(),
+                installed_path: "C:\\Setups\\tatuusfa1\\mugello\\race.ini".into(),
+                source_archive: Some("team-pack.zip".into()),
+                content_sha256: [3; 32],
+                imported_at: "2026-08-23T08:00:00Z".into(),
+            })
+            .expect("save setup");
+        store
+            .save_setup_import(&NewSetupImport {
+                id: "setup-other-car".into(),
+                simulator_key: "assetto-corsa".into(),
+                source_car_id: "ks_mazda_mx5_cup".into(),
+                source_track_id: "mugello".into(),
+                layout_id: None,
+                name: "qualifying.ini".into(),
+                installed_path: "C:\\Setups\\ks_mazda_mx5_cup\\mugello\\qualifying.ini".into(),
+                source_archive: None,
+                content_sha256: [4; 32],
+                imported_at: "2026-08-23T08:01:00Z".into(),
+            })
+            .expect("save other setup");
+
+        let suggestions = store
+            .compatible_setups("session-1", 10)
+            .expect("suggestions");
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].name, "race.ini");
+        assert_eq!(
+            suggestions[0].source_archive.as_deref(),
+            Some("team-pack.zip")
+        );
+        assert!(matches!(
+            store.compatible_setups("missing", 10),
+            Err(MetadataError::RecordNotFound)
+        ));
+    }
+
+    #[test]
     fn version_one_database_migrates_without_losing_existing_rows() {
         let connection = Connection::open_in_memory().expect("database");
         connection
@@ -1495,7 +1713,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 7);
+        assert_eq!(store.schema_version().expect("schema version"), 8);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
