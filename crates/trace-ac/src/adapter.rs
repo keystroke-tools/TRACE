@@ -274,7 +274,7 @@ impl<S: AcSource> AcAdapter<S> {
         else {
             unreachable!("running poll requires running state")
         };
-        if *previous != session {
+        if session_identity_changed(previous, &session) {
             *previous = session.clone();
             events.push(AdapterEvent::SessionChanged(session));
         }
@@ -322,6 +322,34 @@ fn source_descriptor(simulator_version: Option<String>, replay: bool) -> SourceD
             SourceKind::NativeCapture
         },
     }
+}
+
+fn session_identity_changed(previous: &SessionSeed, current: &SessionSeed) -> bool {
+    // AC briefly clears static-page strings and individual graphics fields while
+    // loading or resetting a hotlap. Treat those snapshots as incomplete metadata,
+    // not dozens of real session boundaries.
+    if current.car_id.is_none() || current.track_id.is_none() {
+        return false;
+    }
+    if previous.car_id != current.car_id || previous.track_id != current.track_id {
+        return true;
+    }
+    if matches!(
+        (&previous.source_session_id, &current.source_session_id),
+        (Some(previous), Some(current)) if previous != current
+    ) {
+        return true;
+    }
+    if matches!(
+        (&previous.layout_id, &current.layout_id),
+        (Some(previous), Some(current)) if previous != current
+    ) {
+        return true;
+    }
+    matches!(
+        (&previous.session_type, &current.session_type),
+        (Some(previous), Some(current)) if previous != current
+    )
 }
 
 fn runtime_status(status: i32) -> Result<AcRuntimeStatus, AdapterError> {
@@ -512,6 +540,22 @@ mod tests {
             adapter.poll().expect("disconnect"),
             vec![AdapterEvent::Disconnected(DisconnectReason::SourceClosed)]
         );
+    }
+
+    #[test]
+    fn ignores_transient_missing_ac_session_identity() {
+        let mut adapter = AcAdapter::with_source(source([
+            snapshot(STATUS_LIVE, "car-a", "track-a"),
+            snapshot(STATUS_LIVE, "", ""),
+            snapshot(STATUS_LIVE, "car-a", "track-a"),
+        ]));
+        adapter.poll().expect("connect");
+
+        let missing = adapter.poll().expect("transient missing identity");
+        assert!(matches!(missing.as_slice(), [AdapterEvent::Frame(_)]));
+
+        let recovered = adapter.poll().expect("recovered identity");
+        assert!(matches!(recovered.as_slice(), [AdapterEvent::Frame(_)]));
     }
 
     #[test]

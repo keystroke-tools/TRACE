@@ -1033,6 +1033,52 @@ impl MetadataStore {
             .collect()
     }
 
+    /// Removes session shells that contain no completed laps.
+    ///
+    /// This is intended for startup recovery, before blob reconciliation and before
+    /// capture can create an active session. Returned paths become unreferenced and
+    /// are quarantined by the normal blob reconciliation pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns a metadata error when a stored blob path is malformed or `SQLite`
+    /// cannot complete the cleanup transaction.
+    pub fn discard_empty_sessions(&mut self) -> Result<Vec<RelativeBlobPath>, MetadataError> {
+        let transaction = self.connection.transaction().map_err(MetadataError::from)?;
+        let paths = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT b.relative_path
+                     FROM sessions s
+                     JOIN telemetry_blobs b ON b.session_id = s.id
+                     WHERE NOT EXISTS (SELECT 1 FROM laps l WHERE l.session_id = s.id)
+                     ORDER BY b.relative_path",
+                )
+                .map_err(MetadataError::from)?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(MetadataError::from)?
+                .map(|result| {
+                    let path = result.map_err(MetadataError::from)?;
+                    RelativeBlobPath::parse(path).map_err(|error| {
+                        MetadataError::InvalidRecord(format!(
+                            "stored telemetry blob path is invalid: {error:?}"
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        transaction
+            .execute(
+                "DELETE FROM sessions
+                 WHERE NOT EXISTS (SELECT 1 FROM laps l WHERE l.session_id = sessions.id)",
+                [],
+            )
+            .map_err(MetadataError::from)?;
+        transaction.commit().map_err(MetadataError::from)?;
+        Ok(paths)
+    }
+
     /// Finds the immutable blob and exact sample range for one lap.
     ///
     /// # Errors
@@ -1785,5 +1831,32 @@ mod tests {
 
         assert_eq!(store.delete_session("session-1"), Ok(None));
         assert!(store.recent_sessions(10).expect("sessions").is_empty());
+    }
+
+    #[test]
+    fn startup_cleanup_discards_zero_lap_session_shells() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        store
+            .create_session(&session("completed-empty"))
+            .expect("empty session");
+        store
+            .complete_session("completed-empty", "2026-08-21T15:00:00Z", &blob(), &[])
+            .expect("completed empty session");
+        store
+            .create_session(&session("interrupted-empty"))
+            .expect("interrupted session");
+
+        let discarded = store
+            .discard_empty_sessions()
+            .expect("discard empty sessions");
+
+        assert_eq!(discarded, vec![blob().path]);
+        assert!(store.recent_sessions(10).expect("sessions").is_empty());
+        assert!(
+            store
+                .referenced_blob_paths()
+                .expect("referenced paths")
+                .is_empty()
+        );
     }
 }

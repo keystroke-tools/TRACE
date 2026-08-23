@@ -15,7 +15,7 @@ use trace_recorder::{
     persistence::{CompletionDescriptor, persist_streamed_recording},
 };
 use trace_storage::{
-    FileBlobStore, FileBlobWriter, RelativeBlobPath,
+    FileBlobStore, FileBlobWriter, RelativeBlobPath, TelemetryBlobStore,
     ipc::TelemetryIpcWriter,
     metadata::{MetadataStore, NewSession, SessionConditions},
 };
@@ -61,9 +61,15 @@ impl CaptureStatus {
 
 pub type SharedCaptureStatus = Arc<Mutex<CaptureStatus>>;
 
-struct ActivePersistence {
-    descriptor: CompletionDescriptor,
-    writer: Option<TelemetryIpcWriter<FileBlobWriter>>,
+enum ActivePersistence {
+    Pending {
+        source: SourceDescriptor,
+        seed: SessionSeed,
+    },
+    Recording {
+        descriptor: CompletionDescriptor,
+        writer: Option<TelemetryIpcWriter<FileBlobWriter>>,
+    },
 }
 
 pub fn spawn<A, F>(
@@ -113,6 +119,12 @@ fn run_capture(
     std::fs::create_dir_all(data_directory).map_err(|error| error.to_string())?;
     let mut metadata = MetadataStore::open(&data_directory.join("trace.sqlite"))
         .map_err(|error| format!("metadata initialization failed: {error:?}"))?;
+    let discarded = metadata
+        .discard_empty_sessions()
+        .map_err(|error| format!("empty session cleanup failed: {error:?}"))?;
+    if !discarded.is_empty() {
+        eprintln!("TRACE discarded {} empty session records", discarded.len());
+    }
     let mut blobs = FileBlobStore::open(&data_directory.join("telemetry"), MAX_SESSION_BYTES)
         .map_err(|error| format!("blob initialization failed: {error:?}"))?;
     let referenced = metadata
@@ -191,83 +203,128 @@ fn handle_output(
 ) -> Result<(), String> {
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
-            let session_id = unique_session_id();
-            let configured_path = metadata
-                .simulator_install_path(source.simulator.as_str())
-                .map_err(|error| format!("simulator settings query failed: {error:?}"))?
-                .map(PathBuf::from);
-            let driver_profile = metadata
-                .driver_profile_name()
-                .map_err(|error| format!("driver profile query failed: {error:?}"))?;
-            metadata
-                .create_session(&new_session(
-                    &session_id,
-                    &source,
-                    &seed,
-                    configured_path.as_deref(),
-                    ac_race_config,
-                )?)
-                .map_err(|error| format!("session creation failed: {error:?}"))?;
-            if let Some(driver) = driver_profile.as_deref() {
-                metadata
-                    .update_session_details(&session_id, None, Some(driver), "mine", &[])
-                    .map_err(|error| format!("driver attribution failed: {error:?}"))?;
-            }
-            let path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
-                .map_err(|error| format!("session blob path failed: {error:?}"))?;
-            *active = Some(ActivePersistence {
-                descriptor: CompletionDescriptor {
-                    session_id: session_id.clone(),
-                    ended_at: String::new(),
-                    blob_path: path,
-                    lap_id_prefix: format!("{session_id}-lap"),
-                },
-                writer: Some(
-                    TelemetryIpcWriter::new(
-                        blobs
-                            .begin_writer()
-                            .map_err(|error| format!("telemetry staging failed: {error:?}"))?,
-                        ARROW_BATCH_FRAMES,
-                    )
-                    .map_err(|error| format!("Arrow stream start failed: {error:?}"))?,
-                ),
+            *active = Some(ActivePersistence::Pending {
+                source,
+                seed: seed.clone(),
             });
-            set_active_session(status, Some(session_id));
             update_status(status, "recording", 60, &session_label(&seed));
         }
         RecorderOutput::FrameAccepted(frame) => {
+            if matches!(active, Some(ActivePersistence::Pending { .. })) {
+                let Some(ActivePersistence::Pending { source, seed }) = active.take() else {
+                    unreachable!("pending persistence was checked above")
+                };
+                *active = Some(begin_recording(
+                    metadata,
+                    blobs,
+                    ac_race_config,
+                    status,
+                    &source,
+                    &seed,
+                )?);
+            }
             let persistence = active
                 .as_mut()
                 .ok_or_else(|| "accepted frame has no persistence identity".to_owned())?;
-            persistence
-                .writer
+            let ActivePersistence::Recording { writer, .. } = persistence else {
+                return Err("accepted frame did not initialize persistence".into());
+            };
+            writer
                 .as_mut()
                 .ok_or_else(|| "accepted frame has no Arrow writer".to_owned())?
                 .push(frame)
                 .map_err(|error| format!("Arrow batch write failed: {error:?}"))?;
         }
         RecorderOutput::SessionCompleted(recording) => {
-            let Some(mut persistence) = active.take() else {
+            let Some(persistence) = active.take() else {
                 return Err("completed recording has no persistence identity".into());
             };
-            persistence.descriptor.ended_at = now_rfc3339()?;
-            let writer = persistence
-                .writer
+            let ActivePersistence::Recording {
+                mut descriptor,
+                mut writer,
+            } = persistence
+            else {
+                set_active_session(status, None);
+                update_status(status, "waiting", 0, "NO ACTIVE SESSION");
+                return Ok(());
+            };
+            let writer = writer
                 .take()
                 .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
-            let result = persist_streamed_recording(
-                blobs,
-                metadata,
-                &recording,
-                &persistence.descriptor,
-                writer,
-            );
+            if recording.laps.is_empty() {
+                let (writer, _) = writer
+                    .finish()
+                    .map_err(|error| format!("Arrow stream discard failed: {error:?}"))?;
+                blobs
+                    .abort(&writer.into_pending())
+                    .map_err(|error| format!("empty telemetry cleanup failed: {error:?}"))?;
+                metadata
+                    .delete_session(&descriptor.session_id)
+                    .map_err(|error| format!("empty session cleanup failed: {error:?}"))?;
+                set_active_session(status, None);
+                update_status(status, "waiting", 0, "NO ACTIVE SESSION");
+                return Ok(());
+            }
+            descriptor.ended_at = now_rfc3339()?;
+            let result =
+                persist_streamed_recording(blobs, metadata, &recording, &descriptor, writer);
             set_active_session(status, None);
             result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
             update_status(status, "waiting", 0, "NO ACTIVE SESSION");
         }
     }
     Ok(())
+}
+
+fn begin_recording(
+    metadata: &mut MetadataStore,
+    blobs: &mut FileBlobStore,
+    ac_race_config: Option<&std::path::Path>,
+    status: &SharedCaptureStatus,
+    source: &SourceDescriptor,
+    seed: &SessionSeed,
+) -> Result<ActivePersistence, String> {
+    let session_id = unique_session_id();
+    let configured_path = metadata
+        .simulator_install_path(source.simulator.as_str())
+        .map_err(|error| format!("simulator settings query failed: {error:?}"))?
+        .map(PathBuf::from);
+    let driver_profile = metadata
+        .driver_profile_name()
+        .map_err(|error| format!("driver profile query failed: {error:?}"))?;
+    metadata
+        .create_session(&new_session(
+            &session_id,
+            source,
+            seed,
+            configured_path.as_deref(),
+            ac_race_config,
+        )?)
+        .map_err(|error| format!("session creation failed: {error:?}"))?;
+    if let Some(driver) = driver_profile.as_deref() {
+        metadata
+            .update_session_details(&session_id, None, Some(driver), "mine", &[])
+            .map_err(|error| format!("driver attribution failed: {error:?}"))?;
+    }
+    let path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
+        .map_err(|error| format!("session blob path failed: {error:?}"))?;
+    let writer = TelemetryIpcWriter::new(
+        blobs
+            .begin_writer()
+            .map_err(|error| format!("telemetry staging failed: {error:?}"))?,
+        ARROW_BATCH_FRAMES,
+    )
+    .map_err(|error| format!("Arrow stream start failed: {error:?}"))?;
+    set_active_session(status, Some(session_id.clone()));
+    Ok(ActivePersistence::Recording {
+        descriptor: CompletionDescriptor {
+            session_id: session_id.clone(),
+            ended_at: String::new(),
+            blob_path: path,
+            lap_id_prefix: format!("{session_id}-lap"),
+        },
+        writer: Some(writer),
+    })
 }
 
 fn new_session(
