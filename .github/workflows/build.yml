@@ -16,6 +16,10 @@ jobs:
     name: Windows executables
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -26,10 +30,32 @@ jobs:
           version: 2026.7.13
           cache: true
 
-      - name: Cache Rust dependencies
+      - name: Enable compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.16.0
+
+      - name: Cache Cargo registry
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: windows-release
+          shared-key: windows
+          cache-targets: "false"
+          cache-bin: "false"
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        shell: pwsh
+        run: |
+          $store = pnpm store path --silent
+          "path=$store" >> $env:GITHUB_OUTPUT
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -52,7 +78,7 @@ jobs:
           --clobber
 
       - name: Upload Windows executables
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trace-windows-x86_64-${{ github.sha }}
           path: |
