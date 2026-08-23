@@ -1590,7 +1590,7 @@ function Setups() {
           </div>
         </div>
       )}
-      <p className="mt-4 max-w-4xl text-[11px] leading-5 text-trace-dim">Assetto Corsa is the first setup-import adapter. TRACE does not yet compare setup values or attach them to recorded sessions.</p>
+      <p className="mt-4 max-w-4xl text-[11px] leading-5 text-trace-dim">Assetto Corsa is the first setup-import adapter. Imported setups are indexed for exact session matches; open a session to mark the setup you used, compare its INI values, and include it in a shared .trace package. TRACE cannot automatically identify which setup was active while you drove.</p>
     </>
   );
 }
