@@ -13,6 +13,11 @@
 		<meta property="og:type" content="website" />
 		<meta property="og:url" content="https://simtrace.run" />
 		<meta property="og:image" content="https://simtrace.run/screenshots/trace-comparison.png" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="TRACE — Understand every lap" />
+		<meta name="twitter:description" content="Record, compare, and share approachable racing telemetry." />
+		<meta name="twitter:image" content="https://simtrace.run/screenshots/trace-comparison.png" />
+		<link rel="canonical" href="https://simtrace.run/" />
 		<link rel="icon" href="/trace-mark.svg" type="image/svg+xml" />
 		<title>TRACE — Understand every lap</title>
 	</head>
@@ -59,6 +64,7 @@
 						<img
 							src="/screenshots/trace-comparison.png"
 							alt="TRACE comparing two laps with synchronized telemetry graphs, a track map, and corner analysis"
+							fetchpriority="high"
 						/>
 					</button>
 					<div class="floating-delta">
@@ -202,7 +208,11 @@
 						TRACE is local-first, simulator-agnostic at its core, and released under the MIT licence. Recording and analysis work without an account
 						or cloud dependency.
 					</p>
-					<div class="code-line"><span>$</span> git clone git@github.com:keystroke-tools/TRACE.git</div>
+					<div class="code-line" aria-label="Clone TRACE from GitHub">
+						<span aria-hidden="true">$</span>
+						<code data-clone-command>git clone https://github.com/keystroke-tools/TRACE.git</code>
+						<button type="button" data-copy-command aria-label="Copy Git clone command">COPY</button>
+					</div>
 					<a class="text-arrow" href="https://github.com/keystroke-tools/TRACE">Explore the repository <span>↗</span></a>
 				</div>
 				<dl class="principles reveal">

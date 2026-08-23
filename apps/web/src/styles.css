@@ -32,6 +32,9 @@ body {
 	min-width: 320px;
 	overflow-x: hidden;
 }
+body:has(dialog[open]) {
+	overflow: hidden;
+}
 button,
 a {
 	-webkit-tap-highlight-color: transparent;
@@ -43,6 +46,16 @@ a {
 button {
 	color: inherit;
 	font: inherit;
+}
+button,
+a,
+[tabindex] {
+	outline-offset: 4px;
+}
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+	outline: 2px solid var(--acid);
 }
 img {
 	display: block;
@@ -317,6 +330,12 @@ img {
 	background: none;
 	padding: 0;
 	cursor: zoom-in;
+}
+.screenshot-button:focus-visible,
+.showcase-shot:focus-visible,
+.library-shot:focus-visible {
+	border-color: var(--acid);
+	box-shadow: 0 0 0 3px rgb(201 255 0 / 0.18);
 }
 .screenshot-button img {
 	width: 100%;
@@ -662,6 +681,7 @@ img {
 .principles {
 	position: relative;
 	z-index: 1;
+	min-width: 0;
 }
 .open-section .kicker {
 	color: #101010;
@@ -675,19 +695,52 @@ img {
 	line-height: 1.7;
 }
 .code-line {
-	overflow: hidden;
+	display: grid;
+	min-width: 0;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.7rem;
+	align-items: center;
 	margin: 2rem 0 1.5rem;
 	border: 1px solid rgb(0 0 0 / 0.25);
 	background: rgb(16 16 16 / 0.92);
 	color: #ddd;
-	padding: 1rem;
+	padding: 0.65rem 0.7rem 0.65rem 1rem;
 	font-family: ui-monospace, monospace;
 	font-size: 0.75rem;
-	white-space: nowrap;
 }
 .code-line span {
-	margin-right: 0.6rem;
 	color: var(--acid);
+}
+.code-line code {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	line-height: 1.55;
+	user-select: all;
+}
+.code-line button {
+	min-height: 36px;
+	border: 1px solid #4b4b4b;
+	background: #202020;
+	color: #aaa;
+	padding: 0 0.8rem;
+	font-family: ui-monospace, monospace;
+	font-size: 0.58rem;
+	font-weight: 900;
+	letter-spacing: 0.08em;
+	cursor: pointer;
+	transition:
+		border-color 0.2s ease,
+		color 0.2s ease,
+		background 0.2s ease;
+}
+.code-line button:hover,
+.code-line button[data-state="success"] {
+	border-color: var(--acid);
+	color: var(--acid);
+}
+.code-line button[data-state="error"] {
+	border-color: #ff7b87;
+	color: #ff9da6;
 }
 .text-arrow {
 	display: inline-flex;
@@ -953,6 +1006,7 @@ dialog button:hover {
 @media (max-width: 700px) {
 	.site-header {
 		height: 58px;
+		padding-inline: 1rem;
 	}
 	.header-actions .text-link {
 		display: none;
@@ -962,8 +1016,11 @@ dialog button:hover {
 		padding-bottom: 75px;
 	}
 	.hero h1 {
-		font-size: clamp(3.2rem, 16vw, 5rem);
+		font-size: clamp(2.8rem, 15vw, 5rem);
 		line-height: 1;
+	}
+	.hero-actions .button {
+		width: 100%;
 	}
 	.hero-product {
 		margin-top: 1rem;
@@ -989,6 +1046,10 @@ dialog button:hover {
 	.section-heading {
 		display: block;
 	}
+	.section,
+	.open-section {
+		padding-block: 4.5rem;
+	}
 	.section-heading h2 {
 		margin: 1.2rem 0 1.5rem;
 	}
@@ -996,7 +1057,8 @@ dialog button:hover {
 		grid-template-columns: 1fr;
 	}
 	.feature-card {
-		min-height: 340px;
+		min-height: 0;
+		padding: 1.4rem;
 	}
 	.steps {
 		grid-template-columns: 1fr;
@@ -1009,6 +1071,17 @@ dialog button:hover {
 	.principles {
 		grid-template-columns: 1fr;
 	}
+	.principles div {
+		min-height: 112px;
+	}
+	.code-line {
+		grid-template-columns: auto minmax(0, 1fr);
+		padding: 0.85rem 1rem;
+	}
+	.code-line button {
+		grid-column: 2;
+		width: max-content;
+	}
 	.development-disclosure {
 		grid-template-columns: 1fr;
 	}
@@ -1019,6 +1092,19 @@ dialog button:hover {
 		align-items: stretch;
 		flex-direction: column;
 	}
+	.download-section {
+		padding-block: 6rem;
+	}
+	dialog {
+		padding: 0.75rem;
+	}
+	.screenshot-preview {
+		max-width: calc(100vw - 1.5rem);
+		max-height: calc(100dvh - 1.5rem);
+	}
+	dialog img {
+		max-height: calc(100dvh - 1.5rem);
+	}
 	footer {
 		grid-template-columns: 1fr auto;
 		gap: 1rem;
@@ -1028,6 +1114,18 @@ dialog button:hover {
 	}
 	footer > div {
 		flex-wrap: wrap;
+	}
+}
+
+@media (max-width: 430px) {
+	.site-header .button-small span {
+		display: none;
+	}
+	.site-header .button-small {
+		padding-inline: 0.75rem;
+	}
+	.hero-meta {
+		gap: 0.65rem 1rem;
 	}
 }
 
