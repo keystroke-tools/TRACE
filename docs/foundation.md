@@ -427,6 +427,13 @@ the control-plane API and realtime service endpoints separate: hosted installs d
 to `https://api.simtrace.run` and `https://live.simtrace.run`, while self-hosters can
 replace both with validated HTTP or HTTPS base URLs.
 
+## Current implementation priority
+
+Go Live is the next product milestone. The active slice covers live-session creation,
+canonical telemetry publishing, spectator fan-out, the browser spectator page, and
+reconnect/end behavior. Setup snapshots and setup comparison remain planned, but are
+intentionally scheduled after the live path rather than blocking it.
+
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so
 an existing destination is never overwritten. Blob identity is the SHA-256 digest of

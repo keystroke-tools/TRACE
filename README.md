@@ -205,8 +205,10 @@ When contributing LLM-assisted changes:
 ## Product scope
 
 TRACE v0.1 will eventually include local capture and comparison, Assetto Corsa
-support, deterministic corner analysis, setup/context comparison, portable sessions,
-live spectating, and unlisted session sharing.
+support, deterministic corner analysis, portable sessions, live spectating, unlisted
+session sharing, and later setup/context comparison. Go Live is the active product
+priority; setup support is deliberately deferred until the live publishing and
+spectator path is useful end to end.
 
 It will not include accounts, social features, payments, chat, a coaching marketplace,
 automatic setup recommendations, or LLM coaching.

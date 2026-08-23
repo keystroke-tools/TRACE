@@ -2059,32 +2059,7 @@ At the end of this phase, TRACE should answer:
 
 > Where am I losing time and what am I doing differently?
 
-### Phase 5 — Context/setup
-
-Implement:
-
-- setup snapshot/import
-- setup comparison
-- conditions comparison
-- comparability scoring
-- setup-influence warnings
-- setup revision history
-- notes
-
-At the end of this phase, TRACE should help distinguish:
-
-> Driving difference vs potentially setup/conditions-influenced difference.
-
-### Phase 6 — Import/export
-
-Implement:
-
-- portable TRACE format
-- export/import
-- MoTeC importer
-- provenance handling
-
-### Phase 7 — Backend/live
+### Phase 5 — Backend/live
 
 Implement:
 
@@ -2099,7 +2074,34 @@ Implement:
 - live link generation
 - completed-lap upload
 
-At the end of this phase, I should be able to hotlap in Assetto Corsa and send someone a URL where they can watch my telemetry in near-real time.
+At the end of this phase:
+
+> I should be able to hotlap in Assetto Corsa and send someone a URL where they can watch my telemetry in near-real time.
+
+### Phase 6 — Import/export
+
+Implement:
+
+- portable TRACE format
+- export/import
+- MoTeC importer
+- provenance handling
+
+### Phase 7 — Context/setup
+
+Implement:
+
+- setup snapshot/import
+- setup comparison
+- conditions comparison
+- comparability scoring
+- setup-influence warnings
+- setup revision history
+- notes
+
+At the end of this phase, TRACE should help distinguish:
+
+> Driving difference vs potentially setup/conditions-influenced difference.
 
 ### Phase 8 — Sharing
 
