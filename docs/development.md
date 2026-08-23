@@ -70,11 +70,18 @@ resource/library tools. It builds the frontend first and emits
 process from WSL. This produces an unpackaged acceptance executable, not an installer.
 
 GitHub Actions runs the same checks in `CI`. Publishing a GitHub release triggers the
-separate `Build executables` workflow; pushes and pull requests never build release
-binaries. Successful release runs retain a downloadable artifact containing `trace.exe`
-and the privacy-redacted `capture_fixture.exe` collector for 14 days, and attach both
-executables directly to the corresponding GitHub release. The workflow currently
-produces unpackaged binaries rather than signed installers.
+separate `Build executables` workflow; pushes and pull requests never package a release.
+The release workflow builds a signed NSIS installer and updater signature, publishes
+Tauri's `latest.json`, and retains the installer as a workflow artifact. It also keeps
+the standalone `trace.exe` and privacy-redacted `capture_fixture.exe` available for
+portable diagnostics.
+
+Tauri update signatures are independent of Windows Authenticode signing. Installed
+apps trust the public key committed in `tauri.conf.json`; GitHub Actions signs each
+installer using the `TAURI_SIGNING_PRIVATE_KEY` repository secret. The corresponding
+private key must be backed up securely. Losing it prevents every existing installation
+from accepting future updates; it must never be committed, logged, or placed in a
+release asset.
 
 ## Native desktop prerequisites
 

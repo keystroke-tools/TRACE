@@ -110,11 +110,16 @@ mapped pointers never cross into simulator, domain, analysis, storage, or UI cod
 
 ## Install and use
 
-Download the latest Windows executable from [GitHub Releases](https://github.com/keystroke-tools/TRACE/releases/latest).
-Run `trace.exe`, then start driving or play a replay in Assetto Corsa. TRACE detects
+Download the latest Windows installer from [GitHub Releases](https://github.com/keystroke-tools/TRACE/releases/latest).
+Install and run TRACE, then start driving or play a replay in Assetto Corsa. TRACE detects
 the simulator, records locally, and adds the completed drive to Sessions. Replays must
 be played through Assetto Corsa because TRACE records the simulator's live telemetry
 rather than parsing replay files directly.
+
+Installed builds check GitHub Releases shortly after startup. When a newer signed
+version is available, TRACE offers to download, install, and restart into it. Portable
+`trace.exe` builds remain available for diagnostics, but the installer is the supported
+path for automatic updates.
 
 ## Development
 

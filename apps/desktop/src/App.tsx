@@ -10,6 +10,7 @@ import { SessionDetail } from "./features/sessions/SessionDetail";
 import { SessionsPage } from "./features/sessions/SessionsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SetupsPage } from "./features/setups/SetupsPage";
+import { UpdateNotice } from "./features/update/UpdateNotice";
 import { TitleBar } from "./TitleBar";
 
 export function App() {
@@ -42,6 +43,7 @@ export function App() {
 
 	return (
 		<main className="grid h-screen grid-cols-[176px_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text max-[900px]:grid-cols-[140px_1fr]">
+			<UpdateNotice />
 			<TitleBar
 				status={status}
 				backLabel={openLapIndex == null ? "SESSIONS" : "SESSION"}

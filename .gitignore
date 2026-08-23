@@ -6,6 +6,7 @@
 /.cache/
 /.idea/
 /.vscode/
+/secrets/
 *.swp
 *.tmp
 .DS_Store

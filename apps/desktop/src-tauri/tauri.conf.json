@@ -15,5 +15,12 @@
 		],
 		"security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
 	},
-	"bundle": { "active": true, "targets": "all" }
+	"bundle": { "active": true, "targets": "all", "createUpdaterArtifacts": true },
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyN0Y2MkRFRDI4RUFBMTMKUldRVHFvN1MzbUovY2hhWjRtaFlaakZOczk2ZGY1aFVORWswRk9JZHZPc0J5QnpBMmVtTHNEQVMK",
+			"endpoints": ["https://github.com/keystroke-tools/TRACE/releases/latest/download/latest.json"],
+			"windows": { "installMode": "passive" }
+		}
+	}
 }
