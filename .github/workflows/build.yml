@@ -69,11 +69,10 @@ jobs:
                   projectPath: apps/desktop
                   releaseId: ${{ github.event.release.id }}
                   tagName: ${{ github.event.release.tag_name }}
+                  tauriScript: pnpm exec tauri
                   args: --bundles nsis
-                  uploadUpdaterJson: true
+                  includeUpdaterJson: true
                   updaterJsonPreferNsis: true
-                  uploadWorkflowArtifacts: true
-                  workflowArtifactNamePattern: trace-windows-[arch]-[bundle]-${{ github.sha }}
 
             - name: Build fixture collector and portable executable
               run: |
