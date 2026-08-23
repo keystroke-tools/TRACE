@@ -1706,7 +1706,7 @@ function Settings() {
       <form className="mt-7 border border-trace-divider bg-trace-surface" onSubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">DRIVER PROFILE</h2>
-          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Use a nickname or full name that other drivers will recognize. TRACE attaches it to new captures and includes it in shared <span className="font-mono text-trace-soft">.trace</span> packages; exports of older self-owned sessions use it when no session-specific driver is set.</p>
+          <p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">Use a nickname or full name that other drivers will recognize. TRACE attaches it to new captures and includes it in shared <span className="font-mono text-trace-soft">.trace</span> packages; exports of older self-owned sessions use it when no session-specific driver is set.</p>
         </div>
         <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
           DISPLAY NAME
@@ -1719,11 +1719,11 @@ function Settings() {
       <form className="mt-7 border border-trace-divider bg-trace-surface" onSubmit={(event) => { event.preventDefault(); void saveLiveSettings(); }}>
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">GO LIVE</h2>
-          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Choose the service TRACE will use to create sessions, publish realtime telemetry, and generate spectator links. Keep the hosted default or point TRACE at your own compatible deployment.</p>
+          <p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">Choose the service TRACE will use to create sessions, publish realtime telemetry, and generate spectator links. Keep the hosted default or point TRACE at your own compatible deployment.</p>
         </div>
         <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
             LIVE SERVICE ENDPOINT
-            <span className="mt-1 block max-w-3xl font-normal leading-5 normal-case tracking-normal text-trace-dim">One base URL for session creation, realtime publishing, spectator connections, and shareable browser links. Secure WebSocket URLs are derived automatically from HTTPS.</span>
+            <span className="mt-1 block max-w-4xl font-normal leading-5 normal-case tracking-normal text-trace-dim">One base URL for session creation, realtime publishing, spectator connections, and shareable browser links. Secure WebSocket URLs are derived automatically from HTTPS.</span>
             <div className="mt-2 flex">
               <input type="url" value={liveEndpoint} onChange={(event) => setLiveEndpoint(event.target.value)} placeholder={DEFAULT_LIVE_SERVICE_ENDPOINT} spellCheck={false} className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
               <button type="button" disabled={savingLiveSettings || liveEndpoint === DEFAULT_LIVE_SERVICE_ENDPOINT} onClick={() => setLiveEndpoint(DEFAULT_LIVE_SERVICE_ENDPOINT)} className="w-24 shrink-0 border border-l-0 border-trace-divider bg-trace-surface text-[10px] font-bold leading-none text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:bg-trace-deep disabled:text-trace-dim">DEFAULT</button>
@@ -1738,7 +1738,7 @@ function Settings() {
       <div className="mt-7 border border-trace-divider bg-trace-surface">
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
-          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Game roots give each simulator adapter access to the files and metadata needed for content identification, replay and setup workflows, and future integrations. Choose the main game folder—not one of its subfolders.</p>
+          <p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">Game roots give each simulator adapter access to the files and metadata needed for content identification, replay and setup workflows, and future integrations. Choose the main game folder—not one of its subfolders.</p>
         </div>
         {loading ? (
           <div className="p-6 font-mono text-[12px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
@@ -1782,7 +1782,7 @@ function Settings() {
 
 function PageIntro({ index, eyebrow, title, description }: { index: string; eyebrow: string; title: string; description: string }) {
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-4xl">
       <SectionHeading index={index}>{eyebrow}</SectionHeading>
       <h1 className="mt-3 text-2xl font-black tracking-[-.02em]">{title}</h1>
       <p className="mt-2 max-w-2xl text-[14px] leading-6 text-trace-muted">{description}</p>
