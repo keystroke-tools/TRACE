@@ -33,6 +33,7 @@ trace-core = { version = "0.2.2", path = "../../../crates/trace-core" }
 trace-domain.workspace = true
 trace-recorder = { path = "../../../crates/trace-recorder" }
 trace-storage = { path = "../../../crates/trace-storage" }
+zip = { version = "8.4.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [lints]
 workspace = true

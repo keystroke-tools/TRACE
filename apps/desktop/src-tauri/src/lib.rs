@@ -31,9 +31,11 @@ use trace_storage::{
 
 mod ac_content;
 mod capture;
+mod setup_import;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
+use setup_import::{detect_setup_folder, import_setup_archives, setup_importers};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2008,6 +2010,9 @@ pub fn run() {
             compare_session_laps,
             game_install_directories,
             set_game_install_directory,
+            detect_setup_folder,
+            import_setup_archives,
+            setup_importers,
             driver_profile,
             set_driver_profile,
             live_settings,
