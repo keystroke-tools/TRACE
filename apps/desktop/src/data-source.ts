@@ -298,8 +298,7 @@ export interface DriverProfile {
 }
 
 export interface LiveSettings {
-  apiEndpoint: string;
-  liveEndpoint: string;
+  endpoint: string;
 }
 
 export interface SavedComparison {
@@ -338,7 +337,7 @@ export interface TelemetryDataSource {
   getDriverProfile(): Promise<DriverProfile>;
   setDriverProfile(name: string | null): Promise<DriverProfile>;
   getLiveSettings(): Promise<LiveSettings>;
-  setLiveSettings(apiEndpoint: string, liveEndpoint: string): Promise<LiveSettings>;
+  setLiveSettings(endpoint: string): Promise<LiveSettings>;
   getSavedComparisons(): Promise<SavedComparison[]>;
   saveComparison(name: string, referenceSessionId: string, referenceLapIndex: number, analysedSessionId: string, analysedLapIndex: number): Promise<SavedComparison[]>;
   deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
@@ -352,7 +351,7 @@ export interface TelemetryDataSource {
 const deletedFixtureSessionIds = new Set<string>();
 const fixtureSessionDetails = new Map<string, { title: string | null; driver: string | null; ownership: RecordedSessionSummary["ownership"]; tags: string[] }>();
 let fixtureDriverProfile: DriverProfile = { name: null };
-let fixtureLiveSettings: LiveSettings = { apiEndpoint: "https://api.simtrace.run", liveEndpoint: "https://live.simtrace.run" };
+let fixtureLiveSettings: LiveSettings = { endpoint: "https://live.simtrace.run" };
 let fixtureSavedComparisons: SavedComparison[] = [];
 
 export const fixtureDataSource: TelemetryDataSource = {
@@ -556,8 +555,8 @@ export const fixtureDataSource: TelemetryDataSource = {
   async getLiveSettings() {
     return fixtureLiveSettings;
   },
-  async setLiveSettings(apiEndpoint, liveEndpoint) {
-    fixtureLiveSettings = { apiEndpoint, liveEndpoint };
+  async setLiveSettings(endpoint) {
+    fixtureLiveSettings = { endpoint };
     return fixtureLiveSettings;
   },
   async getSavedComparisons() {
@@ -639,8 +638,8 @@ export const tauriDataSource: TelemetryDataSource = {
   getLiveSettings() {
     return invoke<LiveSettings>("live_settings");
   },
-  setLiveSettings(apiEndpoint, liveEndpoint) {
-    return invoke<LiveSettings>("set_live_settings", { apiEndpoint, liveEndpoint });
+  setLiveSettings(endpoint) {
+    return invoke<LiveSettings>("set_live_settings", { endpoint });
   },
   getSavedComparisons() {
     return invoke<SavedComparison[]>("saved_comparisons");

@@ -27,7 +27,6 @@ import { useToast } from "./Toast";
 
 const navigation = ["LIVE", "SESSIONS", "COMPARE", "SETUPS", "SETTINGS"] as const;
 type Section = (typeof navigation)[number];
-const DEFAULT_API_SERVICE_ENDPOINT = "https://api.simtrace.run";
 const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://live.simtrace.run";
 
 export function App() {
@@ -1614,9 +1613,7 @@ function Settings() {
   const [profileName, setProfileName] = useState("");
   const [savedProfileName, setSavedProfileName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
-  const [apiEndpoint, setApiEndpoint] = useState(DEFAULT_API_SERVICE_ENDPOINT);
   const [liveEndpoint, setLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
-  const [savedApiEndpoint, setSavedApiEndpoint] = useState(DEFAULT_API_SERVICE_ENDPOINT);
   const [savedLiveEndpoint, setSavedLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
   const [savingLiveSettings, setSavingLiveSettings] = useState(false);
 
@@ -1628,10 +1625,8 @@ function Settings() {
       setDrafts(Object.fromEntries(values.map((value) => [value.simulatorId, value.path ?? ""])));
       setProfileName(profile.name ?? "");
       setSavedProfileName(profile.name ?? "");
-      setApiEndpoint(liveSettings.apiEndpoint);
-      setLiveEndpoint(liveSettings.liveEndpoint);
-      setSavedApiEndpoint(liveSettings.apiEndpoint);
-      setSavedLiveEndpoint(liveSettings.liveEndpoint);
+      setLiveEndpoint(liveSettings.endpoint);
+      setSavedLiveEndpoint(liveSettings.endpoint);
       setLoading(false);
     }).catch((error) => {
       if (!active) return;
@@ -1670,20 +1665,17 @@ function Settings() {
   }
 
   async function saveLiveSettings() {
-    const normalizedApiEndpoint = normalizeServiceEndpoint(apiEndpoint);
     const normalizedLiveEndpoint = normalizeServiceEndpoint(liveEndpoint);
-    if (!normalizedApiEndpoint || !normalizedLiveEndpoint) {
-      showToast({ kind: "error", title: "Invalid service endpoint", message: "Enter complete HTTP or HTTPS URLs for both the API and Live services.", timeoutMs: 7_000 });
+    if (!normalizedLiveEndpoint) {
+      showToast({ kind: "error", title: "Invalid service endpoint", message: "Enter a complete HTTP or HTTPS URL for the Live service.", timeoutMs: 7_000 });
       return;
     }
     setSavingLiveSettings(true);
     try {
-      const settings = await telemetryDataSource.setLiveSettings(normalizedApiEndpoint, normalizedLiveEndpoint);
-      setApiEndpoint(settings.apiEndpoint);
-      setLiveEndpoint(settings.liveEndpoint);
-      setSavedApiEndpoint(settings.apiEndpoint);
-      setSavedLiveEndpoint(settings.liveEndpoint);
-      showToast({ kind: "success", title: "Go Live services saved", message: "TRACE will use the configured API and Live services when remote spectating becomes available.", timeoutMs: 5_000 });
+      const settings = await telemetryDataSource.setLiveSettings(normalizedLiveEndpoint);
+      setLiveEndpoint(settings.endpoint);
+      setSavedLiveEndpoint(settings.endpoint);
+      showToast({ kind: "success", title: "Go Live service saved", message: "TRACE will use this service to create sessions, publish telemetry, and build spectator links.", timeoutMs: 5_000 });
     } catch (error) {
       showToast({ kind: "error", title: "Could not save Go Live services", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
     } finally {
@@ -1727,31 +1719,20 @@ function Settings() {
       <form className="mt-7 border border-trace-divider bg-trace-surface" onSubmit={(event) => { event.preventDefault(); void saveLiveSettings(); }}>
         <div className="border-b border-trace-divider px-5 py-4">
           <h2 className="text-[14px] font-black tracking-[.04em]">GO LIVE</h2>
-          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Choose the services TRACE will use to create and publish spectatable sessions. Keep the hosted defaults, or point both services at your own compatible deployment.</p>
+          <p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">Choose the service TRACE will use to create sessions, publish realtime telemetry, and generate spectator links. Keep the hosted default or point TRACE at your own compatible deployment.</p>
         </div>
-        <div className="grid grid-cols-2 divide-x divide-trace-divider">
-          <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
-            API ENDPOINT
-            <span className="mt-1 block min-h-10 max-w-xl font-normal leading-5 normal-case tracking-normal text-trace-dim">Creates sessions and handles control-plane requests.</span>
-            <div className="mt-2 flex">
-              <input type="url" value={apiEndpoint} onChange={(event) => setApiEndpoint(event.target.value)} placeholder={DEFAULT_API_SERVICE_ENDPOINT} spellCheck={false} className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
-              <button type="button" disabled={savingLiveSettings || apiEndpoint === DEFAULT_API_SERVICE_ENDPOINT} onClick={() => setApiEndpoint(DEFAULT_API_SERVICE_ENDPOINT)} className="w-24 shrink-0 border border-l-0 border-trace-divider bg-trace-surface text-[10px] font-bold leading-none text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:bg-trace-deep disabled:text-trace-dim">DEFAULT</button>
-            </div>
-            <span className="mt-2 block truncate font-mono text-[10px] font-normal normal-case tracking-normal text-trace-soft">{DEFAULT_API_SERVICE_ENDPOINT}</span>
-          </label>
-          <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
-            LIVE ENDPOINT
-            <span className="mt-1 block min-h-10 max-w-xl font-normal leading-5 normal-case tracking-normal text-trace-dim">Carries realtime telemetry to spectators; secure WebSockets will be derived from this URL.</span>
+        <label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
+            LIVE SERVICE ENDPOINT
+            <span className="mt-1 block max-w-3xl font-normal leading-5 normal-case tracking-normal text-trace-dim">One base URL for session creation, realtime publishing, spectator connections, and shareable browser links. Secure WebSocket URLs are derived automatically from HTTPS.</span>
             <div className="mt-2 flex">
               <input type="url" value={liveEndpoint} onChange={(event) => setLiveEndpoint(event.target.value)} placeholder={DEFAULT_LIVE_SERVICE_ENDPOINT} spellCheck={false} className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent" />
               <button type="button" disabled={savingLiveSettings || liveEndpoint === DEFAULT_LIVE_SERVICE_ENDPOINT} onClick={() => setLiveEndpoint(DEFAULT_LIVE_SERVICE_ENDPOINT)} className="w-24 shrink-0 border border-l-0 border-trace-divider bg-trace-surface text-[10px] font-bold leading-none text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:bg-trace-deep disabled:text-trace-dim">DEFAULT</button>
             </div>
             <span className="mt-2 block truncate font-mono text-[10px] font-normal normal-case tracking-normal text-trace-soft">{DEFAULT_LIVE_SERVICE_ENDPOINT}</span>
-          </label>
-        </div>
+        </label>
         <div className="flex min-h-14 items-center justify-between gap-5 border-t border-trace-divider px-5 py-2">
           <span className="text-[11px] leading-5 text-trace-dim">Only complete HTTP and HTTPS base URLs are accepted.</span>
-          <button type="submit" disabled={savingLiveSettings || !apiEndpoint.trim() || !liveEndpoint.trim() || (apiEndpoint.trim() === savedApiEndpoint && liveEndpoint.trim() === savedLiveEndpoint)} className="h-10 w-28 shrink-0 border border-trace-accent bg-trace-accent-wash text-[12px] font-bold leading-none text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingLiveSettings ? "SAVING…" : "SAVE"}</button>
+          <button type="submit" disabled={savingLiveSettings || !liveEndpoint.trim() || liveEndpoint.trim() === savedLiveEndpoint} className="h-10 w-28 shrink-0 border border-trace-accent bg-trace-accent-wash text-[12px] font-bold leading-none text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim">{savingLiveSettings ? "SAVING…" : "SAVE"}</button>
         </div>
       </form>
       <div className="mt-7 border border-trace-divider bg-trace-surface">

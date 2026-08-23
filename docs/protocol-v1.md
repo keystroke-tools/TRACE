@@ -129,14 +129,12 @@ those features will consume.
 
 ## Service boundaries
 
-TRACE keeps the future control plane and realtime path independently configurable.
-The hosted control-plane base URL is `https://api.simtrace.run`; it will create live
-sessions and handle installation credentials and session metadata. The hosted
-realtime base URL is `https://live.simtrace.run`; it will carry publisher ingestion,
-spectator fan-out, and live-session links. Secure WebSocket URLs are derived from the
-configured HTTPS realtime base rather than stored as a third endpoint. Self-hosted
-deployments may replace both base URLs, but must implement the same versioned
-protocol and validation boundaries.
+TRACE uses one configurable service boundary for live-session creation, publisher
+ingestion, spectator fan-out, session metadata, and live-session links. The hosted
+base URL is `https://live.simtrace.run`. Secure WebSocket URLs are derived from the
+configured HTTPS base rather than stored separately. A self-hosted deployment may
+replace that base URL, but must implement the same versioned protocol and validation
+boundaries.
 
 ## Compatibility rules
 

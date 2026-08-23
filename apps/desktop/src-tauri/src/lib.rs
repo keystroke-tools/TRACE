@@ -57,15 +57,13 @@ struct DriverProfile {
     name: Option<String>,
 }
 
-const DEFAULT_API_SERVICE_ENDPOINT: &str = "https://api.simtrace.run";
 const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
 const LEGACY_SERVICE_ENDPOINT: &str = "https://simtrace.run";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveSettings {
-    api_endpoint: String,
-    live_endpoint: String,
+    endpoint: String,
 }
 
 #[derive(Serialize)]
@@ -560,11 +558,7 @@ fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
         .live_service_endpoint()
         .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?;
     Ok(LiveSettings {
-        api_endpoint: store
-            .api_service_endpoint()
-            .map_err(|error| format!("failed to read API settings: {error:?}"))?
-            .unwrap_or_else(|| DEFAULT_API_SERVICE_ENDPOINT.to_owned()),
-        live_endpoint: configured_live_endpoint
+        endpoint: configured_live_endpoint
             .filter(|endpoint| endpoint != LEGACY_SERVICE_ENDPOINT)
             .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned()),
     })
@@ -572,25 +566,19 @@ fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn set_live_settings(
-    app: tauri::AppHandle,
-    api_endpoint: String,
-    live_endpoint: String,
-) -> Result<LiveSettings, String> {
+fn set_live_settings(app: tauri::AppHandle, endpoint: String) -> Result<LiveSettings, String> {
     let directory = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
     let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let api_endpoint = api_endpoint.trim();
-    let live_endpoint = live_endpoint.trim();
+    let endpoint = endpoint.trim();
     store
-        .set_service_endpoints(api_endpoint, live_endpoint)
-        .map_err(|error| format!("failed to save service endpoints: {error:?}"))?;
+        .set_live_service_endpoint(endpoint)
+        .map_err(|error| format!("failed to save Go Live endpoint: {error:?}"))?;
     Ok(LiveSettings {
-        api_endpoint: api_endpoint.to_owned(),
-        live_endpoint: live_endpoint.to_owned(),
+        endpoint: endpoint.to_owned(),
     })
 }
 

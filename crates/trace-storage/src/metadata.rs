@@ -363,17 +363,6 @@ impl MetadataStore {
         self.service_endpoint("live_service_endpoint")
     }
 
-    /// Returns the configured base URL for the TRACE control-plane API.
-    ///
-    /// `None` means the application should use its built-in hosted default.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
-    pub fn api_service_endpoint(&self) -> Result<Option<String>, MetadataError> {
-        self.service_endpoint("api_service_endpoint")
-    }
-
     /// Persists the base URL used for hosted or self-hosted Go Live sessions.
     ///
     /// # Errors
@@ -381,43 +370,6 @@ impl MetadataStore {
     /// Returns [`MetadataError`] when the endpoint is invalid or `SQLite` cannot persist it.
     pub fn set_live_service_endpoint(&mut self, endpoint: &str) -> Result<(), MetadataError> {
         self.set_service_endpoint("live_service_endpoint", "Go Live", endpoint)
-    }
-
-    /// Persists the base URL used for TRACE control-plane API requests.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`MetadataError`] when the endpoint is invalid or `SQLite` cannot persist it.
-    pub fn set_api_service_endpoint(&mut self, endpoint: &str) -> Result<(), MetadataError> {
-        self.set_service_endpoint("api_service_endpoint", "API", endpoint)
-    }
-
-    /// Atomically persists the control-plane and realtime service base URLs.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`MetadataError`] when either endpoint is invalid or `SQLite` cannot persist them.
-    pub fn set_service_endpoints(
-        &mut self,
-        api_endpoint: &str,
-        live_endpoint: &str,
-    ) -> Result<(), MetadataError> {
-        let api_endpoint = validate_service_endpoint(api_endpoint, "API")?;
-        let live_endpoint = validate_service_endpoint(live_endpoint, "Go Live")?;
-        let transaction = self.connection.transaction().map_err(MetadataError::from)?;
-        for (key, endpoint) in [
-            ("api_service_endpoint", api_endpoint),
-            ("live_service_endpoint", live_endpoint),
-        ] {
-            transaction
-                .execute(
-                    "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
-                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    params![key, endpoint],
-                )
-                .map_err(MetadataError::from)?;
-        }
-        transaction.commit().map_err(MetadataError::from)
     }
 
     fn service_endpoint(&self, key: &str) -> Result<Option<String>, MetadataError> {
@@ -1935,24 +1887,16 @@ mod tests {
     }
 
     #[test]
-    fn service_endpoints_are_persisted_and_validated() {
+    fn live_service_endpoint_is_persisted_and_validated() {
         let mut store = MetadataStore::open_in_memory().expect("migrated store");
         assert_eq!(store.live_service_endpoint().expect("endpoint"), None);
-        assert_eq!(store.api_service_endpoint().expect("endpoint"), None);
 
         store
-            .set_service_endpoints(
-                " https://api.trace.example.test/v1 ",
-                " https://live.trace.example.test ",
-            )
-            .expect("set endpoints");
+            .set_live_service_endpoint(" https://live.trace.example.test/v1 ")
+            .expect("set endpoint");
         assert_eq!(
             store.live_service_endpoint().expect("endpoint"),
-            Some("https://live.trace.example.test".into())
-        );
-        assert_eq!(
-            store.api_service_endpoint().expect("endpoint"),
-            Some("https://api.trace.example.test/v1".into())
+            Some("https://live.trace.example.test/v1".into())
         );
 
         assert!(
@@ -1960,7 +1904,6 @@ mod tests {
                 .set_live_service_endpoint("ftp://trace.example.test")
                 .is_err()
         );
-        assert!(store.set_api_service_endpoint("file:///tmp/trace").is_err());
         assert!(store.set_live_service_endpoint("https://").is_err());
         assert!(store.set_live_service_endpoint("not a URL").is_err());
     }
