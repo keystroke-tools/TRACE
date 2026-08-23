@@ -25,6 +25,7 @@ defines intended product direction.
 | [Live protocol v1](protocol-v1.md) | Implemented bounded DTO/validation model; transport remains future work |
 | [Arrow IPC storage benchmark](storage-benchmark.md) | Reproducible 60–333 Hz codec benchmark and compression decision |
 | [TRACE session package](session-package.md) | Versioned `.trace` sharing format, contents, import behavior, and safety limits |
+| [Setup imports](setup-import.md) | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds |
 | [Asset provenance](assets.md) | Origin and processing history for generated project assets |
 
 ## Status vocabulary

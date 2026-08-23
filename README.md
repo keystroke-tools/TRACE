@@ -91,6 +91,8 @@ Currently implemented:
 - Red invalid/track-limit lap treatment backed by persisted validity or three-plus-tyres-out evidence
 - Simulator-aware capture and archive UI driven by installed adapter descriptors; Assetto Corsa is the first selectable adapter, not a hard-coded product mode
 - Settings page for driver identity and reviewing auto-detected game folders or saving local overrides
+- Simulator-aware setup importer boundary, with native Assetto Corsa ZIP detection,
+  drag and drop, bounded extraction, and opt-in replacement of existing files
 - AC car and track names read from installed `ui_car.json`/`ui_track.json` metadata, with exact source IDs preserved as the fallback
 - Track-map braking zones rendered as red intensity gradients over recorded driving lines
 - Transactional SQLite session/lap writes and bounded native session-browser queries
@@ -104,6 +106,7 @@ The complete product direction and current technical proposal are documented in:
 - [TRACE live protocol v1](docs/protocol-v1.md)
 - [Assetto Corsa shared-memory boundary](docs/assetto-corsa.md)
 - [Corner analysis](docs/corner-analysis.md)
+- [Setup imports](docs/setup-import.md)
 - [Development and verification](docs/development.md)
 - [Contributing](CONTRIBUTING.md)
 
@@ -204,11 +207,10 @@ When contributing LLM-assisted changes:
 
 ## Product scope
 
-TRACE v0.1 will eventually include local capture and comparison, Assetto Corsa
-support, deterministic corner analysis, portable sessions, live spectating, unlisted
-session sharing, and later setup/context comparison. Go Live is the active product
-priority; setup support is deliberately deferred until the live publishing and
-spectator path is useful end to end.
+TRACE includes local capture and comparison, Assetto Corsa support, deterministic
+corner analysis, portable sessions, and a basic simulator-aware setup importer. Go
+Live is the active product priority. Setup snapshots, comparison, and session linking
+remain later work and do not block the live publishing and spectator path.
 
 It will not include accounts, social features, payments, chat, a coaching marketplace,
 automatic setup recommendations, or LLM coaching.

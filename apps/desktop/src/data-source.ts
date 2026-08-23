@@ -234,6 +234,33 @@ export interface GameInstallDirectory {
   source: "manual" | "detected" | "missing";
 }
 
+export interface SetupFolder {
+  path?: string | null;
+  found: boolean;
+  source: "detected" | "default";
+}
+
+export interface SetupImporterDescriptor {
+  simulatorId: string;
+  simulatorName: string;
+  archiveLabel: string;
+  archiveExtensions: string[];
+  folderLabel: string;
+  folderHint: string;
+  archiveHint: string;
+}
+
+export interface SetupImportResult {
+  archiveName: string;
+  car?: string | null;
+  track?: string | null;
+  files: string[];
+  destination?: string | null;
+  skipped: string[];
+  error?: string | null;
+  success: boolean;
+}
+
 export interface DriverProfile {
   name?: string | null;
 }
@@ -269,6 +296,9 @@ export interface TelemetryDataSource {
   compareSessionLaps(referenceSessionId: string, referenceLapIndex: number, comparisonSessionId: string, comparisonLapIndex: number): Promise<LapComparison>;
   getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
   setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
+  getSetupImporters(): Promise<SetupImporterDescriptor[]>;
+  detectSetupFolder(simulatorId: string): Promise<SetupFolder>;
+  importSetupArchives(simulatorId: string, archivePaths: string[], setupsFolder: string, overwrite: boolean): Promise<SetupImportResult[]>;
   getDriverProfile(): Promise<DriverProfile>;
   setDriverProfile(name: string | null): Promise<DriverProfile>;
   getLiveSettings(): Promise<LiveSettings>;
@@ -447,6 +477,23 @@ export const fixtureDataSource: TelemetryDataSource = {
   async setGameInstallDirectory(simulatorId, customPath) {
     return { simulatorId, simulatorName: "Assetto Corsa", path: customPath, source: customPath ? "manual" : "detected" };
   },
+  async getSetupImporters() {
+    return [{ simulatorId: "assetto-corsa", simulatorName: "Assetto Corsa", archiveLabel: "Assetto Corsa setup archives", archiveExtensions: ["zip"], folderLabel: "Assetto Corsa setups folder", folderHint: "Usually Documents\\Assetto Corsa\\setups. Change it if your Documents folder lives elsewhere.", archiveHint: "TRACE uses an .ld telemetry filename to identify the car and track, then installs every .ini setup in the archive." }];
+  },
+  async detectSetupFolder(_simulatorId) {
+    return { path: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups", found: true, source: "detected" };
+  },
+  async importSetupArchives(_simulatorId, archivePaths, setupsFolder, _overwrite) {
+    return archivePaths.map((path) => ({
+      archiveName: path.split(/[\\/]/).at(-1) ?? path,
+      car: "ks_mazda_mx5_cup",
+      track: "ks_zandvoort",
+      files: ["shared-race.ini"],
+      destination: `${setupsFolder}\\ks_mazda_mx5_cup\\ks_zandvoort`,
+      skipped: [],
+      success: true,
+    }));
+  },
   async getDriverProfile() {
     return fixtureDriverProfile;
   },
@@ -509,6 +556,15 @@ export const tauriDataSource: TelemetryDataSource = {
   },
   setGameInstallDirectory(simulatorId, customPath) {
     return invoke<GameInstallDirectory>("set_game_install_directory", { simulatorId, customPath });
+  },
+  getSetupImporters() {
+    return invoke<SetupImporterDescriptor[]>("setup_importers");
+  },
+  detectSetupFolder(simulatorId) {
+    return invoke<SetupFolder>("detect_setup_folder", { simulatorId });
+  },
+  importSetupArchives(simulatorId, archivePaths, setupsFolder, overwrite) {
+    return invoke<SetupImportResult[]>("import_setup_archives", { simulatorId, archivePaths, setupsFolder, overwrite });
   },
   getDriverProfile() {
     return invoke<DriverProfile>("driver_profile");

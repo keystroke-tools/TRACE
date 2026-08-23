@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import desktopPackage from "../package.json";
 import {
@@ -13,6 +14,8 @@ import {
   type RecordedLapMetrics,
   type RecordedSessionSummary,
   type SavedComparison,
+  type SetupImporterDescriptor,
+  type SetupImportResult,
   type SessionExportFormat,
   type TelemetryStatus,
 } from "./data-source";
@@ -1421,17 +1424,170 @@ function formatDelta(value: number) {
 }
 
 function Setups() {
+  const showToast = useToast();
+  const [importers, setImporters] = useState<SetupImporterDescriptor[]>([]);
+  const [simulatorId, setSimulatorId] = useState("");
+  const [setupsFolder, setSetupsFolder] = useState("");
+  const [folderFound, setFolderFound] = useState(false);
+  const [detecting, setDetecting] = useState(true);
+  const [overwrite, setOverwrite] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [results, setResults] = useState<SetupImportResult[]>([]);
+  const importer = importers.find((value) => value.simulatorId === simulatorId) ?? null;
+
+  useEffect(() => {
+    let active = true;
+    void telemetryDataSource.getSetupImporters().then((values) => {
+      if (!active) return;
+      setImporters(values);
+      setSimulatorId((current) => current || values[0]?.simulatorId || "");
+      if (values.length === 0) setDetecting(false);
+    }).catch((error) => {
+      if (!active) return;
+      setDetecting(false);
+      showToast({ kind: "error", title: "Setup importers unavailable", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    });
+    return () => { active = false; };
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!simulatorId) return undefined;
+    let active = true;
+    setDetecting(true);
+    setSetupsFolder("");
+    setFolderFound(false);
+    setResults([]);
+    void telemetryDataSource.detectSetupFolder(simulatorId).then((folder) => {
+      if (!active) return;
+      setSetupsFolder(folder.path ?? "");
+      setFolderFound(folder.found);
+      setDetecting(false);
+    }).catch((error) => {
+      if (!active) return;
+      setDetecting(false);
+      showToast({ kind: "error", title: "Setup folder unavailable", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    });
+    return () => { active = false; };
+  }, [showToast, simulatorId]);
+
+  async function importArchives(paths: string[]) {
+    if (!importer) return;
+    const archives = paths.filter((path) => importer.archiveExtensions.some((extension) => path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)));
+    if (archives.length === 0) {
+      showToast({ kind: "error", title: "No setup archives found", message: `Choose or drop ${importer.archiveExtensions.map((value) => `.${value}`).join(" or ")} files.`, timeoutMs: 5_000 });
+      return;
+    }
+    if (!setupsFolder.trim()) {
+      showToast({ kind: "error", title: "Choose the setups folder", message: `TRACE needs the ${importer.simulatorName} setups directory before it can install files.`, timeoutMs: 6_000 });
+      return;
+    }
+    setImporting(true);
+    try {
+      const nextResults = await telemetryDataSource.importSetupArchives(importer.simulatorId, archives, setupsFolder.trim(), overwrite);
+      setResults(nextResults);
+      const installed = nextResults.reduce((total, result) => total + result.files.length, 0);
+      const skipped = nextResults.reduce((total, result) => total + result.skipped.length, 0);
+      const failures = nextResults.filter((result) => !result.success).length;
+      showToast({
+        kind: failures > 0 ? "error" : "success",
+        title: failures > 0 ? "Some setups could not be imported" : "Setups imported",
+        message: `${installed} file${installed === 1 ? "" : "s"} installed${skipped > 0 ? ` · ${skipped} kept because they already exist` : ""}.`,
+        timeoutMs: failures > 0 ? 8_000 : 5_000,
+      });
+    } catch (error) {
+      showToast({ kind: "error", title: "Setup import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return undefined;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter") setDragging(event.payload.paths.some((path) => importer?.archiveExtensions.some((extension) => path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) ?? false));
+      if (event.payload.type === "leave") setDragging(false);
+      if (event.payload.type === "drop") {
+        setDragging(false);
+        if (!importing) void importArchives(event.payload.paths);
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [importer, importing, overwrite, setupsFolder]);
+
+  async function chooseSetupsFolder() {
+    if (!importer) return;
+    const selected = await open({ directory: true, multiple: false, title: `Choose ${importer.folderLabel}` });
+    if (typeof selected !== "string") return;
+    setSetupsFolder(selected);
+    setFolderFound(true);
+  }
+
+  async function chooseArchives() {
+    if (!importer) return;
+    const selected = await open({ multiple: true, directory: false, title: `Choose ${importer.archiveLabel}`, filters: [{ name: importer.archiveLabel, extensions: importer.archiveExtensions }] });
+    if (selected == null) return;
+    await importArchives(Array.isArray(selected) ? selected : [selected]);
+  }
+
   return (
     <>
-      <PageIntro index="04" eyebrow="CAR SETUPS" title="CONNECT CHANGES TO LAP PERFORMANCE" description="Store setup snapshots beside sessions so a faster lap can be traced back to the car configuration that produced it." />
-      <FeaturePreview label="PLANNED" title="Setup workspace">
-        <div className="grid gap-px bg-trace-divider md:grid-cols-3">
-          <PreviewStep number="01" title="Save a snapshot" detail="Capture or import the setup used for a session." />
-          <PreviewStep number="02" title="See what changed" detail="Compare values without hunting through setup screens." />
-          <PreviewStep number="03" title="Link the result" detail="Associate a setup with laps, notes, and conditions." />
+      <PageIntro index="04" eyebrow="CAR SETUPS" title="INSTALL SHARED SETUPS" description="Choose a simulator-aware importer and let TRACE put shared setup files in the layout that simulator expects." />
+      <div className="mt-7 border border-trace-divider bg-trace-surface">
+        <div className="flex items-center justify-between gap-5 border-b border-trace-divider px-5 py-4">
+          <div><strong className="block text-[13px] tracking-[.04em] text-white">SETUP IMPORTER</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Each simulator owns its detection and archive rules. More importers can be added without changing this workspace.</span></div>
+          <select value={simulatorId} onChange={(event) => setSimulatorId(event.target.value)} disabled={importers.length < 2} className="trace-select h-10 min-w-52 border border-trace-divider bg-trace-deep px-3 text-[12px] font-bold text-trace-text outline-none disabled:text-trace-muted" aria-label="Setup importer simulator">
+            {importers.map((value) => <option value={value.simulatorId} key={value.simulatorId}>{value.simulatorName}</option>)}
+            {importers.length === 0 && <option value="">No setup importers available</option>}
+          </select>
         </div>
-      </FeaturePreview>
-      <AvailabilityNote>Setup capture and imports are not implemented yet. This page describes the intended workflow without pretending the controls are active.</AvailabilityNote>
+        <div className="grid gap-px bg-trace-divider lg:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="bg-trace-surface p-5">
+            <label className="font-mono text-[11px] font-black tracking-[.12em] text-trace-soft" htmlFor="setups-folder">{importer?.folderLabel.toUpperCase() ?? "SETUPS FOLDER"}</label>
+            <p className="mt-1 text-[12px] leading-5 text-trace-dim">{importer?.folderHint ?? "Select a setup importer to continue."}</p>
+            <div className="mt-4 flex min-w-0">
+              <input id="setups-folder" value={setupsFolder} onChange={(event) => { setSetupsFolder(event.target.value); setFolderFound(false); }} placeholder={detecting ? "Detecting…" : "Choose the setups folder"} spellCheck={false} className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] text-trace-text outline-none focus:border-trace-accent" />
+              <button type="button" onClick={() => void chooseSetupsFolder()} className="h-11 shrink-0 border border-l-0 border-trace-divider bg-trace-raised px-4 text-[11px] font-bold text-trace-soft hover:border-trace-accent hover:text-white">CHOOSE FOLDER</button>
+            </div>
+            <p className={`mt-2 font-mono text-[10px] leading-4 ${folderFound ? "text-trace-accent" : "text-trace-dim"}`}>{folderFound ? "FOLDER READY" : "VERIFY THIS LOCATION BEFORE IMPORTING"}</p>
+          </div>
+          <label className="flex cursor-pointer items-center gap-3 bg-trace-deep px-5 py-4 hover:bg-trace-raised">
+            <input type="checkbox" checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} className="size-4 accent-[var(--color-trace-accent)]" />
+            <span><strong className="block text-[12px] text-trace-text">Replace existing files</strong><span className="mt-1 block text-[11px] leading-4 text-trace-dim">Off by default. Matching setups are kept and reported as skipped.</span></span>
+          </label>
+        </div>
+        <button type="button" disabled={importing || detecting} onClick={() => void chooseArchives()} className={`grid min-h-[210px] w-full place-items-center border-0 border-t border-dashed p-8 text-center transition-colors ${dragging ? "border-trace-accent bg-trace-accent-wash" : "border-trace-divider bg-trace-black/30 hover:bg-trace-deep"} disabled:text-trace-dim`}>
+          <span>
+            <svg className={`mx-auto size-9 fill-none stroke-current ${dragging ? "text-trace-accent" : "text-trace-muted"}`} viewBox="0 0 32 32" aria-hidden="true"><path strokeWidth="1.5" d="M16 22V7m0 0-5 5m5-5 5 5M7 19v7h18v-7" /></svg>
+            <strong className="mt-4 block text-[16px] tracking-[.04em] text-white">{importing ? "IMPORTING SETUPS…" : dragging ? "DROP TO IMPORT" : "DROP SETUP ARCHIVES HERE"}</strong>
+            <span className="mt-2 block text-[12px] leading-5 text-trace-muted">or click to choose multiple archives</span>
+            <span className="mx-auto mt-4 block max-w-xl font-mono text-[10px] leading-4 text-trace-dim">{importer?.archiveHint.toUpperCase()}</span>
+          </span>
+        </button>
+      </div>
+      {results.length > 0 && (
+        <div className="mt-5 border border-trace-divider bg-trace-surface">
+          <div className="flex items-center justify-between border-b border-trace-divider px-5 py-4"><strong className="text-[13px] tracking-[.06em] text-white">LAST IMPORT</strong><span className="font-mono text-[10px] text-trace-dim">{results.length} ARCHIVE{results.length === 1 ? "" : "S"}</span></div>
+          <div>
+            {results.map((result, index) => (
+              <article className="grid gap-4 border-b border-trace-divider px-5 py-4 last:border-b-0 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.5fr)_auto] md:items-center" key={`${result.archiveName}-${index}`}>
+                <div className="min-w-0"><strong className="block truncate text-[12px] text-trace-text">{result.archiveName}</strong><span className={`mt-1 block font-mono text-[10px] ${result.success ? "text-trace-accent" : "text-trace-warning"}`}>{result.success ? `${result.car ?? "UNKNOWN CAR"} / ${result.track ?? "UNKNOWN TRACK"}` : "NOT IMPORTED"}</span></div>
+                <div className="min-w-0 text-[11px] leading-5 text-trace-dim">{result.error ?? result.destination ?? "No destination reported"}</div>
+                <div className="font-mono text-[10px] leading-5 text-right text-trace-muted"><span className="block">{result.files.length} INSTALLED</span>{result.skipped.length > 0 && <span className="block text-trace-dim">{result.skipped.length} SKIPPED</span>}</div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="mt-4 max-w-4xl text-[11px] leading-5 text-trace-dim">Assetto Corsa is the first setup-import adapter. TRACE does not yet compare setup values or attach them to recorded sessions.</p>
     </>
   );
 }
@@ -1657,26 +1813,6 @@ function WorkflowStep({ number, title, children }: { number: string; title: stri
       <div><strong className="block text-[13px] text-trace-text">{title}</strong><span className="mt-1 block text-[12px] leading-5 text-trace-faint">{children}</span></div>
     </li>
   );
-}
-
-function FeaturePreview({ label, title, children }: { label: string; title: string; children: ReactNode }) {
-  return (
-    <div className="mt-7 border border-trace-divider bg-trace-surface">
-      <div className="flex items-center justify-between border-b border-trace-divider px-5 py-4">
-        <h2 className="text-[14px] font-black tracking-[.04em]">{title}</h2>
-        <span className="font-mono text-[12px] font-bold tracking-[.08em] text-trace-accent">{label}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function PreviewStep({ number, title, detail }: { number: string; title: string; detail: string }) {
-  return <div className="min-h-44 bg-trace-surface p-6"><span className="font-mono text-[12px] text-trace-accent">{number}</span><h3 className="mt-7 text-base font-black">{title}</h3><p className="mt-2 text-[13px] leading-5 text-trace-faint">{detail}</p></div>;
-}
-
-function AvailabilityNote({ children }: { children: ReactNode }) {
-  return <p className="border border-t-0 border-trace-divider bg-trace-deep px-5 py-4 text-[12px] leading-5 text-trace-muted"><strong className="mr-2 text-trace-warning">NOT AVAILABLE YET</strong>{children}</p>;
 }
 
 function Sessions({ sessions, onOpen, onDeleted, onUpdated, onImported }: { sessions: RecordedSessionSummary[]; onOpen: (sessionId: string) => void; onDeleted: (sessionId: string) => void; onUpdated: (session: RecordedSessionSummary) => void; onImported: () => Promise<void> }) {
