@@ -30,7 +30,7 @@ tauri-plugin-dialog = "2.7.2"
 time.workspace = true
 trace-ac = { path = "../../../crates/trace-ac" }
 trace-adapter = { path = "../../../crates/trace-adapter" }
-trace-core = { version = "0.3.0", path = "../../../crates/trace-core" }
+trace-core = { version = "0.3.1", path = "../../../crates/trace-core" }
 trace-domain.workspace = true
 trace-recorder = { path = "../../../crates/trace-recorder" }
 trace-storage = { path = "../../../crates/trace-storage" }
