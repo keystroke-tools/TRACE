@@ -1117,6 +1117,11 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }, [focusSelection]);
+  useEffect(() => {
+    if (zoom > 1) setPan((current) => current.x === 0 && current.y === 0 ? current : { x: 0, y: 0 });
+    // A cursor move starts a fresh follow position. Retaining pan calculated
+    // around the previous target can place the new target outside the view.
+  }, [cursorIndex]);
   const padding = focusSelection ? 90 : 42;
   const drivenPoints = samples.flatMap((sample) => [
     sample.referencePositionXM != null && sample.referencePositionZM != null ? [sample.referencePositionXM, sample.referencePositionZM] as const : null,
