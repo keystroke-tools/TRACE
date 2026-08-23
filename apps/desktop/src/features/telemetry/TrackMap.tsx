@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEventHandler, type PointerEvent as ReactPointerEvent, type PointerEventHandler } from "react";
 import type { CornerAnalysis, LapComparisonSample, TrackMapAsset } from "../../data-source";
 import { channelColours } from "./ComparisonChart";
 
@@ -19,6 +19,44 @@ export function useTrackMapPip(active: boolean) {
 	}, [active]);
 
 	return { anchor, visible: visible && !dismissed, dismiss: () => setDismissed(true) };
+}
+
+type FloatingMapFrame = { x: number; y: number; width: number; height: number };
+type FloatingMapInteraction = { kind: "move" | "resize"; pointerId: number; x: number; y: number; frame: FloatingMapFrame };
+
+const floatingMapFrameKey = "trace.floating-track-map.frame";
+const floatingMapMargin = 16;
+const floatingMapTop = 64;
+const floatingMapMinimumWidth = 340;
+const floatingMapMinimumHeight = 260;
+
+function constrainFloatingMapFrame(frame: FloatingMapFrame): FloatingMapFrame {
+	const maximumWidth = Math.max(240, window.innerWidth - floatingMapMargin * 2);
+	const maximumHeight = Math.max(220, window.innerHeight - floatingMapTop - floatingMapMargin);
+	const minimumWidth = Math.min(floatingMapMinimumWidth, maximumWidth);
+	const minimumHeight = Math.min(floatingMapMinimumHeight, maximumHeight);
+	const width = Math.min(maximumWidth, Math.max(minimumWidth, frame.width));
+	const height = Math.min(maximumHeight, Math.max(minimumHeight, frame.height));
+	return {
+		x: Math.min(Math.max(floatingMapMargin, frame.x), Math.max(floatingMapMargin, window.innerWidth - width - floatingMapMargin)),
+		y: Math.min(Math.max(floatingMapTop, frame.y), Math.max(floatingMapTop, window.innerHeight - height - floatingMapMargin)),
+		width,
+		height,
+	};
+}
+
+function initialFloatingMapFrame(): FloatingMapFrame {
+	const width = Math.min(500, window.innerWidth - floatingMapMargin * 2);
+	const fallback = { x: window.innerWidth - width - 24, y: floatingMapTop, width, height: 300 };
+	try {
+		const stored = JSON.parse(localStorage.getItem(floatingMapFrameKey) ?? "null") as Partial<FloatingMapFrame> | null;
+		if (stored && [stored.x, stored.y, stored.width, stored.height].every((value) => typeof value === "number" && Number.isFinite(value))) {
+			return constrainFloatingMapFrame(stored as FloatingMapFrame);
+		}
+	} catch {
+		// Ignore stale or malformed display preferences.
+	}
+	return constrainFloatingMapFrame(fallback);
 }
 
 export function FloatingTrackMap({
@@ -50,9 +88,89 @@ export function FloatingTrackMap({
 	onRangeZoomLinked?: (linked: boolean) => void;
 	onDismiss: () => void;
 }) {
+	const [frame, setFrame] = useState(initialFloatingMapFrame);
+	const interaction = useRef<FloatingMapInteraction | null>(null);
+
+	useEffect(() => {
+		const handlePointerMove = (event: PointerEvent) => {
+			const active = interaction.current;
+			if (!active || active.pointerId !== event.pointerId) return;
+			const deltaX = event.clientX - active.x;
+			const deltaY = event.clientY - active.y;
+			setFrame(
+				constrainFloatingMapFrame(
+					active.kind === "move"
+						? { ...active.frame, x: active.frame.x + deltaX, y: active.frame.y + deltaY }
+						: { ...active.frame, width: active.frame.width + deltaX, height: active.frame.height + deltaY },
+				),
+			);
+		};
+		const stopInteraction = (event: PointerEvent) => {
+			if (interaction.current?.pointerId === event.pointerId) interaction.current = null;
+		};
+		const keepOnScreen = () => setFrame((current) => constrainFloatingMapFrame(current));
+		window.addEventListener("pointermove", handlePointerMove);
+		window.addEventListener("pointerup", stopInteraction);
+		window.addEventListener("pointercancel", stopInteraction);
+		window.addEventListener("resize", keepOnScreen);
+		return () => {
+			window.removeEventListener("pointermove", handlePointerMove);
+			window.removeEventListener("pointerup", stopInteraction);
+			window.removeEventListener("pointercancel", stopInteraction);
+			window.removeEventListener("resize", keepOnScreen);
+		};
+	}, []);
+
+	useEffect(() => {
+		try {
+			localStorage.setItem(floatingMapFrameKey, JSON.stringify(frame));
+		} catch {
+			// The map remains usable when WebView storage is unavailable.
+		}
+	}, [frame]);
+
+	const startInteraction = (kind: FloatingMapInteraction["kind"], event: ReactPointerEvent) => {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		interaction.current = { kind, pointerId: event.pointerId, x: event.clientX, y: event.clientY, frame };
+	};
+	const moveWithKeyboard: KeyboardEventHandler<HTMLButtonElement> = (event) => {
+		const step = event.shiftKey ? 40 : 12;
+		const movement =
+			event.key === "ArrowLeft"
+				? [-step, 0]
+				: event.key === "ArrowRight"
+					? [step, 0]
+					: event.key === "ArrowUp"
+						? [0, -step]
+						: event.key === "ArrowDown"
+							? [0, step]
+							: null;
+		if (!movement) return;
+		event.preventDefault();
+		setFrame((current) => constrainFloatingMapFrame({ ...current, x: current.x + movement[0], y: current.y + movement[1] }));
+	};
+	const resizeWithKeyboard: KeyboardEventHandler<HTMLButtonElement> = (event) => {
+		const step = event.shiftKey ? 40 : 12;
+		const change =
+			event.key === "ArrowLeft"
+				? [-step, 0]
+				: event.key === "ArrowRight"
+					? [step, 0]
+					: event.key === "ArrowUp"
+						? [0, -step]
+						: event.key === "ArrowDown"
+							? [0, step]
+							: null;
+		if (!change) return;
+		event.preventDefault();
+		setFrame((current) => constrainFloatingMapFrame({ ...current, width: current.width + change[0], height: current.height + change[1] }));
+	};
+
 	return (
 		<aside
-			className="fixed right-6 top-16 z-40 w-[min(500px,calc(100vw-240px))] overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]"
+			className="fixed z-40 overflow-hidden border border-trace-accent/35 bg-trace-black shadow-[0_18px_55px_rgba(0,0,0,.65)]"
+			style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }}
 			aria-label="Floating track map"
 		>
 			<TrackMap
@@ -60,7 +178,7 @@ export function FloatingTrackMap({
 				cursorIndex={cursorIndex}
 				comparison={comparison}
 				comparisonIsFaster={comparisonIsFaster}
-				height={260}
+				height={frame.height - 40}
 				trackMap={trackMap}
 				focusSelection={focusSelection}
 				rangeLabel={rangeLabel}
@@ -70,7 +188,20 @@ export function FloatingTrackMap({
 				rangeZoomLinked={rangeZoomLinked}
 				onRangeZoomLinked={onRangeZoomLinked}
 				onDismiss={onDismiss}
+				onFloatingDragStart={(event) => startInteraction("move", event)}
+				onFloatingDragKeyDown={moveWithKeyboard}
 			/>
+			<button
+				type="button"
+				className="absolute bottom-0 right-0 z-10 size-5 cursor-se-resize border-0 bg-transparent p-0 text-trace-soft hover:text-trace-accent"
+				onPointerDown={(event) => startInteraction("resize", event)}
+				onKeyDown={resizeWithKeyboard}
+				aria-label="Resize floating track map"
+			>
+				<svg className="size-full stroke-current" viewBox="0 0 20 20" aria-hidden="true">
+					<path d="M19 7 7 19M19 12l-7 7M19 17l-2 2" fill="none" />
+				</svg>
+			</button>
 		</aside>
 	);
 }
@@ -99,6 +230,8 @@ export function TrackMap({
 	rangeZoomLinked = false,
 	onRangeZoomLinked,
 	onDismiss,
+	onFloatingDragStart,
+	onFloatingDragKeyDown,
 }: {
 	samples: LapComparisonSample[];
 	cursorIndex: number | null;
@@ -114,6 +247,8 @@ export function TrackMap({
 	rangeZoomLinked?: boolean;
 	onRangeZoomLinked?: (linked: boolean) => void;
 	onDismiss?: () => void;
+	onFloatingDragStart?: PointerEventHandler<HTMLButtonElement>;
+	onFloatingDragKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
 }) {
 	const [zoom, setZoom] = useState(1);
 	const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -490,7 +625,24 @@ export function TrackMap({
 	return (
 		<div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
 			{onDismiss ? (
-				<div className="flex h-10 items-center justify-end border-b border-trace-divider px-2">{mapControls}</div>
+				<div className="flex h-10 items-center border-b border-trace-divider px-2">
+					<button
+						type="button"
+						onPointerDown={onFloatingDragStart}
+						onKeyDown={onFloatingDragKeyDown}
+						className="flex h-8 min-w-0 flex-1 cursor-move touch-none items-center gap-2 px-2 text-left font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim hover:text-trace-text active:cursor-grabbing"
+						aria-label="Move floating track map"
+					>
+						<svg className="size-3 shrink-0 fill-current" viewBox="0 0 12 12" aria-hidden="true">
+							<circle cx="3" cy="3" r="1" />
+							<circle cx="9" cy="3" r="1" />
+							<circle cx="3" cy="9" r="1" />
+							<circle cx="9" cy="9" r="1" />
+						</svg>
+						MOVE
+					</button>
+					{mapControls}
+				</div>
 			) : (
 				<div className="flex h-12 items-center justify-between border-b border-trace-divider px-4">
 					<div>{mapRangeLabel && <span className="font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}</div>
