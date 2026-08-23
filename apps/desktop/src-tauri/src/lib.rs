@@ -437,6 +437,7 @@ fn game_install_directory(store: &MetadataStore) -> Result<GameInstallDirectory,
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 fn driver_profile(app: tauri::AppHandle) -> Result<DriverProfile, String> {
     let directory = app
         .path()
@@ -476,6 +477,7 @@ fn set_driver_profile(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
     let directory = app
         .path()
@@ -513,6 +515,7 @@ fn set_live_service_endpoint(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 fn saved_comparisons(app: tauri::AppHandle) -> Result<Vec<SavedComparison>, String> {
     let directory = app
         .path()
