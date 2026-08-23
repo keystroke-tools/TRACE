@@ -93,7 +93,8 @@ sudo apt-get install --no-install-recommends \
 
 Use Tauri's platform setup documentation for equivalent packages on other systems.
 Windows is the eventual primary capture platform because Assetto Corsa publishes
-telemetry through named shared-memory mappings. Phase 1 does not open those mappings.
+telemetry through named shared-memory mappings. TRACE opens those mappings only inside
+the audited `trace-windows-shmem` platform boundary.
 
 ## Repository map
 

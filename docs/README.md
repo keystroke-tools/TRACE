@@ -1,18 +1,18 @@
 # TRACE documentation
 
-This index separates implemented behavior from proposals and future product scope.
-When documents disagree, code and tests define current behavior, while `SPEC.md`
-defines intended product direction.
+This index covers TRACE's architecture, simulator boundaries, data formats, analysis,
+and development workflow. When documents disagree, code and tests define current
+behaviour, while `SPEC.md` defines intended product direction.
 
 ## Start here
 
-| Document | Purpose | Status |
-| --- | --- | --- |
-| [README](../README.md) | Product overview, status, principles, and quick start | Current |
-| [Specification](../SPEC.md) | Full v0.1 product and implementation direction | Proposal beyond Phase 1 |
-| [Implemented foundation](foundation.md) | What exists on `master` and Phase 1 acceptance evidence | Current |
-| [Development guide](development.md) | Toolchains, commands, native prerequisites, and troubleshooting | Current |
-| [Contributing](../CONTRIBUTING.md) | Change quality, commit, safety, and LLM-assistance expectations | Current |
+| Document | Purpose |
+| --- | --- |
+| [README](../README.md) | Product overview, principles, installation, and quick start |
+| [Specification](../SPEC.md) | Product and implementation direction |
+| [Implemented foundation](foundation.md) | Foundational implementation and acceptance evidence |
+| [Development guide](development.md) | Toolchains, commands, native prerequisites, and troubleshooting |
+| [Contributing](../CONTRIBUTING.md) | Change quality, commit, safety, and LLM-assistance expectations |
 
 ## Architecture and boundaries
 
@@ -27,23 +27,3 @@ defines intended product direction.
 | [TRACE session package](session-package.md) | Versioned `.trace` sharing format, contents, import behavior, and safety limits |
 | [Setup imports](setup-import.md) | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds |
 | [Asset provenance](assets.md) | Origin and processing history for generated project assets |
-
-## Status vocabulary
-
-- **Current** describes behavior implemented and tested on `master`.
-- **Spike** proves a representation or boundary but is not yet a finalized production
-  implementation.
-- **Proposed** describes work that has not been implemented.
-- **Deferred** is intentionally outside the current phase.
-
-Phases 1–3 are accepted and Phase 4 is in progress. Windows Assetto Corsa acquisition,
-adapter lifecycle orchestration, canonical lap segmentation, SQLite session metadata,
-the native session query, recovery-aware completion ordering, and an atomic filesystem
-blob store are implemented. Automated orphan reconciliation and the desktop capture
-worker are now wired at Tauri startup. Captured ABI fixtures, stale-process detection,
-and representative driven/replay validation are complete. Capture frames are
-persisted in bounded Arrow record batches rather than retained for an entire session.
-Recorded lap sample intervals can be read across batch boundaries without loading the
-complete session file into memory.
-The 30-minute synthetic storage matrix is complete and Zstandard is now the measured
-default compression policy; representative captured-session validation remains.
