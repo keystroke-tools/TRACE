@@ -573,7 +573,7 @@ const channelColours = {
   rpm: "#ffb84d",
   faster: "var(--color-trace-purple)",
   delta: "#e8eaed",
-  mapBrake: "#a52838",
+  mapBrake: "#c13b4a",
 };
 
 function comparisonSeries(reference: ComparisonValueKey, comparison: ComparisonValueKey, colour: string, comparisonIsFaster: boolean): ComparisonChartSeries[] {
@@ -1160,7 +1160,7 @@ function TrackMap({ samples, cursorIndex, comparison = false, comparisonIsFaster
     const x1 = previous[xKey]; const z1 = previous[zKey]; const x2 = sample[xKey]; const z2 = sample[zKey];
     if (brake < 2 || x1 == null || z1 == null || x2 == null || z2 == null || ![x1, z1, x2, z2].every(Number.isFinite)) return [];
     const start = project(x1, z1); const end = project(x2, z2);
-    return [<line x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]} stroke={channelColours.mapBrake} strokeWidth={strokeWidth} strokeLinecap="round" opacity={Math.min(0.7, 0.12 + brake / 100 * 0.58)} vectorEffect="non-scaling-stroke" key={`${prefix}-${offset}`} />];
+    return [<line x1={start[0]} y1={start[1]} x2={end[0]} y2={end[1]} stroke={channelColours.mapBrake} strokeWidth={strokeWidth} strokeLinecap="round" vectorEffect="non-scaling-stroke" key={`${prefix}-${offset}`} />];
   });
   const mapCentre = project((minX + maxX) / 2, (minZ + maxZ) / 2);
   const lineSegments = (line: readonly (readonly [number, number])[]) => line.slice(1).map((point, index) => [line[index], point] as const);
