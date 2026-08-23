@@ -30,6 +30,8 @@ import {
 	type TelemetryWindow,
 } from "../telemetry/telemetry-window";
 
+const COMPARISON_PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4] as const;
+
 export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }) {
 	const showToast = useToast();
 	const eligibleSessions = useMemo(() => sessions.filter((session) => validComparisonLaps(session).length > 0), [sessions]);
@@ -42,6 +44,8 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 	const [state, setState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 	const [error, setError] = useState<string | null>(null);
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+	const [comparisonPlaying, setComparisonPlaying] = useState(false);
+	const [playbackSpeed, setPlaybackSpeed] = useState(1);
 	const [sector, setSector] = useState<number | null>(null);
 	const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
 	const [mapZoomLinked, setMapZoomLinked] = useState(false);
@@ -51,6 +55,9 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 	const mapPip = useTrackMapPip(comparison != null && state === "ready");
 	const skipReferenceDefaults = useRef(false);
 	const skipComparisonDefaults = useRef(false);
+	const playbackAnimationFrame = useRef(0);
+	const playbackStartIndex = useRef(0);
+	const playbackSpeedRef = useRef(1);
 	const referenceSession = eligibleSessions.find((candidate) => candidate.id === referenceSessionId) ?? null;
 	const compatibleSessions = useMemo(
 		() =>
@@ -198,13 +205,99 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 			)
 		: "Saved comparison";
 	const selectedCorner = corners.find((corner) => corner.index === cornerIndex) ?? null;
-	const baseSamples = comparison
-		? selectedCorner
-			? filterSamplesByDistance(comparison.samples, selectedCorner.startDistanceM, selectedCorner.endDistanceM)
-			: filterSamplesBySector(comparison.samples, sector)
-		: [];
-	const samples = filterSamplesByTelemetryWindow(baseSamples, telemetryWindow);
+	const baseSamples = useMemo(
+		() =>
+			comparison
+				? selectedCorner
+					? filterSamplesByDistance(comparison.samples, selectedCorner.startDistanceM, selectedCorner.endDistanceM)
+					: filterSamplesBySector(comparison.samples, sector)
+				: [],
+		[comparison, sector, selectedCorner],
+	);
+	const samples = useMemo(() => filterSamplesByTelemetryWindow(baseSamples, telemetryWindow), [baseSamples, telemetryWindow]);
+
+	useEffect(() => {
+		if (!comparisonPlaying) return;
+		if (samples.length < 2) {
+			setComparisonPlaying(false);
+			return;
+		}
+		const timeline = comparisonPlaybackTimeline(samples);
+		let index = Math.min(playbackStartIndex.current, samples.length - 1);
+		let playbackTime = timeline[index] ?? 0;
+		let previous = performance.now();
+		const tick = (now: number) => {
+			playbackTime += ((now - previous) / 1_000) * playbackSpeedRef.current;
+			previous = now;
+			while (index < samples.length - 1 && timeline[index + 1] <= playbackTime) index += 1;
+			setCursorIndex(index);
+			if (index >= samples.length - 1) {
+				setComparisonPlaying(false);
+				return;
+			}
+			playbackAnimationFrame.current = requestAnimationFrame(tick);
+		};
+		playbackAnimationFrame.current = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(playbackAnimationFrame.current);
+	}, [comparisonPlaying, samples]);
+
+	const toggleComparisonPlayback = () => {
+		if (comparisonPlaying) {
+			setComparisonPlaying(false);
+			return;
+		}
+		const current = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
+		const start = current >= samples.length - 1 ? 0 : current;
+		playbackStartIndex.current = start;
+		if (start !== current || cursorIndex == null) setCursorIndex(start);
+		setComparisonPlaying(samples.length > 1);
+	};
+	const changePlaybackSpeed = (speed: number) => {
+		playbackSpeedRef.current = speed;
+		setPlaybackSpeed(speed);
+	};
+
+	useEffect(() => {
+		if (state !== "ready" || samples.length < 2) return;
+		const handlePlaybackKey = (event: KeyboardEvent) => {
+			const target = event.target;
+			if (target instanceof HTMLElement && (target.isContentEditable || target.matches("input, select, textarea, button, [role='button']"))) return;
+
+			if (event.code === "Space") {
+				if (event.repeat) return;
+				event.preventDefault();
+				toggleComparisonPlayback();
+				return;
+			}
+
+			if (event.code === "ArrowLeft" || event.code === "ArrowRight" || event.code === "Home" || event.code === "End") {
+				event.preventDefault();
+				setComparisonPlaying(false);
+				if (event.code === "Home" || event.code === "End") {
+					setCursorIndex(event.code === "Home" ? 0 : samples.length - 1);
+					return;
+				}
+				const timeline = comparisonPlaybackTimeline(samples);
+				const current = Math.min(Math.max(cursorIndex ?? 0, 0), samples.length - 1);
+				const direction = event.code === "ArrowLeft" ? -1 : 1;
+				const seconds = event.shiftKey ? 5 : 1;
+				setCursorIndex(nearestTimelineIndex(timeline, timeline[current] + direction * seconds));
+				return;
+			}
+
+			if (event.code === "BracketLeft" || event.code === "BracketRight") {
+				event.preventDefault();
+				const current = COMPARISON_PLAYBACK_SPEEDS.indexOf(playbackSpeed as (typeof COMPARISON_PLAYBACK_SPEEDS)[number]);
+				const direction = event.code === "BracketLeft" ? -1 : 1;
+				const next = Math.min(COMPARISON_PLAYBACK_SPEEDS.length - 1, Math.max(0, (current < 0 ? 3 : current) + direction));
+				changePlaybackSpeed(COMPARISON_PLAYBACK_SPEEDS[next]);
+			}
+		};
+		window.addEventListener("keydown", handlePlaybackKey);
+		return () => window.removeEventListener("keydown", handlePlaybackKey);
+	}, [comparisonPlaying, cursorIndex, playbackSpeed, samples, state]);
 	const zoomTelemetry = (anchorM: number, direction: "in" | "out") => {
+		setComparisonPlaying(false);
 		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchorM, direction));
 		setCursorIndex(null);
 	};
@@ -575,13 +668,21 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 						samples={samples}
 						sector={sector}
 						onSector={(value) => {
+							setComparisonPlaying(false);
 							setSector(value);
 							setTelemetryWindow(null);
 							setCornerIndex(null);
 							setCursorIndex(null);
 						}}
 						cursorIndex={cursorIndex}
-						onSeek={setCursorIndex}
+						onSeek={(index) => {
+							setComparisonPlaying(false);
+							setCursorIndex(index);
+						}}
+						playing={comparisonPlaying}
+						onTogglePlayback={toggleComparisonPlayback}
+						playbackSpeed={playbackSpeed}
+						onPlaybackSpeed={changePlaybackSpeed}
 					/>
 				</>
 			)}
@@ -707,7 +808,7 @@ function SavedComparisonsDock({
 				</form>
 			)}
 			<aside
-				className="fixed bottom-[239px] right-6 z-[31] w-[620px] max-w-[calc(100vw-248px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur"
+				className="fixed bottom-[251px] right-6 z-[31] w-[620px] max-w-[calc(100vw-248px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur"
 				aria-label="Comparison lap dock"
 			>
 				<div className="flex h-10 items-stretch">
@@ -1229,6 +1330,10 @@ type ComparisonHudProps = {
 	onSector: (value: number | null) => void;
 	cursorIndex: number | null;
 	onSeek: (index: number) => void;
+	playing: boolean;
+	onTogglePlayback: () => void;
+	playbackSpeed: number;
+	onPlaybackSpeed: (speed: number) => void;
 };
 
 function ComparisonHud({
@@ -1251,6 +1356,10 @@ function ComparisonHud({
 	onSector,
 	cursorIndex,
 	onSeek,
+	playing,
+	onTogglePlayback,
+	playbackSpeed,
+	onPlaybackSpeed,
 }: ComparisonHudProps) {
 	const sample = samples[cursorIndex ?? 0] ?? null;
 	const finalDelta = comparison?.samples
@@ -1280,10 +1389,18 @@ function ComparisonHud({
 	return (
 		<>
 			<div
-				className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[192px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[28px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
+				className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[204px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[40px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
 			>
 				<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
-					<TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
+					<TelemetrySeek
+						samples={samples}
+						cursorIndex={cursorIndex}
+						onSeek={onSeek}
+						playing={playing}
+						onTogglePlayback={onTogglePlayback}
+						playbackSpeed={playbackSpeed}
+						onPlaybackSpeed={onPlaybackSpeed}
+					/>
 				</div>
 				<div className="col-span-full grid grid-cols-[1fr_52px_1fr] gap-3 border-b border-trace-divider pb-2">
 					<HudLapChoice
@@ -1625,15 +1742,72 @@ function formatComparisonGap(seconds?: number | null) {
 	return `${Math.abs(seconds).toFixed(3)}s ${seconds > 0 ? "BEHIND" : "AHEAD"}`;
 }
 
-function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapComparisonSample[]; cursorIndex: number | null; onSeek: (index: number) => void }) {
+function TelemetrySeek({
+	samples,
+	cursorIndex,
+	onSeek,
+	playing,
+	onTogglePlayback,
+	playbackSpeed,
+	onPlaybackSpeed,
+}: {
+	samples: LapComparisonSample[];
+	cursorIndex: number | null;
+	onSeek: (index: number) => void;
+	playing?: boolean;
+	onTogglePlayback?: () => void;
+	playbackSpeed?: number;
+	onPlaybackSpeed?: (speed: number) => void;
+}) {
 	const index = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
 	const start = samples[0]?.distanceM ?? 0;
 	const end = samples.at(-1)?.distanceM ?? 0;
 	return (
-		<label className="grid h-6 grid-cols-[72px_1fr_76px] items-center gap-3 font-mono text-[10px] tabular-nums text-trace-dim">
+		<div
+			className={`grid h-8 ${onTogglePlayback ? "grid-cols-[auto_48px_minmax(0,1fr)_52px]" : "grid-cols-[52px_minmax(0,1fr)_56px]"} items-center gap-2 font-mono text-[10px] tabular-nums text-trace-dim`}
+		>
+			{onTogglePlayback && (
+				<div className="mr-1 flex items-center gap-2 border-r border-trace-divider pr-3">
+					<Tooltip content={playing ? "Pause comparison playback (Space)" : "Play comparison playback (Space)"}>
+						<button
+							type="button"
+							onClick={onTogglePlayback}
+							disabled={samples.length < 2}
+							className={`grid h-8 w-11 place-items-center border ${playing ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text"} disabled:cursor-not-allowed disabled:opacity-35`}
+							aria-label={playing ? "Pause comparison playback" : "Play comparison playback"}
+						>
+							{playing ? (
+								<svg className="size-3 fill-current" viewBox="0 0 12 12" aria-hidden="true">
+									<path d="M2 1h3v10H2zm5 0h3v10H7z" />
+								</svg>
+							) : (
+								<svg className="size-3 fill-current" viewBox="0 0 12 12" aria-hidden="true">
+									<path d="m3 1 8 5-8 5z" />
+								</svg>
+							)}
+						</button>
+					</Tooltip>
+					{onPlaybackSpeed && (
+						<Tooltip content="Playback speed ([ slower · ] faster)" className="h-8 w-11">
+							<select
+								value={playbackSpeed ?? 1}
+								onChange={(event) => onPlaybackSpeed(Number(event.target.value))}
+								className="h-8 w-11 cursor-pointer appearance-none border border-trace-divider bg-trace-deep p-0 text-center text-[10px] font-black tabular-nums text-trace-soft outline-none hover:border-trace-soft hover:text-trace-text focus:border-trace-accent"
+								aria-label="Comparison playback speed"
+							>
+								{COMPARISON_PLAYBACK_SPEEDS.map((speed) => (
+									<option value={speed} key={speed}>
+										{speed}×
+									</option>
+								))}
+							</select>
+						</Tooltip>
+					)}
+				</div>
+			)}
 			<span>{Math.round(start)} M</span>
 			<input
-				className="trace-seek w-full"
+				className="trace-seek trace-seek-lg w-full"
 				type="range"
 				min="0"
 				max={Math.max(samples.length - 1, 0)}
@@ -1644,8 +1818,44 @@ function TelemetrySeek({ samples, cursorIndex, onSeek }: { samples: LapCompariso
 				aria-label="Seek through lap distance"
 			/>
 			<span className="text-right">{Math.round(end)} M</span>
-		</label>
+		</div>
 	);
+}
+
+function comparisonPlaybackTimeline(samples: LapComparisonSample[]) {
+	let elapsed = finiteElapsed(samples[0]) ?? 0;
+	return samples.map((sample, index) => {
+		const reported = finiteElapsed(sample);
+		if (reported != null && (index === 0 || reported > elapsed)) {
+			elapsed = reported;
+		} else if (index > 0) {
+			const previous = samples[index - 1];
+			const distance = Math.max(0, sample.distanceM - previous.distanceM);
+			const speedKmh = sample.comparisonSpeedKmh ?? sample.referenceSpeedKmh;
+			const estimatedStep = speedKmh != null && speedKmh > 1 ? distance / (speedKmh / 3.6) : 1 / 60;
+			elapsed += Math.min(0.25, Math.max(1 / 240, estimatedStep));
+		}
+		return elapsed;
+	});
+}
+
+function nearestTimelineIndex(timeline: number[], target: number) {
+	if (target <= (timeline[0] ?? 0)) return 0;
+	if (target >= (timeline.at(-1) ?? 0)) return Math.max(0, timeline.length - 1);
+	let low = 0;
+	let high = timeline.length - 1;
+	while (low < high) {
+		const middle = Math.floor((low + high) / 2);
+		if (timeline[middle] < target) low = middle + 1;
+		else high = middle;
+	}
+	if (low === 0) return 0;
+	return target - timeline[low - 1] <= timeline[low] - target ? low - 1 : low;
+}
+
+function finiteElapsed(sample: LapComparisonSample) {
+	const elapsed = sample.comparisonElapsedSeconds ?? sample.referenceElapsedSeconds;
+	return elapsed != null && Number.isFinite(elapsed) ? elapsed : null;
 }
 
 function HudValue({ label, value, unit, colour }: { label: string; value: string; unit?: string; colour?: string }) {
