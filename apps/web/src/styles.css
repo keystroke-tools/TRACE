@@ -477,7 +477,7 @@ img {
 .feature-grid {
 	display: grid;
 	max-width: 1320px;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(5, 1fr);
 	margin: auto;
 	border-top: 1px solid var(--line);
 	border-left: 1px solid var(--line);
@@ -559,6 +559,33 @@ img {
 }
 .package-shape::after {
 	right: 10%;
+}
+.overlay-inputs {
+	display: flex;
+	align-items: stretch;
+	justify-content: center;
+	gap: 7px;
+	padding-block: 1rem;
+}
+.overlay-inputs i {
+	position: relative;
+	display: block;
+	width: 12px;
+	background: #090909;
+}
+.overlay-inputs i::after {
+	content: "";
+	position: absolute;
+	inset: 42% 0 0;
+	background: var(--acid);
+}
+.overlay-inputs i:nth-child(2)::after {
+	inset-block-start: 68%;
+	background: #db4b4b;
+}
+.overlay-inputs i:nth-child(3)::after {
+	inset-block-start: 24%;
+	background: #4b9fe8;
 }
 .feature-card h3 {
 	margin: 0 0 0.8rem;
