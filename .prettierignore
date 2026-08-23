@@ -1,0 +1,13 @@
+.cache/
+.git/
+node_modules/
+target/
+**/dist/
+**/coverage/
+assets/
+docs/screenshots/
+fixtures/
+*.trace
+*.arrow
+*.db
+*.sqlite

@@ -8,9 +8,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("TRACE root element is unavailable");
 
 createRoot(root).render(
-  <StrictMode>
-    <ToastProvider>
-      <App />
-    </ToastProvider>
-  </StrictMode>,
+	<StrictMode>
+		<ToastProvider>
+			<App />
+		</ToastProvider>
+	</StrictMode>,
 );

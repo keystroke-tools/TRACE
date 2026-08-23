@@ -1,17 +1,19 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TRACE",
-  "version": "0.3.0",
-  "identifier": "run.simtrace.trace",
-  "build": {
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
-    "devUrl": "http://localhost:1420",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [{ "label": "main", "title": "TRACE — FIND THE TIME", "width": 1600, "height": 1000, "minWidth": 1440, "minHeight": 900, "decorations": false }],
-    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
-  },
-  "bundle": { "active": true, "targets": "all" }
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "TRACE",
+	"version": "0.3.0",
+	"identifier": "run.simtrace.trace",
+	"build": {
+		"beforeDevCommand": "pnpm dev",
+		"beforeBuildCommand": "pnpm build",
+		"devUrl": "http://localhost:1420",
+		"frontendDist": "../dist"
+	},
+	"app": {
+		"windows": [
+			{ "label": "main", "title": "TRACE — FIND THE TIME", "width": 1600, "height": 1000, "minWidth": 1440, "minHeight": 900, "decorations": false }
+		],
+		"security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
+	},
+	"bundle": { "active": true, "targets": "all" }
 }

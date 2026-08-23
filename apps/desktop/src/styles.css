@@ -1,189 +1,211 @@
 @import "tailwindcss";
 
 @theme {
-  --color-trace-base: #121212;
-  --color-trace-surface: #1a1a1a;
-  --color-trace-raised: #222222;
-  --color-trace-divider: #2a2a2a;
-  --color-trace-accent: #c9ff00;
-  --color-trace-accent-dark: #92b900;
-  --color-trace-accent-muted: #394500;
-  --color-trace-accent-wash: #202300;
-  --color-trace-text: #e8e8e8;
-  --color-trace-soft: #b8b8b8;
-  --color-trace-muted: #969696;
-  --color-trace-faint: #8d8d8d;
-  --color-trace-dim: #808080;
-  --color-trace-deep: #151515;
-  --color-trace-black: #101010;
-  --color-trace-warning: #ff6b35;
-  --color-trace-purple: #b87cff;
-  --color-trace-purple-wash: #24182f;
-  --color-trace-sector-yellow: #e3c64b;
-  --color-trace-danger: #c42b1c;
-  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	--color-trace-base: #121212;
+	--color-trace-surface: #1a1a1a;
+	--color-trace-raised: #222222;
+	--color-trace-divider: #2a2a2a;
+	--color-trace-accent: #c9ff00;
+	--color-trace-accent-dark: #92b900;
+	--color-trace-accent-muted: #394500;
+	--color-trace-accent-wash: #202300;
+	--color-trace-text: #e8e8e8;
+	--color-trace-soft: #b8b8b8;
+	--color-trace-muted: #969696;
+	--color-trace-faint: #8d8d8d;
+	--color-trace-dim: #808080;
+	--color-trace-deep: #151515;
+	--color-trace-black: #101010;
+	--color-trace-warning: #ff6b35;
+	--color-trace-purple: #b87cff;
+	--color-trace-purple-wash: #24182f;
+	--color-trace-sector-yellow: #e3c64b;
+	--color-trace-danger: #c42b1c;
+	--font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+	--font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 @layer base {
-  :root {
-    color: var(--color-trace-text);
-    background: var(--color-trace-base);
-    font-family: var(--font-sans);
-    font-synthesis: none;
-  }
+	:root {
+		color: var(--color-trace-text);
+		background: var(--color-trace-base);
+		font-family: var(--font-sans);
+		font-synthesis: none;
+	}
 
-  * {
-    border-radius: 0;
-    box-sizing: border-box;
-    scrollbar-color: var(--color-trace-accent-muted) var(--color-trace-deep);
-    scrollbar-width: thin;
-  }
+	* {
+		border-radius: 0;
+		box-sizing: border-box;
+		scrollbar-color: var(--color-trace-accent-muted) var(--color-trace-deep);
+		scrollbar-width: thin;
+	}
 
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
+	*::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
 
-  *::-webkit-scrollbar-track {
-    background: var(--color-trace-deep);
-    border-left: 1px solid var(--color-trace-divider);
-  }
+	*::-webkit-scrollbar-track {
+		background: var(--color-trace-deep);
+		border-left: 1px solid var(--color-trace-divider);
+	}
 
-  *::-webkit-scrollbar-thumb {
-    background: var(--color-trace-accent-muted);
-    border: 2px solid var(--color-trace-deep);
-  }
+	*::-webkit-scrollbar-thumb {
+		background: var(--color-trace-accent-muted);
+		border: 2px solid var(--color-trace-deep);
+	}
 
-  *::-webkit-scrollbar-thumb:hover {
-    background: var(--color-trace-accent-dark);
-  }
+	*::-webkit-scrollbar-thumb:hover {
+		background: var(--color-trace-accent-dark);
+	}
 
-  body {
-    margin: 0;
-    min-width: 1440px;
-    min-height: 900px;
-    overflow: hidden;
-    user-select: none;
-    -webkit-user-select: none;
-  }
+	body {
+		margin: 0;
+		min-width: 1440px;
+		min-height: 900px;
+		overflow: hidden;
+		user-select: none;
+		-webkit-user-select: none;
+	}
 
-  input,
-  textarea,
-  [contenteditable="true"] {
-    user-select: text;
-    -webkit-user-select: text;
-  }
+	input,
+	textarea,
+	[contenteditable="true"] {
+		user-select: text;
+		-webkit-user-select: text;
+	}
 
-  img,
-  svg {
-    -webkit-user-drag: none;
-  }
+	img,
+	svg {
+		-webkit-user-drag: none;
+	}
 
-  button {
-    color: inherit;
-    font: inherit;
-  }
+	button {
+		color: inherit;
+		font: inherit;
+	}
 }
 
 @layer components {
-  .trace-select {
-    appearance: none;
-    padding-right: 2.5rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='m2.5 4.5 3.5 3 3.5-3' stroke='%23969696' stroke-width='1.25'/%3E%3C/svg%3E");
-    background-position: right 0.875rem center;
-    background-repeat: no-repeat;
-    background-size: 0.75rem;
-  }
+	.trace-select {
+		appearance: none;
+		padding-right: 2.5rem;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='m2.5 4.5 3.5 3 3.5-3' stroke='%23969696' stroke-width='1.25'/%3E%3C/svg%3E");
+		background-position: right 0.875rem center;
+		background-repeat: no-repeat;
+		background-size: 0.75rem;
+	}
 
-  .trace-seek {
-    height: 18px;
-    appearance: none;
-    background: transparent;
-    cursor: ew-resize;
-  }
+	.trace-seek {
+		height: 18px;
+		appearance: none;
+		background: transparent;
+		cursor: ew-resize;
+	}
 
-  .trace-seek::-webkit-slider-runnable-track {
-    height: 3px;
-    background: var(--color-trace-divider);
-  }
+	.trace-seek::-webkit-slider-runnable-track {
+		height: 3px;
+		background: var(--color-trace-divider);
+	}
 
-  .trace-seek::-webkit-slider-thumb {
-    width: 12px;
-    height: 12px;
-    margin-top: -4.5px;
-    appearance: none;
-    border: 2px solid var(--color-trace-black);
-    background: var(--color-trace-accent);
-  }
+	.trace-seek::-webkit-slider-thumb {
+		width: 12px;
+		height: 12px;
+		margin-top: -4.5px;
+		appearance: none;
+		border: 2px solid var(--color-trace-black);
+		background: var(--color-trace-accent);
+	}
 
-  .trace-seek:focus-visible {
-    outline: 1px solid var(--color-trace-accent);
-    outline-offset: 3px;
-  }
+	.trace-seek:focus-visible {
+		outline: 1px solid var(--color-trace-accent);
+		outline-offset: 3px;
+	}
 
-  .trace-seek:disabled {
-    cursor: default;
-    opacity: .45;
-  }
+	.trace-seek:disabled {
+		cursor: default;
+		opacity: 0.45;
+	}
 }
 
 @keyframes trace-toast-in {
-  from { opacity: 0; transform: translateX(24px); }
-  to { opacity: 1; transform: translateX(0); }
+	from {
+		opacity: 0;
+		transform: translateX(24px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
 }
 
 @keyframes trace-toast-out {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(24px); }
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(24px);
+	}
 }
 
 @keyframes trace-toast-progress {
-  from { width: 100%; }
-  to { width: 0%; }
+	from {
+		width: 100%;
+	}
+	to {
+		width: 0%;
+	}
 }
 
-.trace-toast-enter { animation: trace-toast-in 180ms ease-out both; }
-.trace-toast-leave { animation: trace-toast-out 180ms ease-in both; }
-.trace-toast-progress { animation: trace-toast-progress linear both; }
+.trace-toast-enter {
+	animation: trace-toast-in 180ms ease-out both;
+}
+.trace-toast-leave {
+	animation: trace-toast-out 180ms ease-in both;
+}
+.trace-toast-progress {
+	animation: trace-toast-progress linear both;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .trace-toast-enter,
-  .trace-toast-leave,
-  .trace-toast-progress { animation: none; }
+	.trace-toast-enter,
+	.trace-toast-leave,
+	.trace-toast-progress {
+		animation: none;
+	}
 }
 
 @utility trace-grid {
-  background-image:
-    linear-gradient(#171717 1px, transparent 1px),
-    linear-gradient(90deg, #171717 1px, transparent 1px);
-  background-size: 32px 32px;
+	background-image: linear-gradient(#171717 1px, transparent 1px), linear-gradient(90deg, #171717 1px, transparent 1px);
+	background-size: 32px 32px;
 }
 
 @utility trace-crosshair {
-  position: relative;
-  width: 38px;
-  height: 38px;
-  border: 1px solid #4b5d00;
+	position: relative;
+	width: 38px;
+	height: 38px;
+	border: 1px solid #4b5d00;
 
-  &::before,
-  &::after {
-    position: absolute;
-    content: "";
-    background: var(--color-trace-accent);
-  }
+	&::before,
+	&::after {
+		position: absolute;
+		content: "";
+		background: var(--color-trace-accent);
+	}
 
-  &::before {
-    top: 18px;
-    left: 9px;
-    width: 18px;
-    height: 1px;
-  }
+	&::before {
+		top: 18px;
+		left: 9px;
+		width: 18px;
+		height: 1px;
+	}
 
-  &::after {
-    top: 9px;
-    left: 18px;
-    width: 1px;
-    height: 18px;
-  }
+	&::after {
+		top: 9px;
+		left: 18px;
+		width: 1px;
+		height: 18px;
+	}
 }
