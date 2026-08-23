@@ -136,6 +136,28 @@ configured HTTPS base rather than stored separately. A self-hosted deployment ma
 replace that base URL, but must implement the same versioned protocol and validation
 boundaries.
 
+## Spectator time shifting
+
+The spectator page needs a bounded playback buffer rather than a latest-frame-only
+view. Its seek bar spans the telemetry still retained by the service and ends with a
+`LIVE ●` control at the current broadcast edge.
+
+- Dragging or clicking the seek bar moves only that spectator through retained data;
+  it does not pause the publisher or affect other spectators.
+- Leaving the live edge puts the viewer in an explicit behind-live state and stops
+  automatic cursor following.
+- Selecting `LIVE ●` jumps to the newest available timestamp and resumes following.
+- If retention evicts the requested timestamp, the viewer is clamped to the oldest
+  available point and told that earlier data is no longer buffered.
+- Transport messages must expose the retained time/sequence range and allow bounded
+  backfill or resume from a requested sequence or timestamp.
+
+An already-recorded TRACE session can also act as a publisher for development and
+testing. It uses the same live encoder and server path, preserves the original sample
+spacing, and rebases its monotonic clock to the broadcast start. For such a broadcast,
+`LIVE ●` means the current replay broadcast position—not the end of the stored session.
+The recorded session remains immutable.
+
 ## Compatibility rules
 
 - Never serialize internal Rust or simulator structs directly as wire messages.

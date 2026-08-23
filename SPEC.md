@@ -1492,6 +1492,13 @@ Sector performance
 Live-vs-reference/PB telemetry where practical
 ```
 
+The spectator telemetry view includes a buffered seek bar. Its trailing edge has a
+`LIVE ●` control: scrubbing moves that spectator into an explicit behind-live state,
+while selecting `LIVE ●` jumps to the newest retained timestamp and resumes following.
+Seeking must not pause the publisher or change another spectator's position. If the
+requested timestamp has expired from the bounded server buffer, clamp to the oldest
+available point and communicate that limit.
+
 Do not add:
 
 - chat
@@ -1894,6 +1901,12 @@ ReplayAdapter
 A replay/test adapter is encouraged.
 
 It should behave sufficiently like a simulator adapter that UI/live pipelines can be tested offline.
+
+The desktop app should also be able to stream an already-recorded session through the
+same live publisher used by simulator capture. Preserve its sample spacing, rebase the
+clock to the broadcast start, leave the source session immutable, and identify the
+broadcast as replayed telemetry. Spectator seeking operates within the server's
+retained broadcast buffer; `LIVE ●` returns to the replay's current broadcast position.
 
 ---
 
