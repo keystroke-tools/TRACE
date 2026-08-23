@@ -51,12 +51,15 @@ struct DriverProfile {
     name: Option<String>,
 }
 
-const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://simtrace.run";
+const DEFAULT_API_SERVICE_ENDPOINT: &str = "https://api.simtrace.run";
+const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
+const LEGACY_SERVICE_ENDPOINT: &str = "https://simtrace.run";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveSettings {
-    endpoint: String,
+    api_endpoint: String,
+    live_endpoint: String,
 }
 
 #[derive(Serialize)]
@@ -485,19 +488,26 @@ fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
         .map_err(|error| error.to_string())?;
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let configured_live_endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?;
     Ok(LiveSettings {
-        endpoint: store
-            .live_service_endpoint()
-            .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?
+        api_endpoint: store
+            .api_service_endpoint()
+            .map_err(|error| format!("failed to read API settings: {error:?}"))?
+            .unwrap_or_else(|| DEFAULT_API_SERVICE_ENDPOINT.to_owned()),
+        live_endpoint: configured_live_endpoint
+            .filter(|endpoint| endpoint != LEGACY_SERVICE_ENDPOINT)
             .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned()),
     })
 }
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn set_live_service_endpoint(
+fn set_live_settings(
     app: tauri::AppHandle,
-    endpoint: String,
+    api_endpoint: String,
+    live_endpoint: String,
 ) -> Result<LiveSettings, String> {
     let directory = app
         .path()
@@ -505,12 +515,14 @@ fn set_live_service_endpoint(
         .map_err(|error| error.to_string())?;
     let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let endpoint = endpoint.trim();
+    let api_endpoint = api_endpoint.trim();
+    let live_endpoint = live_endpoint.trim();
     store
-        .set_live_service_endpoint(endpoint)
-        .map_err(|error| format!("failed to save Go Live endpoint: {error:?}"))?;
+        .set_service_endpoints(api_endpoint, live_endpoint)
+        .map_err(|error| format!("failed to save service endpoints: {error:?}"))?;
     Ok(LiveSettings {
-        endpoint: endpoint.to_owned(),
+        api_endpoint: api_endpoint.to_owned(),
+        live_endpoint: live_endpoint.to_owned(),
     })
 }
 
@@ -1999,7 +2011,7 @@ pub fn run() {
             driver_profile,
             set_driver_profile,
             live_settings,
-            set_live_service_endpoint,
+            set_live_settings,
             saved_comparisons,
             save_comparison,
             delete_saved_comparison,

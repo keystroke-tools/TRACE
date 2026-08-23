@@ -422,7 +422,10 @@ imported driver names always take precedence. The same page lists the install di
 used by each configurable simulator adapter. Assetto Corsa is auto-detected from Steam libraries and can be overridden with
 a validated game-root path stored in SQLite. TRACE uses that root to read AC's own car
 and track UI metadata. It deliberately preserves raw source identifiers when metadata
-is unavailable instead of accumulating an incomplete alias list.
+is unavailable instead of accumulating an incomplete alias list. Go Live settings keep
+the control-plane API and realtime service endpoints separate: hosted installs default
+to `https://api.simtrace.run` and `https://live.simtrace.run`, while self-hosters can
+replace both with validated HTTP or HTTPS base URLs.
 
 `FileBlobStore` stages bounded writes beneath `.pending` in the dedicated telemetry
 root. Commit syncs the staged file and publishes it with a same-volume hard link, so

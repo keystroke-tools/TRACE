@@ -127,6 +127,17 @@ WebSocket authentication, rate limiting, acknowledgements, reconnect behavior, a
 binary encoding remain Phase 7 work. The current types provide the explicit boundary
 those features will consume.
 
+## Service boundaries
+
+TRACE keeps the future control plane and realtime path independently configurable.
+The hosted control-plane base URL is `https://api.simtrace.run`; it will create live
+sessions and handle installation credentials and session metadata. The hosted
+realtime base URL is `https://live.simtrace.run`; it will carry publisher ingestion,
+spectator fan-out, and live-session links. Secure WebSocket URLs are derived from the
+configured HTTPS realtime base rather than stored as a third endpoint. Self-hosted
+deployments may replace both base URLs, but must implement the same versioned
+protocol and validation boundaries.
+
 ## Compatibility rules
 
 - Never serialize internal Rust or simulator structs directly as wire messages.
@@ -135,4 +146,3 @@ those features will consume.
 - Unknown protocol versions are rejected explicitly.
 - A v1 receiver must preserve missing values and must not invent absent channels.
 - Local full-resolution recording remains independent of live encoding and failure.
-

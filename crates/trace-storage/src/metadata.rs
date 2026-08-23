@@ -346,14 +346,18 @@ impl MetadataStore {
     ///
     /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
     pub fn live_service_endpoint(&self) -> Result<Option<String>, MetadataError> {
-        self.connection
-            .query_row(
-                "SELECT value FROM app_settings WHERE key = 'live_service_endpoint'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(MetadataError::from)
+        self.service_endpoint("live_service_endpoint")
+    }
+
+    /// Returns the configured base URL for the TRACE control-plane API.
+    ///
+    /// `None` means the application should use its built-in hosted default.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn api_service_endpoint(&self) -> Result<Option<String>, MetadataError> {
+        self.service_endpoint("api_service_endpoint")
     }
 
     /// Persists the base URL used for hosted or self-hosted Go Live sessions.
@@ -362,27 +366,69 @@ impl MetadataStore {
     ///
     /// Returns [`MetadataError`] when the endpoint is invalid or `SQLite` cannot persist it.
     pub fn set_live_service_endpoint(&mut self, endpoint: &str) -> Result<(), MetadataError> {
-        let endpoint = endpoint.trim();
-        let valid_scheme = endpoint.starts_with("https://") || endpoint.starts_with("http://");
-        let has_host = endpoint
-            .split_once("://")
-            .is_some_and(|(_, authority)| !authority.is_empty() && !authority.starts_with('/'));
-        if endpoint.is_empty()
-            || endpoint.len() > 2_048
-            || endpoint.chars().any(char::is_control)
-            || endpoint.chars().any(char::is_whitespace)
-            || !valid_scheme
-            || !has_host
-        {
-            return Err(MetadataError::InvalidRecord(
-                "Go Live endpoint must be a valid HTTP or HTTPS URL".into(),
-            ));
+        self.set_service_endpoint("live_service_endpoint", "Go Live", endpoint)
+    }
+
+    /// Persists the base URL used for TRACE control-plane API requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the endpoint is invalid or `SQLite` cannot persist it.
+    pub fn set_api_service_endpoint(&mut self, endpoint: &str) -> Result<(), MetadataError> {
+        self.set_service_endpoint("api_service_endpoint", "API", endpoint)
+    }
+
+    /// Atomically persists the control-plane and realtime service base URLs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when either endpoint is invalid or `SQLite` cannot persist them.
+    pub fn set_service_endpoints(
+        &mut self,
+        api_endpoint: &str,
+        live_endpoint: &str,
+    ) -> Result<(), MetadataError> {
+        let api_endpoint = validate_service_endpoint(api_endpoint, "API")?;
+        let live_endpoint = validate_service_endpoint(live_endpoint, "Go Live")?;
+        let transaction = self.connection.transaction().map_err(MetadataError::from)?;
+        for (key, endpoint) in [
+            ("api_service_endpoint", api_endpoint),
+            ("live_service_endpoint", live_endpoint),
+        ] {
+            transaction
+                .execute(
+                    "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![key, endpoint],
+                )
+                .map_err(MetadataError::from)?;
         }
+        transaction.commit().map_err(MetadataError::from)
+    }
+
+    fn service_endpoint(&self, key: &str) -> Result<Option<String>, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(MetadataError::from)
+    }
+
+    fn set_service_endpoint(
+        &mut self,
+        key: &str,
+        label: &str,
+        endpoint: &str,
+    ) -> Result<(), MetadataError> {
+        let endpoint = validate_service_endpoint(endpoint, label)?;
         self.connection
             .execute(
-                "INSERT INTO app_settings (key, value) VALUES ('live_service_endpoint', ?1)
+                "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                [endpoint],
+                params![key, endpoint],
             )
             .map_err(MetadataError::from)?;
         Ok(())
@@ -1110,6 +1156,26 @@ pub enum MetadataError {
     RecordNotFound,
 }
 
+fn validate_service_endpoint<'a>(endpoint: &'a str, label: &str) -> Result<&'a str, MetadataError> {
+    let endpoint = endpoint.trim();
+    let valid_scheme = endpoint.starts_with("https://") || endpoint.starts_with("http://");
+    let has_host = endpoint
+        .split_once("://")
+        .is_some_and(|(_, authority)| !authority.is_empty() && !authority.starts_with('/'));
+    if endpoint.is_empty()
+        || endpoint.len() > 2_048
+        || endpoint.chars().any(char::is_control)
+        || endpoint.chars().any(char::is_whitespace)
+        || !valid_scheme
+        || !has_host
+    {
+        return Err(MetadataError::InvalidRecord(format!(
+            "{label} endpoint must be a valid HTTP or HTTPS URL"
+        )));
+    }
+    Ok(endpoint)
+}
+
 fn validate_session(session: &NewSession) -> Result<(), MetadataError> {
     if session.id.is_empty()
         || session.simulator_id.is_empty()
@@ -1419,16 +1485,24 @@ mod tests {
     }
 
     #[test]
-    fn live_service_endpoint_is_persisted_and_validated() {
+    fn service_endpoints_are_persisted_and_validated() {
         let mut store = MetadataStore::open_in_memory().expect("migrated store");
         assert_eq!(store.live_service_endpoint().expect("endpoint"), None);
+        assert_eq!(store.api_service_endpoint().expect("endpoint"), None);
 
         store
-            .set_live_service_endpoint(" https://trace.example.test/live ")
-            .expect("set endpoint");
+            .set_service_endpoints(
+                " https://api.trace.example.test/v1 ",
+                " https://live.trace.example.test ",
+            )
+            .expect("set endpoints");
         assert_eq!(
             store.live_service_endpoint().expect("endpoint"),
-            Some("https://trace.example.test/live".into())
+            Some("https://live.trace.example.test".into())
+        );
+        assert_eq!(
+            store.api_service_endpoint().expect("endpoint"),
+            Some("https://api.trace.example.test/v1".into())
         );
 
         assert!(
@@ -1436,6 +1510,7 @@ mod tests {
                 .set_live_service_endpoint("ftp://trace.example.test")
                 .is_err()
         );
+        assert!(store.set_api_service_endpoint("file:///tmp/trace").is_err());
         assert!(store.set_live_service_endpoint("https://").is_err());
         assert!(store.set_live_service_endpoint("not a URL").is_err());
     }
