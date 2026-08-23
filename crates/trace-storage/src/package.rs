@@ -2,7 +2,9 @@
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::{
     ipc::{IpcError, compact_for_sharing},
@@ -10,7 +12,8 @@ use crate::{
 };
 
 pub const PACKAGE_VERSION: u32 = 1;
-pub const MAX_MANIFEST_BYTES: u32 = 1024 * 1024;
+pub const MAX_MANIFEST_BYTES: u32 = 6 * 1024 * 1024;
+pub const MAX_SETUP_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
 const MAGIC: &[u8; 8] = b"TRACEPKG";
 const HEADER_LENGTH: u64 = 24;
 const HEADER_BYTES: usize = 24;
@@ -22,6 +25,22 @@ pub struct SessionPackageManifest {
     pub session: SessionSummary,
     pub laps: Vec<SessionPackageLap>,
     pub sample_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmed_setup: Option<SessionPackageSetup>,
+}
+
+/// Portable user-confirmed setup payload attached to one session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionPackageSetup {
+    pub simulator_key: String,
+    pub source_car_id: String,
+    pub source_track_id: String,
+    pub layout_id: Option<String>,
+    pub name: String,
+    pub source_archive: Option<String>,
+    pub content_sha256: [u8; 32],
+    pub content_base64: String,
+    pub confirmed_at: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,6 +57,39 @@ pub enum PackageError {
     Ipc(IpcError),
     Invalid(&'static str),
     UnsupportedVersion(u32),
+}
+
+/// Creates a bounded portable setup payload and verifies its supplied digest.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] when setup bytes are empty, oversized, or inconsistent.
+pub fn encode_setup_payload(
+    mut setup: SessionPackageSetup,
+    contents: &[u8],
+) -> Result<SessionPackageSetup, PackageError> {
+    validate_setup_bytes(contents, &setup.content_sha256)?;
+    setup.content_base64 = BASE64.encode(contents);
+    validate_setup_payload(&setup)?;
+    Ok(setup)
+}
+
+/// Decodes and verifies a portable setup payload.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] when the payload is malformed, oversized, or corrupted.
+pub fn decode_setup_payload(setup: &SessionPackageSetup) -> Result<Vec<u8>, PackageError> {
+    validate_setup_metadata(setup)?;
+    let maximum_encoded = MAX_SETUP_PAYLOAD_BYTES.div_ceil(3) * 4;
+    if setup.content_base64.len() > maximum_encoded + 4 {
+        return Err(PackageError::Invalid("setup payload is too large"));
+    }
+    let contents = BASE64
+        .decode(&setup.content_base64)
+        .map_err(|_| PackageError::Invalid("setup payload is not valid base64"))?;
+    validate_setup_bytes(&contents, &setup.content_sha256)?;
+    Ok(contents)
 }
 
 impl From<io::Error> for PackageError {
@@ -248,6 +300,108 @@ fn validate_manifest(
     }) {
         return Err(PackageError::Invalid("invalid lap telemetry range"));
     }
+    if let Some(setup) = &manifest.confirmed_setup {
+        decode_setup_payload(setup)?;
+        let session = &manifest.session;
+        if setup.simulator_key != session.simulator_key
+            || session.source_car_id.as_deref() != Some(setup.source_car_id.as_str())
+            || session.source_track_id.as_deref() != Some(setup.source_track_id.as_str())
+            || session.layout_id.as_deref().unwrap_or("")
+                != setup.layout_id.as_deref().unwrap_or("")
+        {
+            return Err(PackageError::Invalid(
+                "confirmed setup does not match the packaged session",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_setup_payload(setup: &SessionPackageSetup) -> Result<(), PackageError> {
+    validate_setup_metadata(setup)?;
+    decode_setup_payload(setup).map(|_| ())
+}
+
+fn validate_setup_metadata(setup: &SessionPackageSetup) -> Result<(), PackageError> {
+    let required = [
+        (setup.simulator_key.as_str(), 128_usize),
+        (setup.source_car_id.as_str(), 256),
+        (setup.source_track_id.as_str(), 256),
+        (setup.name.as_str(), 255),
+        (setup.confirmed_at.as_str(), 64),
+    ];
+    let required_valid = required.iter().all(|(value, maximum)| {
+        !value.trim().is_empty()
+            && value.chars().count() <= *maximum
+            && !value.chars().any(char::is_control)
+    });
+    let optional_valid =
+        setup.layout_id.as_deref().is_none_or(|value| {
+            value.chars().count() <= 256 && !value.chars().any(char::is_control)
+        }) && setup.source_archive.as_deref().is_none_or(|value| {
+            !value.trim().is_empty()
+                && value.chars().count() <= 255
+                && !value.chars().any(char::is_control)
+        });
+    if !required_valid || !optional_valid || !valid_portable_file_name(&setup.name) {
+        return Err(PackageError::Invalid("invalid setup metadata"));
+    }
+    Ok(())
+}
+
+fn valid_portable_file_name(value: &str) -> bool {
+    if value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.ends_with(['.', ' '])
+        || value
+            .chars()
+            .any(|character| character.is_control() || r#"<>:"/\|?*"#.contains(character))
+    {
+        return false;
+    }
+    let stem = value
+        .split('.')
+        .next()
+        .unwrap_or(value)
+        .to_ascii_uppercase();
+    !matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+fn validate_setup_bytes(contents: &[u8], expected: &[u8; 32]) -> Result<(), PackageError> {
+    if contents.is_empty() || contents.len() > MAX_SETUP_PAYLOAD_BYTES {
+        return Err(PackageError::Invalid("setup payload is empty or too large"));
+    }
+    let actual: [u8; 32] = Sha256::digest(contents).into();
+    if &actual != expected {
+        return Err(PackageError::Invalid(
+            "setup payload checksum does not match",
+        ));
+    }
     Ok(())
 }
 
@@ -322,6 +476,34 @@ mod tests {
     };
 
     #[test]
+    fn setup_payload_rejects_unsafe_names_and_inconsistent_digests() {
+        let contents = b"[CAR]\nMODEL=test\n";
+        let template = SessionPackageSetup {
+            simulator_key: "assetto-corsa".into(),
+            source_car_id: "test-car".into(),
+            source_track_id: "test-track".into(),
+            layout_id: None,
+            name: "CON.ini".into(),
+            source_archive: None,
+            content_sha256: Sha256::digest(contents).into(),
+            content_base64: String::new(),
+            confirmed_at: "2026-08-23T12:00:00Z".into(),
+        };
+        assert!(encode_setup_payload(template.clone(), contents).is_err());
+        assert!(
+            encode_setup_payload(
+                SessionPackageSetup {
+                    name: "safe.ini".into(),
+                    content_sha256: [0; 32],
+                    ..template
+                },
+                contents
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn session_package_round_trip_preserves_metadata_laps_and_telemetry() {
         let telemetry = encode_frames(
@@ -334,6 +516,23 @@ mod tests {
                 .collect::<Vec<_>>(),
         )
         .expect("telemetry");
+        let setup_contents = b"[CAR]\nMODEL=ks_mazda_mx5_cup\n";
+        let setup_digest: [u8; 32] = Sha256::digest(setup_contents).into();
+        let confirmed_setup = encode_setup_payload(
+            SessionPackageSetup {
+                simulator_key: "assetto-corsa".into(),
+                source_car_id: "ks_mazda_mx5_cup".into(),
+                source_track_id: "ks_silverstone".into(),
+                layout_id: Some("gp".into()),
+                name: "shared-race.ini".into(),
+                source_archive: Some("alex-setups.zip".into()),
+                content_sha256: setup_digest,
+                content_base64: String::new(),
+                confirmed_at: "2026-08-22T12:10:00Z".into(),
+            },
+            setup_contents,
+        )
+        .expect("setup payload");
         let manifest = SessionPackageManifest {
             format_version: PACKAGE_VERSION,
             telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
@@ -379,18 +578,24 @@ mod tests {
                 sample_count: 3,
             }],
             sample_count: 3,
+            confirmed_setup: Some(confirmed_setup),
         };
         let mut legacy_manifest = serde_json::to_value(&manifest).expect("legacy manifest");
         legacy_manifest["session"]
             .as_object_mut()
             .expect("session object")
             .remove("conditions");
+        legacy_manifest
+            .as_object_mut()
+            .expect("manifest object")
+            .remove("confirmed_setup");
         let legacy_manifest: SessionPackageManifest =
             serde_json::from_value(legacy_manifest).expect("legacy package metadata");
         assert_eq!(
             legacy_manifest.session.conditions,
             crate::metadata::SessionConditions::default()
         );
+        assert_eq!(legacy_manifest.confirmed_setup, None);
 
         let mut package_bytes = Vec::new();
         write_compact_package(&mut package_bytes, Cursor::new(&telemetry), &manifest)
@@ -403,6 +608,17 @@ mod tests {
         )
         .expect("read package");
         assert_eq!(package.manifest, manifest);
+        assert_eq!(
+            decode_setup_payload(
+                package
+                    .manifest
+                    .confirmed_setup
+                    .as_ref()
+                    .expect("confirmed setup")
+            )
+            .expect("decode setup"),
+            setup_contents
+        );
         assert_eq!(
             sample_count(package.telemetry).expect("sample count"),
             manifest.sample_count

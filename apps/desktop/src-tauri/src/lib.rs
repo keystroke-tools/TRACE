@@ -1,11 +1,12 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Seek, SeekFrom, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::Manager;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use trace_ac::AcAdapter;
@@ -22,19 +23,22 @@ use trace_storage::{
         TELEMETRY_SCHEMA_VERSION, TelemetryColumns, export_core_csv, read_columns_range,
         read_lap_metrics, sample_count,
     },
-    metadata::{CompatibleSetup, MetadataStore, SavedComparison, SessionSummary},
+    metadata::{CompatibleSetup, MetadataStore, NewSetupImport, SavedComparison, SessionSummary},
     package::{
-        PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest, imported_records, read_package,
-        write_compact_package,
+        MAX_SETUP_PAYLOAD_BYTES, PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest,
+        SessionPackageSetup, decode_setup_payload, encode_setup_payload, imported_records,
+        read_package, write_compact_package,
     },
 };
 
 mod ac_content;
 mod capture;
+mod setup_analysis;
 mod setup_import;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
+use setup_analysis::compare_setups;
 use setup_import::{detect_setup_folder, import_setup_archives, setup_importers};
 
 #[derive(Serialize)]
@@ -248,6 +252,7 @@ struct SessionImport {
     session_id: String,
     lap_count: usize,
     sample_count: u64,
+    setup_name: Option<String>,
 }
 
 const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -387,6 +392,50 @@ fn compatible_setups(
     store
         .compatible_setups(&session_id, 12)
         .map_err(|error| format!("failed to find compatible setups: {error:?}"))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn confirm_session_setup(
+    app: tauri::AppHandle,
+    session_id: String,
+    setup_id: String,
+) -> Result<Vec<CompatibleSetup>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let confirmed_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| error.to_string())?;
+    store
+        .confirm_session_setup(&session_id, &setup_id, &confirmed_at)
+        .map_err(|error| format!("failed to confirm session setup: {error:?}"))?;
+    store
+        .compatible_setups(&session_id, 12)
+        .map_err(|error| format!("failed to refresh compatible setups: {error:?}"))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn clear_session_setup(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<Vec<CompatibleSetup>, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .clear_session_setup(&session_id)
+        .map_err(|error| format!("failed to clear session setup: {error:?}"))?;
+    store
+        .compatible_setups(&session_id, 12)
+        .map_err(|error| format!("failed to refresh compatible setups: {error:?}"))
 }
 
 #[tauri::command]
@@ -1403,13 +1452,53 @@ fn trace_package_manifest(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let confirmed_setup = package_confirmed_setup(store, session_id)?;
     Ok(SessionPackageManifest {
         format_version: PACKAGE_VERSION,
         telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
         session,
         laps,
         sample_count,
+        confirmed_setup,
     })
+}
+
+fn package_confirmed_setup(
+    store: &MetadataStore,
+    session_id: &str,
+) -> Result<Option<SessionPackageSetup>, String> {
+    let Some(setup) = store
+        .confirmed_session_setup(session_id)
+        .map_err(|error| format!("failed to read confirmed setup: {error:?}"))?
+    else {
+        return Ok(None);
+    };
+    let file = File::open(&setup.installed_path)
+        .map_err(|error| format!("failed to open confirmed setup {}: {error}", setup.name))?;
+    let mut contents = Vec::new();
+    file.take(
+        u64::try_from(MAX_SETUP_PAYLOAD_BYTES)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1),
+    )
+    .read_to_end(&mut contents)
+    .map_err(|error| format!("failed to read confirmed setup {}: {error}", setup.name))?;
+    let payload = encode_setup_payload(
+        SessionPackageSetup {
+            simulator_key: setup.simulator_key,
+            source_car_id: setup.source_car_id,
+            source_track_id: setup.source_track_id,
+            layout_id: setup.layout_id,
+            name: setup.name,
+            source_archive: setup.source_archive,
+            content_sha256: setup.content_sha256,
+            content_base64: String::new(),
+            confirmed_at: setup.confirmed_at,
+        },
+        &contents,
+    )
+    .map_err(|error| format!("confirmed setup is no longer exportable: {error:?}"))?;
+    Ok(Some(payload))
 }
 
 #[tauri::command]
@@ -1492,6 +1581,9 @@ fn import_session(app: tauri::AppHandle, path: String) -> Result<SessionImport, 
                 &manifest.session.tags,
             )
             .map_err(|error| format!("failed to restore session details: {error:?}"))?;
+        if let Some(setup) = &manifest.confirmed_setup {
+            restore_package_setup(&data_directory, &mut metadata, &session_id, setup)?;
+        }
         Ok::<(), String>(())
     })();
     if let Err(error) = import_result {
@@ -1508,7 +1600,81 @@ fn import_session(app: tauri::AppHandle, path: String) -> Result<SessionImport, 
         session_id,
         lap_count: manifest.laps.len(),
         sample_count: manifest.sample_count,
+        setup_name: manifest.confirmed_setup.map(|setup| setup.name),
     })
+}
+
+fn restore_package_setup(
+    data_directory: &Path,
+    metadata: &mut MetadataStore,
+    session_id: &str,
+    setup: &SessionPackageSetup,
+) -> Result<(), String> {
+    let contents = decode_setup_payload(setup)
+        .map_err(|error| format!("invalid packaged setup: {error:?}"))?;
+    let digest = setup.content_sha256.iter().fold(
+        String::with_capacity(setup.content_sha256.len() * 2),
+        |mut output, byte| {
+            use std::fmt::Write as _;
+            write!(output, "{byte:02x}").expect("writing to String cannot fail");
+            output
+        },
+    );
+    let setup_directory = data_directory.join("setup-library").join(&digest);
+    fs::create_dir_all(&setup_directory)
+        .map_err(|error| format!("failed to prepare imported setup storage: {error}"))?;
+    let setup_path = setup_directory.join(&setup.name);
+    let created = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&setup_path)
+    {
+        Ok(mut file) => {
+            if let Err(error) = file.write_all(&contents).and_then(|()| file.sync_all()) {
+                drop(file);
+                let _ = fs::remove_file(&setup_path);
+                return Err(format!("failed to restore packaged setup: {error}"));
+            }
+            true
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let existing = fs::read(&setup_path)
+                .map_err(|read_error| format!("failed to verify restored setup: {read_error}"))?;
+            if existing != contents {
+                return Err("restored setup path contains different data".into());
+            }
+            false
+        }
+        Err(error) => return Err(format!("failed to create restored setup: {error}")),
+    };
+    let imported_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| error.to_string())?;
+    let mut identity = Sha256::new();
+    identity.update(setup.simulator_key.as_bytes());
+    identity.update([0]);
+    identity.update(setup_path.to_string_lossy().as_bytes());
+    let record = NewSetupImport {
+        id: format!("setup-{:x}", identity.finalize()),
+        simulator_key: setup.simulator_key.clone(),
+        source_car_id: setup.source_car_id.clone(),
+        source_track_id: setup.source_track_id.clone(),
+        layout_id: setup.layout_id.clone(),
+        name: setup.name.clone(),
+        installed_path: setup_path.to_string_lossy().into_owned(),
+        source_archive: setup.source_archive.clone(),
+        content_sha256: setup.content_sha256,
+        imported_at,
+    };
+    if let Err(error) =
+        metadata.restore_package_session_setup(session_id, &record, &setup.confirmed_at)
+    {
+        if created {
+            let _ = fs::remove_file(&setup_path);
+        }
+        return Err(format!("failed to index packaged setup: {error:?}"));
+    }
+    Ok(())
 }
 
 fn unique_import_session_id() -> String {
@@ -2023,6 +2189,9 @@ pub fn run() {
             select_simulator,
             recent_sessions,
             compatible_setups,
+            confirm_session_setup,
+            clear_session_setup,
+            compare_setups,
             session_lap_metrics,
             visualize_session_lap,
             compare_session_laps,
@@ -2071,5 +2240,69 @@ mod tests {
     #[test]
     fn unknown_simulator_keys_have_a_readable_fallback_name() {
         assert_eq!(simulator_name("example-racing-sim"), "Example Racing Sim");
+    }
+
+    #[test]
+    fn packaged_setup_is_restored_and_linked_to_imported_session() {
+        use trace_storage::metadata::{NewSession, SessionConditions};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("trace-package-setup-{nonce}"));
+        fs::create_dir_all(&directory).expect("test directory");
+        let mut metadata = MetadataStore::open(&directory.join("trace.sqlite")).expect("metadata");
+        metadata
+            .create_session(&NewSession {
+                id: "imported-session".into(),
+                simulator_id: "sim-assetto-corsa".into(),
+                simulator_key: "assetto-corsa".into(),
+                simulator_version: None,
+                track_id: Some("track-mugello".into()),
+                source_track_id: Some("mugello".into()),
+                layout_id: None,
+                track_display_name: Some("Mugello".into()),
+                car_id: Some("car-tatuusfa1".into()),
+                source_car_id: Some("tatuusfa1".into()),
+                car_display_name: Some("Tatuus FA01".into()),
+                started_at: "2026-08-23T10:00:00Z".into(),
+                session_type: Some("practice".into()),
+                source_kind: "imported".into(),
+                conditions: SessionConditions::default(),
+            })
+            .expect("session");
+        let contents = b"[CAR]\nMODEL=tatuusfa1\n[ARB]\nFRONT=3\n";
+        let digest: [u8; 32] = Sha256::digest(contents).into();
+        let setup = encode_setup_payload(
+            SessionPackageSetup {
+                simulator_key: "assetto-corsa".into(),
+                source_car_id: "tatuusfa1".into(),
+                source_track_id: "mugello".into(),
+                layout_id: None,
+                name: "race.ini".into(),
+                source_archive: Some("friend-setups.zip".into()),
+                content_sha256: digest,
+                content_base64: String::new(),
+                confirmed_at: "2026-08-23T10:05:00Z".into(),
+            },
+            contents,
+        )
+        .expect("payload");
+
+        restore_package_setup(&directory, &mut metadata, "imported-session", &setup)
+            .expect("restore setup");
+        let confirmed = metadata
+            .confirmed_session_setup("imported-session")
+            .expect("query")
+            .expect("confirmed setup");
+        assert_eq!(confirmed.name, "race.ini");
+        assert_eq!(confirmed.confirmation_source, "package_confirmed");
+        assert_eq!(
+            fs::read(confirmed.installed_path).expect("setup file"),
+            contents
+        );
+        drop(metadata);
+        fs::remove_dir_all(directory).expect("cleanup");
     }
 }

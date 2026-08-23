@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 8;
+const SCHEMA_VERSION: u32 = 9;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
@@ -16,6 +16,7 @@ const MIGRATION_5: &str = include_str!("../migrations/0005_lap_track_limits.sql"
 const MIGRATION_6: &str = include_str!("../migrations/0006_simulator_install_paths.sql");
 const MIGRATION_7: &str = include_str!("../migrations/0007_profile_and_saved_comparisons.sql");
 const MIGRATION_8: &str = include_str!("../migrations/0008_setup_library.sql");
+const MIGRATION_9: &str = include_str!("../migrations/0009_session_setup_links.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -177,6 +178,38 @@ pub struct CompatibleSetup {
     pub installed_path: String,
     pub source_archive: Option<String>,
     pub imported_at: String,
+    pub confirmed: bool,
+    pub confirmed_at: Option<String>,
+    pub confirmation_source: Option<String>,
+}
+
+/// Full local record for the setup explicitly confirmed against one session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfirmedSessionSetup {
+    pub id: String,
+    pub simulator_key: String,
+    pub source_car_id: String,
+    pub source_track_id: String,
+    pub layout_id: Option<String>,
+    pub name: String,
+    pub installed_path: String,
+    pub source_archive: Option<String>,
+    pub content_sha256: [u8; 32],
+    pub imported_at: String,
+    pub confirmed_at: String,
+    pub confirmation_source: String,
+}
+
+/// Filesystem and compatibility identity for one setup library entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SetupFileRecord {
+    pub id: String,
+    pub simulator_key: String,
+    pub source_car_id: String,
+    pub source_track_id: String,
+    pub layout_id: Option<String>,
+    pub name: String,
+    pub installed_path: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -227,83 +260,27 @@ impl MetadataStore {
                 supported: SCHEMA_VERSION,
             });
         }
-        if current < 1 {
+        let migrations = [
+            (1_u32, MIGRATION_1),
+            (2, MIGRATION_2),
+            (3, MIGRATION_3),
+            (4, MIGRATION_4),
+            (5, MIGRATION_5),
+            (6, MIGRATION_6),
+            (7, MIGRATION_7),
+            (8, MIGRATION_8),
+            (9, MIGRATION_9),
+        ];
+        for (version, migration) in migrations {
+            if current >= version {
+                continue;
+            }
             let transaction = connection.transaction().map_err(MetadataError::from)?;
             transaction
-                .execute_batch(MIGRATION_1)
+                .execute_batch(migration)
                 .map_err(MetadataError::from)?;
             transaction
-                .pragma_update(None, "user_version", 1)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 2 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_2)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 2)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 3 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_3)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 3)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 4 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_4)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 4)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 5 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_5)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 5)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 6 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_6)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 6)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 7 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_7)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 7)
-                .map_err(MetadataError::from)?;
-            transaction.commit().map_err(MetadataError::from)?;
-        }
-        if current < 8 {
-            let transaction = connection.transaction().map_err(MetadataError::from)?;
-            transaction
-                .execute_batch(MIGRATION_8)
-                .map_err(MetadataError::from)?;
-            transaction
-                .pragma_update(None, "user_version", 8)
+                .pragma_update(None, "user_version", version)
                 .map_err(MetadataError::from)?;
             transaction.commit().map_err(MetadataError::from)?;
         }
@@ -648,7 +625,8 @@ impl MetadataStore {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT sl.id, sl.name, sl.installed_path, sl.source_archive, sl.imported_at
+                "SELECT sl.id, sl.name, sl.installed_path, sl.source_archive, sl.imported_at,
+                        ssl.setup_id IS NOT NULL, ssl.confirmed_at, ssl.relationship
                  FROM sessions s
                  JOIN simulators sim ON sim.id = s.simulator_id
                  JOIN tracks t ON t.id = s.track_id
@@ -658,6 +636,8 @@ impl MetadataStore {
                   AND sl.source_track_id = t.source_track_id COLLATE NOCASE
                   AND sl.layout_id = t.layout_id COLLATE NOCASE
                   AND sl.source_car_id = c.source_car_id COLLATE NOCASE
+                 LEFT JOIN session_setup_links ssl
+                   ON ssl.session_id = s.id AND ssl.setup_id = sl.id
                  WHERE s.id = ?1
                  ORDER BY sl.imported_at DESC, sl.name COLLATE NOCASE, sl.id
                  LIMIT ?2",
@@ -672,10 +652,191 @@ impl MetadataStore {
                     installed_path: row.get(2)?,
                     source_archive: row.get(3)?,
                     imported_at: row.get(4)?,
+                    confirmed: row.get(5)?,
+                    confirmed_at: row.get(6)?,
+                    confirmation_source: row.get(7)?,
                 })
             })
             .map_err(MetadataError::from)?;
         rows.collect::<Result<Vec<_>, _>>()
+            .map_err(MetadataError::from)
+    }
+
+    /// Records the user's explicit claim that a compatible setup was used for a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] if the session/setup pair is missing, incompatible, or
+    /// cannot be stored.
+    pub fn confirm_session_setup(
+        &mut self,
+        session_id: &str,
+        setup_id: &str,
+        confirmed_at: &str,
+    ) -> Result<(), MetadataError> {
+        self.link_session_setup(session_id, setup_id, confirmed_at, "user_confirmed")
+    }
+
+    /// Restores a setup and its sender-confirmed session relationship from a package.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when setup metadata or its relationship is invalid.
+    pub fn restore_package_session_setup(
+        &mut self,
+        session_id: &str,
+        setup: &NewSetupImport,
+        confirmed_at: &str,
+    ) -> Result<(), MetadataError> {
+        self.save_setup_import(setup)?;
+        self.link_session_setup(session_id, &setup.id, confirmed_at, "package_confirmed")
+    }
+
+    fn link_session_setup(
+        &mut self,
+        session_id: &str,
+        setup_id: &str,
+        confirmed_at: &str,
+        relationship: &str,
+    ) -> Result<(), MetadataError> {
+        if confirmed_at.is_empty()
+            || confirmed_at.chars().count() > 64
+            || confirmed_at.chars().any(char::is_control)
+            || !matches!(relationship, "user_confirmed" | "package_confirmed")
+        {
+            return Err(MetadataError::InvalidRecord(
+                "invalid setup confirmation timestamp".into(),
+            ));
+        }
+        let compatible = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM sessions s
+                    JOIN simulators sim ON sim.id = s.simulator_id
+                    JOIN tracks t ON t.id = s.track_id
+                    JOIN cars c ON c.id = s.car_id
+                    JOIN setup_library sl ON sl.id = ?2
+                    WHERE s.id = ?1
+                      AND sl.simulator_key = sim.key
+                      AND sl.source_track_id = t.source_track_id COLLATE NOCASE
+                      AND sl.layout_id = t.layout_id COLLATE NOCASE
+                      AND sl.source_car_id = c.source_car_id COLLATE NOCASE
+                 )",
+                params![session_id, setup_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(MetadataError::from)?;
+        if !compatible {
+            return Err(MetadataError::InvalidRecord(
+                "setup is not compatible with this session".into(),
+            ));
+        }
+        self.connection
+            .execute(
+                "INSERT INTO session_setup_links
+                 (session_id, setup_id, relationship, confirmed_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(session_id) DO UPDATE SET
+                    setup_id = excluded.setup_id,
+                    relationship = excluded.relationship,
+                    confirmed_at = excluded.confirmed_at",
+                params![session_id, setup_id, relationship, confirmed_at],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
+    /// Clears the user-confirmed setup relationship for one session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the database cannot update the relationship.
+    pub fn clear_session_setup(&mut self, session_id: &str) -> Result<(), MetadataError> {
+        self.connection
+            .execute(
+                "DELETE FROM session_setup_links WHERE session_id = ?1",
+                [session_id],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
+    /// Returns the full setup record explicitly confirmed for one session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the setup cannot be read or its digest is invalid.
+    pub fn confirmed_session_setup(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ConfirmedSessionSetup>, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT sl.id, sl.simulator_key, sl.source_car_id, sl.source_track_id,
+                        NULLIF(sl.layout_id, ''), sl.name, sl.installed_path,
+                        sl.source_archive, sl.content_sha256, sl.imported_at, ssl.confirmed_at,
+                        ssl.relationship
+                 FROM session_setup_links ssl
+                 JOIN setup_library sl ON sl.id = ssl.setup_id
+                 WHERE ssl.session_id = ?1",
+                [session_id],
+                |row| {
+                    let digest: Vec<u8> = row.get(8)?;
+                    let content_sha256 =
+                        <[u8; 32]>::try_from(digest.as_slice()).map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                8,
+                                Type::Blob,
+                                Box::new(error),
+                            )
+                        })?;
+                    Ok(ConfirmedSessionSetup {
+                        id: row.get(0)?,
+                        simulator_key: row.get(1)?,
+                        source_car_id: row.get(2)?,
+                        source_track_id: row.get(3)?,
+                        layout_id: row.get(4)?,
+                        name: row.get(5)?,
+                        installed_path: row.get(6)?,
+                        source_archive: row.get(7)?,
+                        content_sha256,
+                        imported_at: row.get(9)?,
+                        confirmed_at: row.get(10)?,
+                        confirmation_source: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(MetadataError::from)
+    }
+
+    /// Returns one setup library entry for bounded simulator-specific inspection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the setup cannot be queried.
+    pub fn setup_file(&self, setup_id: &str) -> Result<Option<SetupFileRecord>, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT id, simulator_key, source_car_id, source_track_id,
+                        NULLIF(layout_id, ''), name, installed_path
+                 FROM setup_library WHERE id = ?1",
+                [setup_id],
+                |row| {
+                    Ok(SetupFileRecord {
+                        id: row.get(0)?,
+                        simulator_key: row.get(1)?,
+                        source_car_id: row.get(2)?,
+                        source_track_id: row.get(3)?,
+                        layout_id: row.get(4)?,
+                        name: row.get(5)?,
+                        installed_path: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
             .map_err(MetadataError::from)
     }
 
@@ -1596,7 +1757,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 8);
+        assert_eq!(store.schema_version().expect("schema version"), 9);
 
         let mut statement = store
             .connection
@@ -1617,6 +1778,7 @@ mod tests {
         assert!(tables.contains(&"app_settings".to_owned()));
         assert!(tables.contains(&"saved_comparisons".to_owned()));
         assert!(tables.contains(&"setup_library".to_owned()));
+        assert!(tables.contains(&"session_setup_links".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
     }
 
@@ -1689,6 +1851,30 @@ mod tests {
             suggestions[0].source_archive.as_deref(),
             Some("team-pack.zip")
         );
+        assert!(!suggestions[0].confirmed);
+        store
+            .confirm_session_setup("session-1", "setup-race", "2026-08-23T08:05:00Z")
+            .expect("confirm setup");
+        let suggestions = store
+            .compatible_setups("session-1", 10)
+            .expect("confirmed suggestions");
+        assert!(suggestions[0].confirmed);
+        let confirmed = store
+            .confirmed_session_setup("session-1")
+            .expect("confirmed setup")
+            .expect("setup");
+        assert_eq!(confirmed.id, "setup-race");
+        assert_eq!(confirmed.content_sha256, [3; 32]);
+        assert!(
+            store
+                .confirm_session_setup("session-1", "setup-other-car", "2026-08-23T08:06:00Z")
+                .is_err()
+        );
+        store.clear_session_setup("session-1").expect("clear setup");
+        assert_eq!(
+            store.confirmed_session_setup("session-1").expect("setup"),
+            None
+        );
         assert!(matches!(
             store.compatible_setups("missing", 10),
             Err(MetadataError::RecordNotFound)
@@ -1713,7 +1899,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 8);
+        assert_eq!(store.schema_version().expect("schema version"), 9);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
