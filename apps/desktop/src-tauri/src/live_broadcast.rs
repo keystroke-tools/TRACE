@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::File,
     sync::{
         Arc, Mutex,
@@ -89,7 +90,7 @@ impl Default for LiveBroadcastStatus {
 #[derive(Clone)]
 pub struct SharedLiveBroadcast {
     status: Arc<Mutex<LiveBroadcastStatus>>,
-    credentials: Arc<Mutex<Option<InstallationCredentials>>>,
+    credentials: Arc<Mutex<HashMap<String, InstallationCredentials>>>,
     generation: Arc<AtomicU64>,
     local_server: Arc<Mutex<Option<LocalServer>>>,
     capture: Arc<Mutex<Option<ActiveCapture>>>,
@@ -114,7 +115,7 @@ impl Default for SharedLiveBroadcast {
         let (capture_events, _) = tokio::sync::broadcast::channel(128);
         Self {
             status: Arc::new(Mutex::new(LiveBroadcastStatus::default())),
-            credentials: Arc::new(Mutex::new(None)),
+            credentials: Arc::new(Mutex::new(HashMap::new())),
             generation: Arc::new(AtomicU64::new(0)),
             local_server: Arc::new(Mutex::new(None)),
             capture: Arc::new(Mutex::new(None)),
@@ -394,8 +395,8 @@ async fn run_recorded_broadcast(
                 status.error = Some(error);
             }
         });
-        if failed && let Ok(mut credentials) = shared.credentials.lock() {
-            *credentials = None;
+        if failed {
+            invalidate_credentials(&shared, &source.endpoint);
         }
     } else {
         finish_cancelled_broadcast(&shared);
@@ -420,8 +421,8 @@ async fn run_active_broadcast(
                 status.error = Some(error);
             }
         });
-        if failed && let Ok(mut credentials) = shared.credentials.lock() {
-            *credentials = None;
+        if failed {
+            invalidate_credentials(&shared, &source.endpoint);
         }
     } else {
         finish_cancelled_broadcast(&shared);
@@ -437,14 +438,12 @@ async fn publish_active_broadcast(
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|error| format!("could not prepare the live client: {error}"))?;
-    let credentials = installation_credentials(shared, &client, &source.endpoint).await?;
-    let created = create_live_session(
-        &client,
-        &source.endpoint,
-        &credentials,
-        source.state.clone(),
-    )
-    .await?;
+    if !shared.current(generation) {
+        return Ok(());
+    }
+    let (credentials, created) =
+        create_authenticated_live_session(shared, &client, &source.endpoint, source.state.clone())
+            .await?;
     let mut websocket = connect_publisher(&created, &credentials).await?;
     let (mut encoder, introduction) = LiveStreamEncoder::start(
         created.session_id.clone(),
@@ -541,17 +540,12 @@ async fn publish_recorded_broadcast(
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|error| format!("could not prepare the live client: {error}"))?;
-    let credentials = installation_credentials(shared, &client, &source.endpoint).await?;
     if !shared.current(generation) {
         return Ok(());
     }
-    let created = create_live_session(
-        &client,
-        &source.endpoint,
-        &credentials,
-        source.state.clone(),
-    )
-    .await?;
+    let (credentials, created) =
+        create_authenticated_live_session(shared, &client, &source.endpoint, source.state.clone())
+            .await?;
     if !shared.current(generation) {
         end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await?;
         return Ok(());
@@ -738,7 +732,8 @@ async fn installation_credentials(
         .credentials
         .lock()
         .map_err(|_| "publishing credential state is unavailable".to_owned())?
-        .clone()
+        .get(endpoint)
+        .cloned()
     {
         return Ok(credentials);
     }
@@ -756,8 +751,54 @@ async fn installation_credentials(
         .credentials
         .lock()
         .map_err(|_| "publishing credential state is unavailable".to_owned())?;
-    let selected = stored.get_or_insert_with(|| credentials.clone());
+    let selected = stored
+        .entry(endpoint.to_owned())
+        .or_insert_with(|| credentials.clone());
     Ok(selected.clone())
+}
+
+fn invalidate_credentials(shared: &SharedLiveBroadcast, endpoint: &str) {
+    if let Ok(mut credentials) = shared.credentials.lock() {
+        credentials.remove(endpoint);
+    }
+}
+
+async fn create_authenticated_live_session(
+    shared: &SharedLiveBroadcast,
+    client: &reqwest::Client,
+    endpoint: &str,
+    state: SessionState,
+) -> Result<(InstallationCredentials, CreateLiveSessionResponse), String> {
+    let mut credentials = installation_credentials(shared, client, endpoint).await?;
+    match create_live_session(client, endpoint, &credentials, state.clone()).await {
+        Ok(created) => Ok((credentials, created)),
+        Err(CreateSessionError::Unauthorized) => {
+            invalidate_credentials(shared, endpoint);
+            credentials = installation_credentials(shared, client, endpoint).await?;
+            create_live_session(client, endpoint, &credentials, state)
+                .await
+                .map(|created| (credentials, created))
+                .map_err(CreateSessionError::message)
+        }
+        Err(error) => Err(error.message()),
+    }
+}
+
+enum CreateSessionError {
+    Unauthorized,
+    Failed(String),
+}
+
+impl CreateSessionError {
+    fn message(self) -> String {
+        match self {
+            Self::Unauthorized => {
+                "live-session creation failed with 401 Unauthorized: publisher authentication failed"
+                    .to_owned()
+            }
+            Self::Failed(message) => message,
+        }
+    }
 }
 
 async fn create_live_session(
@@ -765,7 +806,7 @@ async fn create_live_session(
     endpoint: &str,
     credentials: &InstallationCredentials,
     state: SessionState,
-) -> Result<CreateLiveSessionResponse, String> {
+) -> Result<CreateLiveSessionResponse, CreateSessionError> {
     let response = client
         .post(format!("{endpoint}/api/v1/live-sessions"))
         .header("x-trace-installation-id", &credentials.installation_id)
@@ -773,12 +814,20 @@ async fn create_live_session(
         .json(&CreateLiveSessionRequest { session: state })
         .send()
         .await
-        .map_err(|error| format!("could not create a live session: {error}"))?;
+        .map_err(|error| {
+            CreateSessionError::Failed(format!("could not create a live session: {error}"))
+        })?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(CreateSessionError::Unauthorized);
+    }
     require_success(response, "live-session creation")
-        .await?
+        .await
+        .map_err(CreateSessionError::Failed)?
         .json::<CreateLiveSessionResponse>()
         .await
-        .map_err(|error| format!("live service returned an invalid session: {error}"))
+        .map_err(|error| {
+            CreateSessionError::Failed(format!("live service returned an invalid session: {error}"))
+        })
 }
 
 async fn end_live_session(
@@ -826,8 +875,10 @@ async fn replace_local_server(shared: &SharedLiveBroadcast, server: LocalServer)
         .ok()
         .and_then(|mut value| value.take());
     if let Some(previous) = previous {
+        invalidate_credentials(shared, previous.base_url());
         previous.shutdown().await;
     }
+    invalidate_credentials(shared, server.base_url());
     if let Ok(mut value) = shared.local_server.lock() {
         *value = Some(server);
     }
@@ -840,6 +891,7 @@ async fn stop_local_server(shared: &SharedLiveBroadcast) {
         .ok()
         .and_then(|mut value| value.take());
     if let Some(previous) = previous {
+        invalidate_credentials(shared, previous.base_url());
         previous.shutdown().await;
     }
 }
@@ -1096,5 +1148,49 @@ mod tests {
         let bounded = protocol_optional_text(Some("é".repeat(200))).expect("bounded text");
         assert!(bounded.len() <= 256);
         assert!(bounded.is_char_boundary(bounded.len()));
+    }
+
+    #[tokio::test]
+    async fn stale_local_credentials_are_rebootstrapped_after_server_restart() {
+        let shared = SharedLiveBroadcast::default();
+        let client = reqwest::Client::new();
+        let first = start_local_server(ServerConfig::new("http://127.0.0.1:0"), None)
+            .await
+            .expect("first local server");
+        let endpoint = first.base_url().to_owned();
+        let port = endpoint
+            .parse::<reqwest::Url>()
+            .expect("local URL")
+            .port()
+            .expect("local port");
+        let state = SessionState {
+            driver_name: Some("TRACE tester".to_owned()),
+            simulator: "assetto-corsa".to_owned(),
+            simulator_name: Some("Assetto Corsa".to_owned()),
+            simulator_mark: Some("AC".to_owned()),
+            car: Some("test-car".to_owned()),
+            track: Some("test-track".to_owned()),
+            layout: None,
+            session_type: Some("practice".to_owned()),
+            status: LiveStatus::Live,
+        };
+        let (first_credentials, _) =
+            create_authenticated_live_session(&shared, &client, &endpoint, state.clone())
+                .await
+                .expect("first live session");
+        first.shutdown().await;
+
+        let second = start_local_server(ServerConfig::new("http://127.0.0.1:0"), Some(port))
+            .await
+            .expect("replacement local server");
+        let (replacement_credentials, _) =
+            create_authenticated_live_session(&shared, &client, &endpoint, state)
+                .await
+                .expect("replacement live session");
+        assert_ne!(
+            first_credentials.installation_id,
+            replacement_credentials.installation_id
+        );
+        second.shutdown().await;
     }
 }
