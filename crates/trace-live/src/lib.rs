@@ -165,6 +165,12 @@ struct TimingEventTracker {
     sector_index: Option<u32>,
     previous_lap_time_s: Option<f32>,
     completed_sector_time_s: f64,
+    pending_lap: Option<PendingLap>,
+}
+
+struct PendingLap {
+    lap_index: u32,
+    fallback_duration_s: Option<f64>,
 }
 
 impl TimingEventTracker {
@@ -184,39 +190,27 @@ impl TimingEventTracker {
             self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
             self.completed_sector_time_s = 0.0;
             self.completed_laps = Some(completed_laps);
+            self.pending_lap = None;
+            return events;
+        }
+
+        if self.pending_lap.is_some() && sample.sector_index != self.sector_index {
+            events.extend(self.finish_pending_lap(sample));
+            self.completed_laps = Some(completed_laps);
+            self.sector_index = sample.sector_index;
+            self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
             return events;
         }
 
         if let Some(previous_completed) = self.completed_laps {
             if completed_laps > previous_completed {
-                let final_sector_duration = sample
-                    .last_sector_time_s
-                    .filter(|value| value.is_finite() && *value >= 0.0)
-                    .map(f64::from)
-                    .or_else(|| {
-                        self.previous_lap_time_s
-                            .map(f64::from)
-                            .map(|lap_time| (lap_time - self.completed_sector_time_s).max(0.0))
-                    });
-                if let (Some(sector_index), Some(duration_s)) =
-                    (self.sector_index, final_sector_duration)
-                {
-                    events.push(Payload::SectorEvent(SectorEvent {
-                        lap_index: previous_completed,
-                        sector_index,
-                        duration_s,
-                    }));
-                }
-                let measured_lap_time = final_sector_duration
-                    .map(|duration| self.completed_sector_time_s + duration)
-                    .filter(|duration| *duration > 0.0)
-                    .or_else(|| self.previous_lap_time_s.map(f64::from));
-                events.push(Payload::LapEvent(LapEvent {
+                self.pending_lap = Some(PendingLap {
                     lap_index: previous_completed,
-                    duration_s: measured_lap_time,
-                    validity: LapValidity::Unknown,
-                }));
-                self.completed_sector_time_s = 0.0;
+                    fallback_duration_s: self.previous_lap_time_s.map(f64::from),
+                });
+                if sample.sector_index != self.sector_index || sample.sector_index.is_none() {
+                    events.extend(self.finish_pending_lap(sample));
+                }
             } else if let (Some(previous_sector), Some(next_sector)) =
                 (self.sector_index, sample.sector_index)
                 && next_sector > previous_sector
@@ -245,6 +239,40 @@ impl TimingEventTracker {
         self.completed_laps = Some(completed_laps);
         self.sector_index = sample.sector_index;
         self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
+        events
+    }
+
+    fn finish_pending_lap(&mut self, sample: &LiveTelemetrySample) -> Vec<Payload> {
+        let Some(pending) = self.pending_lap.take() else {
+            return Vec::new();
+        };
+        let final_sector_duration = sample
+            .last_sector_time_s
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .map(f64::from)
+            .or_else(|| {
+                pending
+                    .fallback_duration_s
+                    .map(|lap_time| (lap_time - self.completed_sector_time_s).max(0.0))
+            });
+        let mut events = Vec::with_capacity(2);
+        if let (Some(sector_index), Some(duration_s)) = (self.sector_index, final_sector_duration) {
+            events.push(Payload::SectorEvent(SectorEvent {
+                lap_index: pending.lap_index,
+                sector_index,
+                duration_s,
+            }));
+        }
+        let measured_lap_time = final_sector_duration
+            .map(|duration| self.completed_sector_time_s + duration)
+            .filter(|duration| *duration > 0.0)
+            .or(pending.fallback_duration_s);
+        events.push(Payload::LapEvent(LapEvent {
+            lap_index: pending.lap_index,
+            duration_s: measured_lap_time,
+            validity: LapValidity::Unknown,
+        }));
+        self.completed_sector_time_s = 0.0;
         events
     }
 }
@@ -658,12 +686,24 @@ mod tests {
             })
         ));
 
-        let mut lap = sample(20_000_000, 0.6);
-        lap.completed_laps = Some(1);
-        lap.sector_index = Some(0);
-        lap.lap_time_s = Some(0.1);
-        lap.last_sector_time_s = Some(40.0);
-        let lap_messages = encoder.sample(&lap, 1_020).expect("lap sample");
+        let mut boundary = sample(20_000_000, 0.6);
+        boundary.completed_laps = Some(1);
+        boundary.sector_index = Some(1);
+        boundary.lap_time_s = Some(0.1);
+        boundary.last_sector_time_s = Some(20.0);
+        assert!(
+            encoder
+                .sample(&boundary, 1_020)
+                .expect("counter boundary")
+                .is_empty()
+        );
+
+        let mut wrap = sample(30_000_000, 0.6);
+        wrap.completed_laps = Some(1);
+        wrap.sector_index = Some(0);
+        wrap.lap_time_s = Some(0.2);
+        wrap.last_sector_time_s = Some(40.0);
+        let lap_messages = encoder.sample(&wrap, 1_030).expect("sector wrap");
         assert!(matches!(lap_messages[0].payload, Payload::SectorEvent(_)));
         assert!(matches!(
             lap_messages[1].payload,
@@ -673,6 +713,46 @@ mod tests {
                 validity: LapValidity::Unknown,
             })
         ));
+    }
+
+    #[test]
+    fn keeps_delayed_sector_wraps_attached_to_consecutive_laps() {
+        let mut tracker = TimingEventTracker::default();
+        let mut sectors = Vec::new();
+        for (completed_laps, sector_index, last_sector_time_s) in [
+            (0, 0, None),
+            (0, 1, Some(30.0)),
+            (0, 2, Some(40.0)),
+            (1, 2, Some(40.0)),
+            (1, 0, Some(50.0)),
+            (1, 1, Some(29.0)),
+            (1, 2, Some(39.0)),
+            (2, 2, Some(39.0)),
+            (2, 0, Some(49.0)),
+        ] {
+            let sample = LiveTelemetrySample {
+                completed_laps: Some(completed_laps),
+                sector_index: Some(sector_index),
+                last_sector_time_s,
+                ..LiveTelemetrySample::default()
+            };
+            for event in tracker.observe(&sample) {
+                if let Payload::SectorEvent(event) = event {
+                    sectors.push((event.lap_index, event.sector_index, event.duration_s));
+                }
+            }
+        }
+        assert_eq!(
+            sectors,
+            vec![
+                (0, 0, 30.0),
+                (0, 1, 40.0),
+                (0, 2, 50.0),
+                (1, 0, 29.0),
+                (1, 1, 39.0),
+                (1, 2, 49.0),
+            ]
+        );
     }
 
     #[test]

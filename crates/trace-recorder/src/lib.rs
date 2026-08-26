@@ -308,10 +308,17 @@ impl ActiveSession {
             return;
         }
         if let Some(duration_ns) = frame.lap.last_sector_time_ns.filter(|value| *value > 0) {
-            open.sectors.push(RecordedSector {
+            let sector = RecordedSector {
                 index: previous.saturating_add(1),
                 duration_ns,
-            });
+            };
+            if current < previous && open.started_at_boundary && open.sectors.is_empty() {
+                if let Some(completed) = self.laps.last_mut() {
+                    completed.sectors.push(sector);
+                }
+            } else {
+                open.sectors.push(sector);
+            }
         }
     }
 
@@ -456,10 +463,12 @@ mod tests {
             (1, 100, 0, 0, None),
             (2, 200, 0, 1, Some(30)),
             (3, 300, 0, 2, Some(40)),
-            (4, 400, 1, 0, Some(50)),
-            (5, 500, 1, 1, Some(29)),
-            (6, 600, 1, 2, Some(39)),
-            (7, 700, 2, 0, Some(49)),
+            (4, 400, 1, 2, Some(40)),
+            (5, 410, 1, 0, Some(50)),
+            (6, 500, 1, 1, Some(29)),
+            (7, 600, 1, 2, Some(39)),
+            (8, 700, 2, 2, Some(39)),
+            (9, 710, 2, 0, Some(49)),
         ] {
             let mut value = frame(sequence, elapsed, completed, 0);
             value.lap.current_sector_index = Some(sector);

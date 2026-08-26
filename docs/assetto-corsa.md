@@ -184,6 +184,10 @@ Sector boundaries are recorded only when AC's `currentSectorIndex` changes. The
 duration comes from the corresponding `lastSectorTime` value and is stored beside the
 completed lap in SQLite. No synthetic equal-thirds split is inferred. Recordings made
 before this metadata was available remain readable and show unavailable sector bars.
+AC can increment `completedLaps` a few frames before `currentSectorIndex` wraps back
+to zero. TRACE therefore waits for that sector wrap before attaching the final sector;
+the `lastSectorTime` visible at the earlier counter boundary still belongs to the
+preceding sector.
 
 Counter regression or a jump larger than one is rejected as ambiguous rather than
 silently producing incorrect sample ranges. TRACE aggregates AC's documented
