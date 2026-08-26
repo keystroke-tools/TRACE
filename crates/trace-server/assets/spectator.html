@@ -846,7 +846,9 @@
 				const rangeX = Math.max(1, maxX - minX),
 					rangeY = Math.max(1, maxY - minY);
 				const scale = Math.min((width - padding * 2) / rangeX, (height - padding * 2) / rangeY);
-				return (point) => ({ x: (point.x - (minX + maxX) / 2) * scale + width / 2, y: (point.y - (minY + maxY) / 2) * -scale + height / 2 });
+				// Match the desktop map's X/Z projection. Canvas already grows downward,
+				// so negating Z here mirrors the circuit relative to comparison views.
+				return (point) => ({ x: (point.x - (minX + maxX) / 2) * scale + width / 2, y: (point.y - (minY + maxY) / 2) * scale + height / 2 });
 			};
 			function drawMap() {
 				const { width, height, ratio } = resizeCanvas(mapCanvas);
