@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#101010" />
+        <title>TRACE // Pit Wall</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                font: 14px Inter, ui-sans-serif, system-ui, sans-serif;
+                background: #101010;
+                color: #f2f2f2;
+            }
+            * { box-sizing: border-box; }
+            body { margin: 0; min-width: 320px; min-height: 100vh; background: #101010; }
+            button { font: inherit; }
+            .shell { min-height: 100vh; display: grid; grid-template-rows: 56px auto 1fr; }
+            header { display: flex; align-items: center; gap: 20px; padding: 0 22px; border-bottom: 1px solid #343434; background: #151515; }
+            .brand { font-size: 18px; font-weight: 900; letter-spacing: .12em; white-space: nowrap; }
+            .brand i { color: #71df8b; font-style: normal; }
+            .identity { min-width: 0; display: flex; align-items: center; gap: 10px; color: #aaa; }
+            .identity strong { overflow: hidden; color: #eee; text-overflow: ellipsis; white-space: nowrap; }
+            .identity span { color: #666; }
+            .connection { margin-left: auto; display: flex; align-items: center; gap: 9px; color: #aaa; font: 700 11px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
+            .connection i { width: 8px; height: 8px; border-radius: 50%; background: #777; }
+            .connection.live i { background: #71df8b; box-shadow: 0 0 10px #71df8b; animation: pulse 1.4s infinite; }
+            .connection.warn i { background: #e7b55e; }
+            @keyframes pulse { 50% { opacity: .35; } }
+            .session-strip { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)); border-bottom: 1px solid #343434; background: #181818; }
+            .session-item { min-width: 0; padding: 11px 16px; border-right: 1px solid #303030; }
+            .label { color: #777; font: 700 10px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+            .session-item strong { display: block; overflow: hidden; margin-top: 5px; color: #ddd; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+            main { display: grid; min-height: 0; grid-template-columns: minmax(390px, 1.4fr) minmax(330px, 1fr); grid-template-rows: minmax(360px, 1fr) 250px; gap: 1px; padding: 1px; background: #343434; }
+            .panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #151515; }
+            .panel-head { position: absolute; z-index: 2; top: 0; right: 0; left: 0; display: flex; align-items: center; justify-content: space-between; padding: 15px 17px; pointer-events: none; }
+            .panel-head strong { font: 800 11px ui-monospace, monospace; letter-spacing: .12em; }
+            .panel-head span { color: #777; font: 10px ui-monospace, monospace; }
+            canvas { display: block; width: 100%; height: 100%; }
+            .map-empty { position: absolute; inset: 0; display: grid; place-content: center; color: #666; text-align: center; font-size: 12px; line-height: 1.7; }
+            .map-empty[hidden] { display: none; }
+            .map-empty strong { color: #999; font: 800 11px ui-monospace, monospace; letter-spacing: .1em; }
+            .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; padding-top: 46px; }
+            .metric { min-height: 92px; padding: 15px; border-top: 1px solid #292929; border-right: 1px solid #292929; }
+            .metric-value { margin-top: 9px; color: #eee; font: 700 clamp(20px, 2.2vw, 34px) ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+            .metric-value small { color: #777; font-size: 11px; }
+            .input-block { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 18px; border-top: 1px solid #292929; }
+            .input-row { display: grid; grid-template-columns: 56px 1fr 40px; align-items: center; gap: 10px; }
+            .input-row strong { color: #999; font: 700 10px ui-monospace, monospace; }
+            .input-row output { color: #ddd; text-align: right; font: 700 12px ui-monospace, monospace; }
+            .bar { height: 9px; overflow: hidden; background: #292929; }
+            .bar i { display: block; width: 0; height: 100%; transition: width 80ms linear; }
+            #throttleBar { background: #54ce79; }
+            #brakeBar { background: #cc5252; }
+            .trace-panel { grid-column: 1 / -1; }
+            .legend { display: flex; gap: 15px; color: #777; font: 10px ui-monospace, monospace; }
+            .legend span::before { display: inline-block; width: 16px; height: 2px; margin-right: 6px; vertical-align: 3px; content: ""; background: var(--line); }
+            .footer-note { position: absolute; right: 16px; bottom: 12px; color: #555; font: 9px ui-monospace, monospace; letter-spacing: .08em; }
+            @media (max-width: 900px) {
+                .session-strip { grid-template-columns: repeat(3, 1fr); }
+                main { grid-template-columns: 1fr; grid-template-rows: 440px auto 240px; }
+                .trace-panel { grid-column: 1; }
+            }
+            @media (max-width: 560px) {
+                header { padding: 0 13px; }
+                .identity span, #sim { display: none; }
+                .session-strip { grid-template-columns: repeat(2, 1fr); }
+                main { grid-template-rows: 340px auto 220px; }
+                .metrics { grid-template-columns: repeat(2, 1fr); }
+                .input-block { grid-template-columns: 1fr; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="shell">
+            <header>
+                <div class="brand">TRACE <i>//</i> PIT WALL</div>
+                <div class="identity"><strong id="driver">Unknown driver</strong><span>/</span><span id="track">Waiting for session</span></div>
+                <div class="connection" id="connection"><i></i><span>Connecting</span></div>
+            </header>
+            <section class="session-strip">
+                <div class="session-item"><span class="label">Simulator</span><strong id="sim">—</strong></div>
+                <div class="session-item"><span class="label">Car</span><strong id="car">—</strong></div>
+                <div class="session-item"><span class="label">Session</span><strong id="session">—</strong></div>
+                <div class="session-item"><span class="label">Lap time</span><strong id="lapTime">—</strong></div>
+                <div class="session-item"><span class="label">Sector</span><strong id="sector">—</strong></div>
+                <div class="session-item"><span class="label">Lap progress</span><strong id="lapProgress">—</strong></div>
+            </section>
+            <main>
+                <section class="panel map-panel">
+                    <div class="panel-head"><strong>TRACK MAP</strong><span id="mapSamples">0 POINTS</span></div>
+                    <canvas id="map"></canvas>
+                    <div class="map-empty" id="mapEmpty"><strong>BUILDING TRACK MAP</strong><span>The driven line appears as position data arrives.</span></div>
+                </section>
+                <section class="panel metrics">
+                    <div class="panel-head"><strong>CAR STATE</strong><span>LIVE TELEMETRY</span></div>
+                    <div class="metric"><span class="label">Speed</span><div class="metric-value"><span id="speed">0</span> <small>KM/H</small></div></div>
+                    <div class="metric"><span class="label">Gear</span><div class="metric-value" id="gear">N</div></div>
+                    <div class="metric"><span class="label">Engine</span><div class="metric-value"><span id="rpm">—</span> <small>RPM</small></div></div>
+                    <div class="metric"><span class="label">Fuel</span><div class="metric-value"><span id="fuel">—</span> <small>L</small></div></div>
+                    <div class="metric"><span class="label">Steering</span><div class="metric-value"><span id="steering">—</span> <small>°</small></div></div>
+                    <div class="metric"><span class="label">Track temp</span><div class="metric-value"><span id="trackTemp">—</span> <small>°C</small></div></div>
+                    <div class="input-block">
+                        <div class="input-row"><strong>THROTTLE</strong><div class="bar"><i id="throttleBar"></i></div><output id="throttle">0%</output></div>
+                        <div class="input-row"><strong>BRAKE</strong><div class="bar"><i id="brakeBar"></i></div><output id="brake">0%</output></div>
+                    </div>
+                </section>
+                <section class="panel trace-panel">
+                    <div class="panel-head">
+                        <strong>INPUT HISTORY</strong>
+                        <div class="legend"><span style="--line:#54ce79">THROTTLE</span><span style="--line:#cc5252">BRAKE</span><span style="--line:#65a7e8">SPEED</span></div>
+                    </div>
+                    <canvas id="trace"></canvas>
+                    <span class="footer-note">LATEST 20 SECONDS</span>
+                </section>
+            </main>
+        </div>
+        <script>
+            const sessionId = decodeURIComponent(location.pathname.split("/").pop());
+            const wsUrl = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/v1/live-sessions/${encodeURIComponent(sessionId)}/spectate`;
+            const connection = document.querySelector("#connection");
+            const mapCanvas = document.querySelector("#map");
+            const traceCanvas = document.querySelector("#trace");
+            const mapEmpty = document.querySelector("#mapEmpty");
+            const path = [];
+            const history = [];
+            let latestPosition = null;
+            let retry = 0;
+            let terminal = false;
+
+            const set = (id, value) => { document.querySelector(id).textContent = value; };
+            const valueOf = (channels, names, fallback = null) => {
+                for (const name of names) if (channels[name] != null) return Number(channels[name]);
+                return fallback;
+            };
+            const percent = (value) => Math.max(0, Math.min(100, (Number(value) || 0) * 100));
+            const setConnection = (label, kind = "") => {
+                connection.className = `connection ${kind}`;
+                connection.querySelector("span").textContent = label;
+            };
+            const formatGear = (value) => value === -1 ? "R" : value === 0 ? "N" : Number.isFinite(value) ? String(Math.round(value)) : "—";
+            const formatTime = (seconds) => {
+                if (!Number.isFinite(seconds)) return "—";
+                const minutes = Math.floor(seconds / 60);
+                return `${minutes}:${(seconds - minutes * 60).toFixed(3).padStart(6, "0")}`;
+            };
+            const resizeCanvas = (canvas) => {
+                const box = canvas.getBoundingClientRect();
+                const ratio = Math.min(devicePixelRatio || 1, 2);
+                const width = Math.max(1, Math.round(box.width * ratio));
+                const height = Math.max(1, Math.round(box.height * ratio));
+                if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+                return { width, height, ratio };
+            };
+            const fitPath = (points, width, height, padding) => {
+                const xs = points.map((point) => point.x), ys = points.map((point) => point.y);
+                const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+                const rangeX = Math.max(1, maxX - minX), rangeY = Math.max(1, maxY - minY);
+                const scale = Math.min((width - padding * 2) / rangeX, (height - padding * 2) / rangeY);
+                return (point) => ({ x: (point.x - (minX + maxX) / 2) * scale + width / 2, y: (point.y - (minY + maxY) / 2) * -scale + height / 2 });
+            };
+            function drawMap() {
+                const { width, height, ratio } = resizeCanvas(mapCanvas);
+                const context = mapCanvas.getContext("2d");
+                context.clearRect(0, 0, width, height);
+                if (path.length < 2) return;
+                const project = fitPath(path, width, height, 42 * ratio);
+                context.lineJoin = "round"; context.lineCap = "round";
+                context.strokeStyle = "#303030"; context.lineWidth = 14 * ratio;
+                context.beginPath(); path.forEach((point, index) => { const p = project(point); index ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y); }); context.stroke();
+                context.strokeStyle = "#777"; context.lineWidth = 2 * ratio; context.stroke();
+                if (latestPosition) {
+                    const marker = project(latestPosition);
+                    context.fillStyle = "#71df8b"; context.beginPath(); context.arc(marker.x, marker.y, 7 * ratio, 0, Math.PI * 2); context.fill();
+                    context.strokeStyle = "#101010"; context.lineWidth = 3 * ratio; context.stroke();
+                }
+            }
+            function drawTrace() {
+                const { width, height, ratio } = resizeCanvas(traceCanvas);
+                const context = traceCanvas.getContext("2d");
+                context.clearRect(0, 0, width, height);
+                context.strokeStyle = "#242424"; context.lineWidth = ratio;
+                for (let line = 1; line < 4; line++) { const y = (height * line) / 4; context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke(); }
+                if (history.length < 2) return;
+                const end = history.at(-1).time, start = end - 20;
+                const draw = (field, color, scale = 1) => {
+                    context.strokeStyle = color; context.lineWidth = 2 * ratio; context.beginPath(); let started = false;
+                    for (const sample of history) { if (sample.time < start) continue; const x = ((sample.time - start) / 20) * width; const y = height - Math.max(0, Math.min(1, sample[field] / scale)) * height; started ? context.lineTo(x, y) : context.moveTo(x, y); started = true; } context.stroke();
+                };
+                draw("throttle", "#54ce79"); draw("brake", "#cc5252"); draw("speed", "#65a7e8", 350);
+            }
+            function renderTelemetry(data) {
+                const channels = {};
+                for (const channel of data.channels || []) channels[channel.id] = Array.isArray(channel.values) ? channel.values.at(-1) : null;
+                const throttle = percent(valueOf(channels, ["driver.throttle"], 0));
+                const brake = percent(valueOf(channels, ["driver.brake"], 0));
+                const speed = Math.max(0, (valueOf(channels, ["vehicle.speed"], 0) || 0) * 3.6);
+                const elapsed = Number(data.base_elapsed_ns || 0) / 1e9;
+                const x = valueOf(channels, ["motion.position.x"]), y = valueOf(channels, ["motion.position.z"]);
+                set("#speed", Math.round(speed)); set("#gear", formatGear(valueOf(channels, ["vehicle.gear"]))); set("#rpm", Math.round(valueOf(channels, ["vehicle.engine_rpm"], 0)) || "—");
+                const fuel = valueOf(channels, ["vehicle.fuel"]); set("#fuel", Number.isFinite(fuel) ? fuel.toFixed(1) : "—");
+                const steering = valueOf(channels, ["driver.steering_angle"]); set("#steering", Number.isFinite(steering) ? Math.round(steering * 180 / Math.PI) : "—");
+                const temp = valueOf(channels, ["environment.track_temperature"]); set("#trackTemp", Number.isFinite(temp) ? Math.round(temp) : "—");
+                set("#lapTime", formatTime(valueOf(channels, ["lap.elapsed"]))); const sector = valueOf(channels, ["lap.sector_index"]); set("#sector", Number.isFinite(sector) ? `S${Math.round(sector) + 1}` : "—");
+                const progress = valueOf(channels, ["lap.normalized_position"]); set("#lapProgress", Number.isFinite(progress) ? `${Math.round(progress * 100)}%` : "—");
+                set("#throttle", `${Math.round(throttle)}%`); set("#brake", `${Math.round(brake)}%`); document.querySelector("#throttleBar").style.width = `${throttle}%`; document.querySelector("#brakeBar").style.width = `${brake}%`;
+                history.push({ time: elapsed, throttle: throttle / 100, brake: brake / 100, speed }); while (history.length && history[0].time < elapsed - 21) history.shift();
+                if (Number.isFinite(x) && Number.isFinite(y)) { latestPosition = { x, y }; const previous = path.at(-1); if (!previous || Math.hypot(previous.x - x, previous.y - y) > .5) path.push(latestPosition); if (path.length > 10000) path.shift(); mapEmpty.hidden = path.length > 1; set("#mapSamples", `${path.length} POINTS`); }
+                drawMap(); drawTrace();
+            }
+            function connect() {
+                const socket = new WebSocket(wsUrl);
+                socket.onopen = () => { retry = 0; setConnection("Live", "live"); };
+                socket.onerror = () => setConnection("Reconnecting", "warn");
+                socket.onclose = () => { if (terminal) return; setConnection("Reconnecting", "warn"); setTimeout(connect, Math.min(10000, 500 * 2 ** retry++)); };
+                socket.onmessage = (event) => {
+                    let message; try { message = JSON.parse(event.data); } catch { return; }
+                    const payload = message.payload || {};
+                    if (payload.type === "session_state") { const state = payload.data || {}; set("#driver", state.driver_name || "Unknown driver"); set("#sim", state.simulator || "—"); set("#track", state.track || "Unknown track"); set("#car", state.car || "—"); set("#session", state.session_type || "—"); if (state.status === "ended") { terminal = true; setConnection("Ended"); } }
+                    else if (payload.type === "telemetry_batch") renderTelemetry(payload.data || {});
+                    else if (payload.type === "end") { terminal = true; setConnection("Ended"); }
+                };
+            }
+            new ResizeObserver(() => { drawMap(); drawTrace(); }).observe(document.querySelector("main"));
+            connect();
+        </script>
+    </body>
+</html>
