@@ -20,7 +20,7 @@ use trace_storage::{
     metadata::{MetadataStore, NewSession, SessionConditions},
 };
 
-use crate::ac_content::AcContentNames;
+use crate::{ac_content::AcContentNames, live_broadcast::SharedLiveBroadcast};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -87,6 +87,7 @@ pub fn spawn<A, F>(
     data_directory: PathBuf,
     ac_race_config: Option<PathBuf>,
     status: SharedCaptureStatus,
+    live_broadcast: SharedLiveBroadcast,
     identity: &AdapterIdentity,
     adapter_factory: F,
 ) where
@@ -102,6 +103,7 @@ pub fn spawn<A, F>(
                 &data_directory,
                 ac_race_config.as_deref(),
                 &status,
+                &live_broadcast,
                 &mut adapter,
             );
         })
@@ -112,9 +114,16 @@ fn run(
     data_directory: &std::path::Path,
     ac_race_config: Option<&std::path::Path>,
     status: &SharedCaptureStatus,
+    live_broadcast: &SharedLiveBroadcast,
     adapter: &mut dyn SimulatorAdapter,
 ) {
-    let result = run_capture(data_directory, ac_race_config, status, adapter);
+    let result = run_capture(
+        data_directory,
+        ac_race_config,
+        status,
+        live_broadcast,
+        adapter,
+    );
     if let Err(error) = result {
         update_status(status, "error", 0, &format!("CAPTURE ERROR: {error}"));
         eprintln!("TRACE capture worker stopped: {error}");
@@ -125,6 +134,7 @@ fn run_capture(
     data_directory: &std::path::Path,
     ac_race_config: Option<&std::path::Path>,
     status: &SharedCaptureStatus,
+    live_broadcast: &SharedLiveBroadcast,
     adapter: &mut dyn SimulatorAdapter,
 ) -> Result<(), String> {
     std::fs::create_dir_all(data_directory).map_err(|error| error.to_string())?;
@@ -169,6 +179,7 @@ fn run_capture(
                             &mut blobs,
                             ac_race_config,
                             status,
+                            live_broadcast,
                         ) {
                             eprintln!("TRACE could not persist capture output: {error}");
                             update_status(status, "error", 0, "PERSISTENCE ERROR");
@@ -192,6 +203,7 @@ fn run_capture(
                         &mut blobs,
                         ac_race_config,
                         status,
+                        live_broadcast,
                     ) {
                         eprintln!("TRACE could not finalize disconnected capture: {error}");
                         update_status(status, "error", 0, "PERSISTENCE ERROR");
@@ -211,9 +223,11 @@ fn handle_output(
     blobs: &mut FileBlobStore,
     ac_race_config: Option<&std::path::Path>,
     status: &SharedCaptureStatus,
+    live_broadcast: &SharedLiveBroadcast,
 ) -> Result<(), String> {
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
+            live_broadcast.capture_started(&source, &seed);
             *active = Some(ActivePersistence::Pending {
                 source,
                 seed: seed.clone(),
@@ -222,6 +236,7 @@ fn handle_output(
             clear_live_inputs(status);
         }
         RecorderOutput::FrameAccepted(frame) => {
+            live_broadcast.capture_frame(&frame);
             update_live_inputs(status, &frame);
             if matches!(active, Some(ActivePersistence::Pending { .. })) {
                 let Some(ActivePersistence::Pending { source, seed }) = active.take() else {
@@ -249,6 +264,7 @@ fn handle_output(
                 .map_err(|error| format!("Arrow batch write failed: {error:?}"))?;
         }
         RecorderOutput::SessionCompleted(recording) => {
+            live_broadcast.capture_ended();
             let Some(persistence) = active.take() else {
                 return Err("completed recording has no persistence identity".into());
             };

@@ -1,7 +1,7 @@
 # TRACE Go Live service
 
-Status: local and hosted recorded-session publishing and the browser spectator page
-are implemented; active-capture publishing is the next slice.
+Status: local and hosted publishing support both recorded sessions and active captures;
+the browser spectator page is embedded in the same server binary.
 
 `trace-server` is the single service behind the configured TRACE endpoint. It owns
 the HTTP API, publisher ingestion, spectator fan-out, and browser spectator page.
@@ -120,9 +120,22 @@ Publisher credentials remain memory-only while the server credential store is al
 memory-only. A failed broadcast discards the cached credential so a later attempt can
 bootstrap against a restarted service.
 
+## Active-capture publishing
+
+While a simulator session is recording, the Live Capture page can publish it through
+the hosted service or an internal local-screen server. Accepted canonical frames enter
+a bounded in-process fan-out queue and are projected to the same 20 Hz protocol stream
+used by recorded replays. The capture thread never waits for the publisher: slow
+spectators, a full queue, or a transport failure may drop live-delivery frames but do
+not delay or cancel Arrow persistence.
+
+Stopping Go Live or ending/changing the simulator session publishes a terminal message.
+A publisher transport failure moves Go Live to an error state while local capture keeps
+running; restarting Go Live creates a fresh unlisted spectator session.
+
 ## Next slices
 
 1. Persist installation credentials and live-session lifecycle in the service database.
 2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
 3. Add a bounded seek bar and `LIVE ●` jump to the browser spectator page.
-4. Feed active capture frames through the same encoder without allowing transport failure to affect local recording.
+4. Add publisher resume acknowledgements so an active stream can reconnect without creating a new spectator URL.

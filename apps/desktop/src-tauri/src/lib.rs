@@ -41,7 +41,8 @@ mod setup_import;
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
 use live_broadcast::{
-    SharedLiveBroadcast, live_broadcast_status, start_recorded_live_broadcast, stop_live_broadcast,
+    SharedLiveBroadcast, live_broadcast_status, start_active_live_broadcast,
+    start_recorded_live_broadcast, stop_live_broadcast,
 };
 use setup_analysis::compare_setups;
 use setup_import::{detect_setup_folder, import_setup_archives, setup_importers};
@@ -2231,11 +2232,13 @@ pub fn run() {
                 .ok()
                 .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
             let status = app.state::<SharedCaptureStatus>().inner().clone();
+            let live_broadcast = app.state::<SharedLiveBroadcast>().inner().clone();
             obs_overlay::spawn(status.clone());
             capture::spawn(
                 directory,
                 ac_race_config,
                 status,
+                live_broadcast,
                 &adapter_identity,
                 AcAdapter::new,
             );
@@ -2263,6 +2266,7 @@ pub fn run() {
             live_settings,
             set_live_settings,
             live_broadcast_status,
+            start_active_live_broadcast,
             start_recorded_live_broadcast,
             stop_live_broadcast,
             saved_comparisons,

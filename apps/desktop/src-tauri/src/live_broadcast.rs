@@ -18,7 +18,8 @@ use tokio_tungstenite::{
         http::{HeaderValue, header::AUTHORIZATION},
     },
 };
-use trace_live::{LiveTelemetrySample, encode_recorded_session};
+use trace_domain::{Gear, SessionSeed, SourceDescriptor, TelemetryFrame};
+use trace_live::{LiveStreamEncoder, LiveTelemetrySample, encode_recorded_session};
 use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, InstallationCredentials, LiveStatus,
     SessionState,
@@ -28,6 +29,8 @@ use trace_storage::{
     ipc::{TelemetryColumns, read_columns_range},
     metadata::{MetadataStore, SessionSummary},
 };
+
+const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,20 +89,75 @@ pub struct SharedLiveBroadcast {
     credentials: Arc<Mutex<Option<InstallationCredentials>>>,
     generation: Arc<AtomicU64>,
     local_server: Arc<Mutex<Option<LocalServer>>>,
+    capture: Arc<Mutex<Option<ActiveCapture>>>,
+    capture_events: tokio::sync::broadcast::Sender<CaptureLiveEvent>,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveCapture {
+    source: SourceDescriptor,
+    seed: SessionSeed,
+}
+
+#[derive(Clone, Debug)]
+enum CaptureLiveEvent {
+    Started,
+    Frame(Box<TelemetryFrame>),
+    Ended,
 }
 
 impl Default for SharedLiveBroadcast {
     fn default() -> Self {
+        let (capture_events, _) = tokio::sync::broadcast::channel(128);
         Self {
             status: Arc::new(Mutex::new(LiveBroadcastStatus::default())),
             credentials: Arc::new(Mutex::new(None)),
             generation: Arc::new(AtomicU64::new(0)),
             local_server: Arc::new(Mutex::new(None)),
+            capture: Arc::new(Mutex::new(None)),
+            capture_events,
         }
     }
 }
 
 impl SharedLiveBroadcast {
+    pub fn capture_started(&self, source: &SourceDescriptor, seed: &SessionSeed) {
+        let capture = ActiveCapture {
+            source: source.clone(),
+            seed: seed.clone(),
+        };
+        if let Ok(mut current) = self.capture.lock() {
+            *current = Some(capture.clone());
+        }
+        let _ = self.capture_events.send(CaptureLiveEvent::Started);
+    }
+
+    pub fn capture_frame(&self, frame: &TelemetryFrame) {
+        if self.capture_events.receiver_count() > 0 {
+            let _ = self
+                .capture_events
+                .send(CaptureLiveEvent::Frame(Box::new(frame.clone())));
+        }
+    }
+
+    pub fn capture_ended(&self) {
+        if let Ok(mut current) = self.capture.lock() {
+            *current = None;
+        }
+        let _ = self.capture_events.send(CaptureLiveEvent::Ended);
+    }
+
+    fn subscribe_capture(&self) -> tokio::sync::broadcast::Receiver<CaptureLiveEvent> {
+        self.capture_events.subscribe()
+    }
+
+    fn active_capture(&self) -> Result<Option<ActiveCapture>, String> {
+        self.capture
+            .lock()
+            .map(|capture| capture.clone())
+            .map_err(|_| "active capture state is unavailable".to_owned())
+    }
+
     fn snapshot(&self) -> Result<LiveBroadcastStatus, String> {
         self.status
             .lock()
@@ -165,6 +223,12 @@ struct RecordedBroadcast {
     duration_ns: u64,
 }
 
+struct ActiveBroadcast {
+    endpoint: String,
+    state: SessionState,
+    events: tokio::sync::broadcast::Receiver<CaptureLiveEvent>,
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
 pub fn live_broadcast_status(
@@ -191,29 +255,8 @@ pub async fn start_recorded_live_broadcast(
             .await
             .map_err(|error| format!("recorded broadcast loader stopped: {error}"))??;
     let generation = state.begin(source_session_id, broadcast.duration_ns)?;
-    let endpoint = if options.mode == LiveBroadcastMode::Local {
-        let server =
-            match start_local_server(ServerConfig::new("http://127.0.0.1:0"), options.local_port)
-                .await
-            {
-                Ok(server) => server,
-                Err(error) => {
-                    state.update(generation, |status| {
-                        status.phase = LiveBroadcastPhase::Error;
-                        status.error = Some(format!(
-                            "could not start the local spectator service: {error}"
-                        ));
-                    });
-                    return state.snapshot();
-                }
-            };
-        let endpoint = server.base_url().to_owned();
-        replace_local_server(&state, server).await;
-        endpoint
-    } else {
-        stop_local_server(&state).await;
-        broadcast.endpoint.clone()
-    };
+    let endpoint =
+        prepare_endpoint(&state, options, broadcast.endpoint.clone(), generation).await?;
     let broadcast = RecordedBroadcast {
         endpoint,
         ..broadcast
@@ -221,6 +264,77 @@ pub async fn start_recorded_live_broadcast(
     let shared = state.inner().clone();
     tauri::async_runtime::spawn(async move {
         run_recorded_broadcast(shared, generation, broadcast).await;
+    });
+    state.snapshot()
+}
+
+async fn prepare_endpoint(
+    state: &SharedLiveBroadcast,
+    options: LiveBroadcastOptions,
+    hosted_endpoint: String,
+    generation: u64,
+) -> Result<String, String> {
+    if options.mode == LiveBroadcastMode::Hosted {
+        stop_local_server(state).await;
+        return Ok(hosted_endpoint);
+    }
+    let server = start_local_server(ServerConfig::new("http://127.0.0.1:0"), options.local_port)
+        .await
+        .map_err(|error| {
+            let message = format!("could not start the local spectator service: {error}");
+            state.update(generation, |status| {
+                status.phase = LiveBroadcastPhase::Error;
+                status.error = Some(message.clone());
+            });
+            message
+        })?;
+    let endpoint = server.base_url().to_owned();
+    replace_local_server(state, server).await;
+    Ok(endpoint)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub async fn start_active_live_broadcast(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedLiveBroadcast>,
+    options: LiveBroadcastOptions,
+) -> Result<LiveBroadcastStatus, String> {
+    let capture = state
+        .active_capture()?
+        .ok_or_else(|| "start a simulator session before going live".to_owned())?;
+    let events = state.subscribe_capture();
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let driver_name = store
+        .driver_profile_name()
+        .map_err(|error| format!("failed to read the local driver profile: {error:?}"))?;
+    let configured_endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?
+        .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let generation = state.begin("active-capture".to_owned(), 0)?;
+    let endpoint = prepare_endpoint(&state, options, configured_endpoint, generation).await?;
+    let source = ActiveBroadcast {
+        endpoint,
+        state: SessionState {
+            driver_name,
+            simulator: capture.source.simulator.as_str().to_owned(),
+            car: capture.seed.car_id,
+            track: capture.seed.track_id,
+            layout: capture.seed.layout_id,
+            session_type: capture.seed.session_type,
+            status: LiveStatus::Live,
+        },
+        events,
+    };
+    let shared = state.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        run_active_broadcast(shared, generation, source).await;
     });
     state.snapshot()
 }
@@ -258,6 +372,98 @@ async fn run_recorded_broadcast(
     } else {
         finish_cancelled_broadcast(&shared);
     }
+}
+
+async fn run_active_broadcast(
+    shared: SharedLiveBroadcast,
+    generation: u64,
+    mut source: ActiveBroadcast,
+) {
+    let result = publish_active_broadcast(&shared, generation, &mut source).await;
+    if shared.current(generation) {
+        let failed = result.is_err();
+        shared.update(generation, |status| match result {
+            Ok(()) => {
+                status.phase = LiveBroadcastPhase::Ended;
+                status.error = None;
+            }
+            Err(error) => {
+                status.phase = LiveBroadcastPhase::Error;
+                status.error = Some(error);
+            }
+        });
+        if failed && let Ok(mut credentials) = shared.credentials.lock() {
+            *credentials = None;
+        }
+    } else {
+        finish_cancelled_broadcast(&shared);
+    }
+}
+
+async fn publish_active_broadcast(
+    shared: &SharedLiveBroadcast,
+    generation: u64,
+    source: &mut ActiveBroadcast,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| format!("could not prepare the live client: {error}"))?;
+    let credentials = installation_credentials(shared, &client, &source.endpoint).await?;
+    let created = create_live_session(
+        &client,
+        &source.endpoint,
+        &credentials,
+        source.state.clone(),
+    )
+    .await?;
+    let mut websocket = connect_publisher(&created, &credentials).await?;
+    let (mut encoder, introduction) = LiveStreamEncoder::start(
+        created.session_id.clone(),
+        source.state.clone(),
+        unix_timestamp_ms(),
+    )
+    .map_err(|error| format!("active telemetry cannot be published: {error:?}"))?;
+    for envelope in introduction {
+        send_envelope(&mut websocket, &envelope).await?;
+    }
+    shared.update(generation, |status| {
+        status.phase = LiveBroadcastPhase::Live;
+        status.live_session_id = Some(created.session_id.clone());
+        status.spectator_url = Some(created.spectator_url.clone());
+        status.error = None;
+    });
+
+    let mut cancellation_check = tokio::time::interval(Duration::from_millis(250));
+    loop {
+        tokio::select! {
+            _ = cancellation_check.tick() => {
+                if !shared.current(generation) {
+                    break;
+                }
+            }
+            event = source.events.recv() => match event {
+                Ok(CaptureLiveEvent::Frame(frame)) => {
+                    let sample = live_sample_from_frame(&frame);
+                    if let Some(envelope) = encoder.sample(&sample, unix_timestamp_ms())
+                        .map_err(|error| format!("active telemetry cannot be published: {error:?}"))?
+                    {
+                        send_envelope(&mut websocket, &envelope).await?;
+                        shared.update(generation, |status| status.elapsed_ns = sample.elapsed_ns);
+                    }
+                }
+                Ok(CaptureLiveEvent::Ended | CaptureLiveEvent::Started)
+                | Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+            }
+        }
+    }
+    let terminal = encoder
+        .end("capture ended", unix_timestamp_ms())
+        .map_err(|error| format!("active telemetry cannot be ended: {error:?}"))?;
+    let _ = send_envelope(&mut websocket, &terminal).await;
+    let _ = websocket.close(None).await;
+    end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await
 }
 
 async fn publish_recorded_broadcast(
@@ -340,6 +546,78 @@ async fn publish_recorded_broadcast(
         .await
         .map_err(|error| format!("could not close the live publisher cleanly: {error}"))?;
     Ok(())
+}
+
+type PublisherSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn connect_publisher(
+    created: &CreateLiveSessionResponse,
+    credentials: &InstallationCredentials,
+) -> Result<PublisherSocket, String> {
+    let mut request = created
+        .publish_websocket_url
+        .as_str()
+        .into_client_request()
+        .map_err(|error| format!("live publisher URL is invalid: {error}"))?;
+    request.headers_mut().insert(
+        "x-trace-installation-id",
+        HeaderValue::from_str(&credentials.installation_id)
+            .map_err(|_| "installation identifier is invalid".to_owned())?,
+    );
+    request.headers_mut().insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
+            .map_err(|_| "publishing credential is invalid".to_owned())?,
+    );
+    tokio::time::timeout(Duration::from_secs(15), connect_async(request))
+        .await
+        .map_err(|_| "live publisher connection timed out".to_owned())?
+        .map(|(socket, _)| socket)
+        .map_err(|error| format!("could not connect to the live publisher: {error}"))
+}
+
+async fn send_envelope(
+    socket: &mut PublisherSocket,
+    envelope: &trace_protocol::Envelope,
+) -> Result<(), String> {
+    let encoded = serde_json::to_string(envelope)
+        .map_err(|error| format!("could not encode live telemetry: {error}"))?;
+    socket
+        .send(Message::Text(encoded.into()))
+        .await
+        .map_err(|error| format!("live publisher disconnected: {error}"))
+}
+
+fn live_sample_from_frame(frame: &TelemetryFrame) -> LiveTelemetrySample {
+    let position = frame.motion.position_m;
+    let environment = frame.environment;
+    LiveTelemetrySample {
+        elapsed_ns: frame.elapsed.0,
+        throttle: frame.inputs.throttle,
+        brake: frame.inputs.brake,
+        clutch: frame.inputs.clutch,
+        steering_angle_rad: frame.inputs.steering_angle_rad,
+        speed_mps: frame.vehicle.speed_mps,
+        engine_rpm: frame.vehicle.engine_rpm,
+        gear: frame.vehicle.gear.map(|gear| match gear {
+            Gear::Reverse => -1,
+            Gear::Neutral => 0,
+            Gear::Forward(value) => i16::from(value),
+            Gear::Unknown(value) => value,
+        }),
+        fuel_litres: frame.vehicle.fuel_litres,
+        lap_position: frame.lap.normalized_position,
+        lap_time_s: frame
+            .lap
+            .current_lap_time_ns
+            .map(|value| Duration::from_nanos(value).as_secs_f32()),
+        sector_index: frame.lap.current_sector_index,
+        position_x_m: position.map(|value| value.x),
+        position_z_m: position.map(|value| value.z),
+        ambient_temperature_c: environment.and_then(|value| value.ambient_temperature_c),
+        track_temperature_c: environment.and_then(|value| value.track_temperature_c),
+    }
 }
 
 async fn installation_credentials(

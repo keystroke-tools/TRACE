@@ -364,6 +364,7 @@ export interface TelemetryDataSource {
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(endpoint: string): Promise<LiveSettings>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
+	startActiveLiveBroadcast(options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
 	startRecordedLiveBroadcast(sessionId: string, options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
 	stopLiveBroadcast(): Promise<LiveBroadcastStatus>;
 	getSavedComparisons(): Promise<SavedComparison[]>;
@@ -888,6 +889,17 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async getLiveBroadcastStatus() {
 		return fixtureLiveBroadcastStatus;
 	},
+	async startActiveLiveBroadcast(options) {
+		fixtureLiveBroadcastStatus = {
+			phase: "live",
+			sourceSessionId: "active-capture",
+			liveSessionId: "preview-active-session",
+			spectatorUrl: `${options.mode === "local" ? "http://127.0.0.1:8080" : "https://live.simtrace.run"}/live/preview-active-session`,
+			elapsedNs: 0,
+			durationNs: 0,
+		};
+		return fixtureLiveBroadcastStatus;
+	},
 	async startRecordedLiveBroadcast(sessionId, options) {
 		const local = options.mode === "local";
 		fixtureLiveBroadcastStatus = {
@@ -1011,6 +1023,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	getLiveBroadcastStatus() {
 		return invoke<LiveBroadcastStatus>("live_broadcast_status");
+	},
+	startActiveLiveBroadcast(options) {
+		return invoke<LiveBroadcastStatus>("start_active_live_broadcast", { options });
 	},
 	startRecordedLiveBroadcast(sessionId, options) {
 		return invoke<LiveBroadcastStatus>("start_recorded_live_broadcast", { sessionId, options });

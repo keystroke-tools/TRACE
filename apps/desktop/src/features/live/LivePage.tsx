@@ -1,15 +1,23 @@
 import type { ReactNode } from "react";
-import type { TelemetryStatus } from "../../data-source";
+import type { LiveBroadcastOptions, LiveBroadcastStatus, TelemetryStatus } from "../../data-source";
 import { Metric, PageIntro, PanelTitle } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
 
 export function LivePage({
 	status,
+	liveBroadcast,
+	onStartLive,
+	onStopLive,
+	onCopyLiveLink,
 	onOpenSessions,
 	onSelectSimulator,
 }: {
 	status: TelemetryStatus | null;
+	liveBroadcast: LiveBroadcastStatus | null;
+	onStartLive: (options: LiveBroadcastOptions) => void;
+	onStopLive: () => void;
+	onCopyLiveLink: () => void;
 	onOpenSessions: () => void;
 	onSelectSimulator: (simulatorId: string) => Promise<void>;
 }) {
@@ -19,6 +27,11 @@ export function LivePage({
 	const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
 	const unavailableChannels = status?.channels.filter((channel) => !channel.available) ?? [];
 	const categories = Array.from(new Set(availableChannels.map((channel) => channel.category)));
+	const liveActive = liveBroadcast?.sourceSessionId === "active-capture" && ["connecting", "live", "ending"].includes(liveBroadcast.phase);
+	const localPort = () => {
+		const value = Number.parseInt(window.localStorage.getItem("trace.localSpectatorPort") ?? "", 10);
+		return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined;
+	};
 
 	return (
 		<>
@@ -33,6 +46,38 @@ export function LivePage({
 				}
 			/>
 			<SimulatorPicker status={status} onSelect={onSelectSimulator} />
+			<div className="mt-3 flex flex-wrap items-center gap-2 border border-trace-divider bg-trace-surface p-3">
+				<button
+					type="button"
+					disabled={!recording || (!!liveBroadcast && !["idle", "ended", "error"].includes(liveBroadcast.phase) && !liveActive)}
+					onClick={liveActive ? onStopLive : () => onStartLive({ mode: "hosted" })}
+					className="h-10 border border-trace-accent/60 bg-trace-accent-wash px-4 text-[12px] font-black tracking-[.08em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+				>
+					{liveActive ? (liveBroadcast?.phase === "ending" ? "ENDING…" : "STOP LIVE") : "GO LIVE"}
+				</button>
+				{!liveActive && (
+					<button
+						type="button"
+						disabled={!recording || (!!liveBroadcast && !["idle", "ended", "error"].includes(liveBroadcast.phase))}
+						onClick={() => onStartLive({ mode: "local", localPort: localPort() })}
+						className="h-10 border border-trace-divider bg-trace-deep px-4 text-[12px] font-black tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white disabled:text-trace-dim"
+					>
+						LOCAL SCREEN
+					</button>
+				)}
+				{liveActive && liveBroadcast?.spectatorUrl && (
+					<button
+						type="button"
+						onClick={onCopyLiveLink}
+						className="h-10 border border-trace-divider bg-trace-deep px-4 text-[12px] font-bold text-trace-soft hover:text-white"
+					>
+						COPY LIVE LINK
+					</button>
+				)}
+				<span className="ml-auto text-[11px] text-trace-dim">
+					{recording ? "Publish this capture without interrupting local recording." : "Start driving or play a replay to enable streaming."}
+				</span>
+			</div>
 			<div className="my-[14px] mb-6 grid grid-cols-4 border border-trace-divider max-[900px]:grid-cols-2">
 				<Metric label="SOURCE" value={status?.source ?? "INITIALISING"} accent />
 				<Metric label="STATE" value={status?.connection.toUpperCase() ?? "WAIT"} />

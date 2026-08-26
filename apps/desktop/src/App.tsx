@@ -46,6 +46,20 @@ export function App() {
 		}
 	}
 
+	async function startActiveBroadcast(options: LiveBroadcastOptions) {
+		try {
+			setLiveBroadcast(await telemetryDataSource.startActiveLiveBroadcast(options));
+			showToast({
+				kind: "success",
+				title: "Connecting active session",
+				message: options.mode === "local" ? "TRACE is starting a local spectator screen." : "TRACE is publishing the current simulator session.",
+				timeoutMs: 4_500,
+			});
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not start Go Live", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		}
+	}
+
 	async function stopLiveBroadcast() {
 		try {
 			setLiveBroadcast(await telemetryDataSource.stopLiveBroadcast());
@@ -111,7 +125,17 @@ export function App() {
 				}}
 			/>
 			<section className="trace-grid overflow-auto p-7">
-				{section === "LIVE" && <LivePage status={status} onOpenSessions={() => setSection("SESSIONS")} onSelectSimulator={selectSimulator} />}
+				{section === "LIVE" && (
+					<LivePage
+						status={status}
+						liveBroadcast={liveBroadcast}
+						onStartLive={(options) => void startActiveBroadcast(options)}
+						onStopLive={() => void stopLiveBroadcast()}
+						onCopyLiveLink={() => void copyLiveLink()}
+						onOpenSessions={() => setSection("SESSIONS")}
+						onSelectSimulator={selectSimulator}
+					/>
+				)}
 				{section === "SESSIONS" &&
 					(openSession ? (
 						openLapIndex == null ? (
