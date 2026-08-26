@@ -160,9 +160,16 @@ export function SessionDetail({
 				<div className="min-w-0">
 					<SectionHeading index="02">SESSION OVERVIEW</SectionHeading>
 					<h1 className="mt-3 truncate text-2xl font-black tracking-[-.02em]">{session.title ?? session.track}</h1>
-					<p className="mt-2 text-[13px] text-trace-muted">
-						{session.car} · {friendlySessionType(session)} · {formatSessionDate(session.startedAt)}
-					</p>
+					<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+						<p className="text-[13px] text-trace-muted">
+							{session.car} · {friendlySessionType(session)} · {formatSessionDate(session.startedAt)}
+						</p>
+						{(session.ownership !== "unknown" || session.driver) && (
+							<span className="hidden h-4 w-px bg-trace-divider sm:block" aria-hidden="true" />
+						)}
+						{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
+						{session.driver && <span className="text-[12px] text-trace-soft">{session.driver}</span>}
+					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
 					{thisSessionIsLive && liveBroadcast?.spectatorUrl && (
@@ -198,8 +205,6 @@ export function SessionDetail({
 											: "STREAM RECORDING"
 							: "STREAM RECORDING"}
 					</button>
-					{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
-					{session.driver && <span className="text-[12px] text-trace-soft">{session.driver}</span>}
 				</div>
 			</div>
 
