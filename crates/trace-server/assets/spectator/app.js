@@ -222,6 +222,30 @@ mapCanvas.addEventListener(
 	},
 	{ passive: false },
 );
+mapCanvas.addEventListener("pointerdown", (event) => {
+	if (!event.isPrimary || event.button !== 0) return;
+	event.preventDefault();
+	const startX = event.clientX;
+	const startY = event.clientY;
+	const startOffsetX = mapView.offsetX;
+	const startOffsetY = mapView.offsetY;
+	mapCanvas.setPointerCapture(event.pointerId);
+	mapCanvas.classList.add("panning");
+	const move = (moveEvent) => {
+		mapView.offsetX = startOffsetX + moveEvent.clientX - startX;
+		mapView.offsetY = startOffsetY + moveEvent.clientY - startY;
+		drawMap();
+	};
+	const finish = () => {
+		mapCanvas.classList.remove("panning");
+		mapCanvas.removeEventListener("pointermove", move);
+		mapCanvas.removeEventListener("pointerup", finish);
+		mapCanvas.removeEventListener("pointercancel", finish);
+	};
+	mapCanvas.addEventListener("pointermove", move);
+	mapCanvas.addEventListener("pointerup", finish);
+	mapCanvas.addEventListener("pointercancel", finish);
+});
 document.querySelector("#mapZoomIn").addEventListener("click", () => setMapZoom(mapView.scale * 1.35));
 document.querySelector("#mapZoomOut").addEventListener("click", () => setMapZoom(mapView.scale / 1.35));
 document.querySelector("#mapZoomReset").addEventListener("click", resetMapZoom);

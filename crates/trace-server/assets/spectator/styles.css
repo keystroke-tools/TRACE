@@ -337,6 +337,7 @@ canvas {
 	text-align: center;
 	font-size: 12px;
 	line-height: 1.7;
+	pointer-events: none;
 }
 .map-empty[hidden] {
 	display: none;
@@ -352,7 +353,11 @@ canvas {
 	grid-area: map;
 }
 .map-panel canvas {
-	cursor: zoom-in;
+	cursor: grab;
+	touch-action: none;
+}
+.map-panel canvas.panning {
+	cursor: grabbing;
 }
 .trace-resizer {
 	position: relative;
