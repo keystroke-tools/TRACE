@@ -575,7 +575,7 @@ export function TrackMap({
 		}
 	};
 	const mapControls = (
-		<div className="flex items-center gap-1">
+		<div className="ml-auto flex shrink-0 items-center gap-1">
 			{onRangeZoom && onRangeZoomLinked && (
 				<button
 					type="button"
@@ -623,9 +623,9 @@ export function TrackMap({
 		</div>
 	);
 	return (
-		<div ref={mapViewport} className="overscroll-contain border border-trace-divider bg-trace-surface">
+		<div ref={mapViewport} className="min-w-0 overflow-hidden overscroll-contain border border-trace-divider bg-trace-surface">
 			{onDismiss ? (
-				<div className="flex h-10 items-center border-b border-trace-divider px-2">
+				<div className="flex h-10 min-w-0 items-center overflow-hidden border-b border-trace-divider px-2">
 					<button
 						type="button"
 						onPointerDown={onFloatingDragStart}
@@ -644,19 +644,21 @@ export function TrackMap({
 					{mapControls}
 				</div>
 			) : (
-				<div className="flex h-12 items-center justify-between border-b border-trace-divider px-4">
-					<div>{mapRangeLabel && <span className="font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}</div>
-					<div className="ml-auto mr-4 flex items-center gap-4 font-mono text-[10px] font-bold text-trace-muted">
+				<div className="flex min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-trace-divider px-3 py-2">
+					<div className="min-w-0 shrink">
+						{mapRangeLabel && <span className="block truncate font-mono text-[10px] font-black text-trace-accent">{mapRangeLabel}</span>}
+					</div>
+					<div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-3 gap-y-1 font-mono text-[10px] font-bold text-trace-muted">
 						{comparison && (
 							<>
-								<span className="flex items-center gap-2">
+								<span className="flex items-center gap-2 whitespace-nowrap">
 									<span
 										className={`block w-6 border-t-2 ${comparisonIsFaster ? "" : "border-dashed"}`}
 										style={{ borderColor: referenceColour }}
 									/>
 									REFERENCE
 								</span>
-								<span className="flex items-center gap-2">
+								<span className="flex items-center gap-2 whitespace-nowrap">
 									<span
 										className={`block w-6 border-t-2 ${comparisonIsFaster ? "border-dashed" : ""}`}
 										style={{ borderColor: comparisonColour }}
@@ -665,7 +667,7 @@ export function TrackMap({
 								</span>
 							</>
 						)}
-						<span className="flex items-center gap-2">
+						<span className="flex items-center gap-2 whitespace-nowrap">
 							<span className="block h-1.5 w-6" style={{ backgroundColor: channelColours.mapBrake }} />
 							BRAKE
 						</span>
