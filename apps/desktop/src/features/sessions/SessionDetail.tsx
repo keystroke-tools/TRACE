@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	telemetryDataSource,
 	type CompatibleSetup,
-	type LiveBroadcastOptions,
 	type LiveBroadcastStatus,
 	type RecordedLapMetrics,
 	type RecordedSessionSummary,
@@ -48,7 +47,7 @@ export function SessionDetail({
 	session: RecordedSessionSummary;
 	onOpenLap: (lapIndex: number) => void;
 	liveBroadcast: LiveBroadcastStatus | null;
-	onStartLive: (options: LiveBroadcastOptions) => void;
+	onStartLive: () => void;
 	onStopLive: () => void;
 	onCopyLiveLink: () => void;
 }) {
@@ -70,10 +69,6 @@ export function SessionDetail({
 	const confirmedSetup = compatibleSetups.find((value) => value.confirmed) ?? null;
 	const thisSessionIsLive = liveBroadcast?.sourceSessionId === session.id;
 	const broadcastBusy = liveBroadcast?.phase === "ending";
-	function localSpectatorPort() {
-		const value = Number.parseInt(window.localStorage.getItem("trace.localSpectatorPort") ?? "", 10);
-		return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined;
-	}
 
 	useEffect(() => {
 		let active = true;
@@ -187,9 +182,7 @@ export function SessionDetail({
 							(!!liveBroadcast && ["live", "reconnecting"].includes(liveBroadcast.phase) && !thisSessionIsLive)
 						}
 						onClick={
-							thisSessionIsLive && ["live", "connecting", "reconnecting"].includes(liveBroadcast?.phase ?? "idle")
-								? onStopLive
-								: () => onStartLive({ mode: "hosted" })
+							thisSessionIsLive && ["live", "connecting", "reconnecting"].includes(liveBroadcast?.phase ?? "idle") ? onStopLive : onStartLive
 						}
 						className={`h-9 border px-3 font-mono text-[10px] font-black tracking-[.08em] disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim ${thisSessionIsLive && liveBroadcast?.phase === "live" ? "border-trace-warning/60 bg-trace-warning/10 text-trace-warning hover:bg-trace-warning hover:text-trace-black" : "border-trace-accent/60 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black"}`}
 					>
@@ -205,16 +198,6 @@ export function SessionDetail({
 											: "STREAM RECORDING"
 							: "STREAM RECORDING"}
 					</button>
-					{!thisSessionIsLive && (
-						<button
-							type="button"
-							disabled={broadcastBusy || !session.exportable || (!!liveBroadcast && !["idle", "ended", "error"].includes(liveBroadcast.phase))}
-							onClick={() => onStartLive({ mode: "local", localPort: localSpectatorPort() })}
-							className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-black tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white disabled:text-trace-dim"
-						>
-							LOCAL SCREEN
-						</button>
-					)}
 					{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
 					{session.driver && <span className="text-[12px] text-trace-soft">{session.driver}</span>}
 				</div>

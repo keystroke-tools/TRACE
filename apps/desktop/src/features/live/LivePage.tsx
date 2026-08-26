@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import type { LiveBroadcastOptions, LiveBroadcastStatus, TelemetryStatus } from "../../data-source";
+import type { ReactNode } from "react";
+import type { LiveBroadcastStatus, TelemetryStatus } from "../../data-source";
 import { Metric, PageIntro, PanelTitle } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
@@ -15,7 +15,7 @@ export function LivePage({
 }: {
 	status: TelemetryStatus | null;
 	liveBroadcast: LiveBroadcastStatus | null;
-	onStartLive: (options: LiveBroadcastOptions) => void;
+	onStartLive: () => void;
 	onStopLive: () => void;
 	onCopyLiveLink: () => void;
 	onOpenSessions: () => void;
@@ -27,19 +27,7 @@ export function LivePage({
 	const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
 	const unavailableChannels = status?.channels.filter((channel) => !channel.available) ?? [];
 	const categories = Array.from(new Set(availableChannels.map((channel) => channel.category)));
-	const [broadcastMode, setBroadcastMode] = useState<LiveBroadcastOptions["mode"]>(() =>
-		window.localStorage.getItem("trace.liveBroadcastMode") === "local" ? "local" : "hosted",
-	);
 	const liveActive = liveBroadcast?.sourceSessionId === "active-capture" && ["connecting", "reconnecting", "live", "ending"].includes(liveBroadcast.phase);
-	const localPort = () => {
-		const value = Number.parseInt(window.localStorage.getItem("trace.localSpectatorPort") ?? "", 10);
-		return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined;
-	};
-	const selectBroadcastMode = (mode: LiveBroadcastOptions["mode"]) => {
-		setBroadcastMode(mode);
-		window.localStorage.setItem("trace.liveBroadcastMode", mode);
-	};
-	const startLive = () => onStartLive(broadcastMode === "local" ? { mode: "local", localPort: localPort() } : { mode: "hosted" });
 
 	return (
 		<>
@@ -55,28 +43,10 @@ export function LivePage({
 			/>
 			<SimulatorPicker status={status} onSelect={onSelectSimulator} />
 			<div className="mt-3 flex flex-wrap items-center gap-2 border border-trace-divider bg-trace-surface p-3">
-				{!liveActive && (
-					<div className="flex h-10 border border-trace-divider bg-trace-deep p-1" role="group" aria-label="Go Live destination">
-						{(["local", "hosted"] as const).map((mode) => {
-							const selected = broadcastMode === mode;
-							return (
-								<button
-									type="button"
-									key={mode}
-									aria-pressed={selected}
-									onClick={() => selectBroadcastMode(mode)}
-									className={`min-w-20 px-3 text-[11px] font-black tracking-[.08em] ${selected ? "bg-trace-accent text-trace-black" : "text-trace-dim hover:bg-trace-raised hover:text-trace-text"}`}
-								>
-									{mode === "local" ? "LOCAL" : "ONLINE"}
-								</button>
-							);
-						})}
-					</div>
-				)}
 				<button
 					type="button"
 					disabled={!recording || (!!liveBroadcast && !["idle", "ended", "error"].includes(liveBroadcast.phase) && !liveActive)}
-					onClick={liveActive ? onStopLive : startLive}
+					onClick={liveActive ? onStopLive : onStartLive}
 					className="h-10 border border-trace-accent/60 bg-trace-accent-wash px-4 text-[12px] font-black tracking-[.08em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 				>
 					{liveActive

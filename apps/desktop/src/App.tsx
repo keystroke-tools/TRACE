@@ -17,11 +17,23 @@ export function App() {
 	const showToast = useToast();
 	const [status, setStatus] = useState<TelemetryStatus | null>(null);
 	const [liveBroadcast, setLiveBroadcast] = useState<LiveBroadcastStatus | null>(null);
+	const [liveMode, setLiveMode] = useState<LiveBroadcastOptions["mode"]>(() =>
+		window.localStorage.getItem("trace.liveBroadcastMode") === "local" ? "local" : "hosted",
+	);
 	const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
 	const [section, setSection] = useState<Section>("LIVE");
 	const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 	const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
+	const selectLiveMode = (mode: LiveBroadcastOptions["mode"]) => {
+		setLiveMode(mode);
+		window.localStorage.setItem("trace.liveBroadcastMode", mode);
+	};
+	const liveOptions = (): LiveBroadcastOptions => {
+		if (liveMode === "hosted") return { mode: "hosted" };
+		const value = Number.parseInt(window.localStorage.getItem("trace.localSpectatorPort") ?? "", 10);
+		return { mode: "local", localPort: Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined };
+	};
 
 	async function selectSimulator(simulatorId: string) {
 		await telemetryDataSource.selectSimulator(simulatorId);
@@ -103,6 +115,8 @@ export function App() {
 			<TitleBar
 				status={status}
 				liveBroadcast={liveBroadcast}
+				liveMode={liveMode}
+				onLiveModeChange={selectLiveMode}
 				onStopLive={() => void stopLiveBroadcast()}
 				backLabel={openLapIndex == null ? "SESSIONS" : "SESSION"}
 				onBack={
@@ -129,7 +143,7 @@ export function App() {
 					<LivePage
 						status={status}
 						liveBroadcast={liveBroadcast}
-						onStartLive={(options) => void startActiveBroadcast(options)}
+						onStartLive={() => void startActiveBroadcast(liveOptions())}
 						onStopLive={() => void stopLiveBroadcast()}
 						onCopyLiveLink={() => void copyLiveLink()}
 						onOpenSessions={() => setSection("SESSIONS")}
@@ -143,7 +157,7 @@ export function App() {
 								session={openSession}
 								onOpenLap={setOpenLapIndex}
 								liveBroadcast={liveBroadcast}
-								onStartLive={(options) => void startRecordedBroadcast(openSession.id, options)}
+								onStartLive={() => void startRecordedBroadcast(openSession.id, liveOptions())}
 								onStopLive={() => void stopLiveBroadcast()}
 								onCopyLiveLink={() => void copyLiveLink()}
 							/>

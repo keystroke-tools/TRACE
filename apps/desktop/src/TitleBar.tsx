@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ReactNode } from "react";
-import type { LiveBroadcastStatus, TelemetryStatus } from "./data-source";
+import type { LiveBroadcastOptions, LiveBroadcastStatus, TelemetryStatus } from "./data-source";
 import { Tooltip } from "./Tooltip";
 
 const desktopWindow = isTauri() ? getCurrentWindow() : null;
@@ -15,12 +15,16 @@ function runWindowCommand(command: () => Promise<void>) {
 export function TitleBar({
 	status,
 	liveBroadcast,
+	liveMode,
+	onLiveModeChange,
 	onStopLive,
 	onBack,
 	backLabel = "SESSIONS",
 }: {
 	status: TelemetryStatus | null;
 	liveBroadcast: LiveBroadcastStatus | null;
+	liveMode: LiveBroadcastOptions["mode"];
+	onLiveModeChange: (mode: LiveBroadcastOptions["mode"]) => void;
 	onStopLive: () => void;
 	onBack?: () => void;
 	backLabel?: string;
@@ -41,7 +45,7 @@ export function TitleBar({
 						: "GO LIVE";
 
 	return (
-		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
+		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
 			<div
 				className="flex items-center border-r border-trace-divider px-5 text-[18px] font-black tracking-[.12em]"
 				data-tauri-drag-region
@@ -90,6 +94,20 @@ export function TitleBar({
 					aria-hidden="true"
 				/>
 				<span>{state.toUpperCase()}</span>
+			</div>
+			<div className="flex items-center border-l border-trace-divider p-1" role="group" aria-label="Go Live destination">
+				{(["local", "hosted"] as const).map((mode) => (
+					<button
+						type="button"
+						key={mode}
+						aria-pressed={liveMode === mode}
+						disabled={liveActive}
+						onClick={() => onLiveModeChange(mode)}
+						className={`h-8 min-w-[62px] px-2 text-[10px] font-black tracking-[.08em] ${liveMode === mode ? "bg-trace-accent text-trace-black" : "text-trace-dim hover:bg-trace-raised hover:text-trace-text"} disabled:cursor-default`}
+					>
+						{mode === "local" ? "LOCAL" : "ONLINE"}
+					</button>
+				))}
 			</div>
 			<div id="trace-titlebar-actions" className="flex h-12 items-stretch" />
 			<Tooltip
