@@ -328,12 +328,12 @@ pub async fn start_active_live_broadcast(
     let source = ActiveBroadcast {
         endpoint,
         state: SessionState {
-            driver_name,
+            driver_name: protocol_optional_text(driver_name),
             simulator: capture.source.simulator.as_str().to_owned(),
-            car: capture.seed.car_id,
-            track: capture.seed.track_id,
-            layout: capture.seed.layout_id,
-            session_type: capture.seed.session_type,
+            car: protocol_optional_text(capture.seed.car_id),
+            track: protocol_optional_text(capture.seed.track_id),
+            layout: protocol_optional_text(capture.seed.layout_id),
+            session_type: protocol_optional_text(capture.seed.session_type),
             status: LiveStatus::Live,
         },
         events,
@@ -839,20 +839,55 @@ fn load_recorded_broadcast(
 
 fn session_state(session: &SessionSummary, driver_name: Option<String>) -> SessionState {
     SessionState {
-        driver_name,
+        driver_name: protocol_optional_text(driver_name),
         simulator: session.simulator_key.clone(),
-        car: session
-            .car
-            .clone()
-            .or_else(|| session.source_car_id.clone()),
-        track: session
-            .track
-            .clone()
-            .or_else(|| session.source_track_id.clone()),
-        layout: session.layout_id.clone(),
-        session_type: session.session_type.clone(),
+        car: protocol_optional_text(
+            session
+                .car
+                .clone()
+                .or_else(|| session.source_car_id.clone()),
+        ),
+        track: protocol_optional_text(
+            session
+                .track
+                .clone()
+                .or_else(|| session.source_track_id.clone()),
+        ),
+        layout: protocol_optional_text(session.layout_id.clone()),
+        session_type: protocol_optional_text(session.session_type.clone()),
         status: LiveStatus::Live,
     }
+}
+
+fn protocol_optional_text(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let normalized = value
+            .chars()
+            .map(|character| {
+                if character.is_control() {
+                    ' '
+                } else {
+                    character
+                }
+            })
+            .collect::<String>();
+        let trimmed = normalized.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let end = trimmed
+            .char_indices()
+            .map(|(index, _)| index)
+            .take_while(|index| *index <= 256)
+            .last()
+            .unwrap_or(0);
+        let candidate = if trimmed.len() <= 256 {
+            trimmed
+        } else {
+            &trimmed[..end]
+        };
+        (!candidate.is_empty()).then(|| candidate.to_owned())
+    })
 }
 
 fn live_samples(columns: &TelemetryColumns) -> Result<Vec<LiveTelemetrySample>, String> {
@@ -923,5 +958,18 @@ mod tests {
             shared.stop().expect("stop").phase,
             LiveBroadcastPhase::Ending
         );
+    }
+
+    #[test]
+    fn optional_protocol_metadata_drops_empty_values_and_stays_bounded() {
+        assert_eq!(protocol_optional_text(Some(String::new())), None);
+        assert_eq!(protocol_optional_text(Some(" \t\n ".to_owned())), None);
+        assert_eq!(
+            protocol_optional_text(Some(" Zandvoort\n2023 ".to_owned())),
+            Some("Zandvoort 2023".to_owned())
+        );
+        let bounded = protocol_optional_text(Some("é".repeat(200))).expect("bounded text");
+        assert!(bounded.len() <= 256);
+        assert!(bounded.is_char_boundary(bounded.len()));
     }
 }
