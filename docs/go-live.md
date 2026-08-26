@@ -130,12 +130,17 @@ spectators, a full queue, or a transport failure may drop live-delivery frames b
 not delay or cancel Arrow persistence.
 
 Stopping Go Live or ending/changing the simulator session publishes a terminal message.
-A publisher transport failure moves Go Live to an error state while local capture keeps
-running; restarting Go Live creates a fresh unlisted spectator session.
+A publisher transport failure moves Go Live into a reconnecting state while local
+capture keeps running. TRACE retries with exponential backoff capped at ten seconds,
+retains the same unlisted spectator URL, and resumes ordered publishing when the service
+returns. The server accepts an exact retransmission of the last envelope idempotently,
+which covers connections lost while delivery confirmation is ambiguous. Frames may be
+dropped from the bounded live queue during a long outage; the local recording remains
+complete and independent.
 
 ## Next slices
 
 1. Persist installation credentials and live-session lifecycle in the service database.
 2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
 3. Add a bounded seek bar and `LIVE ●` jump to the browser spectator page.
-4. Add publisher resume acknowledgements so an active stream can reconnect without creating a new spectator URL.
+4. Add explicit publisher acknowledgements and retained-sequence negotiation for multi-instance deployments.

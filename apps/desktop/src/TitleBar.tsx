@@ -28,15 +28,17 @@ export function TitleBar({
 	const state = status?.connection ?? "waiting";
 	const recording = state === "recording";
 	const failed = state === "error";
-	const liveActive = liveBroadcast?.phase === "connecting" || liveBroadcast?.phase === "live" || liveBroadcast?.phase === "ending";
+	const liveActive = ["connecting", "reconnecting", "live", "ending"].includes(liveBroadcast?.phase ?? "idle");
 	const liveButtonLabel =
 		liveBroadcast?.phase === "connecting"
 			? "CANCEL"
-			: liveBroadcast?.phase === "ending"
-				? "ENDING…"
-				: liveBroadcast?.phase === "live"
-					? "STOP LIVE"
-					: "GO LIVE";
+			: liveBroadcast?.phase === "reconnecting"
+				? "RECONNECTING…"
+				: liveBroadcast?.phase === "ending"
+					? "ENDING…"
+					: liveBroadcast?.phase === "live"
+						? "STOP LIVE"
+						: "GO LIVE";
 
 	return (
 		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">

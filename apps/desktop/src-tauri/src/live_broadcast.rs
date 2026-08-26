@@ -37,6 +37,7 @@ const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
 pub enum LiveBroadcastPhase {
     Idle,
     Connecting,
+    Reconnecting,
     Live,
     Ending,
     Ended,
@@ -172,7 +173,10 @@ impl SharedLiveBroadcast {
             .map_err(|_| "live broadcast status is unavailable".to_owned())?;
         if matches!(
             status.phase,
-            LiveBroadcastPhase::Connecting | LiveBroadcastPhase::Live | LiveBroadcastPhase::Ending
+            LiveBroadcastPhase::Connecting
+                | LiveBroadcastPhase::Reconnecting
+                | LiveBroadcastPhase::Live
+                | LiveBroadcastPhase::Ending
         ) {
             return Err("another live broadcast is already active".to_owned());
         }
@@ -206,7 +210,9 @@ impl SharedLiveBroadcast {
             .map_err(|_| "live broadcast status is unavailable".to_owned())?;
         if !matches!(
             status.phase,
-            LiveBroadcastPhase::Connecting | LiveBroadcastPhase::Live
+            LiveBroadcastPhase::Connecting
+                | LiveBroadcastPhase::Reconnecting
+                | LiveBroadcastPhase::Live
         ) {
             return Ok(status.clone());
         }
@@ -425,7 +431,15 @@ async fn publish_active_broadcast(
     )
     .map_err(|error| format!("active telemetry cannot be published: {error:?}"))?;
     for envelope in introduction {
-        send_envelope(&mut websocket, &envelope).await?;
+        send_with_reconnect(
+            &mut websocket,
+            &created,
+            &credentials,
+            &envelope,
+            shared,
+            generation,
+        )
+        .await?;
     }
     shared.update(generation, |status| {
         status.phase = LiveBroadcastPhase::Live;
@@ -448,7 +462,15 @@ async fn publish_active_broadcast(
                     if let Some(envelope) = encoder.sample(&sample, unix_timestamp_ms())
                         .map_err(|error| format!("active telemetry cannot be published: {error:?}"))?
                     {
-                        send_envelope(&mut websocket, &envelope).await?;
+                        send_with_reconnect(
+                            &mut websocket,
+                            &created,
+                            &credentials,
+                            &envelope,
+                            shared,
+                            generation,
+                        )
+                        .await?;
                         shared.update(generation, |status| status.elapsed_ns = sample.elapsed_ns);
                     }
                 }
@@ -461,7 +483,15 @@ async fn publish_active_broadcast(
     let terminal = encoder
         .end("capture ended", unix_timestamp_ms())
         .map_err(|error| format!("active telemetry cannot be ended: {error:?}"))?;
-    let _ = send_envelope(&mut websocket, &terminal).await;
+    let _ = send_with_reconnect(
+        &mut websocket,
+        &created,
+        &credentials,
+        &terminal,
+        shared,
+        generation,
+    )
+    .await;
     let _ = websocket.close(None).await;
     end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await
 }
@@ -490,25 +520,7 @@ async fn publish_recorded_broadcast(
         end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await?;
         return Ok(());
     }
-    let mut request = created
-        .publish_websocket_url
-        .as_str()
-        .into_client_request()
-        .map_err(|error| format!("live publisher URL is invalid: {error}"))?;
-    request.headers_mut().insert(
-        "x-trace-installation-id",
-        HeaderValue::from_str(&credentials.installation_id)
-            .map_err(|_| "installation identifier is invalid".to_owned())?,
-    );
-    request.headers_mut().insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
-            .map_err(|_| "publishing credential is invalid".to_owned())?,
-    );
-    let (mut websocket, _) = tokio::time::timeout(Duration::from_secs(15), connect_async(request))
-        .await
-        .map_err(|_| "live publisher connection timed out".to_owned())?
-        .map_err(|error| format!("could not connect to the live publisher: {error}"))?;
+    let mut websocket = connect_publisher(&created, &credentials).await?;
     let messages = encode_recorded_session(
         &created.session_id,
         source.state.clone(),
@@ -531,12 +543,15 @@ async fn publish_recorded_broadcast(
             end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await?;
             return Ok(());
         }
-        let encoded = serde_json::to_string(&message.envelope)
-            .map_err(|error| format!("could not encode live telemetry: {error}"))?;
-        websocket
-            .send(Message::Text(encoded.into()))
-            .await
-            .map_err(|error| format!("live publisher disconnected: {error}"))?;
+        send_with_reconnect(
+            &mut websocket,
+            &created,
+            &credentials,
+            &message.envelope,
+            shared,
+            generation,
+        )
+        .await?;
         shared.update(generation, |status| {
             status.elapsed_ns = message.due_ns.min(status.duration_ns);
         });
@@ -587,6 +602,48 @@ async fn send_envelope(
         .send(Message::Text(encoded.into()))
         .await
         .map_err(|error| format!("live publisher disconnected: {error}"))
+}
+
+async fn send_with_reconnect(
+    socket: &mut PublisherSocket,
+    created: &CreateLiveSessionResponse,
+    credentials: &InstallationCredentials,
+    envelope: &trace_protocol::Envelope,
+    shared: &SharedLiveBroadcast,
+    generation: u64,
+) -> Result<(), String> {
+    if send_envelope(socket, envelope).await.is_ok() {
+        return Ok(());
+    }
+    shared.update(generation, |status| {
+        status.phase = LiveBroadcastPhase::Reconnecting;
+        status.error = None;
+    });
+    let mut backoff = Duration::from_millis(500);
+    loop {
+        if !shared.current(generation) {
+            return Err("live broadcast was cancelled while reconnecting".to_owned());
+        }
+        tokio::time::sleep(backoff).await;
+        match connect_publisher(created, credentials).await {
+            Ok(mut reconnected) => {
+                if send_envelope(&mut reconnected, envelope).await.is_ok() {
+                    *socket = reconnected;
+                    shared.update(generation, |status| {
+                        status.phase = LiveBroadcastPhase::Live;
+                        status.error = None;
+                    });
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                shared.update(generation, |status| {
+                    status.error = Some(format!("reconnecting: {error}"));
+                });
+            }
+        }
+        backoff = backoff.saturating_mul(2).min(Duration::from_secs(10));
+    }
 }
 
 fn live_sample_from_frame(frame: &TelemetryFrame) -> LiveTelemetrySample {

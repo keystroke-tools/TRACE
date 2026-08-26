@@ -278,11 +278,18 @@ impl LiveService {
         if session.state.status == LiveStatus::Ended {
             return Err(ServiceError::Ended);
         }
-        if session
-            .last_sequence
-            .is_some_and(|sequence| message.sequence <= sequence)
-        {
-            return Err(ServiceError::OutOfOrder);
+        if let Some(sequence) = session.last_sequence {
+            if message.sequence == sequence
+                && session
+                    .buffer
+                    .back()
+                    .is_some_and(|accepted| accepted.message_id == message.message_id)
+            {
+                return Ok(());
+            }
+            if message.sequence <= sequence {
+                return Err(ServiceError::OutOfOrder);
+            }
         }
 
         if let Payload::SessionState(state) = &message.payload {
@@ -692,8 +699,13 @@ mod tests {
         service
             .publish(&created.session_id, message(&created.session_id, 1))
             .expect("first message");
+        service
+            .publish(&created.session_id, message(&created.session_id, 1))
+            .expect("idempotent retry");
+        let mut conflicting = message(&created.session_id, 1);
+        conflicting.message_id = "different_message".to_owned();
         assert!(matches!(
-            service.publish(&created.session_id, message(&created.session_id, 1)),
+            service.publish(&created.session_id, conflicting),
             Err(ServiceError::OutOfOrder)
         ));
     }

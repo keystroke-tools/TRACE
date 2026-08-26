@@ -308,7 +308,7 @@ export interface LiveSettings {
 	endpoint: string;
 }
 
-export type LiveBroadcastPhase = "idle" | "connecting" | "live" | "ending" | "ended" | "error";
+export type LiveBroadcastPhase = "idle" | "connecting" | "reconnecting" | "live" | "ending" | "ended" | "error";
 
 export interface LiveBroadcastStatus {
 	phase: LiveBroadcastPhase;

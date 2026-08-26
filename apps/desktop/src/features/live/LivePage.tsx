@@ -27,7 +27,7 @@ export function LivePage({
 	const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
 	const unavailableChannels = status?.channels.filter((channel) => !channel.available) ?? [];
 	const categories = Array.from(new Set(availableChannels.map((channel) => channel.category)));
-	const liveActive = liveBroadcast?.sourceSessionId === "active-capture" && ["connecting", "live", "ending"].includes(liveBroadcast.phase);
+	const liveActive = liveBroadcast?.sourceSessionId === "active-capture" && ["connecting", "reconnecting", "live", "ending"].includes(liveBroadcast.phase);
 	const localPort = () => {
 		const value = Number.parseInt(window.localStorage.getItem("trace.localSpectatorPort") ?? "", 10);
 		return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined;
@@ -53,7 +53,13 @@ export function LivePage({
 					onClick={liveActive ? onStopLive : () => onStartLive({ mode: "hosted" })}
 					className="h-10 border border-trace-accent/60 bg-trace-accent-wash px-4 text-[12px] font-black tracking-[.08em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 				>
-					{liveActive ? (liveBroadcast?.phase === "ending" ? "ENDING…" : "STOP LIVE") : "GO LIVE"}
+					{liveActive
+						? liveBroadcast?.phase === "ending"
+							? "ENDING…"
+							: liveBroadcast?.phase === "reconnecting"
+								? "RECONNECTING…"
+								: "STOP LIVE"
+						: "GO LIVE"}
 				</button>
 				{!liveActive && (
 					<button

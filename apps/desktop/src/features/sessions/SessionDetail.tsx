@@ -184,10 +184,10 @@ export function SessionDetail({
 						disabled={
 							broadcastBusy ||
 							(!session.exportable && !thisSessionIsLive) ||
-							(!!liveBroadcast && liveBroadcast.phase === "live" && !thisSessionIsLive)
+							(!!liveBroadcast && ["live", "reconnecting"].includes(liveBroadcast.phase) && !thisSessionIsLive)
 						}
 						onClick={
-							thisSessionIsLive && (liveBroadcast?.phase === "live" || liveBroadcast?.phase === "connecting")
+							thisSessionIsLive && ["live", "connecting", "reconnecting"].includes(liveBroadcast?.phase ?? "idle")
 								? onStopLive
 								: () => onStartLive({ mode: "hosted" })
 						}
@@ -196,11 +196,13 @@ export function SessionDetail({
 						{thisSessionIsLive
 							? liveBroadcast?.phase === "connecting"
 								? "CANCEL"
-								: liveBroadcast?.phase === "ending"
-									? "ENDING…"
-									: liveBroadcast?.phase === "live"
-										? "STOP LIVE"
-										: "STREAM RECORDING"
+								: liveBroadcast?.phase === "reconnecting"
+									? "RECONNECTING…"
+									: liveBroadcast?.phase === "ending"
+										? "ENDING…"
+										: liveBroadcast?.phase === "live"
+											? "STOP LIVE"
+											: "STREAM RECORDING"
 							: "STREAM RECORDING"}
 					</button>
 					{!thisSessionIsLive && (
