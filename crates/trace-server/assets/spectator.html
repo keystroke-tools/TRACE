@@ -27,12 +27,15 @@
             .connection i { width: 8px; height: 8px; border-radius: 50%; background: #777; }
             .connection.live i { background: #71df8b; box-shadow: 0 0 10px #71df8b; animation: pulse 1.4s infinite; }
             .connection.warn i { background: #e7b55e; }
+            .pit-status { display: none; margin-left: auto; padding: 7px 10px; border: 1px solid #d59a45; color: #f0bd6a; background: #2a2117; font: 800 10px ui-monospace, monospace; letter-spacing: .1em; white-space: nowrap; }
+            .pit-status.visible { display: block; }
+            .pit-status + .connection { margin-left: 0; }
             @keyframes pulse { 50% { opacity: .35; } }
             .session-strip { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)); border-bottom: 1px solid #343434; background: #181818; }
             .session-item { min-width: 0; padding: 11px 16px; border-right: 1px solid #303030; }
             .label { color: #777; font: 700 10px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
             .session-item strong { display: block; overflow: hidden; margin-top: 5px; color: #ddd; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-            main { display: grid; min-height: 0; grid-template-columns: minmax(390px, 1.4fr) minmax(330px, 1fr); grid-template-rows: minmax(360px, 1fr) 250px; gap: 1px; padding: 1px; background: #343434; }
+            main { display: grid; min-height: 0; grid-template-areas: "map telemetry" "trace laps"; grid-template-columns: minmax(390px, 1.4fr) minmax(330px, 1fr); grid-template-rows: minmax(360px, 1fr) 250px; gap: 1px; padding: 1px; background: #343434; }
             .panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #151515; }
             .panel-head { position: absolute; z-index: 2; top: 0; right: 0; left: 0; display: flex; align-items: center; justify-content: space-between; padding: 15px 17px; pointer-events: none; }
             .panel-head strong { font: 800 11px ui-monospace, monospace; letter-spacing: .12em; }
@@ -41,7 +44,8 @@
             .map-empty { position: absolute; inset: 0; display: grid; place-content: center; color: #666; text-align: center; font-size: 12px; line-height: 1.7; }
             .map-empty[hidden] { display: none; }
             .map-empty strong { color: #999; font: 800 11px ui-monospace, monospace; letter-spacing: .1em; }
-            .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; padding-top: 46px; }
+            .map-panel { grid-area: map; }
+            .metrics { grid-area: telemetry; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; padding-top: 46px; }
             .metric { min-height: 92px; padding: 15px; border-top: 1px solid #292929; border-right: 1px solid #292929; }
             .metric-value { margin-top: 9px; color: #eee; font: 700 clamp(20px, 2.2vw, 34px) ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
             .metric-value small { color: #777; font-size: 11px; }
@@ -53,20 +57,38 @@
             .bar i { display: block; width: 0; height: 100%; transition: width 80ms linear; }
             #throttleBar { background: #54ce79; }
             #brakeBar { background: #cc5252; }
-            .trace-panel { grid-column: 1 / -1; }
+            .steering-readout { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
+            .steering-wheel { position: relative; width: 48px; height: 48px; flex: 0 0 48px; border: 5px solid #ddd; border-radius: 50%; transform: rotate(0deg); transition: transform 60ms linear; }
+            .steering-wheel::before, .steering-wheel::after { position: absolute; content: ""; background: #ddd; }
+            .steering-wheel::before { top: 50%; left: 4px; width: 30px; height: 5px; transform: translateY(-50%); }
+            .steering-wheel::after { top: 19px; left: 50%; width: 5px; height: 19px; transform: translateX(-50%); }
+            .steering-wheel i { position: absolute; top: 50%; left: 50%; z-index: 1; width: 13px; height: 13px; border: 3px solid #151515; border-radius: 50%; background: #ddd; transform: translate(-50%, -50%); }
+            .steering-degrees { color: #aaa; font: 700 14px ui-monospace, monospace; }
+            .trace-panel { grid-area: trace; }
+            .laps-panel { grid-area: laps; padding-top: 45px; }
+            .lap-list { height: 100%; overflow-y: auto; scrollbar-color: #555 #1b1b1b; }
+            .lap-list::-webkit-scrollbar { width: 9px; }
+            .lap-list::-webkit-scrollbar-track { background: #1b1b1b; }
+            .lap-list::-webkit-scrollbar-thumb { border: 2px solid #1b1b1b; background: #555; }
+            .lap-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; min-height: 43px; gap: 12px; padding: 8px 16px; border-top: 1px solid #292929; font: 700 12px ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+            .lap-row .lap-number { color: #777; }
+            .lap-row .lap-duration { color: #eee; }
+            .lap-row .lap-state { color: #777; font-size: 9px; letter-spacing: .08em; }
+            .lap-row.current { background: #1a211c; }
+            .lap-row.current .lap-state { color: #71df8b; }
+            .lap-empty { display: grid; height: 100%; place-items: center; padding: 20px; color: #666; text-align: center; font-size: 12px; }
             .legend { display: flex; gap: 15px; color: #777; font: 10px ui-monospace, monospace; }
             .legend span::before { display: inline-block; width: 16px; height: 2px; margin-right: 6px; vertical-align: 3px; content: ""; background: var(--line); }
             .footer-note { position: absolute; right: 16px; bottom: 12px; color: #555; font: 9px ui-monospace, monospace; letter-spacing: .08em; }
             @media (max-width: 900px) {
                 .session-strip { grid-template-columns: repeat(3, 1fr); }
-                main { grid-template-columns: 1fr; grid-template-rows: 440px auto 240px; }
-                .trace-panel { grid-column: 1; }
+                main { grid-template-areas: "map" "telemetry" "laps" "trace"; grid-template-columns: 1fr; grid-template-rows: 440px auto 240px 240px; }
             }
             @media (max-width: 560px) {
                 header { padding: 0 13px; }
                 .identity span, #sim { display: none; }
                 .session-strip { grid-template-columns: repeat(2, 1fr); }
-                main { grid-template-rows: 340px auto 220px; }
+                main { grid-template-rows: 340px auto 220px 220px; }
                 .metrics { grid-template-columns: repeat(2, 1fr); }
                 .input-block { grid-template-columns: 1fr; }
             }
@@ -77,6 +99,7 @@
             <header>
                 <div class="brand">TRACE <i>//</i> PIT WALL</div>
                 <div class="identity"><b class="sim-mark" id="simMark">SIM</b><strong id="driver">Unknown driver</strong><span>/</span><span id="track">Waiting for session</span></div>
+                <div class="pit-status" id="pitStatus">PIT LANE</div>
                 <div class="connection" id="connection"><i></i><span>Connecting</span></div>
             </header>
             <section class="session-strip">
@@ -99,7 +122,7 @@
                     <div class="metric"><span class="label">Gear</span><div class="metric-value" id="gear">N</div></div>
                     <div class="metric"><span class="label">Engine</span><div class="metric-value"><span id="rpm">—</span> <small>RPM</small></div></div>
                     <div class="metric"><span class="label">Fuel</span><div class="metric-value"><span id="fuel">—</span> <small>L</small></div></div>
-                    <div class="metric"><span class="label">Steering</span><div class="metric-value"><span id="steering">—</span> <small>°</small></div></div>
+                    <div class="metric"><span class="label">Steering</span><div class="steering-readout"><div class="steering-wheel" id="steeringWheel" aria-hidden="true"><i></i></div><span class="steering-degrees"><span id="steering">—</span>°</span></div></div>
                     <div class="metric"><span class="label">Track temp</span><div class="metric-value"><span id="trackTemp">—</span> <small>°C</small></div></div>
                     <div class="input-block">
                         <div class="input-row"><strong>THROTTLE</strong><div class="bar"><i id="throttleBar"></i></div><output id="throttle">0%</output></div>
@@ -114,6 +137,10 @@
                     <canvas id="trace"></canvas>
                     <span class="footer-note">LATEST 20 SECONDS</span>
                 </section>
+                <section class="panel laps-panel">
+                    <div class="panel-head"><strong>LAPS</strong><span id="lapCount">0 COMPLETE</span></div>
+                    <div class="lap-list" id="lapList"><div class="lap-empty">Completed laps will appear here.</div></div>
+                </section>
             </main>
         </div>
         <script>
@@ -127,6 +154,10 @@
             let trackGeometry = null;
             const history = [];
             let latestPosition = null;
+            let lastCompletedLaps = null;
+            let previousLapTime = null;
+            let currentLapNumber = null;
+            const completedLapRows = [];
             let retry = 0;
             let terminal = false;
 
@@ -145,6 +176,16 @@
                 if (!Number.isFinite(seconds)) return "—";
                 const minutes = Math.floor(seconds / 60);
                 return `${minutes}:${(seconds - minutes * 60).toFixed(3).padStart(6, "0")}`;
+            };
+            const renderLaps = (currentTime, pitLabel = "") => {
+                const list = document.querySelector("#lapList");
+                const previousScrollTop = list.scrollTop;
+                const preserveScroll = previousScrollTop > 2;
+                const rows = [...completedLapRows].reverse().map((lap) => `<div class="lap-row"><span class="lap-number">LAP ${lap.number}</span><span class="lap-duration">${formatTime(lap.time)}</span><span class="lap-state">COMPLETE</span></div>`).join("");
+                const current = currentLapNumber == null ? "" : `<div class="lap-row current"><span class="lap-number">LAP ${currentLapNumber}</span><span class="lap-duration">${formatTime(currentTime)}</span><span class="lap-state">${pitLabel || "CURRENT"}</span></div>`;
+                list.innerHTML = current + rows || `<div class="lap-empty">Completed laps will appear here.</div>`;
+                if (preserveScroll) list.scrollTop = previousScrollTop;
+                set("#lapCount", `${completedLapRows.length} COMPLETE`);
             };
             const resizeCanvas = (canvas) => {
                 const box = canvas.getBoundingClientRect();
@@ -205,10 +246,13 @@
                 const x = valueOf(channels, ["motion.position.x"]), y = valueOf(channels, ["motion.position.z"]);
                 set("#speed", Math.round(speed)); set("#gear", formatGear(valueOf(channels, ["vehicle.gear"]))); set("#rpm", Math.round(valueOf(channels, ["vehicle.engine_rpm"], 0)) || "—");
                 const fuel = valueOf(channels, ["vehicle.fuel"]); set("#fuel", Number.isFinite(fuel) ? fuel.toFixed(1) : "—");
-                const steering = valueOf(channels, ["driver.steering_angle"]); set("#steering", Number.isFinite(steering) ? Math.round(steering * 180 / Math.PI) : "—");
+                const steering = valueOf(channels, ["driver.steering_angle"]); const steeringDegrees = Number.isFinite(steering) ? Math.round(steering * 180 / Math.PI) : null; set("#steering", steeringDegrees ?? "—"); document.querySelector("#steeringWheel").style.transform = `rotate(${steeringDegrees ?? 0}deg)`;
                 const temp = valueOf(channels, ["environment.track_temperature"]); set("#trackTemp", Number.isFinite(temp) ? Math.round(temp) : "—");
-                set("#lapTime", formatTime(valueOf(channels, ["lap.elapsed"]))); const sector = valueOf(channels, ["lap.sector_index"]); set("#sector", Number.isFinite(sector) ? `S${Math.round(sector) + 1}` : "—");
+                const lapTime = valueOf(channels, ["lap.elapsed"]); set("#lapTime", formatTime(lapTime)); const sector = valueOf(channels, ["lap.sector_index"]); set("#sector", Number.isFinite(sector) ? `S${Math.round(sector) + 1}` : "—");
                 const progress = valueOf(channels, ["lap.normalized_position"]); set("#lapProgress", Number.isFinite(progress) ? `${Math.round(progress * 100)}%` : "—");
+                const completedLaps = valueOf(channels, ["lap.completed_laps"]); const inPit = valueOf(channels, ["session.in_pit"]) > 0; const inPitLane = valueOf(channels, ["session.in_pit_lane"]) > 0; const pitLabel = inPit ? "IN PIT" : inPitLane ? "PIT LANE" : ""; const pitStatus = document.querySelector("#pitStatus"); pitStatus.textContent = pitLabel; pitStatus.classList.toggle("visible", Boolean(pitLabel));
+                if (Number.isFinite(completedLaps)) { const count = Math.max(0, Math.round(completedLaps)); if (lastCompletedLaps != null && count > lastCompletedLaps) { completedLapRows.push({ number: count, time: previousLapTime }); while (completedLapRows.length > 200) completedLapRows.shift(); } if (lastCompletedLaps == null || count >= lastCompletedLaps) lastCompletedLaps = count; else { lastCompletedLaps = count; completedLapRows.length = 0; } currentLapNumber = count + 1; }
+                renderLaps(lapTime, pitLabel); if (Number.isFinite(lapTime)) previousLapTime = lapTime;
                 set("#throttle", `${Math.round(throttle)}%`); set("#brake", `${Math.round(brake)}%`); document.querySelector("#throttleBar").style.width = `${throttle}%`; document.querySelector("#brakeBar").style.width = `${brake}%`;
                 history.push({ time: elapsed, throttle: throttle / 100, brake: brake / 100, speed }); while (history.length && history[0].time < elapsed - 21) history.shift();
                 if (Number.isFinite(x) && Number.isFinite(y)) { latestPosition = { x, y }; const previous = path.at(-1); if (!previous || Math.hypot(previous.x - x, previous.y - y) > .5) path.push(latestPosition); if (path.length > 10000) path.shift(); mapEmpty.hidden = Boolean(trackGeometry) || path.length > 1; set("#mapSamples", trackGeometry ? `${trackGeometry.centre_line.length} STATIC POINTS` : `${path.length} DRIVEN POINTS`); }

@@ -7,8 +7,8 @@ use std::{
 };
 
 use arrow_array::{
-    Array, BinaryArray, Float32Array, Float64Array, Int8Array, Int16Array, MapArray, RecordBatch,
-    StringArray, StructArray, UInt32Array, UInt64Array,
+    Array, BinaryArray, Float32Array, Float64Array, Int8Array, Int16Array, Int64Array, MapArray,
+    RecordBatch, StringArray, StructArray, UInt32Array, UInt64Array,
     builder::{Float64Builder, Int64Builder, MapBuilder, StringBuilder},
 };
 use arrow_ipc::{
@@ -64,6 +64,7 @@ pub struct TelemetryColumns {
     pub speed_mps: Vec<Option<f32>>,
     pub engine_rpm: Vec<Option<f32>>,
     pub fuel_litres: Vec<Option<f32>>,
+    pub completed_laps: Vec<Option<u32>>,
     pub lap_position: Vec<Option<f32>>,
     pub lap_time_ns: Vec<Option<u64>>,
     pub steering_angle_rad: Vec<Option<f32>>,
@@ -74,6 +75,8 @@ pub struct TelemetryColumns {
     pub gear_kind: Vec<Option<i8>>,
     pub gear_value: Vec<Option<i16>>,
     pub sector_index: Vec<Option<u32>>,
+    pub in_pit: Vec<Option<bool>>,
+    pub in_pit_lane: Vec<Option<bool>>,
     pub track_length_m: Option<f64>,
     pub track_configuration: Option<String>,
 }
@@ -107,6 +110,10 @@ impl TelemetryColumns {
             fuel_litres: frames
                 .iter()
                 .map(|frame| frame.vehicle.fuel_litres)
+                .collect(),
+            completed_laps: frames
+                .iter()
+                .map(|frame| frame.lap.completed_laps)
                 .collect(),
             lap_position: frames
                 .iter()
@@ -156,6 +163,14 @@ impl TelemetryColumns {
                 .iter()
                 .map(|frame| frame.lap.current_sector_index)
                 .collect(),
+            in_pit: frames
+                .iter()
+                .map(|frame| native_boolean(frame, "graphics.is_in_pit"))
+                .collect(),
+            in_pit_lane: frames
+                .iter()
+                .map(|frame| native_boolean(frame, "graphics.is_in_pit_lane"))
+                .collect(),
             track_length_m: frames.iter().find_map(|frame| {
                 frame
                     .native
@@ -195,6 +210,7 @@ impl TelemetryColumns {
             speed_mps: Vec::new(),
             engine_rpm: Vec::new(),
             fuel_litres: Vec::new(),
+            completed_laps: Vec::new(),
             lap_position: Vec::new(),
             lap_time_ns: Vec::new(),
             steering_angle_rad: Vec::new(),
@@ -205,10 +221,20 @@ impl TelemetryColumns {
             gear_kind: Vec::new(),
             gear_value: Vec::new(),
             sector_index: Vec::new(),
+            in_pit: Vec::new(),
+            in_pit_lane: Vec::new(),
             track_length_m: None,
             track_configuration: None,
         }
     }
+}
+
+fn native_boolean(frame: &TelemetryFrame, key: &str) -> Option<bool> {
+    frame
+        .native
+        .as_deref()
+        .and_then(|native| native.integer_fields.get(key))
+        .map(|value| *value != 0)
 }
 
 /// Encodes a canonical frame batch as an Arrow IPC random-access file.
@@ -1000,6 +1026,19 @@ fn native_float_value(map: &MapArray, row: usize, key: &str) -> Option<f64> {
         .and_then(|index| (!values.is_null(index)).then(|| values.value(index)))
 }
 
+fn native_integer_value(map: &MapArray, row: usize, key: &str) -> Option<i64> {
+    if map.is_null(row) {
+        return None;
+    }
+    let entries = map.value(row);
+    let entries = entries.as_any().downcast_ref::<StructArray>()?;
+    let keys = entries.column(0).as_any().downcast_ref::<StringArray>()?;
+    let values = entries.column(1).as_any().downcast_ref::<Int64Array>()?;
+    (0..entries.len())
+        .find(|index| !keys.is_null(*index) && keys.value(*index) == key)
+        .and_then(|index| (!values.is_null(index)).then(|| values.value(index)))
+}
+
 fn native_text_value(map: &MapArray, row: usize, key: &str) -> Option<String> {
     if map.is_null(row) {
         return None;
@@ -1053,6 +1092,12 @@ fn extend_projection(
         .extend(nullable_f32(batch, 5)?.into_iter().skip(start).take(length));
     decoded.fuel_litres.extend(
         optional_f32(batch, "fuel_litres")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.completed_laps.extend(
+        optional_u32(batch, "lap_completed")?
             .into_iter()
             .skip(start)
             .take(length),
@@ -1114,6 +1159,21 @@ fn extend_projection(
             .skip(start)
             .take(length),
     );
+    if let Ok(index) = batch.schema().index_of("native_integer_fields")
+        && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
+    {
+        decoded.in_pit.extend((start..start + length).map(|row| {
+            native_integer_value(native, row, "graphics.is_in_pit").map(|value| value != 0)
+        }));
+        decoded
+            .in_pit_lane
+            .extend((start..start + length).map(|row| {
+                native_integer_value(native, row, "graphics.is_in_pit_lane").map(|value| value != 0)
+            }));
+    } else {
+        decoded.in_pit.extend((0..length).map(|_| None));
+        decoded.in_pit_lane.extend((0..length).map(|_| None));
+    }
     if let Ok(index) = batch.schema().index_of("native_float_fields")
         && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
     {
@@ -1763,11 +1823,19 @@ mod tests {
                 schema: "fixture.native/1".into(),
                 payload: vec![1, 2, 3],
                 float_fields: BTreeMap::from([("physics.speed_kmh".into(), 120.0)]),
-                integer_fields: BTreeMap::from([("physics.rpm".into(), 6_000)]),
+                integer_fields: BTreeMap::from([
+                    ("physics.rpm".into(), 6_000),
+                    ("graphics.is_in_pit".into(), 1),
+                    ("graphics.is_in_pit_lane".into(), 0),
+                ]),
                 text_fields: BTreeMap::from([("graphics.tyre_compound".into(), "SM".into())]),
             })),
         };
         let bytes = encode_frames(&[frame]).expect("encoded");
+        let projected = read_columns_range(Cursor::new(&bytes), 0, 1).expect("projected");
+        assert_eq!(projected.completed_laps, vec![Some(3)]);
+        assert_eq!(projected.in_pit, vec![Some(true)]);
+        assert_eq!(projected.in_pit_lane, vec![Some(false)]);
         let mut reader = FileReader::try_new(Cursor::new(bytes), None).expect("reader");
         assert_eq!(
             reader.schema().metadata().get("trace.schema_version"),
@@ -1816,13 +1884,13 @@ mod tests {
             .expect("native payload");
         assert_eq!(native_schema.value(0), "fixture.native/1");
         assert_eq!(native_payload.value(0), &[1, 2, 3]);
-        for index in 50..=52 {
+        for (index, expected_fields) in [(50, 1), (51, 3), (52, 1)] {
             let fields = batch
                 .column(index)
                 .as_any()
                 .downcast_ref::<arrow_array::MapArray>()
                 .expect("native field map");
-            assert_eq!(fields.value_length(0), 1);
+            assert_eq!(fields.value_length(0), expected_fields);
         }
     }
 

@@ -20,6 +20,7 @@ pub struct LiveTelemetrySample {
     pub engine_rpm: Option<f32>,
     pub gear: Option<i16>,
     pub fuel_litres: Option<f32>,
+    pub completed_laps: Option<u32>,
     pub lap_position: Option<f32>,
     pub lap_time_s: Option<f32>,
     pub sector_index: Option<u32>,
@@ -27,6 +28,8 @@ pub struct LiveTelemetrySample {
     pub position_z_m: Option<f64>,
     pub ambient_temperature_c: Option<f32>,
     pub track_temperature_c: Option<f32>,
+    pub in_pit: Option<bool>,
+    pub in_pit_lane: Option<bool>,
 }
 
 /// One encoded message and its delay from the start of replay broadcasting.
@@ -314,6 +317,14 @@ fn telemetry_batch(sample: &LiveTelemetrySample, elapsed_ns: u64) -> TelemetryBa
         ),
         channel("vehicle.fuel", WireUnit::Litre, sample.fuel_litres),
         channel(
+            "lap.completed_laps",
+            WireUnit::Unitless,
+            sample
+                .completed_laps
+                .and_then(|value| u16::try_from(value).ok())
+                .map(f32::from),
+        ),
+        channel(
             "lap.normalized_position",
             WireUnit::Ratio,
             sample.lap_position,
@@ -346,6 +357,16 @@ fn telemetry_batch(sample: &LiveTelemetrySample, elapsed_ns: u64) -> TelemetryBa
             "environment.track_temperature",
             WireUnit::DegreeCelsius,
             sample.track_temperature_c,
+        ),
+        channel(
+            "session.in_pit",
+            WireUnit::Unitless,
+            sample.in_pit.map(u8::from).map(f32::from),
+        ),
+        channel(
+            "session.in_pit_lane",
+            WireUnit::Unitless,
+            sample.in_pit_lane.map(u8::from).map(f32::from),
         ),
     ];
     TelemetryBatch {
@@ -505,5 +526,26 @@ mod tests {
             encoder.end("capture ended", 1_100).expect("end").sequence,
             4
         );
+    }
+
+    #[test]
+    fn publishes_lap_and_pit_state_as_explicit_channels() {
+        let sample = LiveTelemetrySample {
+            completed_laps: Some(4),
+            in_pit: Some(false),
+            in_pit_lane: Some(true),
+            ..LiveTelemetrySample::default()
+        };
+        let batch = telemetry_batch(&sample, 0);
+        let value = |id: &str| {
+            batch
+                .channels
+                .iter()
+                .find(|channel| channel.id == id)
+                .and_then(|channel| channel.values[0])
+        };
+        assert_eq!(value("lap.completed_laps"), Some(4.0));
+        assert_eq!(value("session.in_pit"), Some(0.0));
+        assert_eq!(value("session.in_pit_lane"), Some(1.0));
     }
 }

@@ -701,6 +701,7 @@ fn live_sample_from_frame(frame: &TelemetryFrame) -> LiveTelemetrySample {
             Gear::Unknown(value) => value,
         }),
         fuel_litres: frame.vehicle.fuel_litres,
+        completed_laps: frame.lap.completed_laps,
         lap_position: frame.lap.normalized_position,
         lap_time_s: frame
             .lap
@@ -711,7 +712,17 @@ fn live_sample_from_frame(frame: &TelemetryFrame) -> LiveTelemetrySample {
         position_z_m: position.map(|value| value.z),
         ambient_temperature_c: environment.and_then(|value| value.ambient_temperature_c),
         track_temperature_c: environment.and_then(|value| value.track_temperature_c),
+        in_pit: native_boolean(frame, "graphics.is_in_pit"),
+        in_pit_lane: native_boolean(frame, "graphics.is_in_pit_lane"),
     }
+}
+
+fn native_boolean(frame: &TelemetryFrame, key: &str) -> Option<bool> {
+    frame
+        .native
+        .as_deref()
+        .and_then(|native| native.integer_fields.get(key))
+        .map(|value| *value != 0)
 }
 
 async fn installation_credentials(
@@ -1012,6 +1023,7 @@ fn live_samples(columns: &TelemetryColumns) -> Result<Vec<LiveTelemetrySample>, 
             engine_rpm: columns.engine_rpm[index],
             gear: columns.gear_value[index],
             fuel_litres: columns.fuel_litres[index],
+            completed_laps: columns.completed_laps[index],
             lap_position: columns.lap_position[index],
             lap_time_s: columns.lap_time_ns[index].and_then(nanoseconds_to_seconds),
             sector_index: columns.sector_index[index],
@@ -1019,6 +1031,8 @@ fn live_samples(columns: &TelemetryColumns) -> Result<Vec<LiveTelemetrySample>, 
             position_z_m: columns.position_z_m[index],
             ambient_temperature_c: columns.ambient_temperature_c[index],
             track_temperature_c: columns.track_temperature_c[index],
+            in_pit: columns.in_pit[index],
+            in_pit_lane: columns.in_pit_lane[index],
         });
     }
     Ok(samples)

@@ -105,6 +105,12 @@ second
 unitless
 ```
 
+TRACE's current live projection publishes driver inputs, speed, RPM, gear, fuel,
+lap time/progress/sector/completed-lap count, world position, temperatures, and the
+explicit simulator pit flags when available. The pit channels are
+`session.in_pit` and `session.in_pit_lane`; each uses unitless `0`/`1` values rather
+than inferring pit state from speed or track position.
+
 All present numeric values must be finite; NaN and infinities are invalid wire data.
 The wire vocabulary is intentionally smaller than the domain vocabulary and expands
 only through an explicit protocol versioning decision.

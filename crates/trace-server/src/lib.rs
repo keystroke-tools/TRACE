@@ -690,6 +690,9 @@ mod tests {
         assert!(page.contains("TRACE <i>//</i> PIT WALL"));
         assert!(page.contains("TRACK MAP"));
         assert!(page.contains("INPUT HISTORY"));
+        assert!(page.contains("steeringWheel"));
+        assert!(page.contains("session.in_pit_lane"));
+        assert!(page.contains("lap.completed_laps"));
         assert!(page.contains("motion.position.x"));
     }
 
