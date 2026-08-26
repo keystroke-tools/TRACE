@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { telemetryDataSource, type LiveBroadcastOptions, type LiveBroadcastStatus, type RecordedSessionSummary, type TelemetryStatus } from "./data-source";
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
@@ -91,6 +92,15 @@ export function App() {
 		}
 	}
 
+	async function openLiveLink() {
+		if (!liveBroadcast?.spectatorUrl) return;
+		try {
+			await openUrl(liveBroadcast.spectatorUrl);
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not open live link", message: error instanceof Error ? error.message : String(error), timeoutMs: 7_000 });
+		}
+	}
+
 	useEffect(() => {
 		void Promise.all([telemetryDataSource.getStatus(), telemetryDataSource.getSessions(), telemetryDataSource.getLiveBroadcastStatus()]).then(
 			([nextStatus, nextSessions, nextLiveBroadcast]) => {
@@ -146,6 +156,7 @@ export function App() {
 						onStartLive={() => void startActiveBroadcast(liveOptions())}
 						onStopLive={() => void stopLiveBroadcast()}
 						onCopyLiveLink={() => void copyLiveLink()}
+						onOpenLiveLink={() => void openLiveLink()}
 						onOpenSessions={() => setSection("SESSIONS")}
 						onSelectSimulator={selectSimulator}
 					/>
@@ -160,6 +171,7 @@ export function App() {
 								onStartLive={() => void startRecordedBroadcast(openSession.id, liveOptions())}
 								onStopLive={() => void stopLiveBroadcast()}
 								onCopyLiveLink={() => void copyLiveLink()}
+								onOpenLiveLink={() => void openLiveLink()}
 							/>
 						) : (
 							<LapVisualizer session={openSession} lapIndex={openLapIndex} />

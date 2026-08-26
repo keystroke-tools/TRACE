@@ -10,6 +10,7 @@ export function LivePage({
 	onStartLive,
 	onStopLive,
 	onCopyLiveLink,
+	onOpenLiveLink,
 	onOpenSessions,
 	onSelectSimulator,
 }: {
@@ -18,6 +19,7 @@ export function LivePage({
 	onStartLive: () => void;
 	onStopLive: () => void;
 	onCopyLiveLink: () => void;
+	onOpenLiveLink: () => void;
 	onOpenSessions: () => void;
 	onSelectSimulator: (simulatorId: string) => Promise<void>;
 }) {
@@ -58,13 +60,22 @@ export function LivePage({
 						: "GO LIVE"}
 				</button>
 				{liveActive && liveBroadcast?.spectatorUrl && (
-					<button
-						type="button"
-						onClick={onCopyLiveLink}
-						className="h-10 border border-trace-divider bg-trace-deep px-4 text-[12px] font-bold text-trace-soft hover:text-white"
-					>
-						COPY LIVE LINK
-					</button>
+					<>
+						<button
+							type="button"
+							onClick={onCopyLiveLink}
+							className="h-10 border border-trace-divider bg-trace-deep px-4 text-[12px] font-bold text-trace-soft hover:text-white"
+						>
+							COPY LIVE LINK
+						</button>
+						<button
+							type="button"
+							onClick={onOpenLiveLink}
+							className="h-10 border border-trace-divider bg-trace-deep px-4 text-[12px] font-bold text-trace-soft hover:text-white"
+						>
+							OPEN →
+						</button>
+					</>
 				)}
 				<span className="ml-auto text-[11px] text-trace-dim">
 					{recording ? "Publish this capture without interrupting local recording." : "Start driving or play a replay to enable streaming."}

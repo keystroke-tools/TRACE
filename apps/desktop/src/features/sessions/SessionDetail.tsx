@@ -43,6 +43,7 @@ export function SessionDetail({
 	onStartLive,
 	onStopLive,
 	onCopyLiveLink,
+	onOpenLiveLink,
 }: {
 	session: RecordedSessionSummary;
 	onOpenLap: (lapIndex: number) => void;
@@ -50,6 +51,7 @@ export function SessionDetail({
 	onStartLive: () => void;
 	onStopLive: () => void;
 	onCopyLiveLink: () => void;
+	onOpenLiveLink: () => void;
 }) {
 	const showToast = useToast();
 	const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
@@ -173,13 +175,22 @@ export function SessionDetail({
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
 					{thisSessionIsLive && liveBroadcast?.spectatorUrl && (
-						<button
-							type="button"
-							onClick={onCopyLiveLink}
-							className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white"
-						>
-							COPY LIVE LINK
-						</button>
+						<>
+							<button
+								type="button"
+								onClick={onCopyLiveLink}
+								className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white"
+							>
+								COPY LIVE LINK
+							</button>
+							<button
+								type="button"
+								onClick={onOpenLiveLink}
+								className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white"
+							>
+								OPEN →
+							</button>
+						</>
 					)}
 					<button
 						type="button"
