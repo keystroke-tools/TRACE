@@ -36,6 +36,105 @@ pub struct ScheduledEnvelope {
     pub envelope: Envelope,
 }
 
+/// Stateful encoder for an active capture stream.
+pub struct LiveStreamEncoder {
+    session_id: String,
+    sequence: u64,
+    last_sample_elapsed_ns: Option<u64>,
+}
+
+impl LiveStreamEncoder {
+    /// Starts a stream and returns its introduction messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns a protocol error when the session metadata or identifier is invalid.
+    pub fn start(
+        session_id: impl Into<String>,
+        mut state: SessionState,
+        sent_at_unix_ms: i64,
+    ) -> Result<(Self, Vec<Envelope>), ProtocolError> {
+        let session_id = session_id.into();
+        state.status = LiveStatus::Live;
+        let mut encoder = Self {
+            session_id,
+            sequence: 0,
+            last_sample_elapsed_ns: None,
+        };
+        let messages = vec![
+            encoder.envelope(
+                sent_at_unix_ms,
+                Payload::Hello(Hello {
+                    publisher_version: env!("CARGO_PKG_VERSION").to_owned(),
+                    source: "active-capture".to_owned(),
+                }),
+            )?,
+            encoder.envelope(sent_at_unix_ms, Payload::SessionState(state))?,
+        ];
+        Ok((encoder, messages))
+    }
+
+    /// Encodes a sample when the 20 Hz live interval has elapsed.
+    ///
+    /// # Errors
+    ///
+    /// Returns a protocol error when the projected telemetry is invalid.
+    pub fn sample(
+        &mut self,
+        sample: &LiveTelemetrySample,
+        sent_at_unix_ms: i64,
+    ) -> Result<Option<Envelope>, ProtocolError> {
+        if self
+            .last_sample_elapsed_ns
+            .is_some_and(|last| sample.elapsed_ns < last.saturating_add(LIVE_SAMPLE_INTERVAL_NS))
+        {
+            return Ok(None);
+        }
+        self.last_sample_elapsed_ns = Some(sample.elapsed_ns);
+        self.envelope(
+            sent_at_unix_ms,
+            Payload::TelemetryBatch(telemetry_batch(sample, sample.elapsed_ns)),
+        )
+        .map(Some)
+    }
+
+    /// Ends the stream with a terminal message.
+    ///
+    /// # Errors
+    ///
+    /// Returns a protocol error when the terminal payload is invalid.
+    pub fn end(
+        &mut self,
+        reason: impl Into<String>,
+        sent_at_unix_ms: i64,
+    ) -> Result<Envelope, ProtocolError> {
+        self.envelope(
+            sent_at_unix_ms,
+            Payload::End(SessionEnd {
+                reason: reason.into(),
+            }),
+        )
+    }
+
+    fn envelope(
+        &mut self,
+        sent_at_unix_ms: i64,
+        payload: Payload,
+    ) -> Result<Envelope, ProtocolError> {
+        let envelope = Envelope {
+            protocol_version: PROTOCOL_VERSION,
+            message_id: format!("live_{}", self.sequence),
+            session_id: self.session_id.clone(),
+            sequence: self.sequence,
+            sent_at_unix_ms,
+            payload,
+        };
+        envelope.validate(ProtocolLimits::default())?;
+        self.sequence = self.sequence.saturating_add(1);
+        Ok(envelope)
+    }
+}
+
 /// Failure to build a valid replay stream.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplayEncodeError {
@@ -327,6 +426,44 @@ mod tests {
                 0,
             ),
             Err(ReplayEncodeError::NonIncreasingTime)
+        );
+    }
+
+    #[test]
+    fn active_streams_are_ordered_and_rate_limited() {
+        let (mut encoder, introduction) =
+            LiveStreamEncoder::start("0123456789abcdef0123456789abcdef", state(), 1_000)
+                .expect("active stream");
+        assert_eq!(introduction.len(), 2);
+        assert_eq!(introduction[0].sequence, 0);
+        assert_eq!(introduction[1].sequence, 1);
+
+        let first = sample(0, 0.4);
+        assert_eq!(
+            encoder
+                .sample(&first, 1_000)
+                .expect("first sample")
+                .expect("published")
+                .sequence,
+            2
+        );
+        assert!(
+            encoder
+                .sample(&sample(10_000_000, 0.5), 1_010)
+                .expect("limited sample")
+                .is_none()
+        );
+        assert_eq!(
+            encoder
+                .sample(&sample(LIVE_SAMPLE_INTERVAL_NS, 0.6), 1_050)
+                .expect("next sample")
+                .expect("published")
+                .sequence,
+            3
+        );
+        assert_eq!(
+            encoder.end("capture ended", 1_100).expect("end").sequence,
+            4
         );
     }
 }
