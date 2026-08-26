@@ -177,25 +177,43 @@
 				font-variant-numeric: tabular-nums;
 			}
 			.dvr-seek {
+				--dvr-progress: 0%;
 				width: 100%;
-				height: 18px;
+				height: 22px;
 				margin: 0;
 				cursor: pointer;
 				appearance: none;
 				background: transparent;
 			}
 			.dvr-seek::-webkit-slider-runnable-track {
-				height: 4px;
-				background: #383838;
+				height: 5px;
+				border: 1px solid #444;
+				background: linear-gradient(to right, #71df8b 0 var(--dvr-progress), #292929 var(--dvr-progress) 100%);
 			}
 			.dvr-seek::-webkit-slider-thumb {
-				width: 13px;
-				height: 13px;
-				margin-top: -4.5px;
-				border: 2px solid #101010;
-				border-radius: 50%;
+				width: 6px;
+				height: 17px;
+				margin-top: -7px;
+				border: 1px solid #101010;
+				border-radius: 1px;
 				appearance: none;
-				background: #aaa;
+				background: #71df8b;
+			}
+			.dvr-seek::-moz-range-track {
+				height: 5px;
+				border: 1px solid #444;
+				background: #292929;
+			}
+			.dvr-seek::-moz-range-progress {
+				height: 5px;
+				background: #71df8b;
+			}
+			.dvr-seek::-moz-range-thumb {
+				width: 6px;
+				height: 17px;
+				border: 1px solid #101010;
+				border-radius: 1px;
+				background: #71df8b;
 			}
 			.dvr-seek:focus-visible {
 				outline: 1px solid #71df8b;
@@ -233,7 +251,7 @@
 			main {
 				display: grid;
 				min-height: 0;
-				grid-template-areas: "map telemetry" "trace laps";
+				grid-template-areas: "map telemetry" "trace telemetry";
 				grid-template-columns: minmax(390px, 1.4fr) minmax(330px, 1fr);
 				grid-template-rows: minmax(292px, 1fr) minmax(120px, 0.55fr);
 				gap: 1px;
@@ -300,8 +318,16 @@
 			.map-panel {
 				grid-area: map;
 			}
-			.metrics {
+			.telemetry-column {
 				grid-area: telemetry;
+				display: grid;
+				min-width: 0;
+				min-height: 0;
+				grid-template-rows: auto minmax(0, 1fr);
+				gap: 1px;
+				background: #343434;
+			}
+			.metrics {
 				display: grid;
 				grid-template-columns: repeat(3, minmax(0, 1fr));
 				align-content: start;
@@ -428,7 +454,6 @@
 				grid-area: trace;
 			}
 			.laps-panel {
-				grid-area: laps;
 				padding-top: 45px;
 			}
 			.lap-list {
@@ -458,6 +483,39 @@
 					700 12px ui-monospace,
 					monospace;
 				font-variant-numeric: tabular-nums;
+			}
+			.lap-sectors {
+				display: flex;
+				min-width: 0;
+				grid-column: 1 / -1;
+				gap: 4px;
+			}
+			.lap-sector {
+				display: grid;
+				min-width: 0;
+				flex: 1 1 0;
+				gap: 4px;
+			}
+			.lap-sector i {
+				display: block;
+				height: 4px;
+				background: #555;
+			}
+			.lap-sector small {
+				overflow: hidden;
+				color: #777;
+				font-size: 9px;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.lap-sector.purple i {
+				background: #b56cff;
+			}
+			.lap-sector.green i {
+				background: #54ce79;
+			}
+			.lap-sector.yellow i {
+				background: #e7b55e;
 			}
 			.lap-row .lap-number {
 				color: #777;
@@ -527,9 +585,12 @@
 					grid-template-columns: repeat(3, 1fr);
 				}
 				main {
-					grid-template-areas: "map" "telemetry" "laps" "trace";
+					grid-template-areas: "map" "telemetry" "trace";
 					grid-template-columns: 1fr;
-					grid-template-rows: 440px auto 240px 240px;
+					grid-template-rows: 440px auto 240px;
+				}
+				.telemetry-column {
+					grid-template-rows: auto 240px;
 				}
 			}
 			@media (max-width: 560px) {
@@ -544,7 +605,7 @@
 					grid-template-columns: repeat(2, 1fr);
 				}
 				main {
-					grid-template-rows: 340px auto 220px 220px;
+					grid-template-rows: 340px auto 220px;
 				}
 				.metrics {
 					grid-template-columns: repeat(2, 1fr);
@@ -584,48 +645,54 @@
 					<canvas id="map"></canvas>
 					<div class="map-empty" id="mapEmpty"><strong>BUILDING TRACK MAP</strong><span>The driven line appears as position data arrives.</span></div>
 				</section>
-				<section class="panel metrics">
-					<div class="panel-head"><strong>CAR STATE</strong><span>LIVE TELEMETRY</span></div>
-					<div class="metric">
-						<span class="label">Speed</span>
-						<div class="metric-value"><span id="speed">0</span> <small>KM/H</small></div>
-					</div>
-					<div class="metric">
-						<span class="label">Gear</span>
-						<div class="metric-value" id="gear">N</div>
-					</div>
-					<div class="metric">
-						<span class="label">Engine</span>
-						<div class="metric-value"><span id="rpm">—</span> <small>RPM</small></div>
-					</div>
-					<div class="metric">
-						<span class="label">Fuel</span>
-						<div class="metric-value"><span id="fuel">—</span> <small>L</small></div>
-					</div>
-					<div class="metric">
-						<span class="label">Steering</span>
-						<div class="steering-readout">
-							<div class="steering-wheel" id="steeringWheel" aria-hidden="true"><i></i></div>
-							<span class="steering-degrees"><span id="steering">—</span>°</span>
+				<div class="telemetry-column">
+					<section class="panel metrics">
+						<div class="panel-head"><strong>CAR STATE</strong><span>LIVE TELEMETRY</span></div>
+						<div class="metric">
+							<span class="label">Speed</span>
+							<div class="metric-value"><span id="speed">0</span> <small>KM/H</small></div>
 						</div>
-					</div>
-					<div class="metric">
-						<span class="label">Track temp</span>
-						<div class="metric-value"><span id="trackTemp">—</span> <small>°C</small></div>
-					</div>
-					<div class="input-block">
-						<div class="input-row">
-							<strong>THROTTLE</strong>
-							<div class="bar"><i id="throttleBar"></i></div>
-							<output id="throttle">0%</output>
+						<div class="metric">
+							<span class="label">Gear</span>
+							<div class="metric-value" id="gear">N</div>
 						</div>
-						<div class="input-row">
-							<strong>BRAKE</strong>
-							<div class="bar"><i id="brakeBar"></i></div>
-							<output id="brake">0%</output>
+						<div class="metric">
+							<span class="label">Engine</span>
+							<div class="metric-value"><span id="rpm">—</span> <small>RPM</small></div>
 						</div>
-					</div>
-				</section>
+						<div class="metric">
+							<span class="label">Fuel</span>
+							<div class="metric-value"><span id="fuel">—</span> <small>L</small></div>
+						</div>
+						<div class="metric">
+							<span class="label">Steering</span>
+							<div class="steering-readout">
+								<div class="steering-wheel" id="steeringWheel" aria-hidden="true"><i></i></div>
+								<span class="steering-degrees"><span id="steering">—</span>°</span>
+							</div>
+						</div>
+						<div class="metric">
+							<span class="label">Track temp</span>
+							<div class="metric-value"><span id="trackTemp">—</span> <small>°C</small></div>
+						</div>
+						<div class="input-block">
+							<div class="input-row">
+								<strong>THROTTLE</strong>
+								<div class="bar"><i id="throttleBar"></i></div>
+								<output id="throttle">0%</output>
+							</div>
+							<div class="input-row">
+								<strong>BRAKE</strong>
+								<div class="bar"><i id="brakeBar"></i></div>
+								<output id="brake">0%</output>
+							</div>
+						</div>
+					</section>
+					<section class="panel laps-panel">
+						<div class="panel-head"><strong>LAPS</strong><span id="lapCount">0 COMPLETE</span></div>
+						<div class="lap-list" id="lapList"><div class="lap-empty">Completed laps will appear here.</div></div>
+					</section>
+				</div>
 				<section class="panel trace-panel">
 					<div class="panel-head">
 						<strong>INPUT HISTORY</strong>
@@ -635,10 +702,6 @@
 					</div>
 					<canvas id="trace"></canvas>
 					<span class="footer-note">LATEST 20 SECONDS</span>
-				</section>
-				<section class="panel laps-panel">
-					<div class="panel-head"><strong>LAPS</strong><span id="lapCount">0 COMPLETE</span></div>
-					<div class="lap-list" id="lapList"><div class="lap-empty">Completed laps will appear here.</div></div>
 				</section>
 			</main>
 		</div>
@@ -659,10 +722,15 @@
 			let lastCompletedLaps = null;
 			let previousLapTime = null;
 			let currentLapNumber = null;
+			let lastSectorIndex = null;
+			let currentSectorTimes = [];
 			const completedLapRows = [];
 			let retry = 0;
 			let terminal = false;
 			let followingLive = true;
+			let playbackAnchor = null;
+			let playbackFrame = null;
+			let renderedBufferTime = null;
 
 			const set = (id, value) => {
 				document.querySelector(id).textContent = value;
@@ -706,11 +774,36 @@
 				const first = telemetryFrames.length ? elapsedOf(telemetryFrames[0]) : 0;
 				const last = telemetryFrames.length ? elapsedOf(telemetryFrames.at(-1)) : first;
 				const selected = Math.max(first, Math.min(last, selectedTime ?? last));
-				dvrSeek.min = String(first);
-				dvrSeek.max = String(last);
-				dvrSeek.value = String(selected);
+				const duration = Math.max(0, last - first);
+				const relative = selected - first;
+				dvrSeek.min = "0";
+				dvrSeek.max = String(duration);
+				dvrSeek.value = String(relative);
+				dvrSeek.disabled = telemetryFrames.length < 2;
+				dvrSeek.style.setProperty("--dvr-progress", `${duration > 0 ? (relative / duration) * 100 : 0}%`);
 				set("#dvrTime", `${formatDvrTime(selected - first)} / ${formatDvrTime(last - first)}`);
 				liveEdge.classList.toggle("active", followingLive);
+			};
+			const sectorTone = (lap, sectorIndex) => {
+				const value = lap.sectors?.[sectorIndex];
+				if (!Number.isFinite(value)) return "grey";
+				const all = completedLapRows.map((candidate) => candidate.sectors?.[sectorIndex]).filter(Number.isFinite);
+				if (all.length && value === Math.min(...all)) return "purple";
+				const prior = completedLapRows
+					.filter((candidate) => candidate.number < lap.number)
+					.map((candidate) => candidate.sectors?.[sectorIndex])
+					.filter(Number.isFinite);
+				if (!prior.length) return "grey";
+				return value < Math.min(...prior) ? "green" : "yellow";
+			};
+			const sectorMarkup = (lap) => {
+				if (!lap.sectors?.some(Number.isFinite)) return "";
+				return `<div class="lap-sectors">${lap.sectors
+					.map(
+						(value, index) =>
+							`<span class="lap-sector ${sectorTone(lap, index)}"><i></i><small>S${index + 1} ${Number.isFinite(value) ? Number(value).toFixed(3) : "—"}</small></span>`,
+					)
+					.join("")}</div>`;
 			};
 			const renderLaps = (currentTime, pitLabel = "") => {
 				const list = document.querySelector("#lapList");
@@ -721,7 +814,7 @@
 					.reverse()
 					.map(
 						(lap) =>
-							`<div class="lap-row"><span class="lap-number">LAP ${lap.number}</span><span class="lap-duration">${formatTime(lap.time)}</span><span class="lap-state">COMPLETE</span></div>`,
+							`<div class="lap-row"><span class="lap-number">LAP ${lap.number}</span><span class="lap-duration">${formatTime(lap.time)}</span><span class="lap-state">COMPLETE</span>${sectorMarkup(lap)}</div>`,
 					)
 					.join("");
 				const current =
@@ -828,6 +921,44 @@
 				draw("brake", "#cc5252");
 				draw("speed", "#65a7e8", 350);
 			}
+			function accumulateLapState(completedLaps, sector, lapTime) {
+				if (!Number.isFinite(completedLaps)) return;
+				const count = Math.max(0, Math.round(completedLaps));
+				const sectorIndex = Number.isFinite(sector) ? Math.max(0, Math.round(sector)) : null;
+				if (lastCompletedLaps != null && count < lastCompletedLaps) {
+					completedLapRows.length = 0;
+					currentSectorTimes = [];
+					lastSectorIndex = sectorIndex;
+				} else if (lastCompletedLaps != null && count > lastCompletedLaps) {
+					if (lastSectorIndex != null && Number.isFinite(previousLapTime)) {
+						const recorded = currentSectorTimes.reduce((total, value) => total + (Number.isFinite(value) ? value : 0), 0);
+						currentSectorTimes[lastSectorIndex] = Math.max(0, previousLapTime - recorded);
+					}
+					completedLapRows.push({ number: count, time: previousLapTime, sectors: [...currentSectorTimes] });
+					while (completedLapRows.length > 200) completedLapRows.shift();
+					currentSectorTimes = [];
+					lastSectorIndex = sectorIndex;
+				} else if (lastSectorIndex != null && sectorIndex != null && sectorIndex > lastSectorIndex && Number.isFinite(previousLapTime)) {
+					const recorded = currentSectorTimes.reduce((total, value) => total + (Number.isFinite(value) ? value : 0), 0);
+					currentSectorTimes[lastSectorIndex] = Math.max(0, previousLapTime - recorded);
+					lastSectorIndex = sectorIndex;
+				} else if (lastSectorIndex == null) {
+					lastSectorIndex = sectorIndex;
+				}
+				lastCompletedLaps = count;
+				if (Number.isFinite(lapTime)) previousLapTime = lapTime;
+			}
+			function accumulateHiddenTelemetry(data) {
+				const channels = channelsOf(data);
+				accumulateLapState(valueOf(channels, ["lap.completed_laps"]), valueOf(channels, ["lap.sector_index"]), valueOf(channels, ["lap.elapsed"]));
+				const x = valueOf(channels, ["motion.position.x"]);
+				const y = valueOf(channels, ["motion.position.z"]);
+				if (Number.isFinite(x) && Number.isFinite(y)) {
+					const previous = path.at(-1);
+					if (!previous || Math.hypot(previous.x - x, previous.y - y) > 0.5) path.push({ x, y });
+					if (path.length > 10000) path.shift();
+				}
+			}
 			function renderTelemetry(data, accumulate = true) {
 				const channels = channelsOf(data);
 				const throttle = percent(valueOf(channels, ["driver.throttle"], 0));
@@ -862,21 +993,10 @@
 				pitStatus.classList.toggle("visible", Boolean(pitLabel));
 				if (Number.isFinite(completedLaps)) {
 					const count = Math.max(0, Math.round(completedLaps));
-					if (accumulate) {
-						if (lastCompletedLaps != null && count > lastCompletedLaps) {
-							completedLapRows.push({ number: count, time: previousLapTime });
-							while (completedLapRows.length > 200) completedLapRows.shift();
-						}
-						if (lastCompletedLaps == null || count >= lastCompletedLaps) lastCompletedLaps = count;
-						else {
-							lastCompletedLaps = count;
-							completedLapRows.length = 0;
-						}
-					}
+					if (accumulate) accumulateLapState(completedLaps, sector, lapTime);
 					currentLapNumber = count + 1;
 				}
 				renderLaps(lapTime, pitLabel);
-				if (accumulate && Number.isFinite(lapTime)) previousLapTime = lapTime;
 				set("#throttle", `${Math.round(throttle)}%`);
 				set("#brake", `${Math.round(brake)}%`);
 				document.querySelector("#throttleBar").style.width = `${throttle}%`;
@@ -908,21 +1028,50 @@
 					}
 				}
 				const selectedTime = elapsedOf(telemetryFrames[selectedIndex]);
-				history.length = 0;
-				for (let index = selectedIndex; index >= 0; index--) {
-					const sample = traceSample(telemetryFrames[index]);
-					if (sample.time < selectedTime - 20) break;
-					history.unshift(sample);
+				if (selectedTime !== renderedBufferTime) {
+					history.length = 0;
+					for (let index = selectedIndex; index >= 0; index--) {
+						const sample = traceSample(telemetryFrames[index]);
+						if (sample.time < selectedTime - 20) break;
+						history.unshift(sample);
+					}
+					renderTelemetry(telemetryFrames[selectedIndex], false);
+					renderedBufferTime = selectedTime;
 				}
-				renderTelemetry(telemetryFrames[selectedIndex], false);
-				updateDvrBar(selectedTime);
+				updateDvrBar(targetTime);
 			}
-			dvrSeek.addEventListener("input", () => {
+			const dvrStartTime = () => (telemetryFrames.length ? elapsedOf(telemetryFrames[0]) : 0);
+			const currentPlaybackTime = () =>
+				playbackAnchor ? playbackAnchor.mediaTime + (performance.now() - playbackAnchor.wallTime) / 1000 : dvrStartTime() + Number(dvrSeek.value);
+			const playbackTick = () => {
+				playbackFrame = null;
+				if (followingLive || !playbackAnchor || !telemetryFrames.length) return;
+				const first = dvrStartTime();
+				const last = elapsedOf(telemetryFrames.at(-1));
+				let target = currentPlaybackTime();
+				if (target < first) {
+					target = first;
+					playbackAnchor = { mediaTime: first, wallTime: performance.now() };
+				}
+				renderBufferedAt(Math.min(target, last));
+				if (!(terminal && target >= last)) playbackFrame = requestAnimationFrame(playbackTick);
+			};
+			const playFrom = (targetTime) => {
 				followingLive = false;
-				renderBufferedAt(Number(dvrSeek.value));
+				playbackAnchor = { mediaTime: targetTime, wallTime: performance.now() };
+				renderedBufferTime = null;
+				renderBufferedAt(targetTime);
+				if (playbackFrame == null) playbackFrame = requestAnimationFrame(playbackTick);
+			};
+			dvrSeek.addEventListener("input", () => {
+				playFrom(dvrStartTime() + Number(dvrSeek.value));
 			});
 			liveEdge.addEventListener("click", () => {
 				followingLive = true;
+				playbackAnchor = null;
+				if (playbackFrame != null) cancelAnimationFrame(playbackFrame);
+				playbackFrame = null;
+				renderedBufferTime = null;
 				if (telemetryFrames.length) renderBufferedAt(elapsedOf(telemetryFrames.at(-1)));
 				else updateDvrBar(0);
 			});
@@ -985,9 +1134,11 @@
 						if (telemetryFrames.length > 2400) telemetryFrames.shift();
 						if (followingLive) {
 							renderTelemetry(data);
+							renderedBufferTime = elapsedOf(data);
 							updateDvrBar(elapsedOf(data));
 						} else {
-							updateDvrBar(Number(dvrSeek.value));
+							accumulateHiddenTelemetry(data);
+							updateDvrBar(Math.min(currentPlaybackTime(), elapsedOf(data)));
 						}
 					} else if (payload.type === "end") {
 						terminal = true;

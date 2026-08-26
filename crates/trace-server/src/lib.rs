@@ -695,6 +695,8 @@ mod tests {
         assert!(page.contains("lap.completed_laps"));
         assert!(page.contains("Spectator timeline"));
         assert!(page.contains("liveEdge"));
+        assert!(page.contains("playbackTick"));
+        assert!(page.contains("lap-sectors"));
         assert!(page.contains("motion.position.x"));
     }
 
