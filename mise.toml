@@ -55,3 +55,7 @@ run = [
 description = "Build and launch the TRACE Windows desktop app from WSL"
 depends = ["build-windows-desktop"]
 run = "powershell.exe -NoProfile -Command \"Start-Process -FilePath '$(wslpath -w '{{config_root}}/target/x86_64-pc-windows-msvc/release/trace.exe')'\""
+
+[tasks.win]
+description = "Build and launch TRACE from WSL"
+depends = ["run-windows-desktop"]
