@@ -714,6 +714,8 @@ mod tests {
         assert!(script.contains("session.in_pit_lane"));
         assert!(script.contains("playbackTick"));
         assert!(script.contains("motion.position.x"));
+        assert!(script.contains("setMapZoom"));
+        assert!(script.contains("setTraceHeight"));
         assert!(include_str!("../assets/spectator/styles.css").contains(".lap-sectors"));
     }
 

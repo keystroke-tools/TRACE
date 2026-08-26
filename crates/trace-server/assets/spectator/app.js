@@ -6,8 +6,11 @@ const traceCanvas = document.querySelector("#trace");
 const mapEmpty = document.querySelector("#mapEmpty");
 const dvrSeek = document.querySelector("#dvrSeek");
 const liveEdge = document.querySelector("#liveEdge");
+const workspace = document.querySelector("main");
+const traceResizer = document.querySelector("#traceResizer");
 const path = [];
 let trackGeometry = null;
+const mapView = { scale: 1, offsetX: 0, offsetY: 0 };
 const history = [];
 const telemetryFrames = [];
 let latestPosition = null;
@@ -20,6 +23,10 @@ let playbackAnchor = null;
 let playbackFrame = null;
 let renderedBufferTime = null;
 const LIVE_EDGE_THRESHOLD_SECONDS = 0.15;
+const MAP_MIN_SCALE = 1;
+const MAP_MAX_SCALE = 8;
+const TRACE_MIN_HEIGHT = 96;
+const MAP_MIN_HEIGHT = 220;
 
 const set = (id, value) => {
 	document.querySelector(id).textContent = value;
@@ -65,11 +72,10 @@ const updateDvrBar = (selectedTime) => {
 	const selected = followingLive ? last : Math.max(first, Math.min(last, selectedTime ?? last));
 	const duration = Math.max(0, last - first);
 	const relative = selected - first;
-	dvrSeek.min = "0";
-	dvrSeek.max = String(duration);
-	dvrSeek.value = String(relative);
+	const progress = duration > 0 ? relative / duration : 1;
+	dvrSeek.value = String(followingLive ? 1 : progress);
 	dvrSeek.disabled = telemetryFrames.length < 2;
-	dvrSeek.style.setProperty("--dvr-progress", `${followingLive ? 100 : duration > 0 ? (relative / duration) * 100 : 0}%`);
+	dvrSeek.style.setProperty("--dvr-progress", `${followingLive ? 100 : progress * 100}%`);
 	set("#dvrTime", `${formatDvrTime(selected - first)} / ${formatDvrTime(last - first)}`);
 	liveEdge.classList.toggle("active", followingLive);
 };
@@ -139,13 +145,40 @@ const fitPath = (points, width, height, padding) => {
 	// so negating Z here mirrors the circuit relative to comparison views.
 	return (point) => ({ x: (point.x - (minX + maxX) / 2) * scale + width / 2, y: (point.y - (minY + maxY) / 2) * scale + height / 2 });
 };
+const updateMapZoomLabel = () => set("#mapZoomValue", `${Math.round(mapView.scale * 100)}%`);
+function setMapZoom(nextScale, anchorX = mapCanvas.clientWidth / 2, anchorY = mapCanvas.clientHeight / 2) {
+	const scale = Math.max(MAP_MIN_SCALE, Math.min(MAP_MAX_SCALE, nextScale));
+	if (scale === mapView.scale) return;
+	const ratio = scale / mapView.scale;
+	const centreX = mapCanvas.clientWidth / 2;
+	const centreY = mapCanvas.clientHeight / 2;
+	mapView.offsetX = anchorX - centreX - (anchorX - centreX - mapView.offsetX) * ratio;
+	mapView.offsetY = anchorY - centreY - (anchorY - centreY - mapView.offsetY) * ratio;
+	mapView.scale = scale;
+	updateMapZoomLabel();
+	drawMap();
+}
+function resetMapZoom() {
+	mapView.scale = 1;
+	mapView.offsetX = 0;
+	mapView.offsetY = 0;
+	updateMapZoomLabel();
+	drawMap();
+}
 function drawMap() {
 	const { width, height, ratio } = resizeCanvas(mapCanvas);
 	const context = mapCanvas.getContext("2d");
 	context.clearRect(0, 0, width, height);
 	const reference = trackGeometry?.centre_line?.length > 2 ? trackGeometry.centre_line : path;
 	if (reference.length < 2) return;
-	const project = fitPath(reference, width, height, 42 * ratio);
+	const projectBase = fitPath(reference, width, height, 42 * ratio);
+	const project = (point) => {
+		const projected = projectBase(point);
+		return {
+			x: (projected.x - width / 2) * mapView.scale + width / 2 + mapView.offsetX * ratio,
+			y: (projected.y - height / 2) * mapView.scale + height / 2 + mapView.offsetY * ratio,
+		};
+	};
 	context.lineJoin = "round";
 	context.lineCap = "round";
 	const strokePath = (points, color, lineWidth, closed = false) => {
@@ -178,6 +211,51 @@ function drawMap() {
 		context.stroke();
 	}
 }
+
+mapCanvas.addEventListener(
+	"wheel",
+	(event) => {
+		event.preventDefault();
+		const bounds = mapCanvas.getBoundingClientRect();
+		const factor = Math.exp(-event.deltaY * 0.0015);
+		setMapZoom(mapView.scale * factor, event.clientX - bounds.left, event.clientY - bounds.top);
+	},
+	{ passive: false },
+);
+document.querySelector("#mapZoomIn").addEventListener("click", () => setMapZoom(mapView.scale * 1.35));
+document.querySelector("#mapZoomOut").addEventListener("click", () => setMapZoom(mapView.scale / 1.35));
+document.querySelector("#mapZoomReset").addEventListener("click", resetMapZoom);
+mapCanvas.addEventListener("dblclick", resetMapZoom);
+
+const maximumTraceHeight = () => Math.max(TRACE_MIN_HEIGHT, workspace.clientHeight - MAP_MIN_HEIGHT - traceResizer.offsetHeight);
+const setTraceHeight = (height) => {
+	const next = Math.max(TRACE_MIN_HEIGHT, Math.min(maximumTraceHeight(), height));
+	workspace.style.setProperty("--trace-height", `${Math.round(next)}px`);
+	drawMap();
+	drawTrace();
+};
+traceResizer.addEventListener("pointerdown", (event) => {
+	const startY = event.clientY;
+	const startHeight = traceCanvas.getBoundingClientRect().height;
+	traceResizer.setPointerCapture(event.pointerId);
+	document.body.classList.add("resizing-trace");
+	const move = (moveEvent) => setTraceHeight(startHeight - (moveEvent.clientY - startY));
+	const finish = () => {
+		document.body.classList.remove("resizing-trace");
+		traceResizer.removeEventListener("pointermove", move);
+		traceResizer.removeEventListener("pointerup", finish);
+		traceResizer.removeEventListener("pointercancel", finish);
+	};
+	traceResizer.addEventListener("pointermove", move);
+	traceResizer.addEventListener("pointerup", finish);
+	traceResizer.addEventListener("pointercancel", finish);
+});
+traceResizer.addEventListener("keydown", (event) => {
+	if (!["ArrowUp", "ArrowDown"].includes(event.key)) return;
+	event.preventDefault();
+	const height = traceCanvas.getBoundingClientRect().height;
+	setTraceHeight(height + (event.key === "ArrowUp" ? 16 : -16));
+});
 function drawTrace() {
 	const { width, height, ratio } = resizeCanvas(traceCanvas);
 	const context = traceCanvas.getContext("2d");
@@ -325,8 +403,9 @@ function renderBufferedAt(targetTime) {
 	updateDvrBar(targetTime);
 }
 const dvrStartTime = () => (telemetryFrames.length ? elapsedOf(telemetryFrames[0]) : 0);
+const dvrDuration = () => (telemetryFrames.length ? elapsedOf(telemetryFrames.at(-1)) - dvrStartTime() : 0);
 const currentPlaybackTime = () =>
-	playbackAnchor ? playbackAnchor.mediaTime + (performance.now() - playbackAnchor.wallTime) / 1000 : dvrStartTime() + Number(dvrSeek.value);
+	playbackAnchor ? playbackAnchor.mediaTime + (performance.now() - playbackAnchor.wallTime) / 1000 : dvrStartTime() + Number(dvrSeek.value) * dvrDuration();
 const playbackTick = () => {
 	playbackFrame = null;
 	if (followingLive || !playbackAnchor || !telemetryFrames.length) return;
@@ -352,7 +431,7 @@ const playFrom = (targetTime) => {
 	if (playbackFrame == null) playbackFrame = requestAnimationFrame(playbackTick);
 };
 dvrSeek.addEventListener("input", () => {
-	playFrom(dvrStartTime() + Number(dvrSeek.value));
+	playFrom(dvrStartTime() + Number(dvrSeek.value) * dvrDuration());
 });
 function jumpToLive() {
 	followingLive = true;

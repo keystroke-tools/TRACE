@@ -27,12 +27,22 @@
 			</section>
 			<div class="dvr-bar">
 				<output class="dvr-time" id="dvrTime">0:00 / 0:00</output>
-				<input class="dvr-seek" id="dvrSeek" type="range" min="0" max="0" step="0.05" value="0" aria-label="Spectator timeline" />
+				<input class="dvr-seek" id="dvrSeek" type="range" min="0" max="1" step="0.001" value="1" aria-label="Spectator timeline" />
 				<button class="live-edge active" id="liveEdge" type="button"><span>LIVE</span><i></i></button>
 			</div>
 			<main>
 				<section class="panel map-panel">
-					<div class="panel-head"><strong>TRACK MAP</strong><span id="mapSamples">0 POINTS</span></div>
+					<div class="panel-head">
+						<strong>TRACK MAP</strong>
+						<div class="map-head-actions">
+							<span id="mapSamples">0 POINTS</span>
+							<div class="map-zoom" aria-label="Track map zoom controls">
+								<button id="mapZoomOut" type="button" aria-label="Zoom track map out">−</button>
+								<button id="mapZoomReset" type="button" aria-label="Reset track map zoom"><span id="mapZoomValue">100%</span></button>
+								<button id="mapZoomIn" type="button" aria-label="Zoom track map in">+</button>
+							</div>
+						</div>
+					</div>
 					<canvas id="map"></canvas>
 					<div class="map-empty" id="mapEmpty"><strong>BUILDING TRACK MAP</strong><span>The driven line appears as position data arrives.</span></div>
 				</section>
@@ -83,6 +93,9 @@
 						<div class="panel-head"><strong>LAPS</strong><span id="lapCount">0 COMPLETE</span></div>
 						<div class="lap-list" id="lapList"><div class="lap-empty">Completed laps will appear here.</div></div>
 					</section>
+				</div>
+				<div class="trace-resizer" id="traceResizer" role="separator" aria-label="Resize input history" aria-orientation="horizontal" tabindex="0">
+					<i></i>
 				</div>
 				<section class="panel trace-panel">
 					<div class="panel-head">

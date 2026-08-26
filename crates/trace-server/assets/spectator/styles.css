@@ -241,11 +241,12 @@ header {
 	box-shadow: 0 0 8px #71df8b;
 }
 main {
+	--trace-height: clamp(120px, 24vh, 240px);
 	display: grid;
 	min-height: 0;
-	grid-template-areas: "map telemetry" "trace telemetry";
+	grid-template-areas: "map telemetry" "resizer telemetry" "trace telemetry";
 	grid-template-columns: minmax(390px, 1.4fr) minmax(330px, 1fr);
-	grid-template-rows: minmax(292px, 1fr) minmax(120px, 0.55fr);
+	grid-template-rows: minmax(220px, 1fr) 9px var(--trace-height);
 	gap: 1px;
 	padding: 1px;
 	overflow: hidden;
@@ -282,6 +283,46 @@ main {
 		10px ui-monospace,
 		monospace;
 }
+.map-head-actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.map-zoom {
+	display: flex;
+	height: 26px;
+	pointer-events: auto;
+}
+.map-zoom button {
+	display: grid;
+	min-width: 28px;
+	place-items: center;
+	padding: 0 7px;
+	border: 1px solid #3d3d3d;
+	background: #1b1b1b;
+	color: #aaa;
+	cursor: pointer;
+	font:
+		800 13px ui-monospace,
+		monospace;
+}
+.map-zoom button + button {
+	border-left: 0;
+}
+.map-zoom button:hover,
+.map-zoom button:focus-visible {
+	background: #252525;
+	color: #fff;
+}
+#mapZoomReset {
+	min-width: 54px;
+}
+#mapZoomReset span {
+	color: inherit;
+	font:
+		700 9px ui-monospace,
+		monospace;
+}
 canvas {
 	display: block;
 	width: 100%;
@@ -309,6 +350,44 @@ canvas {
 }
 .map-panel {
 	grid-area: map;
+}
+.map-panel canvas {
+	cursor: zoom-in;
+}
+.trace-resizer {
+	position: relative;
+	z-index: 3;
+	grid-area: resizer;
+	display: grid;
+	place-items: center;
+	background: #151515;
+	cursor: row-resize;
+	touch-action: none;
+}
+.trace-resizer::before {
+	position: absolute;
+	inset: 0;
+	border-top: 1px solid #343434;
+	border-bottom: 1px solid #343434;
+	content: "";
+}
+.trace-resizer i {
+	z-index: 1;
+	width: 42px;
+	height: 2px;
+	background: #555;
+}
+.trace-resizer:hover i,
+.trace-resizer:focus-visible i,
+body.resizing-trace .trace-resizer i {
+	background: #71df8b;
+}
+.trace-resizer:focus-visible {
+	outline: none;
+}
+body.resizing-trace {
+	cursor: row-resize;
+	user-select: none;
 }
 .telemetry-column {
 	grid-area: telemetry;
@@ -580,6 +659,9 @@ canvas {
 		grid-template-areas: "map" "telemetry" "trace";
 		grid-template-columns: 1fr;
 		grid-template-rows: 440px auto 240px;
+	}
+	.trace-resizer {
+		display: none;
 	}
 	.telemetry-column {
 		grid-template-rows: auto 240px;
