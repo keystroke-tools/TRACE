@@ -50,3 +50,8 @@ run = [
   "pnpm build",
   "cargo xwin build --target x86_64-pc-windows-msvc -p trace-desktop --bin trace --release",
 ]
+
+[tasks.run-windows-desktop]
+description = "Build and launch the TRACE Windows desktop app from WSL"
+depends = ["build-windows-desktop"]
+run = "powershell.exe -NoProfile -Command \"Start-Process -FilePath '$(wslpath -w '{{config_root}}/target/x86_64-pc-windows-msvc/release/trace.exe')'\""
