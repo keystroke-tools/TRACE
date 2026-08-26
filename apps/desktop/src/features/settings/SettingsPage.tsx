@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { telemetryDataSource, type GameInstallDirectory } from "../../data-source";
 import { PageIntro } from "../../components/layout";
@@ -6,6 +6,15 @@ import { useToast } from "../../Toast";
 import { useUpdater } from "../update/UpdateContext";
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://live.simtrace.run";
+
+const settingsTabs = [
+	{ id: "general", label: "GENERAL", description: "Driver identity and app preferences" },
+	{ id: "games", label: "GAMES", description: "Simulator installations and adapters" },
+	{ id: "connectivity", label: "CONNECTIVITY", description: "Live services and integrations" },
+	{ id: "updates", label: "UPDATES & ABOUT", description: "Version and release channel" },
+] as const;
+
+type SettingsTab = (typeof settingsTabs)[number]["id"];
 
 function normalizeServiceEndpoint(value: string) {
 	try {
@@ -20,6 +29,7 @@ function normalizeServiceEndpoint(value: string) {
 export function SettingsPage() {
 	const showToast = useToast();
 	const updater = useUpdater();
+	const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 	const [directories, setDirectories] = useState<GameInstallDirectory[]>([]);
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 	const [loading, setLoading] = useState(true);
@@ -179,6 +189,19 @@ export function SettingsPage() {
 		else void updater.checkForUpdates(true);
 	}
 
+	function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+		let nextIndex: number | null = null;
+		if (event.key === "ArrowRight") nextIndex = (index + 1) % settingsTabs.length;
+		else if (event.key === "ArrowLeft") nextIndex = (index - 1 + settingsTabs.length) % settingsTabs.length;
+		else if (event.key === "Home") nextIndex = 0;
+		else if (event.key === "End") nextIndex = settingsTabs.length - 1;
+		if (nextIndex == null) return;
+		event.preventDefault();
+		const nextTab = settingsTabs[nextIndex];
+		setActiveTab(nextTab.id);
+		window.requestAnimationFrame(() => document.getElementById(`settings-tab-${nextTab.id}`)?.focus());
+	}
+
 	return (
 		<>
 			<PageIntro
@@ -187,223 +210,260 @@ export function SettingsPage() {
 				title="SETTINGS"
 				description="Control how TRACE connects to your simulators and works with their data. Recording, storage, analysis, and appearance preferences will also live here as those features become configurable."
 			/>
-			<form
-				className="mt-7 border border-trace-divider bg-trace-surface"
-				onSubmit={(event) => {
-					event.preventDefault();
-					void saveProfile();
-				}}
+			<div
+				className="mt-7 grid grid-cols-4 border border-trace-divider bg-trace-surface max-[1050px]:grid-cols-2"
+				role="tablist"
+				aria-label="Settings categories"
 			>
-				<div className="border-b border-trace-divider px-5 py-4">
-					<h2 className="text-[14px] font-black tracking-[.04em]">DRIVER PROFILE</h2>
-					<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
-						Use a nickname or full name that other drivers will recognize. TRACE attaches it to new captures and includes it in shared{" "}
-						<span className="font-mono text-trace-soft">.trace</span> packages; exports of older self-owned sessions use it when no session-specific
-						driver is set.
-					</p>
-				</div>
-				<label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
-					DISPLAY NAME
-					<div className="mt-1.5 flex max-w-2xl">
-						<input
-							value={profileName}
-							maxLength={80}
-							onChange={(event) => setProfileName(event.target.value)}
-							placeholder="Nickname or full name"
-							className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 text-[13px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
-						/>
+				{settingsTabs.map((tab, index) => {
+					const selected = activeTab === tab.id;
+					return (
+						<button
+							id={`settings-tab-${tab.id}`}
+							key={tab.id}
+							type="button"
+							role="tab"
+							aria-selected={selected}
+							aria-controls={`settings-panel-${tab.id}`}
+							tabIndex={selected ? 0 : -1}
+							onClick={() => setActiveTab(tab.id)}
+							onKeyDown={(event) => handleTabKeyDown(event, index)}
+							className={`relative min-h-[72px] min-w-0 border-0 border-r border-trace-divider px-4 py-3 text-left last:border-r-0 max-[1050px]:border-b max-[1050px]:nth-[2]:border-r-0 max-[1050px]:nth-[3]:border-b-0 max-[1050px]:nth-[4]:border-b-0 ${
+								selected ? "bg-trace-deep text-trace-text" : "bg-trace-surface text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+							}`}
+						>
+							<span className="block truncate font-mono text-[11px] font-black tracking-[.09em]">{tab.label}</span>
+							<span className="mt-1 block truncate text-[11px] leading-4 text-trace-dim">{tab.description}</span>
+							{selected && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-trace-accent" aria-hidden="true" />}
+						</button>
+					);
+				})}
+			</div>
+			<div id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={activeTab !== "general"}>
+				<form
+					className="mt-7 border border-trace-divider bg-trace-surface"
+					onSubmit={(event) => {
+						event.preventDefault();
+						void saveProfile();
+					}}
+				>
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 className="text-[14px] font-black tracking-[.04em]">DRIVER PROFILE</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+							Use a nickname or full name that other drivers will recognize. TRACE attaches it to new captures and includes it in shared{" "}
+							<span className="font-mono text-trace-soft">.trace</span> packages; exports of older self-owned sessions use it when no
+							session-specific driver is set.
+						</p>
+					</div>
+					<label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
+						DISPLAY NAME
+						<div className="mt-1.5 flex max-w-2xl">
+							<input
+								value={profileName}
+								maxLength={80}
+								onChange={(event) => setProfileName(event.target.value)}
+								placeholder="Nickname or full name"
+								className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 text-[13px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
+							/>
+							<button
+								type="submit"
+								disabled={savingProfile || profileName.trim() === savedProfileName}
+								className="w-28 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+							>
+								{savingProfile ? "SAVING…" : "SAVE"}
+							</button>
+						</div>
+					</label>
+				</form>
+			</div>
+			<div id="settings-panel-connectivity" role="tabpanel" aria-labelledby="settings-tab-connectivity" hidden={activeTab !== "connectivity"}>
+				<form
+					className="mt-7 border border-trace-divider bg-trace-surface"
+					onSubmit={(event) => {
+						event.preventDefault();
+						void saveLiveSettings();
+					}}
+				>
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 className="text-[14px] font-black tracking-[.04em]">GO LIVE</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+							Choose the service TRACE will use to create sessions, publish realtime telemetry, and generate spectator links. Keep the hosted
+							default or point TRACE at your own compatible deployment.
+						</p>
+					</div>
+					<label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
+						LIVE SERVICE ENDPOINT
+						<span className="mt-1 block max-w-4xl font-normal leading-5 normal-case tracking-normal text-trace-dim">
+							One base URL for session creation, realtime publishing, spectator connections, and shareable browser links. Secure WebSocket URLs
+							are derived automatically from HTTPS.
+						</span>
+						<div className="mt-2 flex">
+							<input
+								type="url"
+								value={liveEndpoint}
+								onChange={(event) => setLiveEndpoint(event.target.value)}
+								placeholder={DEFAULT_LIVE_SERVICE_ENDPOINT}
+								spellCheck={false}
+								className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
+							/>
+							<button
+								type="button"
+								disabled={savingLiveSettings || liveEndpoint === DEFAULT_LIVE_SERVICE_ENDPOINT}
+								onClick={() => setLiveEndpoint(DEFAULT_LIVE_SERVICE_ENDPOINT)}
+								className="w-24 shrink-0 border border-l-0 border-trace-divider bg-trace-surface text-[10px] font-bold leading-none text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:bg-trace-deep disabled:text-trace-dim"
+							>
+								DEFAULT
+							</button>
+						</div>
+						<span className="mt-2 block truncate font-mono text-[10px] font-normal normal-case tracking-normal text-trace-soft">
+							{DEFAULT_LIVE_SERVICE_ENDPOINT}
+						</span>
+					</label>
+					<div className="flex min-h-14 items-center justify-between gap-5 border-t border-trace-divider px-5 py-2">
+						<span className="text-[11px] leading-5 text-trace-dim">Only complete HTTP and HTTPS base URLs are accepted.</span>
 						<button
 							type="submit"
-							disabled={savingProfile || profileName.trim() === savedProfileName}
-							className="w-28 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+							disabled={savingLiveSettings || !liveEndpoint.trim() || liveEndpoint.trim() === savedLiveEndpoint}
+							className="h-10 w-28 shrink-0 border border-trace-accent bg-trace-accent-wash text-[12px] font-bold leading-none text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 						>
-							{savingProfile ? "SAVING…" : "SAVE"}
+							{savingLiveSettings ? "SAVING…" : "SAVE"}
 						</button>
 					</div>
-				</label>
-			</form>
-			<form
-				className="mt-7 border border-trace-divider bg-trace-surface"
-				onSubmit={(event) => {
-					event.preventDefault();
-					void saveLiveSettings();
-				}}
-			>
-				<div className="border-b border-trace-divider px-5 py-4">
-					<h2 className="text-[14px] font-black tracking-[.04em]">GO LIVE</h2>
-					<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
-						Choose the service TRACE will use to create sessions, publish realtime telemetry, and generate spectator links. Keep the hosted default
-						or point TRACE at your own compatible deployment.
-					</p>
-				</div>
-				<label className="block p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
-					LIVE SERVICE ENDPOINT
-					<span className="mt-1 block max-w-4xl font-normal leading-5 normal-case tracking-normal text-trace-dim">
-						One base URL for session creation, realtime publishing, spectator connections, and shareable browser links. Secure WebSocket URLs are
-						derived automatically from HTTPS.
-					</span>
-					<div className="mt-2 flex">
-						<input
-							type="url"
-							value={liveEndpoint}
-							onChange={(event) => setLiveEndpoint(event.target.value)}
-							placeholder={DEFAULT_LIVE_SERVICE_ENDPOINT}
-							spellCheck={false}
-							className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
-						/>
+				</form>
+			</div>
+			<div id="settings-panel-updates" role="tabpanel" aria-labelledby="settings-tab-updates" hidden={activeTab !== "updates"}>
+				<section className="mt-7 border border-trace-divider bg-trace-surface" aria-labelledby="application-update-heading">
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 id="application-update-heading" className="text-[14px] font-black tracking-[.04em]">
+							APPLICATION UPDATE
+						</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+							Check TRACE's signed GitHub release channel manually. Automatic checks remain enabled and use the same updater state.
+						</p>
+					</div>
+					<div className="flex flex-wrap items-center justify-between gap-5 p-5">
+						<div className="min-w-[260px] flex-1">
+							<span className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">INSTALLED VERSION</span>
+							<strong className="mt-1 block font-mono text-[15px] text-trace-text">{updater.currentVersion}</strong>
+							<p
+								className={`mt-2 text-[12px] leading-5 ${updater.phase === "failed" ? "text-trace-warning" : "text-trace-muted"}`}
+								aria-live="polite"
+							>
+								{updateStatus}
+							</p>
+							{updater.phase === "downloading" && (
+								<div className="mt-3 h-1.5 max-w-xl overflow-hidden bg-trace-divider" aria-hidden="true">
+									<div
+										className={`h-full bg-trace-accent transition-[width] ${updater.downloadProgress == null ? "w-1/3 animate-pulse" : ""}`}
+										style={updater.downloadProgress == null ? undefined : { width: `${updater.downloadProgress}%` }}
+									/>
+								</div>
+							)}
+						</div>
 						<button
 							type="button"
-							disabled={savingLiveSettings || liveEndpoint === DEFAULT_LIVE_SERVICE_ENDPOINT}
-							onClick={() => setLiveEndpoint(DEFAULT_LIVE_SERVICE_ENDPOINT)}
-							className="w-24 shrink-0 border border-l-0 border-trace-divider bg-trace-surface text-[10px] font-bold leading-none text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:bg-trace-deep disabled:text-trace-dim"
+							onClick={runUpdateAction}
+							disabled={updateBusy}
+							className="min-h-11 min-w-44 shrink-0 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 						>
-							DEFAULT
+							{updater.phase === "checking"
+								? "CHECKING…"
+								: updater.phase === "downloading" || updater.phase === "installing" || updater.phase === "restarting"
+									? "UPDATING…"
+									: updater.availableVersion
+										? `${updater.phase === "failed" ? "TRY UPDATE" : "UPDATE NOW"} · ${updater.availableVersion}`
+										: updater.phase === "failed"
+											? "CHECK AGAIN"
+											: "CHECK FOR UPDATES"}
 						</button>
 					</div>
-					<span className="mt-2 block truncate font-mono text-[10px] font-normal normal-case tracking-normal text-trace-soft">
-						{DEFAULT_LIVE_SERVICE_ENDPOINT}
-					</span>
-				</label>
-				<div className="flex min-h-14 items-center justify-between gap-5 border-t border-trace-divider px-5 py-2">
-					<span className="text-[11px] leading-5 text-trace-dim">Only complete HTTP and HTTPS base URLs are accepted.</span>
-					<button
-						type="submit"
-						disabled={savingLiveSettings || !liveEndpoint.trim() || liveEndpoint.trim() === savedLiveEndpoint}
-						className="h-10 w-28 shrink-0 border border-trace-accent bg-trace-accent-wash text-[12px] font-bold leading-none text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
-					>
-						{savingLiveSettings ? "SAVING…" : "SAVE"}
-					</button>
-				</div>
-			</form>
-			<section className="mt-7 border border-trace-divider bg-trace-surface" aria-labelledby="application-update-heading">
-				<div className="border-b border-trace-divider px-5 py-4">
-					<h2 id="application-update-heading" className="text-[14px] font-black tracking-[.04em]">
-						APPLICATION UPDATE
-					</h2>
-					<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
-						Check TRACE's signed GitHub release channel manually. Automatic checks remain enabled and use the same updater state.
-					</p>
-				</div>
-				<div className="flex flex-wrap items-center justify-between gap-5 p-5">
-					<div className="min-w-[260px] flex-1">
-						<span className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">INSTALLED VERSION</span>
-						<strong className="mt-1 block font-mono text-[15px] text-trace-text">{updater.currentVersion}</strong>
-						<p
-							className={`mt-2 text-[12px] leading-5 ${updater.phase === "failed" ? "text-trace-warning" : "text-trace-muted"}`}
-							aria-live="polite"
-						>
-							{updateStatus}
+				</section>
+			</div>
+			<div id="settings-panel-games" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeTab !== "games"}>
+				<div className="mt-7 border border-trace-divider bg-trace-surface">
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+							Game roots give each simulator adapter access to the files and metadata needed for content identification, replay and setup
+							workflows, and future integrations. Choose the main game folder—not one of its subfolders.
 						</p>
-						{updater.phase === "downloading" && (
-							<div className="mt-3 h-1.5 max-w-xl overflow-hidden bg-trace-divider" aria-hidden="true">
-								<div
-									className={`h-full bg-trace-accent transition-[width] ${updater.downloadProgress == null ? "w-1/3 animate-pulse" : ""}`}
-									style={updater.downloadProgress == null ? undefined : { width: `${updater.downloadProgress}%` }}
-								/>
-							</div>
-						)}
 					</div>
-					<button
-						type="button"
-						onClick={runUpdateAction}
-						disabled={updateBusy}
-						className="min-h-11 min-w-44 shrink-0 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
-					>
-						{updater.phase === "checking"
-							? "CHECKING…"
-							: updater.phase === "downloading" || updater.phase === "installing" || updater.phase === "restarting"
-								? "UPDATING…"
-								: updater.availableVersion
-									? `${updater.phase === "failed" ? "TRY UPDATE" : "UPDATE NOW"} · ${updater.availableVersion}`
-									: updater.phase === "failed"
-										? "CHECK AGAIN"
-										: "CHECK FOR UPDATES"}
-					</button>
-				</div>
-			</section>
-			<div className="mt-7 border border-trace-divider bg-trace-surface">
-				<div className="border-b border-trace-divider px-5 py-4">
-					<h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
-					<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
-						Game roots give each simulator adapter access to the files and metadata needed for content identification, replay and setup workflows,
-						and future integrations. Choose the main game folder—not one of its subfolders.
-					</p>
-				</div>
-				{loading ? (
-					<div className="p-6 font-mono text-[12px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
-				) : directories.length === 0 ? (
-					<div className="p-6 text-[12px] text-trace-dim">No configurable game adapters are installed.</div>
-				) : (
-					directories.map((directory) => {
-						const draft = drafts[directory.simulatorId] ?? "";
-						const unchanged = draft.trim() === (directory.path ?? "");
-						return (
-							<form
-								className="p-5"
-								key={directory.simulatorId}
-								onSubmit={(event) => {
-									event.preventDefault();
-									void saveDirectory(directory.simulatorId, draft.trim() || null);
-								}}
-							>
-								<div className="flex items-center justify-between gap-4">
-									<div>
-										<strong className="text-[14px] text-trace-text">{directory.simulatorName}</strong>
-										<span
-											className={`ml-3 inline-flex border px-2 py-1 font-mono text-[12px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-soft/50 text-trace-soft" : "border-trace-accent-muted text-trace-accent"}`}
-										>
-											{directory.source === "manual" ? "CUSTOM" : directory.source === "detected" ? "AUTO-DETECTED" : "NOT FOUND"}
-										</span>
+					{loading ? (
+						<div className="p-6 font-mono text-[12px] text-trace-dim">CHECKING INSTALLED GAMES…</div>
+					) : directories.length === 0 ? (
+						<div className="p-6 text-[12px] text-trace-dim">No configurable game adapters are installed.</div>
+					) : (
+						directories.map((directory) => {
+							const draft = drafts[directory.simulatorId] ?? "";
+							const unchanged = draft.trim() === (directory.path ?? "");
+							return (
+								<form
+									className="p-5"
+									key={directory.simulatorId}
+									onSubmit={(event) => {
+										event.preventDefault();
+										void saveDirectory(directory.simulatorId, draft.trim() || null);
+									}}
+								>
+									<div className="flex items-center justify-between gap-4">
+										<div>
+											<strong className="text-[14px] text-trace-text">{directory.simulatorName}</strong>
+											<span
+												className={`ml-3 inline-flex border px-2 py-1 font-mono text-[12px] font-bold tracking-[.08em] ${directory.source === "missing" ? "border-trace-warning/50 text-trace-warning" : directory.source === "manual" ? "border-trace-soft/50 text-trace-soft" : "border-trace-accent-muted text-trace-accent"}`}
+											>
+												{directory.source === "manual" ? "CUSTOM" : directory.source === "detected" ? "AUTO-DETECTED" : "NOT FOUND"}
+											</span>
+										</div>
+										{directory.source === "manual" && (
+											<button
+												type="button"
+												disabled={saving === directory.simulatorId}
+												onClick={() => void saveDirectory(directory.simulatorId, null)}
+												className="border-0 bg-transparent text-[12px] font-bold text-trace-muted hover:text-trace-text disabled:text-trace-dim"
+											>
+												USE AUTO-DETECTION
+											</button>
+										)}
 									</div>
-									{directory.source === "manual" && (
-										<button
-											type="button"
-											disabled={saving === directory.simulatorId}
-											onClick={() => void saveDirectory(directory.simulatorId, null)}
-											className="border-0 bg-transparent text-[12px] font-bold text-trace-muted hover:text-trace-text disabled:text-trace-dim"
-										>
-											USE AUTO-DETECTION
-										</button>
-									)}
-								</div>
-								<label className="mt-4 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
-									INSTALL DIRECTORY
-									<div className="mt-1.5 flex">
-										<input
-											value={draft}
-											onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))}
-											placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa"
-											className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
-										/>
-										<button
-											type="button"
-											disabled={saving === directory.simulatorId}
-											onClick={() => void chooseDirectory(directory)}
-											className="flex h-11 w-28 items-center justify-center gap-2 border border-l-0 border-trace-divider bg-trace-surface text-[12px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:text-trace-dim"
-										>
-											<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-												<path d="M1.5 4.5h5l1.2 1.5h6.8v7.5h-13zM1.5 4.5V2.8h4.2l1.2 1.7" />
-											</svg>
-											BROWSE
-										</button>
-										<button
-											type="submit"
-											disabled={saving === directory.simulatorId || unchanged || !draft.trim()}
-											className="w-24 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
-										>
-											{saving === directory.simulatorId ? "SAVING…" : "SAVE"}
-										</button>
-									</div>
-								</label>
-								<p className="mt-2 text-[12px] leading-5 text-trace-dim">
-									{directory.path
-										? `Currently using ${directory.source === "manual" ? "your custom path" : "the detected Steam installation"}.`
-										: "TRACE could not locate this game automatically. Paste its installation folder above."}
-								</p>
-							</form>
-						);
-					})
-				)}
+									<label className="mt-4 block text-[12px] font-bold tracking-[.08em] text-trace-dim">
+										INSTALL DIRECTORY
+										<div className="mt-1.5 flex">
+											<input
+												value={draft}
+												onChange={(event) => setDrafts((current) => ({ ...current, [directory.simulatorId]: event.target.value }))}
+												placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\assettocorsa"
+												className="h-11 min-w-0 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
+											/>
+											<button
+												type="button"
+												disabled={saving === directory.simulatorId}
+												onClick={() => void chooseDirectory(directory)}
+												className="flex h-11 w-28 items-center justify-center gap-2 border border-l-0 border-trace-divider bg-trace-surface text-[12px] font-bold text-trace-soft hover:bg-trace-raised hover:text-trace-text disabled:text-trace-dim"
+											>
+												<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+													<path d="M1.5 4.5h5l1.2 1.5h6.8v7.5h-13zM1.5 4.5V2.8h4.2l1.2 1.7" />
+												</svg>
+												BROWSE
+											</button>
+											<button
+												type="submit"
+												disabled={saving === directory.simulatorId || unchanged || !draft.trim()}
+												className="w-24 border border-l-0 border-trace-accent bg-trace-accent-wash text-[12px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+											>
+												{saving === directory.simulatorId ? "SAVING…" : "SAVE"}
+											</button>
+										</div>
+									</label>
+									<p className="mt-2 text-[12px] leading-5 text-trace-dim">
+										{directory.path
+											? `Currently using ${directory.source === "manual" ? "your custom path" : "the detected Steam installation"}.`
+											: "TRACE could not locate this game automatically. Paste its installation folder above."}
+									</p>
+								</form>
+							);
+						})
+					)}
+				</div>
 			</div>
 		</>
 	);
