@@ -14,7 +14,7 @@
 		"core:window:allow-unminimize",
 		"core:webview:allow-create-webview-window",
 		"dialog:allow-open",
-		"opener:allow-open-url",
+		"opener:default",
 		"process:allow-restart",
 		"updater:allow-check",
 		"updater:allow-download-and-install"
