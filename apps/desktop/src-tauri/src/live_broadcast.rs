@@ -1,0 +1,522 @@
+use std::{
+    fs::File,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+use futures_util::SinkExt;
+use serde::Serialize;
+use tauri::Manager;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        Message,
+        client::IntoClientRequest,
+        http::{HeaderValue, header::AUTHORIZATION},
+    },
+};
+use trace_live::{LiveTelemetrySample, encode_recorded_session};
+use trace_protocol::{
+    CreateLiveSessionRequest, CreateLiveSessionResponse, InstallationCredentials, LiveStatus,
+    SessionState,
+};
+use trace_storage::{
+    ipc::{TelemetryColumns, read_columns_range},
+    metadata::{MetadataStore, SessionSummary},
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveBroadcastPhase {
+    Idle,
+    Connecting,
+    Live,
+    Ending,
+    Ended,
+    Error,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveBroadcastStatus {
+    pub phase: LiveBroadcastPhase,
+    pub source_session_id: Option<String>,
+    pub live_session_id: Option<String>,
+    pub spectator_url: Option<String>,
+    pub elapsed_ns: u64,
+    pub duration_ns: u64,
+    pub error: Option<String>,
+}
+
+impl Default for LiveBroadcastStatus {
+    fn default() -> Self {
+        Self {
+            phase: LiveBroadcastPhase::Idle,
+            source_session_id: None,
+            live_session_id: None,
+            spectator_url: None,
+            elapsed_ns: 0,
+            duration_ns: 0,
+            error: None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SharedLiveBroadcast {
+    status: Arc<Mutex<LiveBroadcastStatus>>,
+    credentials: Arc<Mutex<Option<InstallationCredentials>>>,
+    generation: Arc<AtomicU64>,
+}
+
+impl Default for SharedLiveBroadcast {
+    fn default() -> Self {
+        Self {
+            status: Arc::new(Mutex::new(LiveBroadcastStatus::default())),
+            credentials: Arc::new(Mutex::new(None)),
+            generation: Arc::new(AtomicU64::new(0)),
+        }
+    }
+}
+
+impl SharedLiveBroadcast {
+    fn snapshot(&self) -> Result<LiveBroadcastStatus, String> {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .map_err(|_| "live broadcast status is unavailable".to_owned())
+    }
+
+    fn begin(&self, source_session_id: String, duration_ns: u64) -> Result<u64, String> {
+        let mut status = self
+            .status
+            .lock()
+            .map_err(|_| "live broadcast status is unavailable".to_owned())?;
+        if matches!(
+            status.phase,
+            LiveBroadcastPhase::Connecting | LiveBroadcastPhase::Live | LiveBroadcastPhase::Ending
+        ) {
+            return Err("another live broadcast is already active".to_owned());
+        }
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        *status = LiveBroadcastStatus {
+            phase: LiveBroadcastPhase::Connecting,
+            source_session_id: Some(source_session_id),
+            duration_ns,
+            ..LiveBroadcastStatus::default()
+        };
+        Ok(generation)
+    }
+
+    fn update(&self, generation: u64, update: impl FnOnce(&mut LiveBroadcastStatus)) {
+        if self.generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        if let Ok(mut status) = self.status.lock() {
+            update(&mut status);
+        }
+    }
+
+    fn current(&self, generation: u64) -> bool {
+        self.generation.load(Ordering::SeqCst) == generation
+    }
+
+    fn stop(&self) -> Result<LiveBroadcastStatus, String> {
+        let mut status = self
+            .status
+            .lock()
+            .map_err(|_| "live broadcast status is unavailable".to_owned())?;
+        if !matches!(
+            status.phase,
+            LiveBroadcastPhase::Connecting | LiveBroadcastPhase::Live
+        ) {
+            return Ok(status.clone());
+        }
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        status.phase = LiveBroadcastPhase::Ending;
+        Ok(status.clone())
+    }
+}
+
+struct RecordedBroadcast {
+    endpoint: String,
+    state: SessionState,
+    samples: Vec<LiveTelemetrySample>,
+    duration_ns: u64,
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub fn live_broadcast_status(
+    state: tauri::State<'_, SharedLiveBroadcast>,
+) -> Result<LiveBroadcastStatus, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub async fn start_recorded_live_broadcast(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedLiveBroadcast>,
+    session_id: String,
+) -> Result<LiveBroadcastStatus, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let source_session_id = session_id.clone();
+    let broadcast =
+        tokio::task::spawn_blocking(move || load_recorded_broadcast(&directory, &session_id))
+            .await
+            .map_err(|error| format!("recorded broadcast loader stopped: {error}"))??;
+    let generation = state.begin(source_session_id, broadcast.duration_ns)?;
+    let shared = state.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        run_recorded_broadcast(shared, generation, broadcast).await;
+    });
+    state.snapshot()
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub fn stop_live_broadcast(
+    state: tauri::State<'_, SharedLiveBroadcast>,
+) -> Result<LiveBroadcastStatus, String> {
+    state.stop()
+}
+
+async fn run_recorded_broadcast(
+    shared: SharedLiveBroadcast,
+    generation: u64,
+    source: RecordedBroadcast,
+) {
+    let result = publish_recorded_broadcast(&shared, generation, &source).await;
+    if shared.current(generation) {
+        let failed = result.is_err();
+        shared.update(generation, |status| match result {
+            Ok(()) => {
+                status.phase = LiveBroadcastPhase::Ended;
+                status.elapsed_ns = status.duration_ns;
+                status.error = None;
+            }
+            Err(error) => {
+                status.phase = LiveBroadcastPhase::Error;
+                status.error = Some(error);
+            }
+        });
+        if failed && let Ok(mut credentials) = shared.credentials.lock() {
+            *credentials = None;
+        }
+    } else {
+        finish_cancelled_broadcast(&shared);
+    }
+}
+
+async fn publish_recorded_broadcast(
+    shared: &SharedLiveBroadcast,
+    generation: u64,
+    source: &RecordedBroadcast,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| format!("could not prepare the live client: {error}"))?;
+    let credentials = installation_credentials(shared, &client, &source.endpoint).await?;
+    if !shared.current(generation) {
+        return Ok(());
+    }
+    let created = create_live_session(
+        &client,
+        &source.endpoint,
+        &credentials,
+        source.state.clone(),
+    )
+    .await?;
+    if !shared.current(generation) {
+        end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await?;
+        return Ok(());
+    }
+    let mut request = created
+        .publish_websocket_url
+        .as_str()
+        .into_client_request()
+        .map_err(|error| format!("live publisher URL is invalid: {error}"))?;
+    request.headers_mut().insert(
+        "x-trace-installation-id",
+        HeaderValue::from_str(&credentials.installation_id)
+            .map_err(|_| "installation identifier is invalid".to_owned())?,
+    );
+    request.headers_mut().insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
+            .map_err(|_| "publishing credential is invalid".to_owned())?,
+    );
+    let (mut websocket, _) = tokio::time::timeout(Duration::from_secs(15), connect_async(request))
+        .await
+        .map_err(|_| "live publisher connection timed out".to_owned())?
+        .map_err(|error| format!("could not connect to the live publisher: {error}"))?;
+    let messages = encode_recorded_session(
+        &created.session_id,
+        source.state.clone(),
+        &source.samples,
+        unix_timestamp_ms(),
+    )
+    .map_err(|error| format!("recorded telemetry cannot be published: {error:?}"))?;
+    shared.update(generation, |status| {
+        status.phase = LiveBroadcastPhase::Live;
+        status.live_session_id = Some(created.session_id.clone());
+        status.spectator_url = Some(created.spectator_url.clone());
+        status.error = None;
+    });
+
+    let started = tokio::time::Instant::now();
+    for message in messages {
+        tokio::time::sleep_until(started + Duration::from_nanos(message.due_ns)).await;
+        if !shared.current(generation) {
+            let _ = websocket.close(None).await;
+            end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await?;
+            return Ok(());
+        }
+        let encoded = serde_json::to_string(&message.envelope)
+            .map_err(|error| format!("could not encode live telemetry: {error}"))?;
+        websocket
+            .send(Message::Text(encoded.into()))
+            .await
+            .map_err(|error| format!("live publisher disconnected: {error}"))?;
+        shared.update(generation, |status| {
+            status.elapsed_ns = message.due_ns.min(status.duration_ns);
+        });
+    }
+    websocket
+        .close(None)
+        .await
+        .map_err(|error| format!("could not close the live publisher cleanly: {error}"))?;
+    Ok(())
+}
+
+async fn installation_credentials(
+    shared: &SharedLiveBroadcast,
+    client: &reqwest::Client,
+    endpoint: &str,
+) -> Result<InstallationCredentials, String> {
+    if let Some(credentials) = shared
+        .credentials
+        .lock()
+        .map_err(|_| "publishing credential state is unavailable".to_owned())?
+        .clone()
+    {
+        return Ok(credentials);
+    }
+    let response = client
+        .post(format!("{endpoint}/api/v1/installations"))
+        .send()
+        .await
+        .map_err(|error| format!("could not reach the live service: {error}"))?;
+    let response = require_success(response, "installation bootstrap").await?;
+    let credentials = response
+        .json::<InstallationCredentials>()
+        .await
+        .map_err(|error| format!("live service returned invalid credentials: {error}"))?;
+    let mut stored = shared
+        .credentials
+        .lock()
+        .map_err(|_| "publishing credential state is unavailable".to_owned())?;
+    let selected = stored.get_or_insert_with(|| credentials.clone());
+    Ok(selected.clone())
+}
+
+async fn create_live_session(
+    client: &reqwest::Client,
+    endpoint: &str,
+    credentials: &InstallationCredentials,
+    state: SessionState,
+) -> Result<CreateLiveSessionResponse, String> {
+    let response = client
+        .post(format!("{endpoint}/api/v1/live-sessions"))
+        .header("x-trace-installation-id", &credentials.installation_id)
+        .bearer_auth(&credentials.publishing_token)
+        .json(&CreateLiveSessionRequest { session: state })
+        .send()
+        .await
+        .map_err(|error| format!("could not create a live session: {error}"))?;
+    require_success(response, "live-session creation")
+        .await?
+        .json::<CreateLiveSessionResponse>()
+        .await
+        .map_err(|error| format!("live service returned an invalid session: {error}"))
+}
+
+async fn end_live_session(
+    client: &reqwest::Client,
+    endpoint: &str,
+    credentials: &InstallationCredentials,
+    session_id: &str,
+) -> Result<(), String> {
+    let response = client
+        .delete(format!("{endpoint}/api/v1/live-sessions/{session_id}"))
+        .header("x-trace-installation-id", &credentials.installation_id)
+        .bearer_auth(&credentials.publishing_token)
+        .send()
+        .await
+        .map_err(|error| format!("could not end the live session: {error}"))?;
+    require_success(response, "live-session ending").await?;
+    Ok(())
+}
+
+async fn require_success(
+    response: reqwest::Response,
+    operation: &str,
+) -> Result<reqwest::Response, String> {
+    if response.status().is_success() {
+        return Ok(response);
+    }
+    let status = response.status();
+    let detail = response
+        .text()
+        .await
+        .unwrap_or_else(|_| "response body unavailable".to_owned());
+    Err(format!("{operation} failed with {status}: {detail}"))
+}
+
+fn finish_cancelled_broadcast(shared: &SharedLiveBroadcast) {
+    if let Ok(mut status) = shared.status.lock() {
+        *status = LiveBroadcastStatus::default();
+    }
+}
+
+fn load_recorded_broadcast(
+    directory: &std::path::Path,
+    session_id: &str,
+) -> Result<RecordedBroadcast, String> {
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let session = store
+        .recent_sessions(10_000)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "recorded session was not found".to_owned())?;
+    let locator = store
+        .session_telemetry(session_id)
+        .map_err(|error| format!("session telemetry was not found: {error:?}"))?;
+    let file = File::open(directory.join("telemetry").join(locator.blob_path.as_str()))
+        .map_err(|error| format!("failed to open recorded telemetry: {error}"))?;
+    let columns = read_columns_range(file, 0, locator.sample_count)
+        .map_err(|error| format!("failed to read recorded telemetry: {error:?}"))?;
+    let samples = live_samples(&columns)?;
+    let duration_ns = samples
+        .first()
+        .zip(samples.last())
+        .map_or(0, |(first, last)| {
+            last.elapsed_ns.saturating_sub(first.elapsed_ns)
+        });
+    if duration_ns == 0 {
+        return Err("recorded session does not contain a playable telemetry timeline".to_owned());
+    }
+    let endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?
+        .unwrap_or_else(|| "https://live.simtrace.run".to_owned());
+    let driver_name = session.user_driver.clone().or(store
+        .driver_profile_name()
+        .map_err(|error| format!("failed to read the local driver profile: {error:?}"))?);
+    let state = session_state(&session, driver_name);
+    Ok(RecordedBroadcast {
+        endpoint,
+        state,
+        samples,
+        duration_ns,
+    })
+}
+
+fn session_state(session: &SessionSummary, driver_name: Option<String>) -> SessionState {
+    SessionState {
+        driver_name,
+        simulator: session.simulator_key.clone(),
+        car: session
+            .car
+            .clone()
+            .or_else(|| session.source_car_id.clone()),
+        track: session
+            .track
+            .clone()
+            .or_else(|| session.source_track_id.clone()),
+        layout: session.layout_id.clone(),
+        session_type: session.session_type.clone(),
+        status: LiveStatus::Live,
+    }
+}
+
+fn live_samples(columns: &TelemetryColumns) -> Result<Vec<LiveTelemetrySample>, String> {
+    if columns.is_empty() {
+        return Err("recorded session contains no telemetry samples".to_owned());
+    }
+    let mut samples = Vec::with_capacity(columns.len());
+    for index in 0..columns.len() {
+        samples.push(LiveTelemetrySample {
+            elapsed_ns: columns.elapsed_ns[index],
+            throttle: columns.throttle[index],
+            brake: columns.brake[index],
+            clutch: columns.clutch[index],
+            steering_angle_rad: columns.steering_angle_rad[index],
+            speed_mps: columns.speed_mps[index],
+            engine_rpm: columns.engine_rpm[index],
+            gear: columns.gear_value[index],
+            fuel_litres: columns.fuel_litres[index],
+            lap_position: columns.lap_position[index],
+            lap_time_s: columns.lap_time_ns[index].and_then(nanoseconds_to_seconds),
+            sector_index: columns.sector_index[index],
+            position_x_m: columns.position_x_m[index],
+            position_z_m: columns.position_z_m[index],
+            ambient_temperature_c: columns.ambient_temperature_c[index],
+            track_temperature_c: columns.track_temperature_c[index],
+        });
+    }
+    Ok(samples)
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn nanoseconds_to_seconds(value: u64) -> Option<f32> {
+    let seconds = value as f32 / 1_000_000_000.0;
+    seconds.is_finite().then_some(seconds)
+}
+
+fn unix_timestamp_ms() -> i64 {
+    let milliseconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis());
+    i64::try_from(milliseconds).unwrap_or(i64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_defaults_to_idle() {
+        let shared = SharedLiveBroadcast::default();
+        assert_eq!(
+            shared.snapshot().expect("status").phase,
+            LiveBroadcastPhase::Idle
+        );
+    }
+
+    #[test]
+    fn only_one_broadcast_can_start_at_a_time() {
+        let shared = SharedLiveBroadcast::default();
+        shared
+            .begin("one".to_owned(), 100)
+            .expect("first broadcast");
+        assert_eq!(
+            shared.begin("two".to_owned(), 100),
+            Err("another live broadcast is already active".to_owned())
+        );
+        assert_eq!(
+            shared.stop().expect("stop").phase,
+            LiveBroadcastPhase::Ending
+        );
+    }
+}

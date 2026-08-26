@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { telemetryDataSource, type CompatibleSetup, type RecordedLapMetrics, type RecordedSessionSummary, type SetupComparison } from "../../data-source";
+import {
+	telemetryDataSource,
+	type CompatibleSetup,
+	type LiveBroadcastStatus,
+	type RecordedLapMetrics,
+	type RecordedSessionSummary,
+	type SetupComparison,
+} from "../../data-source";
 import { Metric, SectionHeading } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
@@ -29,7 +36,21 @@ import {
 	theoreticalBestLap,
 } from "./session-components";
 
-export function SessionDetail({ session, onOpenLap }: { session: RecordedSessionSummary; onOpenLap: (lapIndex: number) => void }) {
+export function SessionDetail({
+	session,
+	onOpenLap,
+	liveBroadcast,
+	onStartLive,
+	onStopLive,
+	onCopyLiveLink,
+}: {
+	session: RecordedSessionSummary;
+	onOpenLap: (lapIndex: number) => void;
+	liveBroadcast: LiveBroadcastStatus | null;
+	onStartLive: () => void;
+	onStopLive: () => void;
+	onCopyLiveLink: () => void;
+}) {
 	const showToast = useToast();
 	const [metrics, setMetrics] = useState<RecordedLapMetrics[]>([]);
 	const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
@@ -46,6 +67,8 @@ export function SessionDetail({ session, onOpenLap }: { session: RecordedSession
 	const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
 	const theoreticalBest = theoreticalBestLap(session.laps, sectorIndices);
 	const confirmedSetup = compatibleSetups.find((value) => value.confirmed) ?? null;
+	const thisSessionIsLive = liveBroadcast?.sourceSessionId === session.id;
+	const broadcastBusy = liveBroadcast?.phase === "ending";
 
 	useEffect(() => {
 		let active = true;
@@ -141,11 +164,62 @@ export function SessionDetail({ session, onOpenLap }: { session: RecordedSession
 						{session.car} · {friendlySessionType(session)} · {formatSessionDate(session.startedAt)}
 					</p>
 				</div>
-				<div className="flex shrink-0 items-center gap-3">
+				<div className="flex shrink-0 items-center gap-2">
+					{thisSessionIsLive && liveBroadcast?.spectatorUrl && (
+						<button
+							type="button"
+							onClick={onCopyLiveLink}
+							className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white"
+						>
+							COPY LIVE LINK
+						</button>
+					)}
+					<button
+						type="button"
+						disabled={
+							broadcastBusy ||
+							(!session.exportable && !thisSessionIsLive) ||
+							(!!liveBroadcast && liveBroadcast.phase === "live" && !thisSessionIsLive)
+						}
+						onClick={thisSessionIsLive && (liveBroadcast?.phase === "live" || liveBroadcast?.phase === "connecting") ? onStopLive : onStartLive}
+						className={`h-9 border px-3 font-mono text-[10px] font-black tracking-[.08em] disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim ${thisSessionIsLive && liveBroadcast?.phase === "live" ? "border-trace-warning/60 bg-trace-warning/10 text-trace-warning hover:bg-trace-warning hover:text-trace-black" : "border-trace-accent/60 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black"}`}
+					>
+						{thisSessionIsLive
+							? liveBroadcast?.phase === "connecting"
+								? "CANCEL"
+								: liveBroadcast?.phase === "ending"
+									? "ENDING…"
+									: liveBroadcast?.phase === "live"
+										? "STOP LIVE"
+										: "STREAM RECORDING"
+							: "STREAM RECORDING"}
+					</button>
 					{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
 					{session.driver && <span className="text-[12px] text-trace-soft">{session.driver}</span>}
 				</div>
 			</div>
+
+			{thisSessionIsLive && liveBroadcast && liveBroadcast.phase !== "idle" && (
+				<div className="mt-3 border border-trace-divider bg-trace-deep px-4 py-3">
+					<div className="flex items-center justify-between gap-4 font-mono text-[10px] font-bold tracking-[.08em]">
+						<span className={liveBroadcast.phase === "error" ? "text-trace-warning" : "text-trace-accent"}>
+							{liveBroadcast.phase === "live" ? "LIVE REPLAY" : liveBroadcast.phase.toUpperCase()}
+						</span>
+						<span className="text-trace-dim">
+							{formatBroadcastDuration(liveBroadcast.elapsedNs)} / {formatBroadcastDuration(liveBroadcast.durationNs)}
+						</span>
+					</div>
+					<div className="mt-2 h-1 overflow-hidden bg-trace-divider">
+						<div
+							className="h-full bg-trace-accent transition-[width] duration-200"
+							style={{
+								width: `${liveBroadcast.durationNs > 0 ? Math.min(100, (liveBroadcast.elapsedNs / liveBroadcast.durationNs) * 100) : 0}%`,
+							}}
+						/>
+					</div>
+					{liveBroadcast.error && <p className="mt-2 text-[11px] leading-4 text-trace-warning">{liveBroadcast.error}</p>}
+				</div>
+			)}
 
 			<div className="mt-6 grid grid-cols-5 border border-trace-divider bg-trace-surface">
 				<Metric label="LAPS" value={String(session.laps.length)} accent />
@@ -285,6 +359,12 @@ export function SessionDetail({ session, onOpenLap }: { session: RecordedSession
 			</div>
 		</>
 	);
+}
+
+function formatBroadcastDuration(nanoseconds: number) {
+	if (!Number.isFinite(nanoseconds) || nanoseconds <= 0) return "0:00";
+	const seconds = Math.floor(nanoseconds / 1_000_000_000);
+	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function CompatibleSetupsDock({

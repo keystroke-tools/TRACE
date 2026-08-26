@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { RecordedSessionSummary, TelemetryStatus } from "./data-source";
+import type { LiveBroadcastStatus, RecordedSessionSummary, TelemetryStatus } from "./data-source";
 import { telemetryDataSource } from "./data-source";
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
@@ -12,9 +12,12 @@ import { SessionsPage } from "./features/sessions/SessionsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SetupsPage } from "./features/setups/SetupsPage";
 import { TitleBar } from "./TitleBar";
+import { useToast } from "./Toast";
 
 export function App() {
+	const showToast = useToast();
 	const [status, setStatus] = useState<TelemetryStatus | null>(null);
+	const [liveBroadcast, setLiveBroadcast] = useState<LiveBroadcastStatus | null>(null);
 	const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
 	const [section, setSection] = useState<Section>("LIVE");
 	const [openSessionId, setOpenSessionId] = useState<string | null>(null);
@@ -26,16 +29,54 @@ export function App() {
 		setStatus(await telemetryDataSource.getStatus());
 	}
 
+	async function startRecordedBroadcast(sessionId: string) {
+		try {
+			const next = await telemetryDataSource.startRecordedLiveBroadcast(sessionId);
+			setLiveBroadcast(next);
+			showToast({
+				kind: "success",
+				title: "Preparing live replay",
+				message: "TRACE is loading the recording and connecting to the configured Go Live service.",
+				timeoutMs: 4_500,
+			});
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not start Go Live", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		}
+	}
+
+	async function stopLiveBroadcast() {
+		try {
+			setLiveBroadcast(await telemetryDataSource.stopLiveBroadcast());
+			showToast({ kind: "success", title: "Ending live session", message: "TRACE is closing the publisher and spectator session.", timeoutMs: 4_000 });
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not stop Go Live", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		}
+	}
+
+	async function copyLiveLink() {
+		if (!liveBroadcast?.spectatorUrl) return;
+		try {
+			await navigator.clipboard.writeText(liveBroadcast.spectatorUrl);
+			showToast({ kind: "success", title: "Live link copied", message: liveBroadcast.spectatorUrl, timeoutMs: 5_000 });
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not copy live link", message: error instanceof Error ? error.message : String(error), timeoutMs: 7_000 });
+		}
+	}
+
 	useEffect(() => {
-		void Promise.all([telemetryDataSource.getStatus(), telemetryDataSource.getSessions()]).then(([nextStatus, nextSessions]) => {
-			setStatus(nextStatus);
-			setSessions(nextSessions);
-		});
+		void Promise.all([telemetryDataSource.getStatus(), telemetryDataSource.getSessions(), telemetryDataSource.getLiveBroadcastStatus()]).then(
+			([nextStatus, nextSessions, nextLiveBroadcast]) => {
+				setStatus(nextStatus);
+				setSessions(nextSessions);
+				setLiveBroadcast(nextLiveBroadcast);
+			},
+		);
 	}, []);
 
 	useEffect(() => {
 		const timer = window.setInterval(() => {
 			void telemetryDataSource.getStatus().then(setStatus);
+			void telemetryDataSource.getLiveBroadcastStatus().then(setLiveBroadcast);
 			if (section === "SESSIONS" || section === "OVERLAYS") void telemetryDataSource.getSessions().then(setSessions);
 		}, 1_000);
 		return () => window.clearInterval(timer);
@@ -45,6 +86,8 @@ export function App() {
 		<main className="grid h-screen grid-cols-[var(--trace-sidebar)_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text [--trace-sidebar:200px] max-[900px]:[--trace-sidebar:156px]">
 			<TitleBar
 				status={status}
+				liveBroadcast={liveBroadcast}
+				onStopLive={() => void stopLiveBroadcast()}
 				backLabel={openLapIndex == null ? "SESSIONS" : "SESSION"}
 				onBack={
 					openSession
@@ -70,7 +113,14 @@ export function App() {
 				{section === "SESSIONS" &&
 					(openSession ? (
 						openLapIndex == null ? (
-							<SessionDetail session={openSession} onOpenLap={setOpenLapIndex} />
+							<SessionDetail
+								session={openSession}
+								onOpenLap={setOpenLapIndex}
+								liveBroadcast={liveBroadcast}
+								onStartLive={() => void startRecordedBroadcast(openSession.id)}
+								onStopLive={() => void stopLiveBroadcast()}
+								onCopyLiveLink={() => void copyLiveLink()}
+							/>
 						) : (
 							<LapVisualizer session={openSession} lapIndex={openLapIndex} />
 						)

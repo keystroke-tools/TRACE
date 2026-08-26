@@ -6,6 +6,7 @@ members = [
   "crates/trace-ac",
   "crates/trace-core",
   "crates/trace-domain",
+  "crates/trace-live",
   "crates/trace-protocol",
   "crates/trace-recorder",
   "crates/trace-server",
@@ -33,7 +34,7 @@ subtle = "2.6.1"
 tauri = "2.11.5"
 tauri-build = "2.6.3"
 time = { version = "0.3.55", features = ["formatting"] }
-tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 trace-domain = { path = "crates/trace-domain" }
 uuid = { version = "1.24.1", features = ["v4"] }
 

@@ -20,12 +20,14 @@ use axum::{
     routing::{get, post},
 };
 use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 use trace_protocol::{
-    Envelope, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolLimits, SessionEnd, SessionState,
+    CreateLiveSessionRequest, CreateLiveSessionResponse, Envelope, InstallationCredentials,
+    LiveSessionSummary, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolLimits, SessionEnd,
+    SessionState,
 };
 use uuid::Uuid;
 
@@ -80,36 +82,6 @@ struct LiveSession {
     last_sequence: Option<u64>,
     buffer: VecDeque<Envelope>,
     broadcast: broadcast::Sender<Envelope>,
-}
-
-/// One-time installation credential returned to a desktop client.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct InstallationCredentials {
-    pub installation_id: String,
-    pub publishing_token: String,
-}
-
-/// Metadata used to open one unlisted live session.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateLiveSessionRequest {
-    pub session: SessionState,
-}
-
-/// Session identifiers and URLs returned to the desktop publisher.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateLiveSessionResponse {
-    pub session_id: String,
-    pub publish_websocket_url: String,
-    pub spectator_url: String,
-}
-
-/// Public metadata for an unlisted live session.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LiveSessionSummary {
-    pub session_id: String,
-    pub session: SessionState,
-    pub oldest_sequence: Option<u64>,
-    pub newest_sequence: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -564,6 +536,7 @@ mod tests {
         http::Request,
     };
     use tower::ServiceExt;
+    use trace_live::{LiveTelemetrySample, encode_recorded_session};
     use trace_protocol::{Hello, PROTOCOL_VERSION};
 
     fn session_state() -> SessionState {
@@ -764,5 +737,47 @@ mod tests {
         let created: CreateLiveSessionResponse =
             serde_json::from_slice(&body).expect("session JSON");
         assert!(created.spectator_url.ends_with(&created.session_id));
+    }
+
+    #[test]
+    fn accepts_a_complete_recorded_replay_stream() {
+        let service = LiveService::new(ServerConfig::new("http://localhost:8080"));
+        let credentials = service.bootstrap_installation().expect("credentials");
+        let created = service
+            .create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            )
+            .expect("session");
+        let samples = [
+            LiveTelemetrySample {
+                elapsed_ns: 1_000_000_000,
+                speed_mps: Some(20.0),
+                ..LiveTelemetrySample::default()
+            },
+            LiveTelemetrySample {
+                elapsed_ns: 1_050_000_000,
+                speed_mps: Some(21.0),
+                ..LiveTelemetrySample::default()
+            },
+        ];
+        let messages = encode_recorded_session(
+            &created.session_id,
+            session_state(),
+            &samples,
+            1_700_000_000_000,
+        )
+        .expect("encoded replay");
+        for message in messages {
+            service
+                .publish(&created.session_id, message.envelope)
+                .expect("accepted replay message");
+        }
+
+        let summary = service.summary(&created.session_id).expect("summary");
+        assert_eq!(summary.session.status, LiveStatus::Ended);
+        assert_eq!(summary.oldest_sequence, Some(0));
+        assert_eq!(summary.newest_sequence, Some(4));
     }
 }

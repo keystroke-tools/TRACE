@@ -10,6 +10,36 @@ use serde::{Deserialize, Serialize};
 /// Current wire protocol version.
 pub const PROTOCOL_VERSION: u16 = 1;
 
+/// One-time installation credential returned to a desktop publisher.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct InstallationCredentials {
+    pub installation_id: String,
+    pub publishing_token: String,
+}
+
+/// Metadata submitted when an unlisted live session is created.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CreateLiveSessionRequest {
+    pub session: SessionState,
+}
+
+/// Identifiers and routes returned to the desktop publisher.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CreateLiveSessionResponse {
+    pub session_id: String,
+    pub publish_websocket_url: String,
+    pub spectator_url: String,
+}
+
+/// Public metadata and retained sequence bounds for one live session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LiveSessionSummary {
+    pub session_id: String,
+    pub session: SessionState,
+    pub oldest_sequence: Option<u64>,
+    pub newest_sequence: Option<u64>,
+}
+
 /// Resource and shape limits applied before accepting a message.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProtocolLimits {

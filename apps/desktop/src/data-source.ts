@@ -308,6 +308,18 @@ export interface LiveSettings {
 	endpoint: string;
 }
 
+export type LiveBroadcastPhase = "idle" | "connecting" | "live" | "ending" | "ended" | "error";
+
+export interface LiveBroadcastStatus {
+	phase: LiveBroadcastPhase;
+	sourceSessionId?: string | null;
+	liveSessionId?: string | null;
+	spectatorUrl?: string | null;
+	elapsedNs: number;
+	durationNs: number;
+	error?: string | null;
+}
+
 export interface SavedComparison {
 	id: string;
 	name: string;
@@ -346,6 +358,9 @@ export interface TelemetryDataSource {
 	setDriverProfile(name: string | null): Promise<DriverProfile>;
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(endpoint: string): Promise<LiveSettings>;
+	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
+	startRecordedLiveBroadcast(sessionId: string): Promise<LiveBroadcastStatus>;
+	stopLiveBroadcast(): Promise<LiveBroadcastStatus>;
 	getSavedComparisons(): Promise<SavedComparison[]>;
 	saveComparison(
 		name: string,
@@ -375,6 +390,11 @@ const fixtureSessionDetails = new Map<
 >();
 let fixtureDriverProfile: DriverProfile = { name: null };
 let fixtureLiveSettings: LiveSettings = { endpoint: "https://live.simtrace.run" };
+let fixtureLiveBroadcastStatus: LiveBroadcastStatus = {
+	phase: "idle",
+	elapsedNs: 0,
+	durationNs: 0,
+};
 let fixtureSavedComparisons: SavedComparison[] = [];
 
 export const fixtureDataSource: TelemetryDataSource = {
@@ -860,6 +880,24 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureLiveSettings = { endpoint };
 		return fixtureLiveSettings;
 	},
+	async getLiveBroadcastStatus() {
+		return fixtureLiveBroadcastStatus;
+	},
+	async startRecordedLiveBroadcast(sessionId) {
+		fixtureLiveBroadcastStatus = {
+			phase: "live",
+			sourceSessionId: sessionId,
+			liveSessionId: "preview-live-session",
+			spectatorUrl: "https://live.simtrace.run/live/preview-live-session",
+			elapsedNs: 0,
+			durationNs: 110_906_000_000,
+		};
+		return fixtureLiveBroadcastStatus;
+	},
+	async stopLiveBroadcast() {
+		fixtureLiveBroadcastStatus = { phase: "idle", elapsedNs: 0, durationNs: 0 };
+		return fixtureLiveBroadcastStatus;
+	},
 	async getSavedComparisons() {
 		return fixtureSavedComparisons;
 	},
@@ -964,6 +1002,15 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	setLiveSettings(endpoint) {
 		return invoke<LiveSettings>("set_live_settings", { endpoint });
+	},
+	getLiveBroadcastStatus() {
+		return invoke<LiveBroadcastStatus>("live_broadcast_status");
+	},
+	startRecordedLiveBroadcast(sessionId) {
+		return invoke<LiveBroadcastStatus>("start_recorded_live_broadcast", { sessionId });
+	},
+	stopLiveBroadcast() {
+		return invoke<LiveBroadcastStatus>("stop_live_broadcast");
 	},
 	getSavedComparisons() {
 		return invoke<SavedComparison[]>("saved_comparisons");

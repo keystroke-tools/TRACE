@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ReactNode } from "react";
-import type { TelemetryStatus } from "./data-source";
+import type { LiveBroadcastStatus, TelemetryStatus } from "./data-source";
 import { Tooltip } from "./Tooltip";
 
 const desktopWindow = isTauri() ? getCurrentWindow() : null;
@@ -12,10 +12,31 @@ function runWindowCommand(command: () => Promise<void>) {
 	});
 }
 
-export function TitleBar({ status, onBack, backLabel = "SESSIONS" }: { status: TelemetryStatus | null; onBack?: () => void; backLabel?: string }) {
+export function TitleBar({
+	status,
+	liveBroadcast,
+	onStopLive,
+	onBack,
+	backLabel = "SESSIONS",
+}: {
+	status: TelemetryStatus | null;
+	liveBroadcast: LiveBroadcastStatus | null;
+	onStopLive: () => void;
+	onBack?: () => void;
+	backLabel?: string;
+}) {
 	const state = status?.connection ?? "waiting";
 	const recording = state === "recording";
 	const failed = state === "error";
+	const liveActive = liveBroadcast?.phase === "connecting" || liveBroadcast?.phase === "live" || liveBroadcast?.phase === "ending";
+	const liveButtonLabel =
+		liveBroadcast?.phase === "connecting"
+			? "CANCEL"
+			: liveBroadcast?.phase === "ending"
+				? "ENDING…"
+				: liveBroadcast?.phase === "live"
+					? "STOP LIVE"
+					: "GO LIVE";
 
 	return (
 		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
@@ -71,14 +92,15 @@ export function TitleBar({ status, onBack, backLabel = "SESSIONS" }: { status: T
 			<div id="trace-titlebar-actions" className="flex h-12 items-stretch" />
 			<Tooltip
 				className="h-full"
-				content="Remote spectating is not available yet. Configure the hosted or self-hosted API and Live services in Settings."
+				content={liveActive ? "End the active Go Live broadcast" : "Open a finalized session to stream its recorded telemetry."}
 			>
 				<button
 					type="button"
-					disabled
-					className="h-full w-[88px] border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[12px] font-black tracking-[.1em] text-trace-accent-muted"
+					disabled={!liveActive || liveBroadcast?.phase === "ending"}
+					onClick={onStopLive}
+					className="h-full w-[88px] border-0 border-l border-trace-accent-muted bg-trace-accent-wash text-[11px] font-black tracking-[.08em] text-trace-accent disabled:text-trace-accent-muted"
 				>
-					GO LIVE
+					{liveButtonLabel}
 				</button>
 			</Tooltip>
 			<div className="flex" aria-label="Window controls">

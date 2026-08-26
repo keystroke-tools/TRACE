@@ -63,6 +63,7 @@ pub struct TelemetryColumns {
     pub clutch: Vec<Option<f32>>,
     pub speed_mps: Vec<Option<f32>>,
     pub engine_rpm: Vec<Option<f32>>,
+    pub fuel_litres: Vec<Option<f32>>,
     pub lap_position: Vec<Option<f32>>,
     pub lap_time_ns: Vec<Option<u64>>,
     pub steering_angle_rad: Vec<Option<f32>>,
@@ -102,6 +103,10 @@ impl TelemetryColumns {
             engine_rpm: frames
                 .iter()
                 .map(|frame| frame.vehicle.engine_rpm)
+                .collect(),
+            fuel_litres: frames
+                .iter()
+                .map(|frame| frame.vehicle.fuel_litres)
                 .collect(),
             lap_position: frames
                 .iter()
@@ -189,6 +194,7 @@ impl TelemetryColumns {
             clutch: Vec::new(),
             speed_mps: Vec::new(),
             engine_rpm: Vec::new(),
+            fuel_litres: Vec::new(),
             lap_position: Vec::new(),
             lap_time_ns: Vec::new(),
             steering_angle_rad: Vec::new(),
@@ -1045,6 +1051,12 @@ fn extend_projection(
     decoded
         .engine_rpm
         .extend(nullable_f32(batch, 5)?.into_iter().skip(start).take(length));
+    decoded.fuel_litres.extend(
+        optional_f32(batch, "fuel_litres")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
     decoded
         .lap_position
         .extend(nullable_f32(batch, 6)?.into_iter().skip(start).take(length));

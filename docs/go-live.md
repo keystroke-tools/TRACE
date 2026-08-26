@@ -1,7 +1,7 @@
 # TRACE Go Live service
 
-Status: initial server foundation implemented; desktop publishing and the browser
-spectator interface are the next slices.
+Status: initial server foundation and recorded-session desktop publishing implemented;
+the browser spectator interface and active-capture publishing are the next slices.
 
 `trace-server` is the single service behind the configured TRACE endpoint. It owns
 the HTTP API, publisher ingestion, spectator fan-out, and eventually the browser
@@ -83,11 +83,28 @@ the process therefore ends existing sessions and requires installation bootstrap
 again. Durable credentials/session records, expiry, rate limits, resume acknowledgements,
 and multi-instance fan-out must be added before deploying the public service.
 
+## Recorded-session publishing
+
+The desktop can stream any finalized recording from its session overview. It reads the
+immutable Arrow telemetry projection, rebases its clock to the broadcast start, reduces
+the stream to approximately 20 Hz, then sends it through the same protocol and service
+routes intended for active capture. The live subset currently includes pedals,
+steering, speed, RPM, gear, fuel, lap progress/time/sector, world position, and reported
+air/track temperatures.
+
+The session overview shows replay progress and exposes copy-link and stop actions. The
+fixed title bar keeps cancellation available after navigation. Stopping closes the
+publisher and sends an authenticated session-end request. HTTP and WebSocket setup use
+15-second connection bounds; transport errors update the UI but never mutate the source
+recording.
+
+Publisher credentials remain memory-only while the server credential store is also
+memory-only. A failed broadcast discards the cached credential so a later attempt can
+bootstrap against a restarted service.
+
 ## Next slices
 
 1. Persist installation credentials and live-session lifecycle in the service database.
 2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
-3. Encode a recorded TRACE session into the same 20 Hz publisher path for deterministic testing.
-4. Connect the desktop `GO LIVE`, copy-link, status, and stop controls.
-5. Implement `/live/{id}` as the responsive browser spectator page with a bounded seek bar and `LIVE ●` jump.
-6. Feed active capture frames through the same encoder without allowing transport failure to affect local recording.
+3. Implement `/live/{id}` as the responsive browser spectator page with a bounded seek bar and `LIVE ●` jump.
+4. Feed active capture frames through the same encoder without allowing transport failure to affect local recording.

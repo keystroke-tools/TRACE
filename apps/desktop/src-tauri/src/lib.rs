@@ -33,12 +33,16 @@ use trace_storage::{
 
 mod ac_content;
 mod capture;
+mod live_broadcast;
 mod obs_overlay;
 mod setup_analysis;
 mod setup_import;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
+use live_broadcast::{
+    SharedLiveBroadcast, live_broadcast_status, start_recorded_live_broadcast, stop_live_broadcast,
+};
 use setup_analysis::compare_setups;
 use setup_import::{detect_setup_folder, import_setup_archives, setup_importers};
 
@@ -2218,6 +2222,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(capture_status)
+        .manage(SharedLiveBroadcast::default())
         .setup(move |app| {
             let directory = app.path().app_data_dir()?;
             let ac_race_config = app
@@ -2257,6 +2262,9 @@ pub fn run() {
             set_driver_profile,
             live_settings,
             set_live_settings,
+            live_broadcast_status,
+            start_recorded_live_broadcast,
+            stop_live_broadcast,
             saved_comparisons,
             save_comparison,
             delete_saved_comparison,
