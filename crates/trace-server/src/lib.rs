@@ -374,6 +374,8 @@ pub fn app(config: ServerConfig) -> Router {
             get(spectator_websocket),
         )
         .route("/live/{session_id}", get(spectator_page))
+        .route("/live-assets/spectator.css", get(spectator_styles))
+        .route("/live-assets/spectator.js", get(spectator_script))
         .with_state(state)
 }
 
@@ -413,7 +415,21 @@ async fn spectator_page(
 }
 
 fn spectator_html() -> String {
-    include_str!("../assets/spectator.html").to_owned()
+    include_str!("../assets/spectator/index.html").to_owned()
+}
+
+async fn spectator_styles() -> impl IntoResponse {
+    (
+        [("content-type", "text/css; charset=utf-8")],
+        include_str!("../assets/spectator/styles.css"),
+    )
+}
+
+async fn spectator_script() -> impl IntoResponse {
+    (
+        [("content-type", "text/javascript; charset=utf-8")],
+        include_str!("../assets/spectator/app.js"),
+    )
 }
 
 async fn end_live_session(
@@ -690,14 +706,15 @@ mod tests {
         assert!(page.contains("TRACE <i>//</i> PIT WALL"));
         assert!(page.contains("TRACK MAP"));
         assert!(page.contains("INPUT HISTORY"));
-        assert!(page.contains("steeringWheel"));
-        assert!(page.contains("session.in_pit_lane"));
-        assert!(page.contains("lap.completed_laps"));
         assert!(page.contains("Spectator timeline"));
-        assert!(page.contains("liveEdge"));
-        assert!(page.contains("playbackTick"));
-        assert!(page.contains("lap-sectors"));
-        assert!(page.contains("motion.position.x"));
+        assert!(page.contains("/live-assets/spectator.css"));
+        assert!(page.contains("/live-assets/spectator.js"));
+        let script = include_str!("../assets/spectator/app.js");
+        assert!(script.contains("steeringWheel"));
+        assert!(script.contains("session.in_pit_lane"));
+        assert!(script.contains("playbackTick"));
+        assert!(script.contains("motion.position.x"));
+        assert!(include_str!("../assets/spectator/styles.css").contains(".lap-sectors"));
     }
 
     #[test]
@@ -804,6 +821,25 @@ mod tests {
     #[tokio::test]
     async fn http_api_bootstraps_credentials_and_creates_a_session() {
         let application = app(ServerConfig::new("https://live.simtrace.run"));
+        for (path, content_type) in [
+            ("/live-assets/spectator.css", "text/css; charset=utf-8"),
+            (
+                "/live-assets/spectator.js",
+                "text/javascript; charset=utf-8",
+            ),
+        ] {
+            let response = application
+                .clone()
+                .oneshot(
+                    Request::get(path)
+                        .body(Body::empty())
+                        .expect("asset request"),
+                )
+                .await
+                .expect("asset response");
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()["content-type"], content_type);
+        }
         let response = application
             .clone()
             .oneshot(

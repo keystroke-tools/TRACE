@@ -5,8 +5,8 @@
 	"scripts": {
 		"build": "pnpm --filter @trace/desktop --filter @trace/web build",
 		"check": "pnpm format:check && pnpm --filter @trace/desktop --filter @trace/web check",
-		"format": "prettier --write \"apps/**/*.{js,jsx,mjs,cjs,ts,tsx,json,jsonc,css,html,yaml,yml,md}\" \"crates/**/*.html\" package.json pnpm-workspace.yaml",
-		"format:check": "prettier --check \"apps/**/*.{js,jsx,mjs,cjs,ts,tsx,json,jsonc,css,html,yaml,yml,md}\" \"crates/**/*.html\" package.json pnpm-workspace.yaml"
+		"format": "prettier --write \"apps/**/*.{js,jsx,mjs,cjs,ts,tsx,json,jsonc,css,html,yaml,yml,md}\" \"crates/**/*.{html,css,js}\" package.json pnpm-workspace.yaml",
+		"format:check": "prettier --check \"apps/**/*.{js,jsx,mjs,cjs,ts,tsx,json,jsonc,css,html,yaml,yml,md}\" \"crates/**/*.{html,css,js}\" package.json pnpm-workspace.yaml"
 	},
 	"devDependencies": {
 		"prettier": "^3.9.6"
