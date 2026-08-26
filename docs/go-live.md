@@ -1,0 +1,93 @@
+# TRACE Go Live service
+
+Status: initial server foundation implemented; desktop publishing and the browser
+spectator interface are the next slices.
+
+`trace-server` is the single service behind the configured TRACE endpoint. It owns
+the HTTP API, publisher ingestion, spectator fan-out, and eventually the browser
+spectator page. TRACE does not split these across separate `api` and `live` hosts.
+The hosted service is expected at `https://live.simtrace.run`; self-hosters can run
+the same crate at another base URL.
+
+The server receives only versioned canonical messages from `trace-protocol`. It does
+not know about Assetto Corsa shared memory, replay files, Arrow storage, or desktop
+implementation types.
+
+## Run locally
+
+Install the Mise-managed toolchains and dependencies, then start the service:
+
+```sh
+mise install
+mise run install
+mise run dev-live-service
+```
+
+The defaults are:
+
+```text
+TRACE_BIND=127.0.0.1:8080
+TRACE_PUBLIC_BASE_URL=http://127.0.0.1:8080
+```
+
+Set both variables when the bind address and externally visible URL differ. The
+public URL is used to generate spectator and publisher WebSocket links; HTTPS is
+automatically translated to WSS.
+
+## HTTP API
+
+All implemented routes are versioned under `/api/v1`.
+
+| Method   | Route                                 | Authentication | Purpose                                                |
+| -------- | ------------------------------------- | -------------- | ------------------------------------------------------ |
+| `GET`    | `/health`                             | none           | Process health probe; returns `204`                    |
+| `POST`   | `/api/v1/installations`               | none           | Bootstrap an installation ID and publishing token      |
+| `POST`   | `/api/v1/live-sessions`               | publisher      | Create an unlisted live session                        |
+| `GET`    | `/api/v1/live-sessions/{id}`          | none           | Read public session state and retained sequence bounds |
+| `DELETE` | `/api/v1/live-sessions/{id}`          | publisher      | Explicitly end an owned session                        |
+| `GET`    | `/api/v1/live-sessions/{id}/publish`  | publisher      | Upgrade to the publisher WebSocket                     |
+| `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
+
+Publisher requests send both headers:
+
+```text
+X-TRACE-Installation-ID: <installation_id>
+Authorization: Bearer <publishing_token>
+```
+
+The token is returned only by installation bootstrap. The server stores its SHA-256
+digest and compares credentials in constant time. Desktop persistence must treat the
+plain token as a secret and must not place it in spectator URLs or logs.
+
+Session IDs use 128 bits of operating-system randomness and are intentionally
+unguessable. Spectating is unlisted rather than authenticated: anyone with the share
+URL can view the stream, but public discovery is not implemented.
+
+## Publishing and buffering
+
+Publisher WebSockets currently accept JSON-encoded protocol-v1 `Envelope` values.
+Each envelope must:
+
+- pass all `trace-protocol` shape and resource validation;
+- name the session in the WebSocket route;
+- fit within 512 KiB; and
+- have a sequence greater than every previously accepted envelope.
+
+Accepted envelopes are broadcast to connected spectators and retained in a bounded
+2,400-message queue—roughly two minutes when the desktop publishes at 20 Hz. A new
+spectator first receives that retained snapshot in sequence order, then follows new
+messages. Ending a session publishes a terminal `end` envelope to spectators.
+
+The buffer and credentials are intentionally in memory in this first slice. Restarting
+the process therefore ends existing sessions and requires installation bootstrap
+again. Durable credentials/session records, expiry, rate limits, resume acknowledgements,
+and multi-instance fan-out must be added before deploying the public service.
+
+## Next slices
+
+1. Persist installation credentials and live-session lifecycle in the service database.
+2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
+3. Encode a recorded TRACE session into the same 20 Hz publisher path for deterministic testing.
+4. Connect the desktop `GO LIVE`, copy-link, status, and stop controls.
+5. Implement `/live/{id}` as the responsive browser spectator page with a bounded seek bar and `LIVE ●` jump.
+6. Feed active capture frames through the same encoder without allowing transport failure to affect local recording.

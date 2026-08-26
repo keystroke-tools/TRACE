@@ -22,7 +22,8 @@ behaviour, while `SPEC.md` defines intended product direction.
 | [Assetto Corsa boundary](assetto-corsa.md)                   | Implemented vanilla AC byte readers, mappings, omissions, and Phase 2 acquisition requirements                     |
 | [Corner analysis](corner-analysis.md)                        | Implemented deterministic corner detection, phase loss decomposition, opportunity ranking, and current limitations |
 | [Assetto Corsa API reference](ac-shared-memory-reference.md) | Mapping names, page layouts, enums, fields, offsets, units, and TRACE storage keys                                 |
-| [Live protocol v1](protocol-v1.md)                           | Implemented bounded DTO/validation model; transport remains future work                                            |
+| [Live protocol v1](protocol-v1.md)                           | Versioned telemetry messages, validation, ordering, and compatibility rules                                        |
+| [Go Live service](go-live.md)                                | Implemented service endpoints, authentication, buffering, local operation, and remaining slices                    |
 | [Arrow IPC storage benchmark](storage-benchmark.md)          | Reproducible 60–333 Hz codec benchmark and compression decision                                                    |
 | [TRACE session package](session-package.md)                  | Versioned `.trace` sharing format, contents, import behavior, and safety limits                                    |
 | [Setup imports](setup-import.md)                             | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds                         |

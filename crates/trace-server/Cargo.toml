@@ -1,0 +1,24 @@
+[package]
+name = "trace-server"
+description = "Account-free live telemetry service for TRACE publishers and spectators"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+trace-protocol = { path = "../trace-protocol" }
+uuid.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5.3", features = ["util"] }
+
+[lints]
+workspace = true

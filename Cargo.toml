@@ -8,6 +8,7 @@ members = [
   "crates/trace-domain",
   "crates/trace-protocol",
   "crates/trace-recorder",
+  "crates/trace-server",
   "crates/trace-storage",
   "crates/trace-windows-shmem",
 ]
@@ -22,13 +23,19 @@ rust-version = "1.91"
 arrow-array = "59.1.0"
 arrow-ipc = { version = "59.1.0", features = ["lz4", "zstd"] }
 arrow-schema = "59.1.0"
+axum = { version = "0.8.6", features = ["ws"] }
+futures-util = "0.3.31"
+serde_json = "1.0.145"
 serde = { version = "1.0.219", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 sha2 = "0.10.9"
+subtle = "2.6.1"
 tauri = "2.11.5"
 tauri-build = "2.6.3"
 time = { version = "0.3.55", features = ["formatting"] }
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "sync"] }
 trace-domain = { path = "crates/trace-domain" }
+uuid = { version = "1.24.1", features = ["v4"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

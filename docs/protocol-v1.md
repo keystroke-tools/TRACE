@@ -1,6 +1,6 @@
 # TRACE live protocol v1
 
-Status: implemented data model and validation; transport not yet implemented.
+Status: implemented data model, validation, and initial JSON/WebSocket transport.
 
 The protocol carries canonical TRACE data. It never exposes Assetto Corsa shared
 memory, Rust struct layouts, storage records, or desktop-internal models.
@@ -35,14 +35,14 @@ not the telemetry clock. Telemetry uses monotonic elapsed nanoseconds.
 
 The v1 payload discriminator uses snake-case names:
 
-| Payload | Purpose |
-|---|---|
-| `hello` | Publisher version and canonical source identity |
-| `session_state` | Driver, simulator, car, track/layout, type, and live status |
-| `telemetry_batch` | Bounded columnar live samples |
-| `lap_event` | Completed/invalid/unknown lap timing update |
-| `heartbeat` | Keeps an otherwise idle live session current |
-| `end` | Explicit terminal state and reason |
+| Payload           | Purpose                                                     |
+| ----------------- | ----------------------------------------------------------- |
+| `hello`           | Publisher version and canonical source identity             |
+| `session_state`   | Driver, simulator, car, track/layout, type, and live status |
+| `telemetry_batch` | Bounded columnar live samples                               |
+| `lap_event`       | Completed/invalid/unknown lap timing update                 |
+| `heartbeat`       | Keeps an otherwise idle live session current                |
+| `end`             | Explicit terminal state and reason                          |
 
 Live status is one of `live`, `paused`, `reconnecting`, or `ended`. Spectators must
 show these states rather than silently freezing on stale data.
@@ -73,12 +73,12 @@ increasing. Every channel column has exactly the same length as the offset array
 
 The default validation limits are:
 
-| Limit | Value |
-|---|---:|
-| Samples per batch | 512 |
-| Channels per batch | 64 |
-| Text field size | 256 bytes |
-| Channel ID size | 128 bytes |
+| Limit              |     Value |
+| ------------------ | --------: |
+| Samples per batch  |       512 |
+| Channels per batch |        64 |
+| Text field size    | 256 bytes |
+| Channel ID size    | 128 bytes |
 
 At the intended live rate of approximately 20 Hz, these bounds leave ample batching
 headroom while constraining malformed inputs. Transport-level encoded byte limits
@@ -120,12 +120,12 @@ Receivers validate before publishing or retaining a message:
 4. batch dimensions and timestamp ordering
 5. channel identifier uniqueness and column alignment
 6. numeric finiteness and lap timing validity
-7. later transport concerns: encoded size, authentication, rate, and sequence policy
+7. transport encoded size, authentication, and sequence policy
 
-Protocol validation does not authenticate a publisher. Installation credentials,
-WebSocket authentication, rate limiting, acknowledgements, reconnect behavior, and
-binary encoding remain Phase 7 work. The current types provide the explicit boundary
-those features will consume.
+Protocol validation does not itself authenticate a publisher. The Go Live service
+wraps it with installation credentials, publisher ownership, a 512 KiB WebSocket
+message limit, and strictly increasing per-session sequences. Rate limiting,
+acknowledgements, durable resume state, and binary encoding remain future work.
 
 ## Service boundaries
 
