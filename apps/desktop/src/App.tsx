@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import type { LiveBroadcastStatus, RecordedSessionSummary, TelemetryStatus } from "./data-source";
-import { telemetryDataSource } from "./data-source";
+import { telemetryDataSource, type LiveBroadcastOptions, type LiveBroadcastStatus, type RecordedSessionSummary, type TelemetryStatus } from "./data-source";
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
 import { ComparePage } from "./features/compare/ComparePage";
@@ -29,16 +28,17 @@ export function App() {
 		setStatus(await telemetryDataSource.getStatus());
 	}
 
-	async function startRecordedBroadcast(sessionId: string, local: boolean, localPort?: number) {
+	async function startRecordedBroadcast(sessionId: string, options: LiveBroadcastOptions) {
 		try {
-			const next = await telemetryDataSource.startRecordedLiveBroadcast(sessionId, local, localPort);
+			const next = await telemetryDataSource.startRecordedLiveBroadcast(sessionId, options);
 			setLiveBroadcast(next);
 			showToast({
 				kind: "success",
 				title: "Preparing live replay",
-				message: local
-					? "TRACE is starting a local spectator service and loading the recording."
-					: "TRACE is loading the recording and connecting to the configured Go Live service.",
+				message:
+					options.mode === "local"
+						? "TRACE is starting a local spectator service and loading the recording."
+						: "TRACE is loading the recording and connecting to the configured Go Live service.",
 				timeoutMs: 4_500,
 			});
 		} catch (error) {
@@ -119,7 +119,7 @@ export function App() {
 								session={openSession}
 								onOpenLap={setOpenLapIndex}
 								liveBroadcast={liveBroadcast}
-								onStartLive={(local, port) => void startRecordedBroadcast(openSession.id, local, port)}
+								onStartLive={(options) => void startRecordedBroadcast(openSession.id, options)}
 								onStopLive={() => void stopLiveBroadcast()}
 								onCopyLiveLink={() => void copyLiveLink()}
 							/>

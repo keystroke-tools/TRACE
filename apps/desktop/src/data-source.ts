@@ -320,6 +320,11 @@ export interface LiveBroadcastStatus {
 	error?: string | null;
 }
 
+export interface LiveBroadcastOptions {
+	mode: "hosted" | "local";
+	localPort?: number;
+}
+
 export interface SavedComparison {
 	id: string;
 	name: string;
@@ -359,7 +364,7 @@ export interface TelemetryDataSource {
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(endpoint: string): Promise<LiveSettings>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
-	startRecordedLiveBroadcast(sessionId: string, local: boolean, localPort?: number): Promise<LiveBroadcastStatus>;
+	startRecordedLiveBroadcast(sessionId: string, options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
 	stopLiveBroadcast(): Promise<LiveBroadcastStatus>;
 	getSavedComparisons(): Promise<SavedComparison[]>;
 	saveComparison(
@@ -883,7 +888,8 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async getLiveBroadcastStatus() {
 		return fixtureLiveBroadcastStatus;
 	},
-	async startRecordedLiveBroadcast(sessionId, local, localPort) {
+	async startRecordedLiveBroadcast(sessionId, options) {
+		const local = options.mode === "local";
 		fixtureLiveBroadcastStatus = {
 			phase: "live",
 			sourceSessionId: sessionId,
@@ -1006,8 +1012,8 @@ export const tauriDataSource: TelemetryDataSource = {
 	getLiveBroadcastStatus() {
 		return invoke<LiveBroadcastStatus>("live_broadcast_status");
 	},
-	startRecordedLiveBroadcast(sessionId, local, localPort) {
-		return invoke<LiveBroadcastStatus>("start_recorded_live_broadcast", { sessionId, local, localPort });
+	startRecordedLiveBroadcast(sessionId, options) {
+		return invoke<LiveBroadcastStatus>("start_recorded_live_broadcast", { sessionId, options });
 	},
 	stopLiveBroadcast() {
 		return invoke<LiveBroadcastStatus>("stop_live_broadcast");

@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures_util::SinkExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use tokio_tungstenite::{
     connect_async,
@@ -50,6 +50,20 @@ pub struct LiveBroadcastStatus {
     pub elapsed_ns: u64,
     pub duration_ns: u64,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveBroadcastOptions {
+    mode: LiveBroadcastMode,
+    local_port: Option<u16>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum LiveBroadcastMode {
+    Hosted,
+    Local,
 }
 
 impl Default for LiveBroadcastStatus {
@@ -165,8 +179,7 @@ pub async fn start_recorded_live_broadcast(
     app: tauri::AppHandle,
     state: tauri::State<'_, SharedLiveBroadcast>,
     session_id: String,
-    local: bool,
-    local_port: Option<u16>,
+    options: LiveBroadcastOptions,
 ) -> Result<LiveBroadcastStatus, String> {
     let directory = app
         .path()
@@ -178,9 +191,11 @@ pub async fn start_recorded_live_broadcast(
             .await
             .map_err(|error| format!("recorded broadcast loader stopped: {error}"))??;
     let generation = state.begin(source_session_id, broadcast.duration_ns)?;
-    let endpoint = if local {
+    let endpoint = if options.mode == LiveBroadcastMode::Local {
         let server =
-            match start_local_server(ServerConfig::new("http://127.0.0.1:0"), local_port).await {
+            match start_local_server(ServerConfig::new("http://127.0.0.1:0"), options.local_port)
+                .await
+            {
                 Ok(server) => server,
                 Err(error) => {
                     state.update(generation, |status| {

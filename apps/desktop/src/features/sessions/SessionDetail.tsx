@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	telemetryDataSource,
 	type CompatibleSetup,
+	type LiveBroadcastOptions,
 	type LiveBroadcastStatus,
 	type RecordedLapMetrics,
 	type RecordedSessionSummary,
@@ -47,7 +48,7 @@ export function SessionDetail({
 	session: RecordedSessionSummary;
 	onOpenLap: (lapIndex: number) => void;
 	liveBroadcast: LiveBroadcastStatus | null;
-	onStartLive: (local: boolean, port?: number) => void;
+	onStartLive: (options: LiveBroadcastOptions) => void;
 	onStopLive: () => void;
 	onCopyLiveLink: () => void;
 }) {
@@ -188,7 +189,7 @@ export function SessionDetail({
 						onClick={
 							thisSessionIsLive && (liveBroadcast?.phase === "live" || liveBroadcast?.phase === "connecting")
 								? onStopLive
-								: () => onStartLive(false)
+								: () => onStartLive({ mode: "hosted" })
 						}
 						className={`h-9 border px-3 font-mono text-[10px] font-black tracking-[.08em] disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim ${thisSessionIsLive && liveBroadcast?.phase === "live" ? "border-trace-warning/60 bg-trace-warning/10 text-trace-warning hover:bg-trace-warning hover:text-trace-black" : "border-trace-accent/60 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black"}`}
 					>
@@ -206,7 +207,7 @@ export function SessionDetail({
 						<button
 							type="button"
 							disabled={broadcastBusy || !session.exportable || (!!liveBroadcast && !["idle", "ended", "error"].includes(liveBroadcast.phase))}
-							onClick={() => onStartLive(true, localSpectatorPort())}
+							onClick={() => onStartLive({ mode: "local", localPort: localSpectatorPort() })}
 							className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-black tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white disabled:text-trace-dim"
 						>
 							LOCAL SCREEN
