@@ -4,7 +4,7 @@ node_modules/
 target/
 **/dist/
 **/coverage/
-assets/
+/assets/
 docs/screenshots/
 fixtures/
 *.trace

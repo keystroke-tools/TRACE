@@ -693,6 +693,8 @@ mod tests {
         assert!(page.contains("steeringWheel"));
         assert!(page.contains("session.in_pit_lane"));
         assert!(page.contains("lap.completed_laps"));
+        assert!(page.contains("Spectator timeline"));
+        assert!(page.contains("liveEdge"));
         assert!(page.contains("motion.position.x"));
     }
 
