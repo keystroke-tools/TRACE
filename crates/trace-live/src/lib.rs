@@ -2,7 +2,7 @@
 
 use trace_protocol::{
     ChannelColumn, Envelope, Hello, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolError,
-    ProtocolLimits, SessionEnd, SessionState, TelemetryBatch, WireUnit,
+    ProtocolLimits, SessionEnd, SessionState, TelemetryBatch, TrackGeometry, WireUnit,
 };
 
 /// Default spectator publishing interval: 20 Hz.
@@ -98,6 +98,19 @@ impl LiveStreamEncoder {
         .map(Some)
     }
 
+    /// Encodes static track geometry once before telemetry samples.
+    ///
+    /// # Errors
+    ///
+    /// Returns a protocol error when the geometry is malformed or oversized.
+    pub fn track_geometry(
+        &mut self,
+        geometry: TrackGeometry,
+        sent_at_unix_ms: i64,
+    ) -> Result<Envelope, ProtocolError> {
+        self.envelope(sent_at_unix_ms, Payload::TrackGeometry(geometry))
+    }
+
     /// Ends the stream with a terminal message.
     ///
     /// # Errors
@@ -155,7 +168,22 @@ pub enum ReplayEncodeError {
 /// Returns [`ReplayEncodeError`] for empty/non-monotonic input or invalid protocol data.
 pub fn encode_recorded_session(
     session_id: &str,
+    state: SessionState,
+    samples: &[LiveTelemetrySample],
+    broadcast_unix_ms: i64,
+) -> Result<Vec<ScheduledEnvelope>, ReplayEncodeError> {
+    encode_recorded_session_with_geometry(session_id, state, None, samples, broadcast_unix_ms)
+}
+
+/// Encodes a recorded stream with optional simulator-provided track geometry.
+///
+/// # Errors
+///
+/// Returns [`ReplayEncodeError`] for invalid metadata, geometry, or telemetry.
+pub fn encode_recorded_session_with_geometry(
+    session_id: &str,
     mut state: SessionState,
+    track_geometry: Option<TrackGeometry>,
     samples: &[LiveTelemetrySample],
     broadcast_unix_ms: i64,
 ) -> Result<Vec<ScheduledEnvelope>, ReplayEncodeError> {
@@ -189,6 +217,16 @@ pub fn encode_recorded_session(
         broadcast_unix_ms,
         Payload::SessionState(state),
     )?;
+    if let Some(geometry) = track_geometry {
+        push_message(
+            &mut scheduled,
+            session_id,
+            &mut sequence,
+            0,
+            broadcast_unix_ms,
+            Payload::TrackGeometry(geometry),
+        )?;
+    }
 
     let mut last_selected = None;
     let mut next_due_ns = 0_u64;
@@ -347,6 +385,8 @@ mod tests {
         SessionState {
             driver_name: Some("Ismail".to_owned()),
             simulator: "assetto-corsa".to_owned(),
+            simulator_name: Some("Assetto Corsa".to_owned()),
+            simulator_mark: Some("AC".to_owned()),
             car: Some("ks_mazda_mx5_cup".to_owned()),
             track: Some("zandvoort".to_owned()),
             layout: None,

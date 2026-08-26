@@ -47,7 +47,7 @@ All implemented routes are versioned under `/api/v1`.
 | `DELETE` | `/api/v1/live-sessions/{id}`          | publisher      | Explicitly end an owned session                        |
 | `GET`    | `/api/v1/live-sessions/{id}/publish`  | publisher      | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
-| `GET`    | `/live/{id}`                           | none           | Open the built-in browser spectator page                |
+| `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
 
 Publisher requests send both headers:
 
@@ -137,6 +137,14 @@ returns. The server accepts an exact retransmission of the last envelope idempot
 which covers connections lost while delivery confirmation is ambiguous. Frames may be
 dropped from the bounded live queue during a long outage; the local recording remains
 complete and independent.
+
+For Assetto Corsa, the publisher reads the selected layout's `ai/fast_lane.ai` and
+sends its centreline and road edges once at session start. The pit-wall map therefore
+has complete static geometry before a lap is driven, and overlays live world position
+without learning spins or off-track excursions as track shape. Simulator adapters can
+provide the same canonical geometry for future games; the spectator falls back to a
+clearly labelled driven line when no static geometry exists. Session metadata also
+includes a human-readable simulator name and compact simulator mark.
 
 ## Next slices
 

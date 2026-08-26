@@ -19,16 +19,18 @@ use tokio_tungstenite::{
     },
 };
 use trace_domain::{Gear, SessionSeed, SourceDescriptor, TelemetryFrame};
-use trace_live::{LiveStreamEncoder, LiveTelemetrySample, encode_recorded_session};
+use trace_live::{LiveStreamEncoder, LiveTelemetrySample, encode_recorded_session_with_geometry};
 use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, InstallationCredentials, LiveStatus,
-    SessionState,
+    SessionState, TrackGeometry, TrackPoint,
 };
 use trace_server::{LocalServer, ServerConfig, start_local_server};
 use trace_storage::{
     ipc::{TelemetryColumns, read_columns_range},
     metadata::{MetadataStore, SessionSummary},
 };
+
+use crate::ac_content::{AcContentNames, AcTrackGeometry};
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
 
@@ -227,12 +229,14 @@ struct RecordedBroadcast {
     state: SessionState,
     samples: Vec<LiveTelemetrySample>,
     duration_ns: u64,
+    track_geometry: Option<TrackGeometry>,
 }
 
 struct ActiveBroadcast {
     endpoint: String,
     state: SessionState,
     events: tokio::sync::broadcast::Receiver<CaptureLiveEvent>,
+    track_geometry: Option<TrackGeometry>,
 }
 
 #[tauri::command]
@@ -323,13 +327,30 @@ pub async fn start_active_live_broadcast(
         .live_service_endpoint()
         .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?
         .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let simulator_key = capture.source.simulator.as_str();
+    let track_geometry = if simulator_key == "assetto-corsa" {
+        let configured_path = store
+            .simulator_install_path(simulator_key)
+            .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
+            .map(std::path::PathBuf::from);
+        capture.seed.track_id.as_deref().and_then(|track| {
+            AcContentNames::discover(configured_path.as_deref())
+                .track_geometry(track, capture.seed.layout_id.as_deref())
+                .map(protocol_track_geometry)
+        })
+    } else {
+        None
+    };
+    let (simulator_name, simulator_mark) = simulator_identity(simulator_key);
     let generation = state.begin("active-capture".to_owned(), 0)?;
     let endpoint = prepare_endpoint(&state, options, configured_endpoint, generation).await?;
     let source = ActiveBroadcast {
         endpoint,
         state: SessionState {
             driver_name: protocol_optional_text(driver_name),
-            simulator: capture.source.simulator.as_str().to_owned(),
+            simulator: simulator_key.to_owned(),
+            simulator_name: Some(simulator_name),
+            simulator_mark: Some(simulator_mark),
             car: protocol_optional_text(capture.seed.car_id),
             track: protocol_optional_text(capture.seed.track_id),
             layout: protocol_optional_text(capture.seed.layout_id),
@@ -337,6 +358,7 @@ pub async fn start_active_live_broadcast(
             status: LiveStatus::Live,
         },
         events,
+        track_geometry,
     };
     let shared = state.inner().clone();
     tauri::async_runtime::spawn(async move {
@@ -441,6 +463,20 @@ async fn publish_active_broadcast(
         )
         .await?;
     }
+    if let Some(geometry) = source.track_geometry.take() {
+        let envelope = encoder
+            .track_geometry(geometry, unix_timestamp_ms())
+            .map_err(|error| format!("track geometry cannot be published: {error:?}"))?;
+        send_with_reconnect(
+            &mut websocket,
+            &created,
+            &credentials,
+            &envelope,
+            shared,
+            generation,
+        )
+        .await?;
+    }
     shared.update(generation, |status| {
         status.phase = LiveBroadcastPhase::Live;
         status.live_session_id = Some(created.session_id.clone());
@@ -521,9 +557,10 @@ async fn publish_recorded_broadcast(
         return Ok(());
     }
     let mut websocket = connect_publisher(&created, &credentials).await?;
-    let messages = encode_recorded_session(
+    let messages = encode_recorded_session_with_geometry(
         &created.session_id,
         source.state.clone(),
+        source.track_geometry.clone(),
         &source.samples,
         unix_timestamp_ms(),
     )
@@ -828,19 +865,36 @@ fn load_recorded_broadcast(
     let driver_name = session.user_driver.clone().or(store
         .driver_profile_name()
         .map_err(|error| format!("failed to read the local driver profile: {error:?}"))?);
+    let track_geometry = if session.simulator_key == "assetto-corsa" {
+        let configured_path = store
+            .simulator_install_path(&session.simulator_key)
+            .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
+            .map(std::path::PathBuf::from);
+        session.source_track_id.as_deref().and_then(|track| {
+            AcContentNames::discover(configured_path.as_deref())
+                .track_geometry(track, session.layout_id.as_deref())
+                .map(protocol_track_geometry)
+        })
+    } else {
+        None
+    };
     let state = session_state(&session, driver_name);
     Ok(RecordedBroadcast {
         endpoint,
         state,
         samples,
         duration_ns,
+        track_geometry,
     })
 }
 
 fn session_state(session: &SessionSummary, driver_name: Option<String>) -> SessionState {
+    let (simulator_name, simulator_mark) = simulator_identity(&session.simulator_key);
     SessionState {
         driver_name: protocol_optional_text(driver_name),
         simulator: session.simulator_key.clone(),
+        simulator_name: Some(simulator_name),
+        simulator_mark: Some(simulator_mark),
         car: protocol_optional_text(
             session
                 .car
@@ -857,6 +911,58 @@ fn session_state(session: &SessionSummary, driver_name: Option<String>) -> Sessi
         session_type: protocol_optional_text(session.session_type.clone()),
         status: LiveStatus::Live,
     }
+}
+
+fn protocol_track_geometry(geometry: AcTrackGeometry) -> TrackGeometry {
+    let points = |values: Vec<crate::ac_content::AcTrackPoint>| {
+        values
+            .into_iter()
+            .map(|point| TrackPoint {
+                x_m: point.x_m,
+                z_m: point.z_m,
+            })
+            .collect()
+    };
+    TrackGeometry {
+        centre_line: points(geometry.centre_line),
+        left_boundary: points(geometry.left_boundary),
+        right_boundary: points(geometry.right_boundary),
+    }
+}
+
+fn simulator_identity(key: &str) -> (String, String) {
+    if key == "assetto-corsa" {
+        return ("Assetto Corsa".to_owned(), "AC".to_owned());
+    }
+    let name = key
+        .split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut characters = part.chars();
+            characters.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(characters).collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mark = name
+        .split_whitespace()
+        .filter_map(|part| part.chars().next())
+        .take(3)
+        .collect::<String>()
+        .to_uppercase();
+    (
+        if name.is_empty() {
+            "Unknown simulator".to_owned()
+        } else {
+            name
+        },
+        if mark.is_empty() {
+            "SIM".to_owned()
+        } else {
+            mark
+        },
+    )
 }
 
 fn protocol_optional_text(value: Option<String>) -> Option<String> {

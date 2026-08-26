@@ -39,6 +39,7 @@ The v1 payload discriminator uses snake-case names:
 | ----------------- | ----------------------------------------------------------- |
 | `hello`           | Publisher version and canonical source identity             |
 | `session_state`   | Driver, simulator, car, track/layout, type, and live status |
+| `track_geometry`  | Bounded world-space centreline and left/right road edges    |
 | `telemetry_batch` | Bounded columnar live samples                               |
 | `lap_event`       | Completed/invalid/unknown lap timing update                 |
 | `heartbeat`       | Keeps an otherwise idle live session current                |
@@ -50,6 +51,10 @@ show these states rather than silently freezing on stale data.
 Text fields are non-empty, reject control characters, and default to at most 256
 UTF-8 bytes. Implementations may negotiate or configure stricter limits, but cannot
 accept values beyond server resource policy.
+
+Session state carries a stable simulator key plus optional human-readable name and
+compact mark. Track geometry contains 3–4,096 aligned finite points per line; it is
+published once and uses the same world-space metres as `motion.position.x/z`.
 
 ## Telemetry batches
 

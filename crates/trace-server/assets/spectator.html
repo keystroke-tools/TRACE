@@ -20,6 +20,7 @@
             .brand { font-size: 18px; font-weight: 900; letter-spacing: .12em; white-space: nowrap; }
             .brand i { color: #71df8b; font-style: normal; }
             .identity { min-width: 0; display: flex; align-items: center; gap: 10px; color: #aaa; }
+            .sim-mark { display: grid; width: 34px; height: 28px; place-items: center; border: 1px solid #444; background: #202020; color: #71df8b; font: 900 10px ui-monospace, monospace; letter-spacing: .06em; }
             .identity strong { overflow: hidden; color: #eee; text-overflow: ellipsis; white-space: nowrap; }
             .identity span { color: #666; }
             .connection { margin-left: auto; display: flex; align-items: center; gap: 9px; color: #aaa; font: 700 11px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
@@ -75,7 +76,7 @@
         <div class="shell">
             <header>
                 <div class="brand">TRACE <i>//</i> PIT WALL</div>
-                <div class="identity"><strong id="driver">Unknown driver</strong><span>/</span><span id="track">Waiting for session</span></div>
+                <div class="identity"><b class="sim-mark" id="simMark">SIM</b><strong id="driver">Unknown driver</strong><span>/</span><span id="track">Waiting for session</span></div>
                 <div class="connection" id="connection"><i></i><span>Connecting</span></div>
             </header>
             <section class="session-strip">
@@ -123,6 +124,7 @@
             const traceCanvas = document.querySelector("#trace");
             const mapEmpty = document.querySelector("#mapEmpty");
             const path = [];
+            let trackGeometry = null;
             const history = [];
             let latestPosition = null;
             let retry = 0;
@@ -163,12 +165,16 @@
                 const { width, height, ratio } = resizeCanvas(mapCanvas);
                 const context = mapCanvas.getContext("2d");
                 context.clearRect(0, 0, width, height);
-                if (path.length < 2) return;
-                const project = fitPath(path, width, height, 42 * ratio);
+                const reference = trackGeometry?.centre_line?.length > 2 ? trackGeometry.centre_line : path;
+                if (reference.length < 2) return;
+                const project = fitPath(reference, width, height, 42 * ratio);
                 context.lineJoin = "round"; context.lineCap = "round";
-                context.strokeStyle = "#303030"; context.lineWidth = 14 * ratio;
-                context.beginPath(); path.forEach((point, index) => { const p = project(point); index ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y); }); context.stroke();
-                context.strokeStyle = "#777"; context.lineWidth = 2 * ratio; context.stroke();
+                const strokePath = (points, color, lineWidth, closed = false) => { context.strokeStyle = color; context.lineWidth = lineWidth * ratio; context.beginPath(); points.forEach((point, index) => { const p = project(point); index ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y); }); if (closed) context.closePath(); context.stroke(); };
+                if (trackGeometry) {
+                    strokePath(trackGeometry.left_boundary, "#777", 2, true); strokePath(trackGeometry.right_boundary, "#777", 2, true); strokePath(trackGeometry.centre_line, "#303030", 1, true);
+                } else {
+                    strokePath(path, "#303030", 14); strokePath(path, "#777", 2);
+                }
                 if (latestPosition) {
                     const marker = project(latestPosition);
                     context.fillStyle = "#71df8b"; context.beginPath(); context.arc(marker.x, marker.y, 7 * ratio, 0, Math.PI * 2); context.fill();
@@ -205,7 +211,7 @@
                 const progress = valueOf(channels, ["lap.normalized_position"]); set("#lapProgress", Number.isFinite(progress) ? `${Math.round(progress * 100)}%` : "—");
                 set("#throttle", `${Math.round(throttle)}%`); set("#brake", `${Math.round(brake)}%`); document.querySelector("#throttleBar").style.width = `${throttle}%`; document.querySelector("#brakeBar").style.width = `${brake}%`;
                 history.push({ time: elapsed, throttle: throttle / 100, brake: brake / 100, speed }); while (history.length && history[0].time < elapsed - 21) history.shift();
-                if (Number.isFinite(x) && Number.isFinite(y)) { latestPosition = { x, y }; const previous = path.at(-1); if (!previous || Math.hypot(previous.x - x, previous.y - y) > .5) path.push(latestPosition); if (path.length > 10000) path.shift(); mapEmpty.hidden = path.length > 1; set("#mapSamples", `${path.length} POINTS`); }
+                if (Number.isFinite(x) && Number.isFinite(y)) { latestPosition = { x, y }; const previous = path.at(-1); if (!previous || Math.hypot(previous.x - x, previous.y - y) > .5) path.push(latestPosition); if (path.length > 10000) path.shift(); mapEmpty.hidden = Boolean(trackGeometry) || path.length > 1; set("#mapSamples", trackGeometry ? `${trackGeometry.centre_line.length} STATIC POINTS` : `${path.length} DRIVEN POINTS`); }
                 drawMap(); drawTrace();
             }
             function connect() {
@@ -216,7 +222,8 @@
                 socket.onmessage = (event) => {
                     let message; try { message = JSON.parse(event.data); } catch { return; }
                     const payload = message.payload || {};
-                    if (payload.type === "session_state") { const state = payload.data || {}; set("#driver", state.driver_name || "Unknown driver"); set("#sim", state.simulator || "—"); set("#track", state.track || "Unknown track"); set("#car", state.car || "—"); set("#session", state.session_type || "—"); if (state.status === "ended") { terminal = true; setConnection("Ended"); } }
+                    if (payload.type === "session_state") { const state = payload.data || {}; set("#driver", state.driver_name || "Unknown driver"); set("#sim", state.simulator_name || state.simulator || "—"); set("#simMark", state.simulator_mark || "SIM"); set("#track", state.track || "Unknown track"); set("#car", state.car || "—"); set("#session", state.session_type || "—"); if (state.status === "ended") { terminal = true; setConnection("Ended"); } }
+                    else if (payload.type === "track_geometry") { const geometry = payload.data || {}; const convert = (points) => (points || []).map((point) => ({ x: Number(point.x_m), y: Number(point.z_m) })).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)); const candidate = { centre_line: convert(geometry.centre_line), left_boundary: convert(geometry.left_boundary), right_boundary: convert(geometry.right_boundary) }; if (candidate.centre_line.length > 2 && candidate.left_boundary.length === candidate.centre_line.length && candidate.right_boundary.length === candidate.centre_line.length) { trackGeometry = candidate; mapEmpty.hidden = true; set("#mapSamples", `${candidate.centre_line.length} STATIC POINTS`); drawMap(); } }
                     else if (payload.type === "telemetry_batch") renderTelemetry(payload.data || {});
                     else if (payload.type === "end") { terminal = true; setConnection("Ended"); }
                 };

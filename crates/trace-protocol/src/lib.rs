@@ -93,6 +93,7 @@ impl Envelope {
 pub enum Payload {
     Hello(Hello),
     SessionState(SessionState),
+    TrackGeometry(TrackGeometry),
     TelemetryBatch(TelemetryBatch),
     LapEvent(LapEvent),
     Heartbeat,
@@ -107,6 +108,7 @@ impl Payload {
                 validate_text(&hello.source, limits.max_text_bytes)
             }
             Self::SessionState(state) => state.validate(limits),
+            Self::TrackGeometry(geometry) => geometry.validate(),
             Self::TelemetryBatch(batch) => batch.validate(limits),
             Self::LapEvent(event) => event.validate(),
             Self::Heartbeat => Ok(()),
@@ -127,6 +129,8 @@ pub struct Hello {
 pub struct SessionState {
     pub driver_name: Option<String>,
     pub simulator: String,
+    pub simulator_name: Option<String>,
+    pub simulator_mark: Option<String>,
     pub car: Option<String>,
     pub track: Option<String>,
     pub layout: Option<String>,
@@ -139,6 +143,8 @@ impl SessionState {
         validate_text(&self.simulator, limits.max_text_bytes)?;
         for value in [
             self.driver_name.as_deref(),
+            self.simulator_name.as_deref(),
+            self.simulator_mark.as_deref(),
             self.car.as_deref(),
             self.track.as_deref(),
             self.layout.as_deref(),
@@ -151,6 +157,44 @@ impl SessionState {
         }
         Ok(())
     }
+}
+
+/// Simulator-provided world-space track geometry aligned with telemetry positions.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TrackGeometry {
+    pub centre_line: Vec<TrackPoint>,
+    pub left_boundary: Vec<TrackPoint>,
+    pub right_boundary: Vec<TrackPoint>,
+}
+
+impl TrackGeometry {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        const MAX_POINTS: usize = 4_096;
+        let point_count = self.centre_line.len();
+        if !(3..=MAX_POINTS).contains(&point_count)
+            || self.left_boundary.len() != point_count
+            || self.right_boundary.len() != point_count
+        {
+            return Err(ProtocolError::InvalidTrackGeometry);
+        }
+        if self
+            .centre_line
+            .iter()
+            .chain(&self.left_boundary)
+            .chain(&self.right_boundary)
+            .any(|point| !point.x_m.is_finite() || !point.z_m.is_finite())
+        {
+            return Err(ProtocolError::InvalidTrackGeometry);
+        }
+        Ok(())
+    }
+}
+
+/// One horizontal world-space track point in metres.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TrackPoint {
+    pub x_m: f32,
+    pub z_m: f32,
 }
 
 /// Explicit live lifecycle shown to spectators.
@@ -287,6 +331,7 @@ pub enum ProtocolError {
     DuplicateChannel,
     ColumnLengthMismatch,
     NonFiniteValue,
+    InvalidTrackGeometry,
     InvalidLapDuration,
 }
 
@@ -369,6 +414,30 @@ mod tests {
         assert_eq!(
             envelope(Payload::TelemetryBatch(batch())).validate(ProtocolLimits::default()),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn validates_aligned_finite_track_geometry() {
+        let points = vec![
+            TrackPoint { x_m: 0.0, z_m: 0.0 },
+            TrackPoint { x_m: 1.0, z_m: 0.0 },
+            TrackPoint { x_m: 1.0, z_m: 1.0 },
+        ];
+        let geometry = TrackGeometry {
+            centre_line: points.clone(),
+            left_boundary: points.clone(),
+            right_boundary: points,
+        };
+        assert_eq!(
+            envelope(Payload::TrackGeometry(geometry.clone())).validate(ProtocolLimits::default()),
+            Ok(())
+        );
+        let mut invalid = geometry;
+        invalid.right_boundary.pop();
+        assert_eq!(
+            envelope(Payload::TrackGeometry(invalid)).validate(ProtocolLimits::default()),
+            Err(ProtocolError::InvalidTrackGeometry)
         );
     }
 

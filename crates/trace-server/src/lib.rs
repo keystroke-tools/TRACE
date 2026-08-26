@@ -628,6 +628,8 @@ mod tests {
         SessionState {
             driver_name: Some("3X3".to_owned()),
             simulator: "assetto-corsa".to_owned(),
+            simulator_name: Some("Assetto Corsa".to_owned()),
+            simulator_mark: Some("AC".to_owned()),
             car: Some("ks_mazda_mx5_cup".to_owned()),
             track: Some("zandvoort".to_owned()),
             layout: None,
