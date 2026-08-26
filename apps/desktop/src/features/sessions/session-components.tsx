@@ -57,18 +57,20 @@ export function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | 
 		{ short: "RR", name: "Rear right", index: 3 },
 	];
 	return (
-		<div className="grid w-fit grid-cols-2 gap-1" aria-label="Tyre condition remaining at the end of this lap">
+		<div className="grid w-fit grid-cols-2 gap-1" aria-label="Lowest tyre condition observed during this lap">
 			{tyres.map((tyre) => {
 				const start = metrics?.tyreWearStart[tyre.index];
 				const end = metrics?.tyreWearEnd[tyre.index];
-				const remaining = end != null && Number.isFinite(end) ? Math.min(100, Math.max(0, end)) : null;
+				const minimum = metrics?.tyreWearMinimum[tyre.index];
+				const observed = minimum != null && Number.isFinite(minimum) ? minimum : end;
+				const remaining = observed != null && Number.isFinite(observed) ? Math.min(100, Math.max(0, observed)) : null;
 				const colour = remaining == null ? null : tyreConditionColour(remaining);
-				const value = remaining == null ? "—" : `${Math.round(remaining)}%`;
-				const used = start != null && end != null && Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, start - end) : null;
+				const value = remaining == null ? "—" : `${wholeTyreCondition(remaining)}%`;
+				const used = start != null && remaining != null && Number.isFinite(start) ? Math.max(0, start - remaining) : null;
 				const detail =
 					remaining == null
 						? `${tyre.name}: wear telemetry unavailable`
-						: `${tyre.name}: ${value} condition remaining${start != null ? ` · ${start.toFixed(2)}% to ${remaining.toFixed(2)}%${used != null ? ` · ${used.toFixed(2)}% used this lap` : ""}` : ""}`;
+						: `${tyre.name}: ${value} condition remaining · ${remaining.toFixed(2)}% lowest observed${start != null ? ` · ${start.toFixed(2)}% at lap start${used != null ? ` · ${used.toFixed(2)}% used this lap` : ""}` : ""}`;
 				return (
 					<Tooltip key={tyre.short} content={detail}>
 						<span
@@ -88,6 +90,11 @@ export function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | 
 			})}
 		</div>
 	);
+}
+
+export function wholeTyreCondition(remainingPercent: number) {
+	const condition = Math.min(100, Math.max(0, remainingPercent));
+	return condition >= 99.999 ? 100 : Math.floor(condition);
 }
 
 export function tyreConditionColour(remainingPercent: number) {

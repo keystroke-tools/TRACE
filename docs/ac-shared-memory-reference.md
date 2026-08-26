@@ -46,7 +46,7 @@ no packet counter and is copied with the changing pages.
 | 72 | `wheelLoad[4]` | `float[4]` | wheel load, N |
 | 88 | `wheelsPressure[4]` | `float[4]` | tyre pressure; source unit not asserted by TRACE |
 | 104 | `wheelAngularSpeed[4]` | `float[4]` | wheel angular speed |
-| 120 | `tyreWear[4]` | `float[4]` | tyre wear |
+| 120 | `tyreWear[4]` | `float[4]` | source-native tyre condition/wear value; commonly near 100 and observed to decrease with wear, but may reset or recover at hotlap and pit boundaries |
 | 136 | `tyreDirtyLevel[4]` | `float[4]` | tyre dirt level |
 | 152 | `tyreCoreTemperature[4]` | `float[4]` | °C |
 | 168 | `camberRAD[4]` | `float[4]` | radians |
