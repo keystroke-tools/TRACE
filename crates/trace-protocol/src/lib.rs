@@ -96,6 +96,7 @@ pub enum Payload {
     TrackGeometry(TrackGeometry),
     TelemetryBatch(TelemetryBatch),
     LapEvent(LapEvent),
+    SectorEvent(SectorEvent),
     Heartbeat,
     End(SessionEnd),
 }
@@ -111,6 +112,7 @@ impl Payload {
             Self::TrackGeometry(geometry) => geometry.validate(),
             Self::TelemetryBatch(batch) => batch.validate(limits),
             Self::LapEvent(event) => event.validate(),
+            Self::SectorEvent(event) => event.validate(),
             Self::Heartbeat => Ok(()),
             Self::End(end) => validate_text(&end.reason, limits.max_text_bytes),
         }
@@ -288,6 +290,23 @@ pub struct LapEvent {
     pub validity: LapValidity,
 }
 
+/// Discrete completed sector update. Indices are zero-based on the wire.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SectorEvent {
+    pub lap_index: u32,
+    pub sector_index: u32,
+    pub duration_s: f64,
+}
+
+impl SectorEvent {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        if !self.duration_s.is_finite() || self.duration_s < 0.0 {
+            return Err(ProtocolError::InvalidSectorDuration);
+        }
+        Ok(())
+    }
+}
+
 impl LapEvent {
     fn validate(&self) -> Result<(), ProtocolError> {
         if self
@@ -333,6 +352,7 @@ pub enum ProtocolError {
     NonFiniteValue,
     InvalidTrackGeometry,
     InvalidLapDuration,
+    InvalidSectorDuration,
 }
 
 #[derive(Clone, Copy)]

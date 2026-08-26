@@ -1,8 +1,9 @@
 //! Simulator- and transport-independent live telemetry encoding.
 
 use trace_protocol::{
-    ChannelColumn, Envelope, Hello, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolError,
-    ProtocolLimits, SessionEnd, SessionState, TelemetryBatch, TrackGeometry, WireUnit,
+    ChannelColumn, Envelope, Hello, LapEvent, LapValidity, LiveStatus, PROTOCOL_VERSION, Payload,
+    ProtocolError, ProtocolLimits, SectorEvent, SessionEnd, SessionState, TelemetryBatch,
+    TrackGeometry, WireUnit,
 };
 
 /// Default spectator publishing interval: 20 Hz.
@@ -24,6 +25,7 @@ pub struct LiveTelemetrySample {
     pub lap_position: Option<f32>,
     pub lap_time_s: Option<f32>,
     pub sector_index: Option<u32>,
+    pub last_sector_time_s: Option<f32>,
     pub position_x_m: Option<f64>,
     pub position_z_m: Option<f64>,
     pub ambient_temperature_c: Option<f32>,
@@ -44,6 +46,7 @@ pub struct LiveStreamEncoder {
     session_id: String,
     sequence: u64,
     last_sample_elapsed_ns: Option<u64>,
+    timing: TimingEventTracker,
 }
 
 impl LiveStreamEncoder {
@@ -63,6 +66,7 @@ impl LiveStreamEncoder {
             session_id,
             sequence: 0,
             last_sample_elapsed_ns: None,
+            timing: TimingEventTracker::default(),
         };
         let messages = vec![
             encoder.envelope(
@@ -77,7 +81,7 @@ impl LiveStreamEncoder {
         Ok((encoder, messages))
     }
 
-    /// Encodes a sample when the 20 Hz live interval has elapsed.
+    /// Encodes timing events immediately and telemetry when the 20 Hz interval has elapsed.
     ///
     /// # Errors
     ///
@@ -86,19 +90,23 @@ impl LiveStreamEncoder {
         &mut self,
         sample: &LiveTelemetrySample,
         sent_at_unix_ms: i64,
-    ) -> Result<Option<Envelope>, ProtocolError> {
+    ) -> Result<Vec<Envelope>, ProtocolError> {
+        let mut envelopes = Vec::new();
+        for payload in self.timing.observe(sample) {
+            envelopes.push(self.envelope(sent_at_unix_ms, payload)?);
+        }
         if self
             .last_sample_elapsed_ns
             .is_some_and(|last| sample.elapsed_ns < last.saturating_add(LIVE_SAMPLE_INTERVAL_NS))
         {
-            return Ok(None);
+            return Ok(envelopes);
         }
         self.last_sample_elapsed_ns = Some(sample.elapsed_ns);
-        self.envelope(
+        envelopes.push(self.envelope(
             sent_at_unix_ms,
             Payload::TelemetryBatch(telemetry_batch(sample, sample.elapsed_ns)),
-        )
-        .map(Some)
+        )?);
+        Ok(envelopes)
     }
 
     /// Encodes static track geometry once before telemetry samples.
@@ -148,6 +156,96 @@ impl LiveStreamEncoder {
         envelope.validate(ProtocolLimits::default())?;
         self.sequence = self.sequence.saturating_add(1);
         Ok(envelope)
+    }
+}
+
+#[derive(Default)]
+struct TimingEventTracker {
+    completed_laps: Option<u32>,
+    sector_index: Option<u32>,
+    previous_lap_time_s: Option<f32>,
+    completed_sector_time_s: f64,
+}
+
+impl TimingEventTracker {
+    fn observe(&mut self, sample: &LiveTelemetrySample) -> Vec<Payload> {
+        let mut events = Vec::new();
+        let Some(completed_laps) = sample.completed_laps else {
+            self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
+            self.sector_index = sample.sector_index;
+            return events;
+        };
+
+        if self
+            .completed_laps
+            .is_some_and(|previous| completed_laps < previous)
+        {
+            self.sector_index = sample.sector_index;
+            self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
+            self.completed_sector_time_s = 0.0;
+            self.completed_laps = Some(completed_laps);
+            return events;
+        }
+
+        if let Some(previous_completed) = self.completed_laps {
+            if completed_laps > previous_completed {
+                let final_sector_duration = sample
+                    .last_sector_time_s
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .map(f64::from)
+                    .or_else(|| {
+                        self.previous_lap_time_s
+                            .map(f64::from)
+                            .map(|lap_time| (lap_time - self.completed_sector_time_s).max(0.0))
+                    });
+                if let (Some(sector_index), Some(duration_s)) =
+                    (self.sector_index, final_sector_duration)
+                {
+                    events.push(Payload::SectorEvent(SectorEvent {
+                        lap_index: previous_completed,
+                        sector_index,
+                        duration_s,
+                    }));
+                }
+                let measured_lap_time = final_sector_duration
+                    .map(|duration| self.completed_sector_time_s + duration)
+                    .filter(|duration| *duration > 0.0)
+                    .or_else(|| self.previous_lap_time_s.map(f64::from));
+                events.push(Payload::LapEvent(LapEvent {
+                    lap_index: previous_completed,
+                    duration_s: measured_lap_time,
+                    validity: LapValidity::Unknown,
+                }));
+                self.completed_sector_time_s = 0.0;
+            } else if let (Some(previous_sector), Some(next_sector)) =
+                (self.sector_index, sample.sector_index)
+                && next_sector > previous_sector
+            {
+                let duration_s = sample
+                    .last_sector_time_s
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .map(f64::from)
+                    .or_else(|| {
+                        sample
+                            .lap_time_s
+                            .map(f64::from)
+                            .map(|lap_time| (lap_time - self.completed_sector_time_s).max(0.0))
+                    });
+                if let Some(duration_s) = duration_s {
+                    events.push(Payload::SectorEvent(SectorEvent {
+                        lap_index: completed_laps,
+                        sector_index: previous_sector,
+                        duration_s,
+                    }));
+                    self.completed_sector_time_s += duration_s;
+                }
+            }
+        }
+
+        self.completed_laps = Some(completed_laps);
+        self.sector_index = sample.sector_index;
+        self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
+        events
     }
 }
 
@@ -233,8 +331,19 @@ pub fn encode_recorded_session_with_geometry(
 
     let mut last_selected = None;
     let mut next_due_ns = 0_u64;
+    let mut timing = TimingEventTracker::default();
     for (index, sample) in samples.iter().enumerate() {
         let due_ns = sample.elapsed_ns - first.elapsed_ns;
+        for payload in timing.observe(sample) {
+            push_message(
+                &mut scheduled,
+                session_id,
+                &mut sequence,
+                due_ns,
+                rebased_timestamp(broadcast_unix_ms, due_ns),
+                payload,
+            )?;
+        }
         let final_sample = index + 1 == samples.len();
         if due_ns < next_due_ns && !final_sample {
             continue;
@@ -501,24 +610,19 @@ mod tests {
 
         let first = sample(0, 0.4);
         assert_eq!(
-            encoder
-                .sample(&first, 1_000)
-                .expect("first sample")
-                .expect("published")
-                .sequence,
+            encoder.sample(&first, 1_000).expect("first sample")[0].sequence,
             2
         );
         assert!(
             encoder
                 .sample(&sample(10_000_000, 0.5), 1_010)
                 .expect("limited sample")
-                .is_none()
+                .is_empty()
         );
         assert_eq!(
             encoder
                 .sample(&sample(LIVE_SAMPLE_INTERVAL_NS, 0.6), 1_050)
-                .expect("next sample")
-                .expect("published")
+                .expect("next sample")[0]
                 .sequence,
             3
         );
@@ -526,6 +630,49 @@ mod tests {
             encoder.end("capture ended", 1_100).expect("end").sequence,
             4
         );
+    }
+
+    #[test]
+    fn emits_sector_and_lap_events_between_rate_limited_samples() {
+        let (mut encoder, _) =
+            LiveStreamEncoder::start("0123456789abcdef0123456789abcdef", state(), 1_000)
+                .expect("active stream");
+        let mut first = sample(0, 0.4);
+        first.completed_laps = Some(0);
+        first.sector_index = Some(0);
+        first.lap_time_s = Some(10.0);
+        encoder.sample(&first, 1_000).expect("first sample");
+
+        let mut sector = sample(10_000_000, 0.5);
+        sector.completed_laps = Some(0);
+        sector.sector_index = Some(1);
+        sector.lap_time_s = None;
+        sector.last_sector_time_s = Some(20.0);
+        let sector_messages = encoder.sample(&sector, 1_010).expect("sector sample");
+        assert!(matches!(
+            &sector_messages[0].payload,
+            Payload::SectorEvent(SectorEvent {
+                lap_index: 0,
+                sector_index: 0,
+                duration_s: 20.0,
+            })
+        ));
+
+        let mut lap = sample(20_000_000, 0.6);
+        lap.completed_laps = Some(1);
+        lap.sector_index = Some(0);
+        lap.lap_time_s = Some(0.1);
+        lap.last_sector_time_s = Some(40.0);
+        let lap_messages = encoder.sample(&lap, 1_020).expect("lap sample");
+        assert!(matches!(lap_messages[0].payload, Payload::SectorEvent(_)));
+        assert!(matches!(
+            lap_messages[1].payload,
+            Payload::LapEvent(LapEvent {
+                lap_index: 0,
+                duration_s: Some(60.0),
+                validity: LapValidity::Unknown,
+            })
+        ));
     }
 
     #[test]

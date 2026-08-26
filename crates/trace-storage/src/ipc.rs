@@ -75,6 +75,7 @@ pub struct TelemetryColumns {
     pub gear_kind: Vec<Option<i8>>,
     pub gear_value: Vec<Option<i16>>,
     pub sector_index: Vec<Option<u32>>,
+    pub last_sector_time_ns: Vec<Option<u64>>,
     pub in_pit: Vec<Option<bool>>,
     pub in_pit_lane: Vec<Option<bool>>,
     pub track_length_m: Option<f64>,
@@ -163,6 +164,10 @@ impl TelemetryColumns {
                 .iter()
                 .map(|frame| frame.lap.current_sector_index)
                 .collect(),
+            last_sector_time_ns: frames
+                .iter()
+                .map(|frame| frame.lap.last_sector_time_ns)
+                .collect(),
             in_pit: frames
                 .iter()
                 .map(|frame| native_boolean(frame, "graphics.is_in_pit"))
@@ -221,6 +226,7 @@ impl TelemetryColumns {
             gear_kind: Vec::new(),
             gear_value: Vec::new(),
             sector_index: Vec::new(),
+            last_sector_time_ns: Vec::new(),
             in_pit: Vec::new(),
             in_pit_lane: Vec::new(),
             track_length_m: None,
@@ -1155,6 +1161,12 @@ fn extend_projection(
     );
     decoded.sector_index.extend(
         optional_u32(batch, "lap_current_sector_index")?
+            .into_iter()
+            .skip(start)
+            .take(length),
+    );
+    decoded.last_sector_time_ns.extend(
+        optional_u64(batch, "lap_last_sector_time_ns")?
             .into_iter()
             .skip(start)
             .take(length),

@@ -42,6 +42,7 @@ The v1 payload discriminator uses snake-case names:
 | `track_geometry`  | Bounded world-space centreline and left/right road edges    |
 | `telemetry_batch` | Bounded columnar live samples                               |
 | `lap_event`       | Completed/invalid/unknown lap timing update                 |
+| `sector_event`    | Completed sector timing update                              |
 | `heartbeat`       | Keeps an otherwise idle live session current                |
 | `end`             | Explicit terminal state and reason                          |
 
@@ -120,6 +121,14 @@ only through an explicit protocol versioning decision.
 A lap event contains a zero-based lap index, optional duration in seconds, and
 validity (`valid`, `invalid`, or `unknown`). A supplied duration must be finite and
 non-negative. Unknown validity is preserved rather than treated as valid.
+
+## Sector events
+
+A sector event contains zero-based lap and sector indices plus a finite,
+non-negative duration in seconds. Publishers derive the event once at the sector
+boundary, before telemetry downsampling, so spectators do not have to reconstruct
+timing transitions from whichever samples happen to reach the wire. The number of
+sectors is deliberately not fixed by the protocol.
 
 ## Validation order
 

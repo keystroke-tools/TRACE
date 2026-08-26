@@ -350,7 +350,7 @@ buffers/chunks. Do not emit an event per native sample across IPC.
 
 ```text
 Envelope { protocol_version, message_id, session_id, sequence, sent_at, payload }
-Payload  { hello | session_state | telemetry_batch | lap_event | heartbeat | end }
+Payload  { hello | session_state | track_geometry | telemetry_batch | sector_event | lap_event | heartbeat | end }
 ```
 
 Telemetry batches have declared channels/units, base time, sequence range, and

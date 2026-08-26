@@ -495,7 +495,7 @@ async fn publish_active_broadcast(
             event = source.events.recv() => match event {
                 Ok(CaptureLiveEvent::Frame(frame)) => {
                     let sample = live_sample_from_frame(&frame);
-                    if let Some(envelope) = encoder.sample(&sample, unix_timestamp_ms())
+                    for envelope in encoder.sample(&sample, unix_timestamp_ms())
                         .map_err(|error| format!("active telemetry cannot be published: {error:?}"))?
                     {
                         send_with_reconnect(
@@ -507,8 +507,8 @@ async fn publish_active_broadcast(
                             generation,
                         )
                         .await?;
-                        shared.update(generation, |status| status.elapsed_ns = sample.elapsed_ns);
                     }
+                    shared.update(generation, |status| status.elapsed_ns = sample.elapsed_ns);
                 }
                 Ok(CaptureLiveEvent::Ended | CaptureLiveEvent::Started)
                 | Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -708,6 +708,10 @@ fn live_sample_from_frame(frame: &TelemetryFrame) -> LiveTelemetrySample {
             .current_lap_time_ns
             .map(|value| Duration::from_nanos(value).as_secs_f32()),
         sector_index: frame.lap.current_sector_index,
+        last_sector_time_s: frame
+            .lap
+            .last_sector_time_ns
+            .map(|value| Duration::from_nanos(value).as_secs_f32()),
         position_x_m: position.map(|value| value.x),
         position_z_m: position.map(|value| value.z),
         ambient_temperature_c: environment.and_then(|value| value.ambient_temperature_c),
@@ -1027,6 +1031,7 @@ fn live_samples(columns: &TelemetryColumns) -> Result<Vec<LiveTelemetrySample>, 
             lap_position: columns.lap_position[index],
             lap_time_s: columns.lap_time_ns[index].and_then(nanoseconds_to_seconds),
             sector_index: columns.sector_index[index],
+            last_sector_time_s: columns.last_sector_time_ns[index].and_then(nanoseconds_to_seconds),
             position_x_m: columns.position_x_m[index],
             position_z_m: columns.position_z_m[index],
             ambient_temperature_c: columns.ambient_temperature_c[index],
