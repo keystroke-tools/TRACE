@@ -29,14 +29,16 @@ export function App() {
 		setStatus(await telemetryDataSource.getStatus());
 	}
 
-	async function startRecordedBroadcast(sessionId: string) {
+	async function startRecordedBroadcast(sessionId: string, local: boolean, localPort?: number) {
 		try {
-			const next = await telemetryDataSource.startRecordedLiveBroadcast(sessionId);
+			const next = await telemetryDataSource.startRecordedLiveBroadcast(sessionId, local, localPort);
 			setLiveBroadcast(next);
 			showToast({
 				kind: "success",
 				title: "Preparing live replay",
-				message: "TRACE is loading the recording and connecting to the configured Go Live service.",
+				message: local
+					? "TRACE is starting a local spectator service and loading the recording."
+					: "TRACE is loading the recording and connecting to the configured Go Live service.",
 				timeoutMs: 4_500,
 			});
 		} catch (error) {
@@ -117,7 +119,7 @@ export function App() {
 								session={openSession}
 								onOpenLap={setOpenLapIndex}
 								liveBroadcast={liveBroadcast}
-								onStartLive={() => void startRecordedBroadcast(openSession.id)}
+								onStartLive={(local, port) => void startRecordedBroadcast(openSession.id, local, port)}
 								onStopLive={() => void stopLiveBroadcast()}
 								onCopyLiveLink={() => void copyLiveLink()}
 							/>

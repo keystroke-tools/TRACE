@@ -23,6 +23,7 @@ use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, InstallationCredentials, LiveStatus,
     SessionState,
 };
+use trace_server::{LocalServer, ServerConfig, start_local_server};
 use trace_storage::{
     ipc::{TelemetryColumns, read_columns_range},
     metadata::{MetadataStore, SessionSummary},
@@ -70,6 +71,7 @@ pub struct SharedLiveBroadcast {
     status: Arc<Mutex<LiveBroadcastStatus>>,
     credentials: Arc<Mutex<Option<InstallationCredentials>>>,
     generation: Arc<AtomicU64>,
+    local_server: Arc<Mutex<Option<LocalServer>>>,
 }
 
 impl Default for SharedLiveBroadcast {
@@ -78,6 +80,7 @@ impl Default for SharedLiveBroadcast {
             status: Arc::new(Mutex::new(LiveBroadcastStatus::default())),
             credentials: Arc::new(Mutex::new(None)),
             generation: Arc::new(AtomicU64::new(0)),
+            local_server: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -162,6 +165,8 @@ pub async fn start_recorded_live_broadcast(
     app: tauri::AppHandle,
     state: tauri::State<'_, SharedLiveBroadcast>,
     session_id: String,
+    local: bool,
+    local_port: Option<u16>,
 ) -> Result<LiveBroadcastStatus, String> {
     let directory = app
         .path()
@@ -173,6 +178,31 @@ pub async fn start_recorded_live_broadcast(
             .await
             .map_err(|error| format!("recorded broadcast loader stopped: {error}"))??;
     let generation = state.begin(source_session_id, broadcast.duration_ns)?;
+    let endpoint = if local {
+        let server =
+            match start_local_server(ServerConfig::new("http://127.0.0.1:0"), local_port).await {
+                Ok(server) => server,
+                Err(error) => {
+                    state.update(generation, |status| {
+                        status.phase = LiveBroadcastPhase::Error;
+                        status.error = Some(format!(
+                            "could not start the local spectator service: {error}"
+                        ));
+                    });
+                    return state.snapshot();
+                }
+            };
+        let endpoint = server.base_url().to_owned();
+        replace_local_server(&state, server).await;
+        endpoint
+    } else {
+        stop_local_server(&state).await;
+        broadcast.endpoint.clone()
+    };
+    let broadcast = RecordedBroadcast {
+        endpoint,
+        ..broadcast
+    };
     let shared = state.inner().clone();
     tauri::async_runtime::spawn(async move {
         run_recorded_broadcast(shared, generation, broadcast).await;
@@ -384,6 +414,31 @@ async fn require_success(
 fn finish_cancelled_broadcast(shared: &SharedLiveBroadcast) {
     if let Ok(mut status) = shared.status.lock() {
         *status = LiveBroadcastStatus::default();
+    }
+}
+
+async fn replace_local_server(shared: &SharedLiveBroadcast, server: LocalServer) {
+    let previous = shared
+        .local_server
+        .lock()
+        .ok()
+        .and_then(|mut value| value.take());
+    if let Some(previous) = previous {
+        previous.shutdown().await;
+    }
+    if let Ok(mut value) = shared.local_server.lock() {
+        *value = Some(server);
+    }
+}
+
+async fn stop_local_server(shared: &SharedLiveBroadcast) {
+    let previous = shared
+        .local_server
+        .lock()
+        .ok()
+        .and_then(|mut value| value.take());
+    if let Some(previous) = previous {
+        previous.shutdown().await;
     }
 }
 

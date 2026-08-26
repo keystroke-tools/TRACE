@@ -1,11 +1,11 @@
 # TRACE Go Live service
 
-Status: initial server foundation and recorded-session desktop publishing implemented;
-the browser spectator interface and active-capture publishing are the next slices.
+Status: local and hosted recorded-session publishing and the browser spectator page
+are implemented; active-capture publishing is the next slice.
 
 `trace-server` is the single service behind the configured TRACE endpoint. It owns
-the HTTP API, publisher ingestion, spectator fan-out, and eventually the browser
-spectator page. TRACE does not split these across separate `api` and `live` hosts.
+the HTTP API, publisher ingestion, spectator fan-out, and browser spectator page.
+TRACE does not split these across separate `api` and `live` hosts.
 The hosted service is expected at `https://live.simtrace.run`; self-hosters can run
 the same crate at another base URL.
 
@@ -47,6 +47,7 @@ All implemented routes are versioned under `/api/v1`.
 | `DELETE` | `/api/v1/live-sessions/{id}`          | publisher      | Explicitly end an owned session                        |
 | `GET`    | `/api/v1/live-sessions/{id}/publish`  | publisher      | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
+| `GET`    | `/live/{id}`                           | none           | Open the built-in browser spectator page                |
 
 Publisher requests send both headers:
 
@@ -98,6 +99,18 @@ publisher and sends an authenticated session-end request. HTTP and WebSocket set
 15-second connection bounds; transport errors update the UI but never mutate the source
 recording.
 
+### Local screen mode
+
+`LOCAL SCREEN` in the session overview starts the same publisher and spectator service
+inside the desktop process. By default it binds to an available loopback port; the
+port can be fixed in Settings → Connectivity (use `0` to return to automatic selection).
+TRACE then shows a URL such as `http://127.0.0.1:43127/live/<id>`; open that URL in a browser on the same machine,
+for example on a second monitor or a full-screen display. The local service remains
+available after the replay finishes so the retained telemetry can still be inspected.
+Starting another local stream replaces the previous listener. This mode is intentionally
+loopback-only; sharing to another device will require an explicit LAN binding and access
+policy in a later slice.
+
 Publisher credentials remain memory-only while the server credential store is also
 memory-only. A failed broadcast discards the cached credential so a later attempt can
 bootstrap against a restarted service.
@@ -106,5 +119,5 @@ bootstrap against a restarted service.
 
 1. Persist installation credentials and live-session lifecycle in the service database.
 2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
-3. Implement `/live/{id}` as the responsive browser spectator page with a bounded seek bar and `LIVE ●` jump.
+3. Add a bounded seek bar and `LIVE ●` jump to the browser spectator page.
 4. Feed active capture frames through the same encoder without allowing transport failure to affect local recording.

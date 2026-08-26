@@ -16,7 +16,7 @@ use axum::{
         ws::{Message, WebSocket},
     },
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use futures_util::StreamExt;
@@ -24,6 +24,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
+use tokio::sync::oneshot;
 use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, Envelope, InstallationCredentials,
     LiveSessionSummary, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolLimits, SessionEnd,
@@ -64,6 +65,58 @@ impl ServerConfig {
 pub struct LiveService {
     inner: Arc<RwLock<ServiceState>>,
     config: ServerConfig,
+}
+
+/// Handle for a server embedded in the desktop process.
+pub struct LocalServer {
+    base_url: String,
+    shutdown: Option<oneshot::Sender<()>>,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl LocalServer {
+    /// Returns the loopback URL that can be opened by a browser on this machine.
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Requests the embedded listener to stop and waits for its task to exit.
+    pub async fn shutdown(mut self) {
+        if let Some(sender) = self.shutdown.take() {
+            let _ = sender.send(());
+        }
+        if let Some(task) = self.task.take() {
+            let _ = task.await;
+        }
+    }
+}
+
+/// Starts a loopback service on an available local TCP port.
+///
+/// # Errors
+///
+/// Returns the operating-system error when the loopback listener cannot be bound
+/// or its assigned address cannot be read.
+pub async fn start_local_server(
+    config: ServerConfig,
+    port: Option<u16>,
+) -> Result<LocalServer, std::io::Error> {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port.unwrap_or(0))).await?;
+    let port = listener.local_addr()?.port();
+    let (shutdown, receiver) = oneshot::channel();
+    let task = tokio::spawn(async move {
+        let _ = axum::serve(listener, app(config))
+            .with_graceful_shutdown(async {
+                let _ = receiver.await;
+            })
+            .await;
+    });
+    Ok(LocalServer {
+        base_url: format!("http://127.0.0.1:{port}"),
+        shutdown: Some(shutdown),
+        task: Some(task),
+    })
 }
 
 #[derive(Default)]
@@ -312,6 +365,7 @@ pub fn app(config: ServerConfig) -> Router {
             "/api/v1/live-sessions/{session_id}/spectate",
             get(spectator_websocket),
         )
+        .route("/live/{session_id}", get(spectator_page))
         .with_state(state)
 }
 
@@ -340,6 +394,28 @@ async fn get_live_session(
     Path(session_id): Path<String>,
 ) -> Result<Json<LiveSessionSummary>, ServiceError> {
     service.summary(&session_id).map(Json)
+}
+
+async fn spectator_page(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+) -> Result<Html<String>, ServiceError> {
+    service.summary(&session_id)?;
+    Ok(Html(spectator_html()))
+}
+
+fn spectator_html() -> String {
+    r#"<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRACE // Live</title><style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#151515;color:#f5f5f5}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(circle at 50% 0,#262626,#151515 55%)}main{width:min(980px,100%)}header{display:flex;justify-content:space-between;align-items:end;border-bottom:1px solid #3a3a3a;padding-bottom:16px;margin-bottom:18px}h1{font-size:clamp(2rem,5vw,4rem);letter-spacing:.08em;margin:0}h1 span{color:#72df8b}.status{color:#aaa;font-size:.9rem;text-transform:uppercase;letter-spacing:.12em}.meta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}.pill{background:#202020;border:1px solid #3d3d3d;border-radius:6px;padding:8px 12px;color:#ccc}.telemetry{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{background:#1d1d1d;border:1px solid #383838;border-radius:8px;padding:18px;min-height:110px}.label{color:#999;font-size:.75rem;text-transform:uppercase;letter-spacing:.1em}.value{font-size:2.3rem;font-variant-numeric:tabular-nums;margin-top:12px}.bar{height:8px;background:#303030;margin-top:15px;border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:#72df8b;width:0;transition:width .1s}.footer{margin-top:18px;color:#888;font-size:.85rem}@media(max-width:700px){.telemetry{grid-template-columns:repeat(2,1fr)}.value{font-size:1.8rem}}
+</style></head><body><main><header><h1>TRACE <span>//</span> LIVE</h1><div class="status" id="status">Connecting…</div></header><div class="meta"><div class="pill" id="driver">Driver —</div><div class="pill" id="sim">Simulator —</div><div class="pill" id="track">Track —</div><div class="pill" id="car">Car —</div><div class="pill" id="session">Session —</div></div><section class="telemetry"><div class="card"><div class="label">Speed</div><div class="value"><span id="speed">—</span> <small>km/h</small></div></div><div class="card"><div class="label">Gear</div><div class="value" id="gear">—</div></div><div class="card"><div class="label">Throttle</div><div class="value"><span id="throttle">0</span><small>%</small></div><div class="bar"><i id="throttleBar"></i></div></div><div class="card"><div class="label">Brake</div><div class="value"><span id="brake">0</span><small>%</small></div><div class="bar"><i id="brakeBar"></i></div></div></section><div class="footer" id="footer">Waiting for telemetry…</div></main><script>
+const id=decodeURIComponent(location.pathname.split('/').pop()),statusEl=document.querySelector('#status');
+const set=(q,v)=>document.querySelector(q).textContent=v;
+const pct=(q,v)=>{const n=Math.max(0,Math.min(100,Number(v)||0));set(q,String(Math.round(n)));document.querySelector(q+'Bar').style.width=n+'%'};
+const wsUrl=(location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/api/v1/live-sessions/'+encodeURIComponent(id)+'/spectate';
+let retry=0,closed=false;function connect(){const socket=new WebSocket(wsUrl);socket.onopen=()=>{retry=0;statusEl.textContent='Live'};socket.onclose=()=>{if(closed)return;statusEl.textContent='Reconnecting…';setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>{statusEl.textContent='Reconnecting…'};socket.onmessage=event=>{let msg;try{msg=JSON.parse(event.data)}catch{return}const p=msg.payload||{};if(p.type==='session_state'){const s=p.data||{};set('#driver',s.driver_name||'Driver —');set('#sim',s.simulator||'Simulator —');set('#track',s.track||'Track —');set('#car',s.car||'Car —');set('#session',s.session_type||'Session —');if(s.status==='ended'){statusEl.textContent='Ended';closed=true}}else if(p.type==='telemetry_batch'){const list=p.data&&p.data.channels||[];const c={};list.forEach(ch=>{c[ch.id]=Array.isArray(ch.values)?ch.values[0]:null});const val=(names,def=0)=>{for(const name of (Array.isArray(names)?names:[names]))if(c[name]!=null)return c[name];return def};set('#speed',Math.round(Number(val(['speed_kph','speed','vehicle.speed']))||0));set('#gear',String(val(['gear','vehicle.gear'],'—')));pct('#throttle',val(['throttle','inputs.throttle']));pct('#brake',val(['brake','inputs.brake']));set('#footer','Telemetry position '+Math.round(Number(val(['position_m','distance_m','vehicle.position']))||0)+' m')}else if(p.type==='end'){statusEl.textContent='Ended';closed=true;set('#footer',p.data&&p.data.reason||'Session ended')}}}connect();
+</script></body></html>"#.to_owned()
 }
 
 async fn end_live_session(

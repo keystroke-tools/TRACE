@@ -40,6 +40,7 @@ export function SettingsPage() {
 	const [liveEndpoint, setLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
 	const [savedLiveEndpoint, setSavedLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
 	const [savingLiveSettings, setSavingLiveSettings] = useState(false);
+	const [localSpectatorPort, setLocalSpectatorPort] = useState("0");
 
 	useEffect(() => {
 		let active = true;
@@ -52,6 +53,7 @@ export function SettingsPage() {
 				setSavedProfileName(profile.name ?? "");
 				setLiveEndpoint(liveSettings.endpoint);
 				setSavedLiveEndpoint(liveSettings.endpoint);
+				setLocalSpectatorPort(window.localStorage.getItem("trace.localSpectatorPort") ?? "0");
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -128,6 +130,9 @@ export function SettingsPage() {
 		setSavingLiveSettings(true);
 		try {
 			const settings = await telemetryDataSource.setLiveSettings(normalizedLiveEndpoint);
+			const port = Number.parseInt(localSpectatorPort, 10);
+			if (!Number.isInteger(port) || (port !== 0 && port < 1024) || port > 65535) throw new Error("Local port must be 0 or between 1024 and 65535.");
+			window.localStorage.setItem("trace.localSpectatorPort", String(port));
 			setLiveEndpoint(settings.endpoint);
 			setSavedLiveEndpoint(settings.endpoint);
 			showToast({
@@ -273,6 +278,20 @@ export function SettingsPage() {
 								{savingProfile ? "SAVING…" : "SAVE"}
 							</button>
 						</div>
+					</label>
+					<label className="block border-t border-trace-divider p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
+						LOCAL SPECTATOR PORT
+						<span className="mt-1 block max-w-4xl font-normal leading-5 normal-case tracking-normal text-trace-dim">
+							Port for LOCAL SCREEN mode. Use 0 to choose an available port automatically, or set a fixed port from 1024 to 65535.
+						</span>
+						<input
+							type="number"
+							min={0}
+							max={65535}
+							value={localSpectatorPort}
+							onChange={(event) => setLocalSpectatorPort(event.target.value)}
+							className="mt-2 h-11 w-40 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
+						/>
 					</label>
 				</form>
 			</div>

@@ -4677,6 +4677,7 @@ dependencies = [
  "trace-live",
  "trace-protocol",
  "trace-recorder",
+ "trace-server",
  "trace-storage",
  "zip 8.6.0",
 ]
