@@ -111,6 +111,11 @@ Starting another local stream replaces the previous listener. This mode is inten
 loopback-only; sharing to another device will require an explicit LAN binding and access
 policy in a later slice.
 
+The spectator page is compiled into the `trace-server` binary, so hosted and local
+spectating use the same implementation and do not require a separate frontend process.
+The browser reconnects automatically after a transient WebSocket interruption; a terminal
+session end stops retries and leaves the retained replay visible.
+
 Publisher credentials remain memory-only while the server credential store is also
 memory-only. A failed broadcast discards the cached credential so a later attempt can
 bootstrap against a restarted service.
