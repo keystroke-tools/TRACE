@@ -360,7 +360,7 @@ function CompatibleSetupsDock({
 				{open && (
 					<aside
 						id="compatible-setups-dock"
-						className="absolute right-0 top-[calc(100%+.5rem)] flex max-h-[calc(100vh-150px)] w-[min(520px,calc(100vw-232px))] min-w-0 flex-col border border-trace-divider bg-trace-black shadow-[0_18px_48px_rgba(0,0,0,.62)]"
+						className="absolute right-0 top-[calc(100%+.5rem)] flex max-h-[calc(100vh-150px)] w-[min(520px,calc(100vw-var(--trace-sidebar)-56px))] min-w-0 flex-col border border-trace-divider bg-trace-black shadow-[0_18px_48px_rgba(0,0,0,.62)]"
 						aria-label="Compatible setups"
 					>
 						<div className="flex items-start justify-between gap-4 border-b border-trace-divider px-4 py-3">

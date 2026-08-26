@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ToastProvider } from "./Toast";
 import { PedalOverlay } from "./features/telemetry/PedalOverlay";
+import { UpdateProvider } from "./features/update/UpdateContext";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -18,7 +19,9 @@ createRoot(root).render(
 			<PedalOverlay />
 		) : (
 			<ToastProvider>
-				<App />
+				<UpdateProvider>
+					<App />
+				</UpdateProvider>
 			</ToastProvider>
 		)}
 	</StrictMode>,

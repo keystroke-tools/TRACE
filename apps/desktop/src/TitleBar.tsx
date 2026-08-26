@@ -18,7 +18,7 @@ export function TitleBar({ status, onBack, backLabel = "SESSIONS" }: { status: T
 	const failed = state === "error";
 
 	return (
-		<div className="col-span-full grid select-none grid-cols-[176px_minmax(0,1fr)_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black max-[900px]:grid-cols-[140px_minmax(0,1fr)_auto_auto_88px_auto]">
+		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
 			<div
 				className="flex items-center border-r border-trace-divider px-5 text-[18px] font-black tracking-[.12em]"
 				data-tauri-drag-region

@@ -808,7 +808,7 @@ function SavedComparisonsDock({
 				</form>
 			)}
 			<aside
-				className="fixed bottom-[251px] right-6 z-[31] w-[620px] max-w-[calc(100vw-248px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur"
+				className="fixed bottom-[251px] right-6 z-[31] w-[620px] max-w-[calc(100vw-var(--trace-sidebar)-72px)] border border-trace-divider bg-trace-black/95 shadow-[0_-12px_35px_rgba(0,0,0,.42)] backdrop-blur"
 				aria-label="Comparison lap dock"
 			>
 				<div className="flex h-10 items-stretch">
@@ -1096,7 +1096,7 @@ function CornerAnalysisPanel({
 		.slice(0, 4);
 	return (
 		<section
-			className={`fixed bottom-[252px] left-[204px] top-[76px] z-50 overflow-y-auto border border-trace-divider bg-trace-surface shadow-[0_18px_55px_rgba(0,0,0,.45)] transition-[width] ${collapsed ? "w-11" : "w-72"}`}
+			className={`fixed bottom-[252px] left-[calc(var(--trace-sidebar)+28px)] top-[76px] z-50 overflow-y-auto border border-trace-divider bg-trace-surface shadow-[0_18px_55px_rgba(0,0,0,.45)] transition-[width] ${collapsed ? "w-11" : "w-72"}`}
 			aria-label="Rule-based lap analysis"
 		>
 			<div
@@ -1282,7 +1282,7 @@ export function TelemetryHud({
 	const showConditions = hasHudConditions(airTemperature, trackTemperature);
 	return (
 		<div
-			className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[108px] ${showConditions ? "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
+			className={`fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[108px] ${showConditions ? "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
 		>
 			<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
 				<TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
@@ -1389,7 +1389,7 @@ function ComparisonHud({
 	return (
 		<>
 			<div
-				className={`fixed bottom-12 left-[200px] right-6 z-30 grid h-[204px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[40px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
+				className={`fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[204px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[40px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
 			>
 				<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
 					<TelemetrySeek

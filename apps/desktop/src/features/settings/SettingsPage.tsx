@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { telemetryDataSource, type GameInstallDirectory } from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { useToast } from "../../Toast";
+import { useUpdater } from "../update/UpdateContext";
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://live.simtrace.run";
 
@@ -18,6 +19,7 @@ function normalizeServiceEndpoint(value: string) {
 
 export function SettingsPage() {
 	const showToast = useToast();
+	const updater = useUpdater();
 	const [directories, setDirectories] = useState<GameInstallDirectory[]>([]);
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 	const [loading, setLoading] = useState(true);
@@ -153,6 +155,30 @@ export function SettingsPage() {
 		}
 	}
 
+	const updateBusy = updater.phase === "checking" || updater.phase === "downloading" || updater.phase === "installing" || updater.phase === "restarting";
+	const updateStatus = !updater.supported
+		? "Update checks are available in an installed TRACE desktop build."
+		: updater.phase === "checking"
+			? "Checking the release channel…"
+			: updater.phase === "upToDate"
+				? "TRACE is up to date."
+				: updater.phase === "available"
+					? `${updater.availableVersion} is available to download and install.`
+					: updater.phase === "downloading"
+						? `Downloading ${updater.availableVersion ?? "the update"}${updater.downloadProgress == null ? "…" : ` · ${updater.downloadProgress}%`}`
+						: updater.phase === "installing"
+							? `Installing ${updater.availableVersion ?? "the update"}…`
+							: updater.phase === "restarting"
+								? "The update is installed. Restarting TRACE…"
+								: updater.phase === "failed"
+									? updater.error || "TRACE could not complete the update request."
+									: "TRACE checks for updates shortly after launch. You can also check manually.";
+
+	function runUpdateAction() {
+		if (updater.availableVersion) void updater.installUpdate();
+		else void updater.checkForUpdates(true);
+	}
+
 	return (
 		<>
 			<PageIntro
@@ -249,6 +275,52 @@ export function SettingsPage() {
 					</button>
 				</div>
 			</form>
+			<section className="mt-7 border border-trace-divider bg-trace-surface" aria-labelledby="application-update-heading">
+				<div className="border-b border-trace-divider px-5 py-4">
+					<h2 id="application-update-heading" className="text-[14px] font-black tracking-[.04em]">
+						APPLICATION UPDATE
+					</h2>
+					<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+						Check TRACE's signed GitHub release channel manually. Automatic checks remain enabled and use the same updater state.
+					</p>
+				</div>
+				<div className="flex flex-wrap items-center justify-between gap-5 p-5">
+					<div className="min-w-[260px] flex-1">
+						<span className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">INSTALLED VERSION</span>
+						<strong className="mt-1 block font-mono text-[15px] text-trace-text">{updater.currentVersion}</strong>
+						<p
+							className={`mt-2 text-[12px] leading-5 ${updater.phase === "failed" ? "text-trace-warning" : "text-trace-muted"}`}
+							aria-live="polite"
+						>
+							{updateStatus}
+						</p>
+						{updater.phase === "downloading" && (
+							<div className="mt-3 h-1.5 max-w-xl overflow-hidden bg-trace-divider" aria-hidden="true">
+								<div
+									className={`h-full bg-trace-accent transition-[width] ${updater.downloadProgress == null ? "w-1/3 animate-pulse" : ""}`}
+									style={updater.downloadProgress == null ? undefined : { width: `${updater.downloadProgress}%` }}
+								/>
+							</div>
+						)}
+					</div>
+					<button
+						type="button"
+						onClick={runUpdateAction}
+						disabled={updateBusy}
+						className="min-h-11 min-w-44 shrink-0 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+					>
+						{updater.phase === "checking"
+							? "CHECKING…"
+							: updater.phase === "downloading" || updater.phase === "installing" || updater.phase === "restarting"
+								? "UPDATING…"
+								: updater.availableVersion
+									? `${updater.phase === "failed" ? "TRY UPDATE" : "UPDATE NOW"} · ${updater.availableVersion}`
+									: updater.phase === "failed"
+										? "CHECK AGAIN"
+										: "CHECK FOR UPDATES"}
+					</button>
+				</div>
+			</section>
 			<div className="mt-7 border border-trace-divider bg-trace-surface">
 				<div className="border-b border-trace-divider px-5 py-4">
 					<h2 className="text-[14px] font-black tracking-[.04em]">GAME FOLDERS</h2>
