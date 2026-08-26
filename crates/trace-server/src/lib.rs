@@ -99,11 +99,12 @@ impl LocalServer {
 /// Returns the operating-system error when the loopback listener cannot be bound
 /// or its assigned address cannot be read.
 pub async fn start_local_server(
-    config: ServerConfig,
+    mut config: ServerConfig,
     port: Option<u16>,
 ) -> Result<LocalServer, std::io::Error> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port.unwrap_or(0))).await?;
     let port = listener.local_addr()?.port();
+    config.public_base_url = format!("http://127.0.0.1:{port}");
     let (shutdown, receiver) = oneshot::channel();
     let task = tokio::spawn(async move {
         let _ = axum::serve(listener, app(config))
@@ -613,10 +614,21 @@ fn error_message(error: ServiceError) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use axum::{
         body::{Body, to_bytes},
         http::Request,
+    };
+    use futures_util::SinkExt;
+    use tokio_tungstenite::{
+        MaybeTlsStream, WebSocketStream,
+        tungstenite::{
+            Message as TestMessage,
+            client::IntoClientRequest,
+            http::{HeaderValue, header::AUTHORIZATION},
+        },
     };
     use tower::ServiceExt;
     use trace_live::{LiveTelemetrySample, encode_recorded_session};
@@ -825,6 +837,104 @@ mod tests {
         let created: CreateLiveSessionResponse =
             serde_json::from_slice(&body).expect("session JSON");
         assert!(created.spectator_url.ends_with(&created.session_id));
+    }
+
+    #[tokio::test]
+    async fn publisher_reconnects_without_duplicating_the_ambiguous_message() {
+        let server = start_local_server(ServerConfig::new("http://127.0.0.1:0"), None)
+            .await
+            .expect("local server");
+        let client = reqwest::Client::new();
+        let credentials = client
+            .post(format!("{}/api/v1/installations", server.base_url()))
+            .send()
+            .await
+            .expect("bootstrap request")
+            .json::<InstallationCredentials>()
+            .await
+            .expect("credentials");
+        let created = client
+            .post(format!("{}/api/v1/live-sessions", server.base_url()))
+            .header("x-trace-installation-id", &credentials.installation_id)
+            .bearer_auth(&credentials.publishing_token)
+            .json(&CreateLiveSessionRequest {
+                session: session_state(),
+            })
+            .send()
+            .await
+            .expect("create request")
+            .json::<CreateLiveSessionResponse>()
+            .await
+            .expect("created session");
+
+        let spectator_url = created
+            .publish_websocket_url
+            .replace("/publish", "/spectate");
+        let (mut spectator, _) = tokio_tungstenite::connect_async(&spectator_url)
+            .await
+            .expect("spectator websocket");
+        let mut publisher = connect_test_publisher(&created, &credentials).await;
+        let first = message(&created.session_id, 0);
+        publisher
+            .send(TestMessage::Text(
+                serde_json::to_string(&first).expect("first JSON").into(),
+            ))
+            .await
+            .expect("first publish");
+        assert_eq!(next_test_envelope(&mut spectator).await.sequence, 0);
+        publisher.close(None).await.expect("disconnect publisher");
+
+        let mut reconnected = connect_test_publisher(&created, &credentials).await;
+        for envelope in [first, message(&created.session_id, 1)] {
+            reconnected
+                .send(TestMessage::Text(
+                    serde_json::to_string(&envelope)
+                        .expect("reconnected JSON")
+                        .into(),
+                ))
+                .await
+                .expect("reconnected publish");
+        }
+        assert_eq!(next_test_envelope(&mut spectator).await.sequence, 1);
+        server.shutdown().await;
+    }
+
+    async fn connect_test_publisher(
+        created: &CreateLiveSessionResponse,
+        credentials: &InstallationCredentials,
+    ) -> WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>> {
+        let mut request = created
+            .publish_websocket_url
+            .as_str()
+            .into_client_request()
+            .expect("publisher request");
+        request.headers_mut().insert(
+            "x-trace-installation-id",
+            HeaderValue::from_str(&credentials.installation_id).expect("installation header"),
+        );
+        request.headers_mut().insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
+                .expect("authorization header"),
+        );
+        tokio_tungstenite::connect_async(request)
+            .await
+            .expect("publisher websocket")
+            .0
+    }
+
+    async fn next_test_envelope(
+        socket: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    ) -> Envelope {
+        let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .expect("spectator timeout")
+            .expect("spectator closed")
+            .expect("spectator message");
+        let TestMessage::Text(text) = message else {
+            panic!("expected text telemetry");
+        };
+        serde_json::from_str(&text).expect("telemetry envelope")
     }
 
     #[test]

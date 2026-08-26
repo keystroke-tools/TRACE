@@ -4718,11 +4718,13 @@ version = "0.4.0"
 dependencies = [
  "axum",
  "futures-util",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "subtle",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "trace-live",
  "trace-protocol",
