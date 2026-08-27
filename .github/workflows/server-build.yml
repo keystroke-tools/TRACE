@@ -1,0 +1,85 @@
+name: Build server release
+
+on:
+    release:
+        types: [published]
+
+permissions:
+    contents: write
+
+concurrency:
+    group: server-builds-${{ github.event.release.tag_name }}
+    cancel-in-progress: true
+
+jobs:
+    linux:
+        name: Linux server (${{ matrix.target }})
+        runs-on: ${{ matrix.runner }}
+        timeout-minutes: 20
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - runner: ubuntu-22.04
+                      target: x86_64-unknown-linux-gnu
+                    - runner: ubuntu-22.04-arm
+                      target: aarch64-unknown-linux-gnu
+        env:
+            CARGO_INCREMENTAL: "0"
+            RUSTC_WRAPPER: sccache
+            SCCACHE_GHA_ENABLED: "true"
+        steps:
+            - name: Check out source
+              uses: actions/checkout@v6
+
+            - name: Install pinned toolchains
+              uses: jdx/mise-action@v4
+              with:
+                  version: 2026.7.13
+                  cache: true
+
+            - name: Enable compiler cache
+              uses: mozilla-actions/sccache-action@v0.0.11
+              with:
+                  version: v0.16.0
+
+            - name: Cache Cargo registry
+              uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: server-${{ matrix.target }}
+                  cache-targets: "false"
+                  cache-bin: "false"
+
+            - name: Build server
+              run: cargo build --release --locked --target "${{ matrix.target }}" -p trace-server --bin trace-server
+
+            - name: Package server
+              id: package
+              shell: bash
+              run: |
+                  archive="trace-server-${{ matrix.target }}.tar.gz"
+                  staging="${RUNNER_TEMP}/trace-server-package"
+                  mkdir -p "${staging}"
+                  cp "target/${{ matrix.target }}/release/trace-server" "${staging}/trace-server"
+                  tar -C "${staging}" -czf "${archive}" trace-server
+                  sha256sum "${archive}" > "${archive}.sha256"
+                  echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
+
+            - name: Attach server to release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: >-
+                  gh release upload "${{ github.event.release.tag_name }}"
+                  "${{ steps.package.outputs.archive }}"
+                  "${{ steps.package.outputs.archive }}.sha256"
+                  --clobber
+
+            - name: Upload server artifact
+              uses: actions/upload-artifact@v7
+              with:
+                  name: trace-server-${{ matrix.target }}-${{ github.sha }}
+                  path: |
+                      ${{ steps.package.outputs.archive }}
+                      ${{ steps.package.outputs.archive }}.sha256
+                  if-no-files-found: error
+                  retention-days: 14
