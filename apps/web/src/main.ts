@@ -24,22 +24,23 @@ dialog?.addEventListener("close", () => {
 	screenshotTrigger?.focus();
 });
 
-const copyButton = document.querySelector<HTMLButtonElement>("[data-copy-command]");
-const cloneCommand = document.querySelector<HTMLElement>("[data-clone-command]")?.textContent?.trim();
-copyButton?.addEventListener("click", async () => {
-	if (!cloneCommand) return;
-	try {
-		await navigator.clipboard.writeText(cloneCommand);
-		copyButton.textContent = "COPIED";
-		copyButton.dataset.state = "success";
-	} catch {
-		copyButton.textContent = "SELECT TO COPY";
-		copyButton.dataset.state = "error";
-	}
-	window.setTimeout(() => {
-		copyButton.textContent = "COPY";
-		delete copyButton.dataset.state;
-	}, 2_400);
+document.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((copyButton) => {
+	const target = document.querySelector<HTMLElement>(copyButton.dataset.copyTarget ?? "")?.textContent?.trim();
+	copyButton.addEventListener("click", async () => {
+		if (!target) return;
+		try {
+			await navigator.clipboard.writeText(target);
+			copyButton.textContent = "COPIED";
+			copyButton.dataset.state = "success";
+		} catch {
+			copyButton.textContent = "SELECT TO COPY";
+			copyButton.dataset.state = "error";
+		}
+		window.setTimeout(() => {
+			copyButton.textContent = "COPY";
+			delete copyButton.dataset.state;
+		}, 2_400);
+	});
 });
 
 if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {

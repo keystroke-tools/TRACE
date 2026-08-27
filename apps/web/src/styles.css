@@ -769,6 +769,36 @@ img {
 	border-color: #ff7b87;
 	color: #ff9da6;
 }
+.server-install {
+	max-width: 720px;
+	margin-top: 2.4rem;
+	border-top: 1px solid var(--line);
+	padding-top: 1.6rem;
+}
+.server-install > p {
+	max-width: 610px;
+	margin: 0.65rem 0 0;
+	color: var(--muted);
+	font-size: 0.85rem;
+	line-height: 1.65;
+}
+.server-install .code-line {
+	margin: 1rem 0 0.75rem;
+}
+.server-install-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	color: var(--muted);
+	font-family: ui-monospace, monospace;
+	font-size: 0.62rem;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.server-install-link:hover {
+	color: var(--acid);
+}
 .text-arrow {
 	display: inline-flex;
 	align-items: center;

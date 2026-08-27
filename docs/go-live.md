@@ -34,6 +34,38 @@ Set both variables when the bind address and externally visible URL differ. The
 public URL is used to generate spectator and publisher WebSocket links; HTTPS is
 automatically translated to WSS.
 
+## Install on a Linux server
+
+Tagged releases contain native x86-64 and ARM64 Linux binaries. On a systemd-based
+VM, install the latest release with:
+
+```sh
+curl -fsSL https://simtrace.run/install-server | sudo sh
+```
+
+The installer verifies the release checksum, installs the binary at
+`/usr/local/bin/trace-server`, creates `/etc/trace-server.env`, and enables the
+`trace-server.service` systemd unit. Running the same command again updates the
+binary while preserving the existing environment file. A failed service start
+restores the previous binary.
+
+The initial defaults are `TRACE_BIND=127.0.0.1:8080` and
+`TRACE_PUBLIC_BASE_URL=https://live.simtrace.run`. Override them on first install:
+
+```sh
+curl -fsSL https://simtrace.run/install-server | \
+  sudo env TRACE_BIND=127.0.0.1:9000 TRACE_PUBLIC_BASE_URL=https://live.example.com sh
+```
+
+After installation, edit `/etc/trace-server.env` and run
+`sudo systemctl restart trace-server` to change them. Pin a particular release by
+setting `TRACE_SERVER_VERSION` to its exact tag. The public URL should terminate TLS
+at a reverse proxy that forwards HTTP and WebSocket upgrade requests to `TRACE_BIND`.
+
+An update restarts the process and interrupts active streams. The current service
+keeps credentials and sessions in memory; durable state and zero-downtime deployment
+remain future work.
+
 ## HTTP API
 
 All implemented routes are versioned under `/api/v1`.
@@ -150,5 +182,4 @@ includes a human-readable simulator name and compact simulator mark.
 
 1. Persist installation credentials and live-session lifecycle in the service database.
 2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
-3. Add a bounded seek bar and `LIVE ●` jump to the browser spectator page.
-4. Add explicit publisher acknowledgements and retained-sequence negotiation for multi-instance deployments.
+3. Add explicit publisher acknowledgements and retained-sequence negotiation for multi-instance deployments.

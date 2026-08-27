@@ -224,7 +224,7 @@
 					<div class="code-line" aria-label="Clone TRACE from GitHub">
 						<span aria-hidden="true">$</span>
 						<code data-clone-command>git clone https://github.com/keystroke-tools/TRACE.git</code>
-						<button type="button" data-copy-command aria-label="Copy Git clone command">COPY</button>
+						<button type="button" data-copy-target="[data-clone-command]" aria-label="Copy Git clone command">COPY</button>
 					</div>
 					<a class="text-arrow" href="https://github.com/keystroke-tools/TRACE">Explore the repository <span>↗</span></a>
 				</div>
@@ -273,6 +273,16 @@
 						><a class="button button-ghost" href="https://github.com/keystroke-tools/TRACE/blob/master/README.md">Read the documentation</a>
 					</div>
 					<small>Windows 10/11 · x86-64 installer · Future releases update inside TRACE</small>
+					<div class="server-install">
+						<span class="kicker">SELF-HOST GO LIVE</span>
+						<p>Install or update the embedded spectator service on a Linux VM with one command.</p>
+						<div class="code-line" aria-label="Install the TRACE server">
+							<span aria-hidden="true">$</span>
+							<code data-server-install-command>curl -fsSL https://simtrace.run/install-server | sudo sh</code>
+							<button type="button" data-copy-target="[data-server-install-command]" aria-label="Copy server install command">COPY</button>
+						</div>
+						<a class="server-install-link" href="/install-server">Inspect the installer <span>↗</span></a>
+					</div>
 				</div>
 			</section>
 		</main>

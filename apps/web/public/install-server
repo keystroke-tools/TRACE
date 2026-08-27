@@ -1,0 +1,156 @@
+#!/bin/sh
+set -eu
+
+REPOSITORY="${TRACE_SERVER_REPOSITORY:-keystroke-tools/TRACE}"
+VERSION="${TRACE_SERVER_VERSION:-latest}"
+BINARY_PATH="/usr/local/bin/trace-server"
+ENV_PATH="/etc/trace-server.env"
+UNIT_PATH="/etc/systemd/system/trace-server.service"
+
+usage() {
+    cat <<'EOF'
+Install or update the TRACE Go Live server.
+
+Usage:
+  curl -fsSL https://simtrace.run/install-server | sudo sh
+
+Optional environment variables:
+  TRACE_SERVER_VERSION       Release tag to install (default: latest)
+  TRACE_SERVER_REPOSITORY    GitHub owner/repository (default: keystroke-tools/TRACE)
+  TRACE_BIND                 Initial listen address (default: 127.0.0.1:8080)
+  TRACE_PUBLIC_BASE_URL      Initial public URL (default: https://live.simtrace.run)
+
+Existing /etc/trace-server.env settings are preserved during updates.
+EOF
+}
+
+fail() {
+    printf 'TRACE server install failed: %s\n' "$*" >&2
+    exit 1
+}
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    usage
+    exit 0
+fi
+
+[ "$(uname -s)" = "Linux" ] || fail "Linux is required"
+[ "$(id -u)" -eq 0 ] || fail "run this installer as root (pipe it to 'sudo sh')"
+
+for command in curl tar sha256sum install systemctl mktemp; do
+    command -v "$command" >/dev/null 2>&1 || fail "required command '$command' was not found"
+done
+
+case "$(uname -m)" in
+    x86_64 | amd64)
+        target="x86_64-unknown-linux-gnu"
+        ;;
+    aarch64 | arm64)
+        target="aarch64-unknown-linux-gnu"
+        ;;
+    *)
+        fail "unsupported CPU architecture: $(uname -m)"
+        ;;
+esac
+
+case "$VERSION" in
+    latest)
+        release_url="https://github.com/${REPOSITORY}/releases/latest/download"
+        ;;
+    *[!A-Za-z0-9._-]* | "")
+        fail "TRACE_SERVER_VERSION contains unsupported characters"
+        ;;
+    *)
+        release_url="https://github.com/${REPOSITORY}/releases/download/${VERSION}"
+        ;;
+esac
+
+case "$REPOSITORY" in
+    *[!A-Za-z0-9._/-]* | "" | /* | */ | *//* )
+        fail "TRACE_SERVER_REPOSITORY must be a GitHub owner/repository"
+        ;;
+esac
+
+archive="trace-server-${target}.tar.gz"
+temporary_directory="$(mktemp -d)"
+trap 'rm -rf -- "$temporary_directory"' EXIT HUP INT TERM
+
+printf 'Downloading TRACE server %s for %s...\n' "$VERSION" "$target"
+curl -fL --retry 3 --retry-delay 2 -o "${temporary_directory}/${archive}" "${release_url}/${archive}"
+curl -fL --retry 3 --retry-delay 2 -o "${temporary_directory}/${archive}.sha256" "${release_url}/${archive}.sha256"
+(
+    cd "$temporary_directory"
+    sha256sum -c "${archive}.sha256"
+)
+tar -xzf "${temporary_directory}/${archive}" -C "$temporary_directory"
+[ -f "${temporary_directory}/trace-server" ] || fail "release archive does not contain trace-server"
+
+if [ ! -f "$ENV_PATH" ]; then
+    bind="${TRACE_BIND:-127.0.0.1:8080}"
+    public_base_url="${TRACE_PUBLIC_BASE_URL:-https://live.simtrace.run}"
+    case "$bind" in *[!A-Za-z0-9.:_-]*) fail "TRACE_BIND contains unsupported characters" ;; esac
+    case "$public_base_url" in http://* | https://*) ;; *) fail "TRACE_PUBLIC_BASE_URL must use HTTP or HTTPS" ;; esac
+    case "$public_base_url" in *[!A-Za-z0-9.:/_-]*) fail "TRACE_PUBLIC_BASE_URL contains unsupported characters" ;; esac
+
+    install -m 0600 /dev/null "$ENV_PATH"
+    printf 'TRACE_BIND=%s\nTRACE_PUBLIC_BASE_URL=%s\n' "$bind" "$public_base_url" > "$ENV_PATH"
+    printf 'Created %s\n' "$ENV_PATH"
+else
+    printf 'Preserving existing configuration in %s\n' "$ENV_PATH"
+fi
+
+had_previous_binary=false
+if [ -f "$BINARY_PATH" ]; then
+    cp -p "$BINARY_PATH" "${temporary_directory}/trace-server.previous"
+    had_previous_binary=true
+fi
+
+install -m 0755 "${temporary_directory}/trace-server" "${BINARY_PATH}.new"
+mv -f "${BINARY_PATH}.new" "$BINARY_PATH"
+
+cat > "$UNIT_PATH" <<'EOF'
+[Unit]
+Description=TRACE Go Live service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/trace-server.env
+ExecStart=/usr/local/bin/trace-server
+Restart=on-failure
+RestartSec=3
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable trace-server.service >/dev/null
+service_started=true
+systemctl restart trace-server.service || service_started=false
+sleep 1
+if [ "$service_started" != true ] || ! systemctl is-active --quiet trace-server.service; then
+    if [ "$had_previous_binary" = true ]; then
+        printf 'New server failed to start; restoring the previous binary.\n' >&2
+        install -m 0755 "${temporary_directory}/trace-server.previous" "$BINARY_PATH"
+        systemctl restart trace-server.service || true
+    fi
+    fail "trace-server.service did not start; inspect it with 'journalctl -u trace-server.service'"
+fi
+
+printf '\nTRACE server is installed and running.\n'
+printf '  Binary: %s\n' "$BINARY_PATH"
+printf '  Config: %s\n' "$ENV_PATH"
+printf '  Status: systemctl status trace-server.service\n'
+printf '\nRerun this installer to update to the latest release.\n'
