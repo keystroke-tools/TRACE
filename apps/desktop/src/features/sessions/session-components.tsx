@@ -372,12 +372,20 @@ export function sessionSourceLabel(session: RecordedSessionSummary) {
 }
 
 export function friendlySessionType(session: RecordedSessionSummary) {
-	const type = session.sessionType.toLocaleLowerCase();
-	if (type === "session") return "DRIVE";
-	if (type === "qualify") return "QUALIFYING";
-	if (type === "time_attack") return "TIME ATTACK";
-	if (type.includes("replay")) return "REPLAY";
-	return session.sessionType;
+	return formatSessionType(session.sessionType);
+}
+
+export function formatSessionType(value: string) {
+	const type = value.trim().toLocaleLowerCase();
+	if (!type) return "Unknown";
+	if (type === "session") return "Drive";
+	if (type === "qualify") return "Qualifying";
+	if (type.includes("replay")) return "Replay";
+	return type
+		.split(/[\s_-]+/)
+		.filter(Boolean)
+		.map((part) => `${part.charAt(0).toLocaleUpperCase()}${part.slice(1)}`)
+		.join(" ");
 }
 
 export function lapDuration(lap: RecordedSessionSummary["laps"][number]) {

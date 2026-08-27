@@ -494,7 +494,7 @@ function connect() {
 			set("#simMark", state.simulator_mark || "SIM");
 			set("#track", state.track || "Unknown track");
 			set("#car", state.car || "—");
-			set("#session", state.session_type || "—");
+			set("#session", formatSessionType(state.session_type));
 			if (state.status === "ended") {
 				terminal = true;
 				setConnection("Ended");
@@ -541,6 +541,21 @@ function connect() {
 			setConnection("Ended");
 		}
 	};
+}
+
+function formatSessionType(value) {
+	const type = String(value || "")
+		.trim()
+		.toLocaleLowerCase();
+	if (!type) return "—";
+	if (type === "session") return "Drive";
+	if (type === "qualify") return "Qualifying";
+	if (type.includes("replay")) return "Replay";
+	return type
+		.split(/[\s_-]+/)
+		.filter(Boolean)
+		.map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
+		.join(" ");
 }
 new ResizeObserver(() => {
 	drawMap();

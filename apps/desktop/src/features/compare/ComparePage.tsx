@@ -15,6 +15,7 @@ import {
 	formatCompactSessionDate,
 	formatLapDurationNs,
 	formatSessionDate,
+	formatSessionType,
 	friendlySessionType,
 	lapDuration,
 	lapIsInvalid,
@@ -1544,7 +1545,7 @@ function SuggestedReferencesList({
 								<strong className="block truncate text-[12px] text-trace-text">{identity}</strong>
 								<span className="mt-1 flex items-center gap-2 font-mono text-[9px] font-bold tracking-[.07em] text-trace-dim">
 									{suggestion.imported && <span className="text-trace-purple">IMPORTED</span>}
-									<span>{suggestion.session.sessionType}</span>
+									<span>{formatSessionType(suggestion.session.sessionType)}</span>
 									<span>{formatSessionDate(suggestion.session.startedAt)}</span>
 									{current && <span className="text-trace-accent">CURRENT</span>}
 								</span>

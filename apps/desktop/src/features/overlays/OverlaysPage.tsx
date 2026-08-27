@@ -3,6 +3,7 @@ import { PageIntro, PanelTitle } from "../../components/layout";
 import { telemetryDataSource, type LapTrace, type LivePedalTelemetry, type RecordedSessionSummary, type TelemetryStatus } from "../../data-source";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
+import { formatSessionType } from "../sessions/session-components";
 import {
 	loadOverlaySettings,
 	PEDAL_OVERLAY_WIDTH,
@@ -511,7 +512,7 @@ function sampleAtTime(trace: LapTrace, seconds: number) {
 
 function lapLabel(option: LapOption) {
 	const driver = option.session.driver?.trim() || "Unknown driver";
-	return `${driver} · ${option.session.track} · ${option.session.car} · ${option.session.sessionType} · Lap ${option.lapIndex} ${option.lapTime} · ${dateFormatter.format(new Date(option.session.startedAt))}`;
+	return `${driver} · ${option.session.track} · ${option.session.car} · ${formatSessionType(option.session.sessionType)} · Lap ${option.lapIndex} ${option.lapTime} · ${dateFormatter.format(new Date(option.session.startedAt))}`;
 }
 
 function formatClock(seconds: number) {
