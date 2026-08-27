@@ -43,6 +43,11 @@ VM, install the latest release with:
 curl -fsSL https://simtrace.run/install-server | sudo sh
 ```
 
+On first install, the script opens a terminal wizard for any unset listen-address
+and public-URL options. Publisher credentials are generated automatically during
+desktop bootstrap, so the current server does not require a static operator secret.
+Existing configuration skips the wizard.
+
 The installer verifies the release checksum, installs the binary at
 `/usr/local/bin/trace-server`, creates `/etc/trace-server.env`, and enables the
 `trace-server.service` systemd unit. Running the same command again updates the
@@ -61,6 +66,8 @@ After installation, edit `/etc/trace-server.env` and run
 `sudo systemctl restart trace-server` to change them. Pin a particular release by
 setting `TRACE_SERVER_VERSION` to its exact tag. The public URL should terminate TLS
 at a reverse proxy that forwards HTTP and WebSocket upgrade requests to `TRACE_BIND`.
+For unattended provisioning, set `TRACE_INSTALL_NONINTERACTIVE=1`; missing options
+then use their documented defaults instead of opening the wizard.
 
 An update restarts the process and interrupts active streams. The current service
 keeps credentials and sessions in memory; durable state and zero-downtime deployment
