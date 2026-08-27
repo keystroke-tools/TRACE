@@ -359,6 +359,8 @@ pub fn app(config: ServerConfig) -> Router {
     let state = LiveService::new(config);
     Router::new()
         .route("/health", get(health))
+        .route("/", get(landing_page))
+        .route("/favicon.svg", get(favicon))
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
         .route(
@@ -376,11 +378,21 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/live/{session_id}", get(spectator_page))
         .route("/live-assets/spectator.css", get(spectator_styles))
         .route("/live-assets/spectator.js", get(spectator_script))
+        .route("/live-assets/site.css", get(site_styles))
+        .route("/live-assets/trace-live-og.png", get(social_card))
+        .fallback(not_found)
         .with_state(state)
 }
 
 async fn health() -> StatusCode {
     StatusCode::NO_CONTENT
+}
+
+async fn landing_page(State(service): State<LiveService>) -> Html<String> {
+    Html(site_html(
+        include_str!("../assets/site/index.html"),
+        &service.config.public_base_url,
+    ))
 }
 
 async fn bootstrap_installation(
@@ -409,13 +421,38 @@ async fn get_live_session(
 async fn spectator_page(
     State(service): State<LiveService>,
     Path(session_id): Path<String>,
-) -> Result<Html<String>, ServiceError> {
-    service.summary(&session_id)?;
-    Ok(Html(spectator_html()))
+) -> Response {
+    match service.summary(&session_id) {
+        Ok(summary) => Html(spectator_html(
+            &summary.session,
+            &session_id,
+            &service.config.public_base_url,
+        ))
+        .into_response(),
+        Err(ServiceError::NotFound) => not_found_response(&service),
+        Err(error) => error.into_response(),
+    }
 }
 
-fn spectator_html() -> String {
-    include_str!("../assets/spectator/index.html").to_owned()
+fn spectator_html(state: &SessionState, session_id: &str, public_base_url: &str) -> String {
+    let driver = state.driver_name.as_deref().unwrap_or("Live driver");
+    let track = state.track.as_deref().unwrap_or("an unknown track");
+    let car = state.car.as_deref().unwrap_or("an unknown car");
+    let session_type = state
+        .session_type
+        .as_deref()
+        .map_or_else(|| "live session".to_owned(), format_session_type);
+    let title = format!("{driver} at {track} — TRACE Pit Wall");
+    let description =
+        format!("Watch {driver}'s {session_type} in {car} at {track} with live TRACE telemetry.");
+    let session_url = format!("{public_base_url}/live/{session_id}");
+    render_page(
+        include_str!("../assets/spectator/index.html"),
+        &title,
+        &description,
+        &session_url,
+        public_base_url,
+    )
 }
 
 async fn spectator_styles() -> impl IntoResponse {
@@ -430,6 +467,105 @@ async fn spectator_script() -> impl IntoResponse {
         [("content-type", "text/javascript; charset=utf-8")],
         include_str!("../assets/spectator/app.js"),
     )
+}
+
+async fn site_styles() -> impl IntoResponse {
+    (
+        [
+            ("content-type", "text/css; charset=utf-8"),
+            ("cache-control", "public, max-age=3600"),
+        ],
+        include_str!("../assets/site/site.css"),
+    )
+}
+
+async fn favicon() -> impl IntoResponse {
+    (
+        [
+            ("content-type", "image/svg+xml"),
+            ("cache-control", "public, max-age=86400"),
+        ],
+        include_str!("../assets/site/favicon.svg"),
+    )
+}
+
+async fn social_card() -> impl IntoResponse {
+    (
+        [
+            ("content-type", "image/png"),
+            ("cache-control", "public, max-age=86400"),
+        ],
+        include_bytes!("../assets/site/trace-live-og.png").as_slice(),
+    )
+}
+
+async fn not_found(State(service): State<LiveService>) -> impl IntoResponse {
+    not_found_response(&service)
+}
+
+fn not_found_response(service: &LiveService) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Html(site_html(
+            include_str!("../assets/site/not-found.html"),
+            &service.config.public_base_url,
+        )),
+    )
+        .into_response()
+}
+
+fn site_html(template: &str, public_base_url: &str) -> String {
+    let base_url = escape_html(public_base_url);
+    template.replace("{{TRACE_URL}}", &base_url).replace(
+        "{{TRACE_OG_IMAGE}}",
+        &format!("{base_url}/live-assets/trace-live-og.png"),
+    )
+}
+
+fn render_page(
+    template: &str,
+    title: &str,
+    description: &str,
+    page_url: &str,
+    public_base_url: &str,
+) -> String {
+    template
+        .replace("{{TRACE_TITLE}}", &escape_html(title))
+        .replace("{{TRACE_DESCRIPTION}}", &escape_html(description))
+        .replace("{{TRACE_URL}}", &escape_html(page_url))
+        .replace(
+            "{{TRACE_OG_IMAGE}}",
+            &format!(
+                "{}/live-assets/trace-live-og.png",
+                escape_html(public_base_url)
+            ),
+        )
+}
+
+fn format_session_type(value: &str) -> String {
+    value
+        .split(|character: char| character.is_whitespace() || matches!(character, '_' | '-'))
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut characters = part.chars();
+            characters.next().map_or_else(String::new, |first| {
+                first
+                    .to_uppercase()
+                    .chain(characters.flat_map(char::to_lowercase))
+                    .collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 async fn end_live_session(
@@ -702,13 +838,22 @@ mod tests {
 
     #[test]
     fn embedded_spectator_page_contains_the_pit_wall_workspace() {
-        let page = spectator_html();
+        let page = spectator_html(
+            &session_state(),
+            "0123456789abcdef0123456789abcdef",
+            "https://live.simtrace.run",
+        );
         assert!(page.contains("TRACE <i>//</i> PIT WALL"));
         assert!(page.contains("TRACK MAP"));
         assert!(page.contains("INPUT HISTORY"));
         assert!(page.contains("Spectator timeline"));
         assert!(page.contains("/live-assets/spectator.css"));
         assert!(page.contains("/live-assets/spectator.js"));
+        assert!(page.contains("3X3 at zandvoort — TRACE Pit Wall"));
+        assert!(page.contains("3X3&#39;s Hotlap"));
+        assert!(page.contains("/live-assets/trace-live-og.png"));
+        assert!(page.contains("/favicon.svg"));
+        assert!(!page.contains("{{TRACE_"));
         let script = include_str!("../assets/spectator/app.js");
         assert!(script.contains("steeringWheel"));
         assert!(script.contains("session.in_pit_lane"));
@@ -718,6 +863,16 @@ mod tests {
         assert!(script.contains("setPointerCapture"));
         assert!(script.contains("setTraceHeight"));
         assert!(include_str!("../assets/spectator/styles.css").contains(".lap-sectors"));
+
+        let mut unsafe_state = session_state();
+        unsafe_state.driver_name = Some("Driver <One> & 'Two'".to_owned());
+        let escaped = spectator_html(
+            &unsafe_state,
+            "0123456789abcdef0123456789abcdef",
+            "https://live.simtrace.run",
+        );
+        assert!(escaped.contains("Driver &lt;One&gt; &amp; &#39;Two&#39;"));
+        assert!(!escaped.contains("Driver <One>"));
     }
 
     #[test]
@@ -830,6 +985,9 @@ mod tests {
                 "/live-assets/spectator.js",
                 "text/javascript; charset=utf-8",
             ),
+            ("/live-assets/site.css", "text/css; charset=utf-8"),
+            ("/favicon.svg", "image/svg+xml"),
+            ("/live-assets/trace-live-og.png", "image/png"),
         ] {
             let response = application
                 .clone()
@@ -842,6 +1000,36 @@ mod tests {
                 .expect("asset response");
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()["content-type"], content_type);
+        }
+        let response = application
+            .clone()
+            .oneshot(Request::get("/").body(Body::empty()).expect("home request"))
+            .await
+            .expect("home response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .expect("home body");
+        let body = String::from_utf8(body.to_vec()).expect("home HTML");
+        assert!(body.contains("The pit wall,"));
+        assert!(body.contains("TRACE Go Live — The pit wall, in your browser"));
+        assert!(body.contains("https://live.simtrace.run/live-assets/trace-live-og.png"));
+
+        for path in ["/missing", "/live/missing"] {
+            let response = application
+                .clone()
+                .oneshot(
+                    Request::get(path)
+                        .body(Body::empty())
+                        .expect("missing request"),
+                )
+                .await
+                .expect("missing response");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            let body = to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("missing body");
+            assert!(String::from_utf8_lossy(&body).contains("This lap has ended."));
         }
         let response = application
             .clone()

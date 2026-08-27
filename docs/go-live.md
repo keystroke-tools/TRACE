@@ -86,7 +86,14 @@ All implemented routes are versioned under `/api/v1`.
 | `DELETE` | `/api/v1/live-sessions/{id}`          | publisher      | Explicitly end an owned session                        |
 | `GET`    | `/api/v1/live-sessions/{id}/publish`  | publisher      | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
+| `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
+
+The public landing, spectator, and missing-session pages are embedded in the server
+binary. They share the TRACE favicon and a hosted social card. Spectator documents
+derive their title, description, canonical URL, and Open Graph/Twitter metadata from
+the validated session state; all simulator-provided values are HTML-escaped before
+rendering. Unknown routes and expired spectator links return a branded HTML `404`.
 
 Publisher requests send both headers:
 
