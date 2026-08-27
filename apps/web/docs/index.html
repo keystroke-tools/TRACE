@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="theme-color" content="#101010" />
+		<meta name="description" content="Learn how to record, review, compare, share, and live-stream racing telemetry with TRACE." />
+		<meta property="og:title" content="TRACE Documentation" />
+		<meta property="og:description" content="A practical guide to recording, comparing, sharing, overlays, setups, and Go Live in TRACE." />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://simtrace.run/docs/" />
+		<meta property="og:image" content="https://simtrace.run/screenshots/trace-session-overview.png" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<link rel="canonical" href="https://simtrace.run/docs/" />
+		<link rel="icon" href="/trace-mark.svg" type="image/svg+xml" />
+		<title>Documentation — TRACE</title>
+	</head>
+	<body class="content-page">
+		<a class="skip-link" href="#main">Skip to content</a>
+		<header class="site-header">
+			<a class="brand" href="/" aria-label="TRACE home"><span>TRACE</span><i>//</i></a>
+			<nav aria-label="Primary navigation">
+				<a href="/#product">Product</a>
+				<a href="/#workflow">How it works</a>
+				<a href="/docs/" aria-current="page">Docs</a>
+				<a href="/faq/">FAQ</a>
+			</nav>
+			<div class="header-actions">
+				<a class="text-link github-link" href="https://github.com/keystroke-tools/TRACE">GitHub</a>
+				<a class="text-link mobile-docs-link" href="/faq/">FAQ</a>
+				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.4.0</span></a>
+			</div>
+		</header>
+
+		<main id="main">
+			<section class="content-hero" id="top">
+				<div class="content-grid" aria-hidden="true"></div>
+				<div class="reveal">
+					<span class="kicker">TRACE DOCUMENTATION</span>
+					<h1>Start with a lap.<br /><em>Leave with an answer.</em></h1>
+					<p>
+						The practical guide to recording clean telemetry, understanding a session, comparing two laps, sharing data, and putting a live pit wall
+						on another screen.
+					</p>
+					<div class="hero-actions">
+						<a class="button" href="#quick-start">Quick start <span>↓</span></a>
+						<a class="button button-ghost" href="/faq/">Common questions <span>→</span></a>
+					</div>
+				</div>
+				<dl class="content-facts reveal">
+					<div>
+						<dt>SUPPORTED SIM</dt>
+						<dd>Assetto Corsa</dd>
+					</div>
+					<div>
+						<dt>PLATFORM</dt>
+						<dd>Windows 10/11</dd>
+					</div>
+					<div>
+						<dt>STORAGE</dt>
+						<dd>Local by default</dd>
+					</div>
+					<div>
+						<dt>ACCOUNT</dt>
+						<dd>Not required</dd>
+					</div>
+				</dl>
+			</section>
+
+			<div class="docs-shell">
+				<aside class="docs-nav" aria-label="Documentation sections">
+					<span>ON THIS PAGE</span>
+					<a href="#quick-start">Quick start</a>
+					<a href="#recording">Recording</a>
+					<a href="#sessions">Session library</a>
+					<a href="#comparison">Comparison</a>
+					<a href="#visualizer">Lap visualizer</a>
+					<a href="#sharing">Sharing sessions</a>
+					<a href="#overlays">Overlays and OBS</a>
+					<a href="#setups">Setups</a>
+					<a href="#go-live">Go Live</a>
+					<a href="#self-host">Self-hosting</a>
+					<a href="#data">Data and privacy</a>
+					<a href="#troubleshooting">Troubleshooting</a>
+				</aside>
+
+				<article class="docs-content">
+					<section id="quick-start" class="doc-section reveal">
+						<span class="doc-index">01</span>
+						<h2>Quick start</h2>
+						<p class="doc-lead">
+							Install TRACE, point it at Assetto Corsa if automatic detection needs help, then let the recorder follow the simulator.
+						</p>
+						<ol class="doc-steps">
+							<li>
+								<span>1</span>
+								<div>
+									<strong>Install TRACE</strong>
+									<p>Download the latest Windows installer. Installed builds can offer signed updates inside the app.</p>
+								</div>
+							</li>
+							<li>
+								<span>2</span>
+								<div>
+									<strong>Check Settings</strong>
+									<p>Open Settings and verify the detected game directory. Choose the directory manually if it is missing.</p>
+								</div>
+							</li>
+							<li>
+								<span>3</span>
+								<div>
+									<strong>Start Assetto Corsa</strong>
+									<p>Drive normally or play an AC replay at normal speed. TRACE records while the simulator exposes live telemetry.</p>
+								</div>
+							</li>
+							<li>
+								<span>4</span>
+								<div>
+									<strong>Open Sessions</strong>
+									<p>When the run ends, open the completed session to review laps or choose one for comparison.</p>
+								</div>
+							</li>
+						</ol>
+						<div class="doc-callout">
+							<strong>Replay files are not parsed directly.</strong><span>Load the replay in Assetto Corsa and play it while TRACE is open.</span>
+						</div>
+					</section>
+
+					<section id="recording" class="doc-section reveal">
+						<span class="doc-index">02</span>
+						<h2>Recording</h2>
+						<p>
+							TRACE watches the supported simulator adapter and records canonical telemetry without requiring a Start Recording button. A
+							recording follows the simulator session and is finalized when the session ends or disconnects.
+						</p>
+						<div class="doc-grid">
+							<div>
+								<h3>What is captured</h3>
+								<p>
+									Timing, sectors, pedals, gear, speed, steering input, fuel, tyre channels, world position, and other supported AC
+									shared-memory fields.
+								</p>
+							</div>
+							<div>
+								<h3>What may be missing</h3>
+								<p>
+									Some session conditions, track-limit reasons, setup state, or replay metadata are not exposed reliably. TRACE leaves
+									unavailable evidence explicit.
+								</p>
+							</div>
+							<div>
+								<h3>First and partial laps</h3>
+								<p>
+									An incomplete lap may be retained for context but excluded from fastest-lap comparisons. Simulator-reported invalidity is
+									kept separately from inferred evidence.
+								</p>
+							</div>
+							<div>
+								<h3>Replay capture</h3>
+								<p>
+									Playback produces the same live telemetry path as driving. Seeking or running a replay unusually fast can create
+									discontinuities, so normal-speed playback is recommended.
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<section id="sessions" class="doc-section reveal">
+						<span class="doc-index">03</span>
+						<h2>Session library</h2>
+						<p>
+							Sessions are searchable by title, driver, simulator, car, track, type, source, and tags. Rename a session, assign a driver, mark
+							ownership, or add tags when imported telemetry would otherwise be difficult to identify.
+						</p>
+						<ul class="doc-list">
+							<li>Open a session for its lap list, sectors, theoretical best, fuel, tyre and validity evidence.</li>
+							<li>Click a lap row to open the lap visualizer; invalid laps are excluded from suitable reference suggestions.</li>
+							<li>Delete a session from its actions menu when it is no longer needed.</li>
+							<li>Use compact export actions to create a share package or specialist CSV/Arrow output.</li>
+						</ul>
+					</section>
+
+					<section id="comparison" class="doc-section reveal">
+						<span class="doc-index">04</span>
+						<h2>Compare two laps</h2>
+						<p>
+							The <strong>Reference</strong> is the lap you want to learn from. The <strong>Analysed Lap</strong> is the lap being measured
+							against it. TRACE usually suggests a faster compatible reference, prioritising imported laps.
+						</p>
+						<div class="doc-grid">
+							<div>
+								<h3>Stay synchronized</h3>
+								<p>
+									Speed, throttle, brake, gear, steering, delta, shared cursor, playback, zoom, sectors, and track position use the same
+									distance-aligned view.
+								</p>
+							</div>
+							<div>
+								<h3>Read the colours</h3>
+								<p>
+									Purple highlights the faster trace and green the slower trace. The Reference and Analysed labels remain the authoritative
+									lap identity.
+								</p>
+							</div>
+							<div>
+								<h3>Save useful pairs</h3>
+								<p>Name and save a comparison to return to the same drivers, sessions, and laps without rebuilding the selection.</p>
+							</div>
+							<div>
+								<h3>Treat analysis as a lead</h3>
+								<p>
+									Corner observations are deterministic heuristics, not AI coaching. They can be wrong; verify them against the graphs and
+									map.
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<section id="visualizer" class="doc-section reveal">
+						<span class="doc-index">05</span>
+						<h2>Lap visualizer</h2>
+						<p>
+							Use the visualizer when you want to inspect one lap without choosing a reference. Play or scrub the lap, select an individual
+							sector, zoom synchronized graphs, and move or resize the floating track map. The HUD shows the current inputs and recorded lap
+							context.
+						</p>
+					</section>
+
+					<section id="sharing" class="doc-section reveal">
+						<span class="doc-index">06</span>
+						<h2>Share a complete session</h2>
+						<p>
+							Export <code>.trace</code> when another TRACE user needs the session. The compact package contains attribution, metadata, laps,
+							sectors, telemetry, and a setup only when it was explicitly associated with the session.
+						</p>
+						<div class="doc-callout">
+							<strong>Use <code>.trace</code> for TRACE-to-TRACE sharing.</strong
+							><span>CSV and Arrow are specialist data exports and do not carry the complete portable session.</span>
+						</div>
+					</section>
+
+					<section id="overlays" class="doc-section reveal">
+						<span class="doc-index">07</span>
+						<h2>Overlays and OBS</h2>
+						<p>
+							The Overlays page previews HUDs using demo, active, or recorded telemetry. The pedal overlay combines input history, throttle,
+							brake, clutch, and steering. Configure it in TRACE, then open the frameless always-on-top window or copy its local OBS Browser
+							Source URL.
+						</p>
+						<ul class="doc-list">
+							<li>Keep TRACE running while an OBS Browser Source uses its loopback URL.</li>
+							<li>Use the dimensions shown in TRACE; the overlay does not stretch itself to an arbitrary OBS canvas.</li>
+							<li>The local overlay endpoint binds to this computer only and stops when TRACE exits.</li>
+						</ul>
+					</section>
+
+					<section id="setups" class="doc-section reveal">
+						<span class="doc-index">08</span>
+						<h2>Setups</h2>
+						<p>
+							The Assetto Corsa setup importer installs bounded ZIP archives into AC's setup tree and indexes compatible files locally.
+							Compatibility means simulator, car, track, and layout identities match—it does not prove the setup was used or recommend a change.
+						</p>
+						<p>
+							Explicitly mark a setup as used for a session before exporting if it should travel inside the <code>.trace</code> package. Setup
+							differences are literal configuration diffs, not claims about lap-time causality.
+						</p>
+					</section>
+
+					<section id="go-live" class="doc-section reveal">
+						<span class="doc-index">09</span>
+						<h2>Go Live</h2>
+						<p>
+							Stream an active capture or a completed recording to the browser pit wall. Choose <strong>Local</strong> for another display on the
+							same computer, or <strong>Online</strong> for an unlisted spectator link through the configured TRACE service.
+						</p>
+						<div class="doc-grid">
+							<div>
+								<h3>Local screen</h3>
+								<p>
+									TRACE starts an internal loopback server. No hosted service or account is needed, but the URL is accessible only on the same
+									machine.
+								</p>
+							</div>
+							<div>
+								<h3>Online</h3>
+								<p>
+									Anyone with the unlisted link can spectate. Publishing can reconnect after transient failures without interrupting the local
+									recording.
+								</p>
+							</div>
+						</div>
+						<div class="doc-callout warning">
+							<strong>Current hosted-service limitation</strong
+							><span
+								>Live sessions and credentials are held in memory today. A server restart ends retained sessions; durable replay storage is
+								planned.</span
+							>
+						</div>
+					</section>
+
+					<section id="self-host" class="doc-section reveal">
+						<span class="doc-index">10</span>
+						<h2>Self-host the live service</h2>
+						<p>Tagged releases provide a single Linux binary with the spectator frontend embedded. Install or update it on a systemd VM with:</p>
+						<div class="code-line doc-command" aria-label="Install the TRACE server">
+							<span aria-hidden="true">$</span>
+							<code data-doc-install-command>curl -fsSL https://simtrace.run/install-server | sudo sh</code>
+							<button type="button" data-copy-target="[data-doc-install-command]" aria-label="Copy server install command">COPY</button>
+						</div>
+						<p>
+							The first-install wizard asks for the listen address and public URL. Configure a TLS reverse proxy to forward HTTP and WebSocket
+							upgrades. Re-running the command updates the binary and preserves <code>/etc/trace-server.env</code>.
+						</p>
+						<a class="doc-text-link" href="https://github.com/keystroke-tools/TRACE/blob/master/docs/go-live.md"
+							>Full service and protocol reference <span>↗</span></a
+						>
+					</section>
+
+					<section id="data" class="doc-section reveal">
+						<span class="doc-index">11</span>
+						<h2>Data and privacy</h2>
+						<p>
+							Normal recording, storage, import, viewing, and analysis are local and work without an account. SQLite stores session metadata;
+							compressed Arrow IPC stores high-rate telemetry. TRACE only sends telemetry to a live endpoint when you deliberately start an online
+							stream.
+						</p>
+						<p>
+							TRACE uses LLMs as development tools, under human direction. The app's telemetry conclusions are deterministic and do not call an
+							LLM.
+						</p>
+					</section>
+
+					<section id="troubleshooting" class="doc-section reveal">
+						<span class="doc-index">12</span>
+						<h2>Troubleshooting</h2>
+						<div class="doc-grid">
+							<div>
+								<h3>TRACE does not detect AC</h3>
+								<p>
+									Verify the Assetto Corsa directory in Settings and start an on-track session. Restart TRACE and AC if a previous crash left
+									the shared-memory connection stale.
+								</p>
+							</div>
+							<div>
+								<h3>A replay records strangely</h3>
+								<p>
+									Play it from the beginning at normal speed. TRACE observes what AC publishes; large seeks and accelerated playback may look
+									like discontinuities.
+								</p>
+							</div>
+							<div>
+								<h3>A field is unknown or unverified</h3>
+								<p>
+									The simulator did not expose enough reliable evidence. TRACE deliberately avoids inventing missing conditions or track-limit
+									reasons.
+								</p>
+							</div>
+							<div>
+								<h3>Go Live will not connect</h3>
+								<p>
+									Check the endpoint in Settings, verify the service health and reverse-proxy WebSocket configuration, then stop and restart
+									the stream.
+								</p>
+							</div>
+						</div>
+						<p class="doc-help">
+							Still stuck? Search the <a href="/faq/">FAQ</a> or <a href="https://github.com/keystroke-tools/TRACE/issues">open an issue</a> with
+							the TRACE version and the action that failed.
+						</p>
+					</section>
+
+					<section class="doc-section reference-section reveal">
+						<span class="doc-index">13</span>
+						<h2>Technical references</h2>
+						<p>
+							The website guide focuses on using TRACE. Architecture, schemas, protocol details, and contributor workflows remain versioned beside
+							the code.
+						</p>
+						<div class="doc-link-grid">
+							<a href="https://github.com/keystroke-tools/TRACE/blob/master/docs/README.md"
+								><strong>Documentation index</strong><span>All technical documents ↗</span></a
+							>
+							<a href="https://github.com/keystroke-tools/TRACE/blob/master/docs/ac-shared-memory-reference.md"
+								><strong>Assetto Corsa API</strong><span>Pages, fields, units, offsets ↗</span></a
+							>
+							<a href="https://github.com/keystroke-tools/TRACE/blob/master/docs/session-package.md"
+								><strong>Session packages</strong><span><code>.trace</code> format and limits ↗</span></a
+							>
+							<a href="https://github.com/keystroke-tools/TRACE/blob/master/docs/protocol-v1.md"
+								><strong>Live protocol</strong><span>Messages and validation ↗</span></a
+							>
+							<a href="https://github.com/keystroke-tools/TRACE/blob/master/docs/development.md"
+								><strong>Development</strong><span>Toolchains and repository guide ↗</span></a
+							>
+							<a href="https://github.com/keystroke-tools/TRACE/blob/master/CONTRIBUTING.md"
+								><strong>Contributing</strong><span>Quality and disclosure rules ↗</span></a
+							>
+						</div>
+					</section>
+				</article>
+			</div>
+		</main>
+
+		<footer>
+			<a class="brand" href="/"><span>TRACE</span><i>//</i></a>
+			<p>Understand every lap.</p>
+			<div>
+				<a href="/docs/">Docs</a><a href="/faq/">FAQ</a><a href="https://github.com/keystroke-tools/TRACE/releases">Releases</a
+				><a href="https://github.com/keystroke-tools/TRACE">Source</a><a href="https://github.com/keystroke-tools/TRACE/issues">Issues</a
+				><a href="https://github.com/keystroke-tools/TRACE/blob/master/LICENSE">MIT Licence</a>
+			</div>
+			<small>© <span id="year"></span> TRACE</small>
+		</footer>
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>

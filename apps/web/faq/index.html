@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="theme-color" content="#101010" />
+		<meta
+			name="description"
+			content="Answers to common questions about TRACE telemetry recording, replay capture, comparisons, sharing, overlays, privacy, and Go Live."
+		/>
+		<meta property="og:title" content="TRACE Frequently Asked Questions" />
+		<meta
+			property="og:description"
+			content="Straight answers about supported simulators, data capture, replay files, sharing, privacy, and live spectating."
+		/>
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://simtrace.run/faq/" />
+		<meta property="og:image" content="https://simtrace.run/screenshots/trace-comparison.png" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<link rel="canonical" href="https://simtrace.run/faq/" />
+		<link rel="icon" href="/trace-mark.svg" type="image/svg+xml" />
+		<title>Frequently Asked Questions — TRACE</title>
+	</head>
+	<body class="content-page">
+		<a class="skip-link" href="#main">Skip to content</a>
+		<header class="site-header">
+			<a class="brand" href="/" aria-label="TRACE home"><span>TRACE</span><i>//</i></a>
+			<nav aria-label="Primary navigation">
+				<a href="/#product">Product</a>
+				<a href="/#workflow">How it works</a>
+				<a href="/docs/">Docs</a>
+				<a href="/faq/" aria-current="page">FAQ</a>
+			</nav>
+			<div class="header-actions">
+				<a class="text-link github-link" href="https://github.com/keystroke-tools/TRACE">GitHub</a>
+				<a class="text-link mobile-docs-link" href="/docs/">Docs</a>
+				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.4.0</span></a>
+			</div>
+		</header>
+
+		<main id="main">
+			<section class="content-hero faq-hero" id="top">
+				<div class="content-grid" aria-hidden="true"></div>
+				<div class="reveal">
+					<span class="kicker">STRAIGHT ANSWERS</span>
+					<h1>Questions are good.<br /><em>Telemetry is weird.</em></h1>
+					<p>What TRACE can record, what it cannot know, and what happens to your data—without pretending every limitation is a feature.</p>
+					<div class="hero-actions">
+						<a class="button" href="#getting-started">Browse answers <span>↓</span></a>
+						<a class="button button-ghost" href="/docs/">Read the guide <span>→</span></a>
+					</div>
+				</div>
+			</section>
+
+			<div class="faq-shell">
+				<section class="faq-group reveal" id="getting-started">
+					<div class="faq-heading">
+						<span>01</span>
+						<div>
+							<h2>Getting started</h2>
+							<p>Compatibility, recording, and replays.</p>
+						</div>
+					</div>
+					<div class="faq-list">
+						<details open>
+							<summary>Which simulators does TRACE support?</summary>
+							<div>
+								<p>
+									Assetto Corsa is the supported simulator today. TRACE's domain and analysis layers are simulator-agnostic, but other
+									adapters are future work rather than implied compatibility.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>How do I record a session?</summary>
+							<div>
+								<p>
+									Open TRACE, start an Assetto Corsa track session, and drive. TRACE detects the simulator and records automatically. The
+									completed run appears in Sessions after the simulator session ends or disconnects.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can TRACE record an Assetto Corsa replay?</summary>
+							<div>
+								<p>
+									Yes, by playing the replay inside Assetto Corsa at normal speed while TRACE is open. TRACE does not parse the replay file
+									directly; it records the telemetry AC exposes during playback.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can I import MoTeC files?</summary>
+							<div>
+								<p>
+									Not yet. MoTeC import and export remain planned work. Do not convert a MoTeC log to CSV and expect it to become a complete
+									TRACE session automatically.
+								</p>
+							</div>
+						</details>
+					</div>
+				</section>
+
+				<section class="faq-group reveal">
+					<div class="faq-heading">
+						<span>02</span>
+						<div>
+							<h2>Understanding the data</h2>
+							<p>Validity, maps, tyres, and analysis.</p>
+						</div>
+					</div>
+					<div class="faq-list">
+						<details>
+							<summary>Does TRACE know when a lap is invalid?</summary>
+							<div>
+								<p>
+									TRACE preserves simulator-reported validity and separately records supporting evidence such as observed tyres outside the
+									track when available. Assetto Corsa does not expose every stewarding reason reliably, so TRACE may show unverified evidence
+									instead of inventing a cause.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Why is the first lap incomplete or invalid?</summary>
+							<div>
+								<p>
+									TRACE may attach after that lap has already begun, or the lap may be an outlap. It can retain the partial data for context
+									while excluding it from fastest-lap and reference selection.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Where does the track map come from?</summary>
+							<div>
+								<p>
+									For Assetto Corsa, TRACE can read the selected layout's AI spline for a stable centre line and road edges, then place
+									recorded or live world positions on it. When static geometry is unavailable, the UI labels its driven-line fallback.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Why are some telemetry values missing?</summary>
+							<div>
+								<p>
+									A simulator, car, replay, or shared-memory version may not expose that channel reliably. Missing data is normal in TRACE's
+									canonical schema and should remain unavailable rather than being displayed as a fabricated zero.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Is the corner analysis AI coaching?</summary>
+							<div>
+								<p>
+									No. It uses deterministic heuristics over measured telemetry. The suggestions can be incorrect and should be treated as
+									places to inspect, not authoritative coaching or setup advice.
+								</p>
+							</div>
+						</details>
+					</div>
+				</section>
+
+				<section class="faq-group reveal">
+					<div class="faq-heading">
+						<span>03</span>
+						<div>
+							<h2>Comparing and sharing</h2>
+							<p>References, attribution, and portable sessions.</p>
+						</div>
+					</div>
+					<div class="faq-list">
+						<details>
+							<summary>What are the Reference and Analysed Lap?</summary>
+							<div>
+								<p>
+									The Reference is the lap you want to learn from—usually the faster lap. The Analysed Lap is the lap whose losses and gains
+									you are inspecting. TRACE suggests faster compatible references and lets you swap the pair.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can a friend send me their telemetry?</summary>
+							<div>
+								<p>
+									Yes. Ask them to export the session as a <code>.trace</code> package, then import it in your session library. Driver
+									attribution, laps, sectors, telemetry, tags, and an explicitly associated setup travel with it.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>What is the difference between .trace, CSV, and Arrow?</summary>
+							<div>
+								<p>
+									<code>.trace</code> is the complete, compact TRACE-to-TRACE exchange format. CSV is convenient for general inspection, while
+									Arrow is the specialist high-fidelity telemetry export. CSV and Arrow do not carry the complete session identity and
+									metadata package.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>How can I tell imported laps apart?</summary>
+							<div>
+								<p>
+									Set your name or nickname in Settings before exporting. Sessions can also be renamed, tagged, assigned a driver, and marked
+									by ownership so selectors do not rely on timestamps alone.
+								</p>
+							</div>
+						</details>
+					</div>
+				</section>
+
+				<section class="faq-group reveal">
+					<div class="faq-heading">
+						<span>04</span>
+						<div>
+							<h2>Live, overlays, and hosting</h2>
+							<p>Spectating on another screen or over the internet.</p>
+						</div>
+					</div>
+					<div class="faq-list">
+						<details>
+							<summary>What is the difference between Local and Online Go Live?</summary>
+							<div>
+								<p>
+									Local starts a spectator server inside the desktop app for a browser on the same computer. Online publishes to the
+									configured TRACE service and produces an unlisted link that can be opened elsewhere.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can I stream an already-recorded session?</summary>
+							<div>
+								<p>
+									Yes. Start Go Live from a completed session to replay its immutable telemetry through the same pit-wall interface. The
+									spectator can seek within the retained window and jump back to live playback.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can I use TRACE overlays in OBS?</summary>
+							<div>
+								<p>
+									Yes. The Overlays page provides a loopback Browser Source URL and exact dimensions while TRACE is running. It also offers a
+									frameless always-on-top window for use over the simulator.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can I run my own Go Live server?</summary>
+							<div>
+								<p>
+									Yes. Linux release binaries contain the API and spectator frontend in one process. Follow the
+									<a href="/docs/#self-host">self-hosting guide</a> to install it as a systemd service behind a TLS reverse proxy.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Can I rewatch old hosted live sessions?</summary>
+							<div>
+								<p>
+									Not reliably yet. The current live server keeps sessions, credentials, and a bounded telemetry window in memory. A server
+									restart clears them, and durable history with automatic expiry is planned.
+								</p>
+							</div>
+						</details>
+					</div>
+				</section>
+
+				<section class="faq-group reveal">
+					<div class="faq-heading">
+						<span>05</span>
+						<div>
+							<h2>Privacy, updates, and development</h2>
+							<p>Where your data goes and how TRACE is built.</p>
+						</div>
+					</div>
+					<div class="faq-list">
+						<details>
+							<summary>Where is my telemetry stored?</summary>
+							<div>
+								<p>
+									Session metadata is stored in a local SQLite database and high-rate telemetry in compressed Arrow files on your computer.
+									Recording, viewing, comparison, and imports do not require a TRACE account or cloud service.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Does TRACE upload my laps automatically?</summary>
+							<div>
+								<p>
+									No. Telemetry is sent to a live endpoint only when you deliberately start an Online Go Live stream. Exporting a file also
+									requires an explicit action.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>How do updates work?</summary>
+							<div>
+								<p>
+									Installed Windows builds check signed GitHub releases and can offer an in-app update. Self-hosted servers are updated by
+									rerunning the installer command. Portable diagnostic builds do not receive the same installed-app update flow.
+								</p>
+							</div>
+						</details>
+						<details>
+							<summary>Was TRACE developed using an LLM?</summary>
+							<div>
+								<p>
+									Yes. LLMs are used as development tools for research, planning, implementation, review, tests, and documentation under human
+									direction. Maintainers remain responsible for accepted changes. TRACE does not use an LLM to generate telemetry conclusions.
+								</p>
+							</div>
+						</details>
+					</div>
+				</section>
+
+				<section class="faq-contact reveal">
+					<span class="kicker">STILL UNSURE?</span>
+					<h2>Bring the exact failure.</h2>
+					<p>
+						Include your TRACE version, simulator version, whether you were driving or playing a replay, and the action immediately before the
+						problem.
+					</p>
+					<div class="hero-actions">
+						<a class="button" href="https://github.com/keystroke-tools/TRACE/issues">Open an issue <span>↗</span></a>
+						<a class="button button-ghost" href="/docs/">Return to docs <span>→</span></a>
+					</div>
+				</section>
+			</div>
+		</main>
+
+		<footer>
+			<a class="brand" href="/"><span>TRACE</span><i>//</i></a>
+			<p>Understand every lap.</p>
+			<div>
+				<a href="/docs/">Docs</a><a href="/faq/">FAQ</a><a href="https://github.com/keystroke-tools/TRACE/releases">Releases</a
+				><a href="https://github.com/keystroke-tools/TRACE">Source</a><a href="https://github.com/keystroke-tools/TRACE/issues">Issues</a
+				><a href="https://github.com/keystroke-tools/TRACE/blob/master/LICENSE">MIT Licence</a>
+			</div>
+			<small>© <span id="year"></span> TRACE</small>
+		</footer>
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>
