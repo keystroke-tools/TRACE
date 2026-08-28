@@ -1,11 +1,20 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { telemetryDataSource, type GameInstallDirectory } from "../../data-source";
+import { telemetryDataSource, type GameInstallDirectory, type LiveBroadcastOptions, type LiveSettings } from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { useToast } from "../../Toast";
 import { useUpdater } from "../update/UpdateContext";
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://live.simtrace.run";
+const AC_SESSION_TYPES = [
+	{ id: "practice", label: "Practice" },
+	{ id: "qualifying", label: "Qualifying" },
+	{ id: "race", label: "Race" },
+	{ id: "hotlap", label: "Hotlap" },
+	{ id: "time attack", label: "Time Attack" },
+	{ id: "drift", label: "Drift" },
+	{ id: "drag", label: "Drag" },
+] as const;
 
 const settingsTabs = [
 	{ id: "general", label: "GENERAL", description: "Driver identity and app preferences" },
@@ -38,9 +47,12 @@ export function SettingsPage() {
 	const [savedProfileName, setSavedProfileName] = useState("");
 	const [savingProfile, setSavingProfile] = useState(false);
 	const [liveEndpoint, setLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
-	const [savedLiveEndpoint, setSavedLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
+	const [savedLiveSettings, setSavedLiveSettings] = useState<LiveSettings | null>(null);
 	const [savingLiveSettings, setSavingLiveSettings] = useState(false);
 	const [localSpectatorPort, setLocalSpectatorPort] = useState("0");
+	const [autoStreamEnabled, setAutoStreamEnabled] = useState(false);
+	const [liveMode, setLiveMode] = useState<LiveBroadcastOptions["mode"]>("hosted");
+	const [acSessionTypes, setAcSessionTypes] = useState<string[]>(AC_SESSION_TYPES.map((value) => value.id));
 
 	useEffect(() => {
 		let active = true;
@@ -52,8 +64,11 @@ export function SettingsPage() {
 				setProfileName(profile.name ?? "");
 				setSavedProfileName(profile.name ?? "");
 				setLiveEndpoint(liveSettings.endpoint);
-				setSavedLiveEndpoint(liveSettings.endpoint);
-				setLocalSpectatorPort(window.localStorage.getItem("trace.localSpectatorPort") ?? "0");
+				setSavedLiveSettings(liveSettings);
+				setLocalSpectatorPort(String(liveSettings.autoStream.localPort ?? 0));
+				setAutoStreamEnabled(liveSettings.autoStream.enabled);
+				setLiveMode(liveSettings.autoStream.mode);
+				setAcSessionTypes(liveSettings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -129,16 +144,31 @@ export function SettingsPage() {
 		}
 		setSavingLiveSettings(true);
 		try {
-			const settings = await telemetryDataSource.setLiveSettings(normalizedLiveEndpoint);
 			const port = Number.parseInt(localSpectatorPort, 10);
 			if (!Number.isInteger(port) || (port !== 0 && port < 1024) || port > 65535) throw new Error("Local port must be 0 or between 1024 and 65535.");
-			window.localStorage.setItem("trace.localSpectatorPort", String(port));
+			if (autoStreamEnabled && acSessionTypes.length === 0) throw new Error("Choose at least one Assetto Corsa session type for automatic streaming.");
+			const settings = await telemetryDataSource.setLiveSettings({
+				endpoint: normalizedLiveEndpoint,
+				autoStream: {
+					enabled: autoStreamEnabled,
+					mode: liveMode,
+					localPort: port === 0 ? null : port,
+					simulatorSessionTypes: { "assetto-corsa": acSessionTypes },
+				},
+			});
 			setLiveEndpoint(settings.endpoint);
-			setSavedLiveEndpoint(settings.endpoint);
+			setSavedLiveSettings(settings);
+			setLocalSpectatorPort(String(settings.autoStream.localPort ?? 0));
+			setAutoStreamEnabled(settings.autoStream.enabled);
+			setLiveMode(settings.autoStream.mode);
+			setAcSessionTypes(settings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
+			window.dispatchEvent(new CustomEvent<LiveSettings>("trace:live-settings", { detail: settings }));
 			showToast({
 				kind: "success",
-				title: "Go Live service saved",
-				message: "TRACE will use this service to create sessions, publish telemetry, and build spectator links.",
+				title: "Go Live settings saved",
+				message: settings.autoStream.enabled
+					? "Eligible simulator sessions will now start streaming automatically."
+					: "Manual Go Live settings were updated.",
 				timeoutMs: 5_000,
 			});
 		} catch (error) {
@@ -188,6 +218,16 @@ export function SettingsPage() {
 								: updater.phase === "failed"
 									? updater.error || "TRACE could not complete the update request."
 									: "TRACE checks for updates shortly after launch. You can also check manually.";
+	const parsedLocalPort = Number.parseInt(localSpectatorPort, 10);
+	const normalizedLocalPort = Number.isInteger(parsedLocalPort) && parsedLocalPort !== 0 ? parsedLocalPort : null;
+	const savedAcSessionTypes = savedLiveSettings?.autoStream.simulatorSessionTypes["assetto-corsa"] ?? [];
+	const liveSettingsChanged =
+		savedLiveSettings == null ||
+		liveEndpoint.trim() !== savedLiveSettings.endpoint ||
+		autoStreamEnabled !== savedLiveSettings.autoStream.enabled ||
+		liveMode !== savedLiveSettings.autoStream.mode ||
+		normalizedLocalPort !== (savedLiveSettings.autoStream.localPort ?? null) ||
+		[...acSessionTypes].sort().join("|") !== [...savedAcSessionTypes].sort().join("|");
 
 	function runUpdateAction() {
 		if (updater.availableVersion) void updater.installUpdate();
@@ -279,20 +319,6 @@ export function SettingsPage() {
 							</button>
 						</div>
 					</label>
-					<label className="block border-t border-trace-divider p-5 text-[12px] font-bold tracking-[.08em] text-trace-dim">
-						LOCAL SPECTATOR PORT
-						<span className="mt-1 block max-w-4xl font-normal leading-5 normal-case tracking-normal text-trace-dim">
-							Port for LOCAL SCREEN mode. Use 0 to choose an available port automatically, or set a fixed port from 1024 to 65535.
-						</span>
-						<input
-							type="number"
-							min={0}
-							max={65535}
-							value={localSpectatorPort}
-							onChange={(event) => setLocalSpectatorPort(event.target.value)}
-							className="mt-2 h-11 w-40 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
-						/>
-					</label>
 				</form>
 			</div>
 			<div id="settings-panel-connectivity" role="tabpanel" aria-labelledby="settings-tab-connectivity" hidden={activeTab !== "connectivity"}>
@@ -338,11 +364,97 @@ export function SettingsPage() {
 							{DEFAULT_LIVE_SERVICE_ENDPOINT}
 						</span>
 					</label>
+					<section className="border-t border-trace-divider p-5" aria-labelledby="automatic-live-heading">
+						<div className="flex items-start justify-between gap-6">
+							<div>
+								<h3 id="automatic-live-heading" className="text-[13px] font-black tracking-[.05em] text-trace-text">
+									AUTOMATIC STREAMING
+								</h3>
+								<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
+									Start Go Live when TRACE detects an eligible simulator session. Recording remains local and continues normally if publishing
+									fails.
+								</p>
+							</div>
+							<button
+								type="button"
+								role="switch"
+								aria-checked={autoStreamEnabled}
+								onClick={() => setAutoStreamEnabled((value) => !value)}
+								className={`relative mt-1 h-7 w-12 shrink-0 border transition-colors ${autoStreamEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
+							>
+								<span
+									className={`absolute top-1 size-[18px] bg-trace-black transition-transform ${autoStreamEnabled ? "translate-x-6" : "translate-x-1"}`}
+								/>
+								<span className="sr-only">Automatically stream eligible sessions</span>
+							</button>
+						</div>
+
+						<div className="mt-5 grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+							<div>
+								<span className="block font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">DESTINATION</span>
+								<div className="mt-2 grid grid-cols-2 border border-trace-divider p-1" role="group" aria-label="Automatic stream destination">
+									{(["local", "hosted"] as const).map((mode) => (
+										<button
+											type="button"
+											key={mode}
+											aria-pressed={liveMode === mode}
+											onClick={() => setLiveMode(mode)}
+											className={`h-9 text-[10px] font-black tracking-[.08em] ${liveMode === mode ? "bg-trace-accent text-trace-black" : "text-trace-dim hover:bg-trace-raised hover:text-trace-text"}`}
+										>
+											{mode === "local" ? "LOCAL" : "ONLINE"}
+										</button>
+									))}
+								</div>
+							</div>
+							<div>
+								<span className="block font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">ASSETTO CORSA SESSION TYPES</span>
+								<div className="mt-2 flex flex-wrap gap-2">
+									{AC_SESSION_TYPES.map((sessionType) => {
+										const selected = acSessionTypes.includes(sessionType.id);
+										return (
+											<button
+												type="button"
+												key={sessionType.id}
+												aria-pressed={selected}
+												onClick={() =>
+													setAcSessionTypes((values) =>
+														selected ? values.filter((value) => value !== sessionType.id) : [...values, sessionType.id],
+													)
+												}
+												className={`h-9 border px-3 text-[10px] font-bold tracking-[.05em] ${selected ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider text-trace-dim hover:bg-trace-raised hover:text-trace-text"}`}
+											>
+												{sessionType.label.toUpperCase()}
+											</button>
+										);
+									})}
+								</div>
+							</div>
+						</div>
+
+						<label className="mt-5 block text-[11px] font-bold tracking-[.08em] text-trace-dim">
+							LOCAL SPECTATOR PORT
+							<span className="mt-1 block max-w-3xl font-normal leading-5 normal-case tracking-normal">
+								Use 0 to select an available port automatically, or choose a fixed port from 1024 to 65535.
+							</span>
+							<input
+								type="number"
+								min={0}
+								max={65535}
+								value={localSpectatorPort}
+								onChange={(event) => setLocalSpectatorPort(event.target.value)}
+								className="mt-2 h-10 w-40 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
+							/>
+						</label>
+					</section>
 					<div className="flex min-h-14 items-center justify-between gap-5 border-t border-trace-divider px-5 py-2">
-						<span className="text-[11px] leading-5 text-trace-dim">Only complete HTTP and HTTPS base URLs are accepted.</span>
+						<span className="text-[11px] leading-5 text-trace-dim">
+							{autoStreamEnabled
+								? `${acSessionTypes.length} Assetto Corsa session type${acSessionTypes.length === 1 ? "" : "s"} selected.`
+								: "Automatic streaming is off."}
+						</span>
 						<button
 							type="submit"
-							disabled={savingLiveSettings || !liveEndpoint.trim() || liveEndpoint.trim() === savedLiveEndpoint}
+							disabled={savingLiveSettings || !liveEndpoint.trim() || !liveSettingsChanged}
 							className="h-10 w-28 shrink-0 border border-trace-accent bg-trace-accent-wash text-[12px] font-bold leading-none text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 						>
 							{savingLiveSettings ? "SAVING…" : "SAVE"}

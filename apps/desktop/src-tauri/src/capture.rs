@@ -83,6 +83,13 @@ enum ActivePersistence {
     },
 }
 
+struct CaptureOutputContext<'a> {
+    data_directory: &'a std::path::Path,
+    ac_race_config: Option<&'a std::path::Path>,
+    status: &'a SharedCaptureStatus,
+    live_broadcast: &'a SharedLiveBroadcast,
+}
+
 pub fn spawn<A, F>(
     data_directory: PathBuf,
     ac_race_config: Option<PathBuf>,
@@ -164,6 +171,12 @@ fn run_capture(
 
     let mut recorder = SessionRecorder::streaming();
     let mut active = None;
+    let context = CaptureOutputContext {
+        data_directory,
+        ac_race_config,
+        status,
+        live_broadcast,
+    };
     loop {
         match adapter.poll() {
             Ok(events) => {
@@ -172,15 +185,9 @@ fn run_capture(
                         .consume(event)
                         .map_err(|error| format!("recording state failed: {error:?}"))?
                     {
-                        if let Err(error) = handle_output(
-                            output,
-                            &mut active,
-                            &mut metadata,
-                            &mut blobs,
-                            ac_race_config,
-                            status,
-                            live_broadcast,
-                        ) {
+                        if let Err(error) =
+                            handle_output(output, &mut active, &mut metadata, &mut blobs, &context)
+                        {
                             eprintln!("TRACE could not persist capture output: {error}");
                             update_status(status, "error", 0, "PERSISTENCE ERROR");
                         }
@@ -196,15 +203,9 @@ fn run_capture(
                     ))
                     .map_err(|error| format!("disconnect recording failed: {error:?}"))?
                 {
-                    if let Err(error) = handle_output(
-                        output,
-                        &mut active,
-                        &mut metadata,
-                        &mut blobs,
-                        ac_race_config,
-                        status,
-                        live_broadcast,
-                    ) {
+                    if let Err(error) =
+                        handle_output(output, &mut active, &mut metadata, &mut blobs, &context)
+                    {
                         eprintln!("TRACE could not finalize disconnected capture: {error}");
                         update_status(status, "error", 0, "PERSISTENCE ERROR");
                     }
@@ -221,24 +222,27 @@ fn handle_output(
     active: &mut Option<ActivePersistence>,
     metadata: &mut MetadataStore,
     blobs: &mut FileBlobStore,
-    ac_race_config: Option<&std::path::Path>,
-    status: &SharedCaptureStatus,
-    live_broadcast: &SharedLiveBroadcast,
+    context: &CaptureOutputContext<'_>,
 ) -> Result<(), String> {
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
-            live_broadcast.capture_started(&source, &seed);
+            context.live_broadcast.capture_started(&source, &seed);
+            context.live_broadcast.start_automatically_if_configured(
+                context.data_directory,
+                &source,
+                &seed,
+            );
             let label = session_label(metadata, &source, &seed);
             *active = Some(ActivePersistence::Pending {
                 source,
                 seed: seed.clone(),
             });
-            update_status(status, "recording", 60, &label);
-            clear_live_inputs(status);
+            update_status(context.status, "recording", 60, &label);
+            clear_live_inputs(context.status);
         }
         RecorderOutput::FrameAccepted(frame) => {
-            live_broadcast.capture_frame(&frame);
-            update_live_inputs(status, &frame);
+            context.live_broadcast.capture_frame(&frame);
+            update_live_inputs(context.status, &frame);
             if matches!(active, Some(ActivePersistence::Pending { .. })) {
                 let Some(ActivePersistence::Pending { source, seed }) = active.take() else {
                     unreachable!("pending persistence was checked above")
@@ -246,8 +250,8 @@ fn handle_output(
                 *active = Some(begin_recording(
                     metadata,
                     blobs,
-                    ac_race_config,
-                    status,
+                    context.ac_race_config,
+                    context.status,
                     &source,
                     &seed,
                 )?);
@@ -265,7 +269,7 @@ fn handle_output(
                 .map_err(|error| format!("Arrow batch write failed: {error:?}"))?;
         }
         RecorderOutput::SessionCompleted(recording) => {
-            live_broadcast.capture_ended();
+            context.live_broadcast.capture_ended();
             let Some(persistence) = active.take() else {
                 return Err("completed recording has no persistence identity".into());
             };
@@ -274,8 +278,8 @@ fn handle_output(
                 mut writer,
             } = persistence
             else {
-                set_active_session(status, None);
-                update_status(status, "waiting", 0, "NO ACTIVE SESSION");
+                set_active_session(context.status, None);
+                update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
                 return Ok(());
             };
             let writer = writer
@@ -291,16 +295,16 @@ fn handle_output(
                 metadata
                     .delete_session(&descriptor.session_id)
                     .map_err(|error| format!("empty session cleanup failed: {error:?}"))?;
-                set_active_session(status, None);
-                update_status(status, "waiting", 0, "NO ACTIVE SESSION");
+                set_active_session(context.status, None);
+                update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
                 return Ok(());
             }
             descriptor.ended_at = now_rfc3339()?;
             let result =
                 persist_streamed_recording(blobs, metadata, &recording, &descriptor, *writer);
-            set_active_session(status, None);
+            set_active_session(context.status, None);
             result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
-            update_status(status, "waiting", 0, "NO ACTIVE SESSION");
+            update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
         }
     }
     Ok(())

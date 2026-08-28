@@ -184,6 +184,24 @@ which covers connections lost while delivery confirmation is ambiguous. Frames m
 dropped from the bounded live queue during a long outage; the local recording remains
 complete and independent.
 
+### Automatic streaming
+
+Settings → Connectivity can enable automatic Go Live publishing. The destination is
+the same global `LOCAL` or `ONLINE` selection used by the title bar and manual controls;
+local mode also uses the configured spectator port. Automation is disabled by default.
+
+Filters are simulator-specific. Assetto Corsa currently exposes Practice, Qualifying,
+Race, Hotlap, Time Attack, Drift, and Drag, and each can be enabled independently.
+Sessions with an unknown type are not published automatically. Future simulator adapters
+can add their own filter sets without treating Assetto Corsa's values as universal.
+
+When an eligible capture starts, TRACE launches the normal active publisher asynchronously.
+Manual broadcasts take priority and are never replaced. If AC changes sessions before the
+previous automatic publisher finishes its closing handshake, TRACE briefly waits for that
+publisher and then starts the next stream. Local listeners are restarted cleanly so a fixed
+port can be reused. Authentication, connection, and server failures update Go Live status
+and produce a desktop notification, but the capture worker continues writing local telemetry.
+
 For Assetto Corsa, the publisher reads the selected layout's `ai/fast_lane.ai` and
 sends its centreline and road edges once at session start. The pit-wall map therefore
 has complete static geometry before a lap is driven, and overlays live world position

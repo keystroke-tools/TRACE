@@ -41,7 +41,8 @@ mod setup_import;
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
 use live_broadcast::{
-    SharedLiveBroadcast, live_broadcast_status, start_active_live_broadcast,
+    LiveAutomationSettings, SharedLiveBroadcast, live_broadcast_status,
+    load_live_automation_settings, save_live_automation_settings, start_active_live_broadcast,
     start_recorded_live_broadcast, stop_live_broadcast,
 };
 use setup_analysis::compare_setups;
@@ -70,6 +71,7 @@ const LEGACY_SERVICE_ENDPOINT: &str = "https://simtrace.run";
 #[serde(rename_all = "camelCase")]
 struct LiveSettings {
     endpoint: String,
+    auto_stream: LiveAutomationSettings,
 }
 
 #[derive(Serialize)]
@@ -572,12 +574,17 @@ fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
         endpoint: configured_live_endpoint
             .filter(|endpoint| endpoint != LEGACY_SERVICE_ENDPOINT)
             .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned()),
+        auto_stream: load_live_automation_settings(&directory)?,
     })
 }
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn set_live_settings(app: tauri::AppHandle, endpoint: String) -> Result<LiveSettings, String> {
+fn set_live_settings(
+    app: tauri::AppHandle,
+    endpoint: String,
+    auto_stream: LiveAutomationSettings,
+) -> Result<LiveSettings, String> {
     let directory = app
         .path()
         .app_data_dir()
@@ -588,8 +595,10 @@ fn set_live_settings(app: tauri::AppHandle, endpoint: String) -> Result<LiveSett
     store
         .set_live_service_endpoint(endpoint)
         .map_err(|error| format!("failed to save Go Live endpoint: {error:?}"))?;
+    let auto_stream = save_live_automation_settings(&mut store, auto_stream)?;
     Ok(LiveSettings {
         endpoint: endpoint.to_owned(),
+        auto_stream,
     })
 }
 

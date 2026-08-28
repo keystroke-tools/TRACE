@@ -372,6 +372,44 @@ impl MetadataStore {
         self.set_service_endpoint("live_service_endpoint", "Go Live", endpoint)
     }
 
+    /// Returns the simulator-specific Go Live automation configuration as JSON.
+    ///
+    /// `None` means automation has never been configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn live_automation_config(&self) -> Result<Option<String>, MetadataError> {
+        self.service_endpoint("live_automation_config")
+    }
+
+    /// Persists a bounded JSON object describing Go Live automation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the value is not a bounded JSON object or `SQLite`
+    /// cannot persist it.
+    pub fn set_live_automation_config(&mut self, config: &str) -> Result<(), MetadataError> {
+        let config = config.trim();
+        let valid = !config.is_empty()
+            && config.len() <= 4_096
+            && serde_json::from_str::<serde_json::Value>(config)
+                .is_ok_and(|value| value.is_object());
+        if !valid {
+            return Err(MetadataError::InvalidRecord(
+                "Go Live automation must be a JSON object no larger than 4096 bytes".into(),
+            ));
+        }
+        self.connection
+            .execute(
+                "INSERT INTO app_settings (key, value) VALUES ('live_automation_config', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [config],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
     fn service_endpoint(&self, key: &str) -> Result<Option<String>, MetadataError> {
         self.connection
             .query_row(
@@ -1906,6 +1944,32 @@ mod tests {
         );
         assert!(store.set_live_service_endpoint("https://").is_err());
         assert!(store.set_live_service_endpoint("not a URL").is_err());
+    }
+
+    #[test]
+    fn live_automation_config_is_persisted_and_bounded() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        assert_eq!(store.live_automation_config().expect("automation"), None);
+
+        store
+            .set_live_automation_config(
+                r#"{"enabled":true,"mode":"local","simulatorSessionTypes":{"assetto-corsa":["race"]}}"#,
+            )
+            .expect("set automation");
+        assert_eq!(
+            store.live_automation_config().expect("automation"),
+            Some(
+                r#"{"enabled":true,"mode":"local","simulatorSessionTypes":{"assetto-corsa":["race"]}}"#
+                    .into()
+            )
+        );
+        assert!(store.set_live_automation_config("[]").is_err());
+        assert!(store.set_live_automation_config("not json").is_err());
+        assert!(
+            store
+                .set_live_automation_config(&"x".repeat(4_097))
+                .is_err()
+        );
     }
 
     #[test]

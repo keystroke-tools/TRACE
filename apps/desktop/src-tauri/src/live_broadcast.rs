@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs::File,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -34,6 +35,7 @@ use trace_storage::{
 use crate::ac_content::{AcContentNames, AcTrackGeometry};
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
+const BROADCAST_BUSY: &str = "another live broadcast is already active";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,20 +59,117 @@ pub struct LiveBroadcastStatus {
     pub elapsed_ns: u64,
     pub duration_ns: u64,
     pub error: Option<String>,
+    pub automatic: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveBroadcastOptions {
-    mode: LiveBroadcastMode,
-    local_port: Option<u16>,
+    pub(crate) mode: LiveBroadcastMode,
+    pub(crate) local_port: Option<u16>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-enum LiveBroadcastMode {
+pub(crate) enum LiveBroadcastMode {
     Hosted,
     Local,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub(crate) struct LiveAutomationSettings {
+    pub(crate) enabled: bool,
+    pub(crate) mode: LiveBroadcastMode,
+    pub(crate) local_port: Option<u16>,
+    pub(crate) simulator_session_types: HashMap<String, Vec<String>>,
+}
+
+impl Default for LiveAutomationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: LiveBroadcastMode::Hosted,
+            local_port: None,
+            simulator_session_types: HashMap::from([(
+                "assetto-corsa".into(),
+                [
+                    "practice",
+                    "qualifying",
+                    "race",
+                    "hotlap",
+                    "time attack",
+                    "drift",
+                    "drag",
+                ]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            )]),
+        }
+    }
+}
+
+impl LiveAutomationSettings {
+    pub(crate) fn validate(mut self) -> Result<Self, String> {
+        if self.local_port.is_some_and(|port| port < 1_024) {
+            return Err("local spectator port must be between 1024 and 65535".into());
+        }
+        if self.simulator_session_types.len() > 16 {
+            return Err("too many simulator filters were configured".into());
+        }
+        for (simulator, session_types) in &mut self.simulator_session_types {
+            if simulator.trim().is_empty() || simulator.len() > 80 || session_types.len() > 32 {
+                return Err("invalid simulator session filters".into());
+            }
+            for session_type in session_types.iter_mut() {
+                *session_type = normalise_session_type(session_type);
+                if session_type.is_empty()
+                    || session_type.len() > 80
+                    || session_type.chars().any(char::is_control)
+                {
+                    return Err("invalid simulator session type filter".into());
+                }
+            }
+            session_types.sort();
+            session_types.dedup();
+        }
+        if self.enabled
+            && !self
+                .simulator_session_types
+                .values()
+                .any(|session_types| !session_types.is_empty())
+        {
+            return Err(
+                "choose at least one session type before enabling automatic streaming".into(),
+            );
+        }
+        Ok(self)
+    }
+
+    fn allows(&self, source: &SourceDescriptor, seed: &SessionSeed) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        let Some(session_type) = seed.session_type.as_deref() else {
+            return false;
+        };
+        self.simulator_session_types
+            .get(source.simulator.as_str())
+            .is_some_and(|allowed| allowed.contains(&normalise_session_type(session_type)))
+    }
+
+    fn broadcast_options(&self) -> LiveBroadcastOptions {
+        LiveBroadcastOptions {
+            mode: self.mode,
+            local_port: self.local_port,
+        }
+    }
+}
+
+fn normalise_session_type(value: &str) -> String {
+    value.trim().to_ascii_lowercase().replace(['_', '-'], " ")
 }
 
 impl Default for LiveBroadcastStatus {
@@ -83,6 +182,7 @@ impl Default for LiveBroadcastStatus {
             elapsed_ns: 0,
             duration_ns: 0,
             error: None,
+            automatic: false,
         }
     }
 }
@@ -151,6 +251,34 @@ impl SharedLiveBroadcast {
         let _ = self.capture_events.send(CaptureLiveEvent::Ended);
     }
 
+    pub fn start_automatically_if_configured(
+        &self,
+        data_directory: &Path,
+        source: &SourceDescriptor,
+        seed: &SessionSeed,
+    ) {
+        let settings = match load_live_automation_settings(data_directory) {
+            Ok(settings) => settings,
+            Err(error) => {
+                self.automation_failed(error);
+                return;
+            }
+        };
+        if !settings.allows(source, seed) {
+            return;
+        }
+        let shared = self.clone();
+        let directory = data_directory.to_path_buf();
+        let options = settings.broadcast_options();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) =
+                start_automatic_live_broadcast(directory, shared.clone(), options).await
+            {
+                shared.automation_failed(format!("automatic Go Live failed: {error}"));
+            }
+        });
+    }
+
     fn subscribe_capture(&self) -> tokio::sync::broadcast::Receiver<CaptureLiveEvent> {
         self.capture_events.subscribe()
     }
@@ -169,7 +297,12 @@ impl SharedLiveBroadcast {
             .map_err(|_| "live broadcast status is unavailable".to_owned())
     }
 
-    fn begin(&self, source_session_id: String, duration_ns: u64) -> Result<u64, String> {
+    fn begin(
+        &self,
+        source_session_id: String,
+        duration_ns: u64,
+        automatic: bool,
+    ) -> Result<u64, String> {
         let mut status = self
             .status
             .lock()
@@ -181,13 +314,14 @@ impl SharedLiveBroadcast {
                 | LiveBroadcastPhase::Live
                 | LiveBroadcastPhase::Ending
         ) {
-            return Err("another live broadcast is already active".to_owned());
+            return Err(BROADCAST_BUSY.to_owned());
         }
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         *status = LiveBroadcastStatus {
             phase: LiveBroadcastPhase::Connecting,
             source_session_id: Some(source_session_id),
             duration_ns,
+            automatic,
             ..LiveBroadcastStatus::default()
         };
         Ok(generation)
@@ -223,6 +357,48 @@ impl SharedLiveBroadcast {
         status.phase = LiveBroadcastPhase::Ending;
         Ok(status.clone())
     }
+
+    fn automation_failed(&self, error: String) {
+        if let Ok(mut status) = self.status.lock()
+            && !matches!(
+                status.phase,
+                LiveBroadcastPhase::Live | LiveBroadcastPhase::Ending
+            )
+        {
+            status.phase = LiveBroadcastPhase::Error;
+            status.error = Some(error);
+            status.automatic = true;
+        }
+    }
+}
+
+pub(crate) fn load_live_automation_settings(
+    data_directory: &Path,
+) -> Result<LiveAutomationSettings, String> {
+    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let Some(config) = store
+        .live_automation_config()
+        .map_err(|error| format!("failed to read Go Live automation: {error:?}"))?
+    else {
+        return Ok(LiveAutomationSettings::default());
+    };
+    serde_json::from_str::<LiveAutomationSettings>(&config)
+        .map_err(|error| format!("saved Go Live automation is invalid: {error}"))?
+        .validate()
+}
+
+pub(crate) fn save_live_automation_settings(
+    store: &mut MetadataStore,
+    settings: LiveAutomationSettings,
+) -> Result<LiveAutomationSettings, String> {
+    let settings = settings.validate()?;
+    let config = serde_json::to_string(&settings)
+        .map_err(|error| format!("could not encode Go Live automation: {error}"))?;
+    store
+        .set_live_automation_config(&config)
+        .map_err(|error| format!("failed to save Go Live automation: {error:?}"))?;
+    Ok(settings)
 }
 
 struct RecordedBroadcast {
@@ -248,6 +424,34 @@ pub fn live_broadcast_status(
     state.snapshot()
 }
 
+async fn start_automatic_live_broadcast(
+    directory: PathBuf,
+    state: SharedLiveBroadcast,
+    options: LiveBroadcastOptions,
+) -> Result<LiveBroadcastStatus, String> {
+    for _ in 0..20 {
+        match start_active_live_broadcast_from_directory(
+            directory.clone(),
+            state.clone(),
+            options,
+            true,
+        )
+        .await
+        {
+            Ok(status) => return Ok(status),
+            Err(error) if error == BROADCAST_BUSY => {
+                let status = state.snapshot()?;
+                if !status.automatic {
+                    return Ok(status);
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err("the previous automatic broadcast did not finish in time".into())
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
 pub async fn start_recorded_live_broadcast(
@@ -265,7 +469,7 @@ pub async fn start_recorded_live_broadcast(
         tokio::task::spawn_blocking(move || load_recorded_broadcast(&directory, &session_id))
             .await
             .map_err(|error| format!("recorded broadcast loader stopped: {error}"))??;
-    let generation = state.begin(source_session_id, broadcast.duration_ns)?;
+    let generation = state.begin(source_session_id, broadcast.duration_ns, false)?;
     let endpoint =
         prepare_endpoint(&state, options, broadcast.endpoint.clone(), generation).await?;
     let broadcast = RecordedBroadcast {
@@ -289,6 +493,7 @@ async fn prepare_endpoint(
         stop_local_server(state).await;
         return Ok(hosted_endpoint);
     }
+    stop_local_server(state).await;
     let server = start_local_server(ServerConfig::new("http://127.0.0.1:0"), options.local_port)
         .await
         .map_err(|error| {
@@ -311,14 +516,24 @@ pub async fn start_active_live_broadcast(
     state: tauri::State<'_, SharedLiveBroadcast>,
     options: LiveBroadcastOptions,
 ) -> Result<LiveBroadcastStatus, String> {
-    let capture = state
-        .active_capture()?
-        .ok_or_else(|| "start a simulator session before going live".to_owned())?;
-    let events = state.subscribe_capture();
     let directory = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
+    start_active_live_broadcast_from_directory(directory, state.inner().clone(), options, false)
+        .await
+}
+
+async fn start_active_live_broadcast_from_directory(
+    directory: PathBuf,
+    state: SharedLiveBroadcast,
+    options: LiveBroadcastOptions,
+    automatic: bool,
+) -> Result<LiveBroadcastStatus, String> {
+    let capture = state
+        .active_capture()?
+        .ok_or_else(|| "start a simulator session before going live".to_owned())?;
+    let events = state.subscribe_capture();
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
     let driver_name = store
@@ -357,7 +572,7 @@ pub async fn start_active_live_broadcast(
         )
     });
     let (simulator_name, simulator_mark) = simulator_identity(simulator_key);
-    let generation = state.begin("active-capture".to_owned(), 0)?;
+    let generation = state.begin("active-capture".to_owned(), 0, automatic)?;
     let endpoint = prepare_endpoint(&state, options, configured_endpoint, generation).await?;
     let source = ActiveBroadcast {
         endpoint,
@@ -375,7 +590,7 @@ pub async fn start_active_live_broadcast(
         events,
         track_geometry,
     };
-    let shared = state.inner().clone();
+    let shared = state.clone();
     tauri::async_runtime::spawn(async move {
         run_active_broadcast(shared, generation, source).await;
     });
@@ -1163,6 +1378,15 @@ fn unix_timestamp_ms() -> i64 {
 mod tests {
     use super::*;
 
+    fn source() -> SourceDescriptor {
+        SourceDescriptor {
+            simulator: trace_domain::SimulatorId::parse("assetto-corsa").expect("simulator"),
+            adapter_version: "test".into(),
+            simulator_version: None,
+            kind: trace_domain::SourceKind::NativeCapture,
+        }
+    }
+
     #[test]
     fn status_defaults_to_idle() {
         let shared = SharedLiveBroadcast::default();
@@ -1176,16 +1400,70 @@ mod tests {
     fn only_one_broadcast_can_start_at_a_time() {
         let shared = SharedLiveBroadcast::default();
         shared
-            .begin("one".to_owned(), 100)
+            .begin("one".to_owned(), 100, false)
             .expect("first broadcast");
         assert_eq!(
-            shared.begin("two".to_owned(), 100),
-            Err("another live broadcast is already active".to_owned())
+            shared.begin("two".to_owned(), 100, false),
+            Err(BROADCAST_BUSY.to_owned())
         );
         assert_eq!(
             shared.stop().expect("stop").phase,
             LiveBroadcastPhase::Ending
         );
+    }
+
+    #[test]
+    fn automatic_streaming_respects_simulator_session_filters() {
+        let mut settings = LiveAutomationSettings {
+            enabled: true,
+            ..LiveAutomationSettings::default()
+        };
+        settings.simulator_session_types.insert(
+            "assetto-corsa".into(),
+            vec!["race".into(), "time attack".into()],
+        );
+        let race = SessionSeed {
+            session_type: Some("race".into()),
+            ..SessionSeed::default()
+        };
+        let time_attack = SessionSeed {
+            session_type: Some("time_attack".into()),
+            ..SessionSeed::default()
+        };
+        let practice = SessionSeed {
+            session_type: Some("practice".into()),
+            ..SessionSeed::default()
+        };
+        assert!(settings.allows(&source(), &race));
+        assert!(settings.allows(&source(), &time_attack));
+        assert!(!settings.allows(&source(), &practice));
+    }
+
+    #[test]
+    fn automation_failure_does_not_clear_the_active_capture() {
+        let shared = SharedLiveBroadcast::default();
+        shared.capture_started(&source(), &SessionSeed::default());
+        shared.automation_failed("publisher unavailable".into());
+        assert!(shared.active_capture().expect("capture state").is_some());
+        let status = shared.snapshot().expect("broadcast status");
+        assert_eq!(status.phase, LiveBroadcastPhase::Error);
+        assert_eq!(status.error.as_deref(), Some("publisher unavailable"));
+    }
+
+    #[test]
+    fn automatic_settings_reject_unsafe_ports_and_empty_filters() {
+        let invalid_port = LiveAutomationSettings {
+            local_port: Some(80),
+            ..LiveAutomationSettings::default()
+        };
+        assert!(invalid_port.validate().is_err());
+
+        let empty_filters = LiveAutomationSettings {
+            enabled: true,
+            simulator_session_types: HashMap::new(),
+            ..LiveAutomationSettings::default()
+        };
+        assert!(empty_filters.validate().is_err());
     }
 
     #[test]

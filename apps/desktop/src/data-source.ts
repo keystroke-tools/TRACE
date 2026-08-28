@@ -306,6 +306,14 @@ export interface DriverProfile {
 
 export interface LiveSettings {
 	endpoint: string;
+	autoStream: LiveAutomationSettings;
+}
+
+export interface LiveAutomationSettings {
+	enabled: boolean;
+	mode: LiveBroadcastOptions["mode"];
+	localPort?: number | null;
+	simulatorSessionTypes: Record<string, string[]>;
 }
 
 export type LiveBroadcastPhase = "idle" | "connecting" | "reconnecting" | "live" | "ending" | "ended" | "error";
@@ -318,6 +326,7 @@ export interface LiveBroadcastStatus {
 	elapsedNs: number;
 	durationNs: number;
 	error?: string | null;
+	automatic: boolean;
 }
 
 export interface LiveBroadcastOptions {
@@ -362,7 +371,7 @@ export interface TelemetryDataSource {
 	getDriverProfile(): Promise<DriverProfile>;
 	setDriverProfile(name: string | null): Promise<DriverProfile>;
 	getLiveSettings(): Promise<LiveSettings>;
-	setLiveSettings(endpoint: string): Promise<LiveSettings>;
+	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
 	startActiveLiveBroadcast(options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
 	startRecordedLiveBroadcast(sessionId: string, options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
@@ -395,11 +404,22 @@ const fixtureSessionDetails = new Map<
 	{ title: string | null; driver: string | null; ownership: RecordedSessionSummary["ownership"]; tags: string[] }
 >();
 let fixtureDriverProfile: DriverProfile = { name: null };
-let fixtureLiveSettings: LiveSettings = { endpoint: "https://live.simtrace.run" };
+let fixtureLiveSettings: LiveSettings = {
+	endpoint: "https://live.simtrace.run",
+	autoStream: {
+		enabled: false,
+		mode: "hosted",
+		localPort: null,
+		simulatorSessionTypes: {
+			"assetto-corsa": ["practice", "qualifying", "race", "hotlap", "time attack", "drift", "drag"],
+		},
+	},
+};
 let fixtureLiveBroadcastStatus: LiveBroadcastStatus = {
 	phase: "idle",
 	elapsedNs: 0,
 	durationNs: 0,
+	automatic: false,
 };
 let fixtureSavedComparisons: SavedComparison[] = [];
 
@@ -882,8 +902,8 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async getLiveSettings() {
 		return fixtureLiveSettings;
 	},
-	async setLiveSettings(endpoint) {
-		fixtureLiveSettings = { endpoint };
+	async setLiveSettings(settings) {
+		fixtureLiveSettings = settings;
 		return fixtureLiveSettings;
 	},
 	async getLiveBroadcastStatus() {
@@ -897,6 +917,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			spectatorUrl: `${options.mode === "local" ? "http://127.0.0.1:8080" : "https://live.simtrace.run"}/live/preview-active-session`,
 			elapsedNs: 0,
 			durationNs: 0,
+			automatic: false,
 		};
 		return fixtureLiveBroadcastStatus;
 	},
@@ -909,11 +930,12 @@ export const fixtureDataSource: TelemetryDataSource = {
 			spectatorUrl: `${local ? "http://127.0.0.1:8080" : "https://live.simtrace.run"}/live/preview-live-session`,
 			elapsedNs: 0,
 			durationNs: 110_906_000_000,
+			automatic: false,
 		};
 		return fixtureLiveBroadcastStatus;
 	},
 	async stopLiveBroadcast() {
-		fixtureLiveBroadcastStatus = { phase: "idle", elapsedNs: 0, durationNs: 0 };
+		fixtureLiveBroadcastStatus = { phase: "idle", elapsedNs: 0, durationNs: 0, automatic: false };
 		return fixtureLiveBroadcastStatus;
 	},
 	async getSavedComparisons() {
@@ -1018,8 +1040,8 @@ export const tauriDataSource: TelemetryDataSource = {
 	getLiveSettings() {
 		return invoke<LiveSettings>("live_settings");
 	},
-	setLiveSettings(endpoint) {
-		return invoke<LiveSettings>("set_live_settings", { endpoint });
+	setLiveSettings(settings) {
+		return invoke<LiveSettings>("set_live_settings", { endpoint: settings.endpoint, autoStream: settings.autoStream });
 	},
 	getLiveBroadcastStatus() {
 		return invoke<LiveBroadcastStatus>("live_broadcast_status");

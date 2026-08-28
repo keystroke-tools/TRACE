@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { telemetryDataSource, type LiveBroadcastOptions, type LiveBroadcastStatus, type RecordedSessionSummary, type TelemetryStatus } from "./data-source";
+import {
+	telemetryDataSource,
+	type LiveBroadcastOptions,
+	type LiveBroadcastStatus,
+	type LiveSettings,
+	type RecordedSessionSummary,
+	type TelemetryStatus,
+} from "./data-source";
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
 import { ComparePage } from "./features/compare/ComparePage";
@@ -18,22 +25,36 @@ export function App() {
 	const showToast = useToast();
 	const [status, setStatus] = useState<TelemetryStatus | null>(null);
 	const [liveBroadcast, setLiveBroadcast] = useState<LiveBroadcastStatus | null>(null);
-	const [liveMode, setLiveMode] = useState<LiveBroadcastOptions["mode"]>(() =>
-		window.localStorage.getItem("trace.liveBroadcastMode") === "local" ? "local" : "hosted",
-	);
+	const [liveSettings, setLiveSettings] = useState<LiveSettings | null>(null);
+	const liveMode = liveSettings?.autoStream.mode ?? "hosted";
 	const [sessions, setSessions] = useState<RecordedSessionSummary[]>([]);
 	const [section, setSection] = useState<Section>("LIVE");
 	const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 	const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
+	const announcedAutomaticSession = useRef<string | null>(null);
+	const announcedAutomaticError = useRef<string | null>(null);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
-	const selectLiveMode = (mode: LiveBroadcastOptions["mode"]) => {
-		setLiveMode(mode);
-		window.localStorage.setItem("trace.liveBroadcastMode", mode);
+	const selectLiveMode = async (mode: LiveBroadcastOptions["mode"]) => {
+		if (!liveSettings || liveSettings.autoStream.mode === mode) return;
+		try {
+			setLiveSettings(
+				await telemetryDataSource.setLiveSettings({
+					...liveSettings,
+					autoStream: { ...liveSettings.autoStream, mode },
+				}),
+			);
+		} catch (error) {
+			showToast({
+				kind: "error",
+				title: "Could not change Go Live destination",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		}
 	};
 	const liveOptions = (): LiveBroadcastOptions => {
 		if (liveMode === "hosted") return { mode: "hosted" };
-		const value = Number.parseInt(window.localStorage.getItem("trace.localSpectatorPort") ?? "", 10);
-		return { mode: "local", localPort: Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined };
+		return { mode: "local", localPort: liveSettings?.autoStream.localPort ?? undefined };
 	};
 
 	async function selectSimulator(simulatorId: string) {
@@ -102,13 +123,17 @@ export function App() {
 	}
 
 	useEffect(() => {
-		void Promise.all([telemetryDataSource.getStatus(), telemetryDataSource.getSessions(), telemetryDataSource.getLiveBroadcastStatus()]).then(
-			([nextStatus, nextSessions, nextLiveBroadcast]) => {
-				setStatus(nextStatus);
-				setSessions(nextSessions);
-				setLiveBroadcast(nextLiveBroadcast);
-			},
-		);
+		void Promise.all([
+			telemetryDataSource.getStatus(),
+			telemetryDataSource.getSessions(),
+			telemetryDataSource.getLiveBroadcastStatus(),
+			telemetryDataSource.getLiveSettings(),
+		]).then(([nextStatus, nextSessions, nextLiveBroadcast, nextLiveSettings]) => {
+			setStatus(nextStatus);
+			setSessions(nextSessions);
+			setLiveBroadcast(nextLiveBroadcast);
+			setLiveSettings(nextLiveSettings);
+		});
 	}, []);
 
 	useEffect(() => {
@@ -120,13 +145,36 @@ export function App() {
 		return () => window.clearInterval(timer);
 	}, [section]);
 
+	useEffect(() => {
+		const update = (event: Event) => setLiveSettings((event as CustomEvent<LiveSettings>).detail);
+		window.addEventListener("trace:live-settings", update);
+		return () => window.removeEventListener("trace:live-settings", update);
+	}, []);
+
+	useEffect(() => {
+		if (!liveBroadcast?.automatic) return;
+		if (liveBroadcast.phase === "live" && liveBroadcast.liveSessionId && announcedAutomaticSession.current !== liveBroadcast.liveSessionId) {
+			announcedAutomaticSession.current = liveBroadcast.liveSessionId;
+			showToast({
+				kind: "success",
+				title: "Session went live automatically",
+				message: liveBroadcast.spectatorUrl ?? "TRACE is publishing the current simulator session.",
+				timeoutMs: 6_000,
+			});
+		}
+		if (liveBroadcast.phase === "error" && liveBroadcast.error && announcedAutomaticError.current !== liveBroadcast.error) {
+			announcedAutomaticError.current = liveBroadcast.error;
+			showToast({ kind: "error", title: "Automatic Go Live failed", message: liveBroadcast.error, timeoutMs: 9_000 });
+		}
+	}, [liveBroadcast, showToast]);
+
 	return (
 		<main className="grid h-screen grid-cols-[var(--trace-sidebar)_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text [--trace-sidebar:200px] max-[900px]:[--trace-sidebar:156px]">
 			<TitleBar
 				status={status}
 				liveBroadcast={liveBroadcast}
 				liveMode={liveMode}
-				onLiveModeChange={selectLiveMode}
+				onLiveModeChange={(mode) => void selectLiveMode(mode)}
 				onStopLive={() => void stopLiveBroadcast()}
 				backLabel={openLapIndex == null ? "SESSIONS" : "SESSION"}
 				onBack={
