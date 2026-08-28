@@ -290,7 +290,7 @@ impl SharedLiveBroadcast {
             .map_err(|_| "active capture state is unavailable".to_owned())
     }
 
-    fn snapshot(&self) -> Result<LiveBroadcastStatus, String> {
+    pub(crate) fn snapshot(&self) -> Result<LiveBroadcastStatus, String> {
         self.status
             .lock()
             .map(|status| status.clone())

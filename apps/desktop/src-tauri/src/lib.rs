@@ -33,6 +33,7 @@ use trace_storage::{
 
 mod ac_content;
 mod capture;
+mod discord_activity;
 mod live_broadcast;
 mod obs_overlay;
 mod setup_analysis;
@@ -40,6 +41,7 @@ mod setup_import;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
+use discord_activity::SharedDiscordActivity;
 use live_broadcast::{
     LiveAutomationSettings, SharedLiveBroadcast, live_broadcast_status,
     load_live_automation_settings, save_live_automation_settings, start_active_live_broadcast,
@@ -72,6 +74,7 @@ const LEGACY_SERVICE_ENDPOINT: &str = "https://simtrace.run";
 struct LiveSettings {
     endpoint: String,
     auto_stream: LiveAutomationSettings,
+    discord_activity_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -570,11 +573,15 @@ fn live_settings(app: tauri::AppHandle) -> Result<LiveSettings, String> {
     let configured_live_endpoint = store
         .live_service_endpoint()
         .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?;
+    let discord_activity_enabled = store
+        .discord_activity_enabled()
+        .map_err(|error| format!("failed to read Discord activity setting: {error:?}"))?;
     Ok(LiveSettings {
         endpoint: configured_live_endpoint
             .filter(|endpoint| endpoint != LEGACY_SERVICE_ENDPOINT)
             .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned()),
         auto_stream: load_live_automation_settings(&directory)?,
+        discord_activity_enabled,
     })
 }
 
@@ -584,6 +591,7 @@ fn set_live_settings(
     app: tauri::AppHandle,
     endpoint: String,
     auto_stream: LiveAutomationSettings,
+    discord_activity_enabled: bool,
 ) -> Result<LiveSettings, String> {
     let directory = app
         .path()
@@ -596,9 +604,15 @@ fn set_live_settings(
         .set_live_service_endpoint(endpoint)
         .map_err(|error| format!("failed to save Go Live endpoint: {error:?}"))?;
     let auto_stream = save_live_automation_settings(&mut store, auto_stream)?;
+    store
+        .set_discord_activity_enabled(discord_activity_enabled)
+        .map_err(|error| format!("failed to save Discord activity setting: {error:?}"))?;
+    app.state::<SharedDiscordActivity>()
+        .set_enabled(discord_activity_enabled);
     Ok(LiveSettings {
         endpoint: endpoint.to_owned(),
         auto_stream,
+        discord_activity_enabled,
     })
 }
 
@@ -2294,6 +2308,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(capture_status)
         .manage(SharedLiveBroadcast::default())
+        .manage(SharedDiscordActivity::default())
         .setup(move |app| {
             let directory = app.path().app_data_dir()?;
             let ac_race_config = app
@@ -2303,6 +2318,12 @@ pub fn run() {
                 .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
             let status = app.state::<SharedCaptureStatus>().inner().clone();
             let live_broadcast = app.state::<SharedLiveBroadcast>().inner().clone();
+            let discord_activity = app.state::<SharedDiscordActivity>().inner().clone();
+            let discord_enabled = MetadataStore::open(&directory.join("trace.sqlite"))
+                .and_then(|store| store.discord_activity_enabled())
+                .unwrap_or(false);
+            discord_activity.set_enabled(discord_enabled);
+            discord_activity::spawn(discord_activity, status.clone(), live_broadcast.clone());
             obs_overlay::spawn(status.clone());
             capture::spawn(
                 directory,

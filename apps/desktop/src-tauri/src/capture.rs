@@ -34,7 +34,17 @@ pub struct CaptureStatus {
     pub sample_rate_hz: u16,
     pub session: String,
     pub active_session_id: Option<String>,
+    pub presence_session: Option<PresenceSession>,
     pub live_inputs: LiveInputs,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresenceSession {
+    pub simulator: String,
+    pub session_type: String,
+    pub track: String,
+    pub car: String,
+    pub started_at_unix: i64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -65,6 +75,7 @@ impl CaptureStatus {
             sample_rate_hz: 0,
             session: "NO ACTIVE SESSION".into(),
             active_session_id: None,
+            presence_session: None,
             live_inputs: LiveInputs::default(),
         }
     }
@@ -233,6 +244,7 @@ fn handle_output(
                 &seed,
             );
             let label = session_label(metadata, &source, &seed);
+            set_presence_session(context.status, metadata, &source, &seed);
             *active = Some(ActivePersistence::Pending {
                 source,
                 seed: seed.clone(),
@@ -270,6 +282,7 @@ fn handle_output(
         }
         RecorderOutput::SessionCompleted(recording) => {
             context.live_broadcast.capture_ended();
+            clear_presence_session(context.status);
             let Some(persistence) = active.take() else {
                 return Err("completed recording has no persistence identity".into());
             };
@@ -537,6 +550,56 @@ fn update_status(
 fn set_active_session(status: &SharedCaptureStatus, session_id: Option<String>) {
     if let Ok(mut value) = status.lock() {
         value.active_session_id = session_id;
+    }
+}
+
+fn set_presence_session(
+    status: &SharedCaptureStatus,
+    metadata: &MetadataStore,
+    source: &SourceDescriptor,
+    seed: &SessionSeed,
+) {
+    let configured_path = metadata
+        .simulator_install_path(source.simulator.as_str())
+        .ok()
+        .flatten()
+        .map(PathBuf::from);
+    let names = (source.simulator.as_str() == "assetto-corsa")
+        .then(|| AcContentNames::discover(configured_path.as_deref()));
+    let track = seed.track_id.as_deref().map_or_else(
+        || "Unknown track".to_owned(),
+        |id| {
+            names.as_ref().map_or_else(
+                || id.to_owned(),
+                |names| names.track(id, seed.layout_id.as_deref()),
+            )
+        },
+    );
+    let car = seed.car_id.as_deref().map_or_else(
+        || "Unknown car".to_owned(),
+        |id| {
+            names
+                .as_ref()
+                .map_or_else(|| id.to_owned(), |names| names.car(id))
+        },
+    );
+    if let Ok(mut value) = status.lock() {
+        value.presence_session = Some(PresenceSession {
+            simulator: source.simulator.as_str().to_owned(),
+            session_type: seed
+                .session_type
+                .clone()
+                .unwrap_or_else(|| "Session".to_owned()),
+            track,
+            car,
+            started_at_unix: OffsetDateTime::now_utc().unix_timestamp(),
+        });
+    }
+}
+
+fn clear_presence_session(status: &SharedCaptureStatus) {
+    if let Ok(mut value) = status.lock() {
+        value.presence_session = None;
     }
 }
 

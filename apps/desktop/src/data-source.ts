@@ -307,6 +307,7 @@ export interface DriverProfile {
 export interface LiveSettings {
 	endpoint: string;
 	autoStream: LiveAutomationSettings;
+	discordActivityEnabled: boolean;
 }
 
 export interface LiveAutomationSettings {
@@ -406,6 +407,7 @@ const fixtureSessionDetails = new Map<
 let fixtureDriverProfile: DriverProfile = { name: null };
 let fixtureLiveSettings: LiveSettings = {
 	endpoint: "https://live.simtrace.run",
+	discordActivityEnabled: false,
 	autoStream: {
 		enabled: false,
 		mode: "hosted",
@@ -1041,7 +1043,11 @@ export const tauriDataSource: TelemetryDataSource = {
 		return invoke<LiveSettings>("live_settings");
 	},
 	setLiveSettings(settings) {
-		return invoke<LiveSettings>("set_live_settings", { endpoint: settings.endpoint, autoStream: settings.autoStream });
+		return invoke<LiveSettings>("set_live_settings", {
+			endpoint: settings.endpoint,
+			autoStream: settings.autoStream,
+			discordActivityEnabled: settings.discordActivityEnabled,
+		});
 	},
 	getLiveBroadcastStatus() {
 		return invoke<LiveBroadcastStatus>("live_broadcast_status");

@@ -410,6 +410,33 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns whether Discord Rich Presence is enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the preference.
+    pub fn discord_activity_enabled(&self) -> Result<bool, MetadataError> {
+        Ok(self
+            .service_endpoint("discord_activity_enabled")?
+            .is_some_and(|value| value == "true"))
+    }
+
+    /// Persists the Discord Rich Presence preference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot persist the preference.
+    pub fn set_discord_activity_enabled(&mut self, enabled: bool) -> Result<(), MetadataError> {
+        self.connection
+            .execute(
+                "INSERT INTO app_settings (key, value) VALUES ('discord_activity_enabled', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [if enabled { "true" } else { "false" }],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
     fn service_endpoint(&self, key: &str) -> Result<Option<String>, MetadataError> {
         self.connection
             .query_row(
@@ -1970,6 +1997,20 @@ mod tests {
                 .set_live_automation_config(&"x".repeat(4_097))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn discord_activity_preference_is_persisted() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        assert!(!store.discord_activity_enabled().expect("default"));
+        store
+            .set_discord_activity_enabled(true)
+            .expect("enable Discord activity");
+        assert!(store.discord_activity_enabled().expect("enabled"));
+        store
+            .set_discord_activity_enabled(false)
+            .expect("disable Discord activity");
+        assert!(!store.discord_activity_enabled().expect("disabled"));
     }
 
     #[test]

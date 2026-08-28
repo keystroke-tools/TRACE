@@ -51,6 +51,7 @@ export function SettingsPage() {
 	const [savingLiveSettings, setSavingLiveSettings] = useState(false);
 	const [localSpectatorPort, setLocalSpectatorPort] = useState("0");
 	const [autoStreamEnabled, setAutoStreamEnabled] = useState(false);
+	const [discordActivityEnabled, setDiscordActivityEnabled] = useState(false);
 	const [liveMode, setLiveMode] = useState<LiveBroadcastOptions["mode"]>("hosted");
 	const [acSessionTypes, setAcSessionTypes] = useState<string[]>(AC_SESSION_TYPES.map((value) => value.id));
 
@@ -67,6 +68,7 @@ export function SettingsPage() {
 				setSavedLiveSettings(liveSettings);
 				setLocalSpectatorPort(String(liveSettings.autoStream.localPort ?? 0));
 				setAutoStreamEnabled(liveSettings.autoStream.enabled);
+				setDiscordActivityEnabled(liveSettings.discordActivityEnabled);
 				setLiveMode(liveSettings.autoStream.mode);
 				setAcSessionTypes(liveSettings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
 				setLoading(false);
@@ -149,6 +151,7 @@ export function SettingsPage() {
 			if (autoStreamEnabled && acSessionTypes.length === 0) throw new Error("Choose at least one Assetto Corsa session type for automatic streaming.");
 			const settings = await telemetryDataSource.setLiveSettings({
 				endpoint: normalizedLiveEndpoint,
+				discordActivityEnabled,
 				autoStream: {
 					enabled: autoStreamEnabled,
 					mode: liveMode,
@@ -160,12 +163,13 @@ export function SettingsPage() {
 			setSavedLiveSettings(settings);
 			setLocalSpectatorPort(String(settings.autoStream.localPort ?? 0));
 			setAutoStreamEnabled(settings.autoStream.enabled);
+			setDiscordActivityEnabled(settings.discordActivityEnabled);
 			setLiveMode(settings.autoStream.mode);
 			setAcSessionTypes(settings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
 			window.dispatchEvent(new CustomEvent<LiveSettings>("trace:live-settings", { detail: settings }));
 			showToast({
 				kind: "success",
-				title: "Go Live settings saved",
+				title: "Connectivity settings saved",
 				message: settings.autoStream.enabled
 					? "Eligible simulator sessions will now start streaming automatically."
 					: "Manual Go Live settings were updated.",
@@ -174,7 +178,7 @@ export function SettingsPage() {
 		} catch (error) {
 			showToast({
 				kind: "error",
-				title: "Could not save Go Live services",
+				title: "Could not save connectivity settings",
 				message: error instanceof Error ? error.message : String(error),
 				timeoutMs: 8_000,
 			});
@@ -225,6 +229,7 @@ export function SettingsPage() {
 		savedLiveSettings == null ||
 		liveEndpoint.trim() !== savedLiveSettings.endpoint ||
 		autoStreamEnabled !== savedLiveSettings.autoStream.enabled ||
+		discordActivityEnabled !== savedLiveSettings.discordActivityEnabled ||
 		liveMode !== savedLiveSettings.autoStream.mode ||
 		normalizedLocalPort !== (savedLiveSettings.autoStream.localPort ?? null) ||
 		[...acSessionTypes].sort().join("|") !== [...savedAcSessionTypes].sort().join("|");
@@ -445,6 +450,31 @@ export function SettingsPage() {
 								className="mt-2 h-10 w-40 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] font-normal tracking-normal text-trace-text outline-none focus:border-trace-accent"
 							/>
 						</label>
+					</section>
+					<section className="border-t border-trace-divider p-5" aria-labelledby="discord-activity-heading">
+						<div className="flex items-start justify-between gap-6">
+							<div>
+								<h3 id="discord-activity-heading" className="text-[13px] font-black tracking-[.05em] text-trace-text">
+									DISCORD ACTIVITY
+								</h3>
+								<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
+									Show your simulator, session type, car, and track in Discord while TRACE records. Online broadcasts include a public Watch
+									Live button; local spectator addresses are never shared.
+								</p>
+							</div>
+							<button
+								type="button"
+								role="switch"
+								aria-checked={discordActivityEnabled}
+								onClick={() => setDiscordActivityEnabled((value) => !value)}
+								className={`relative mt-1 h-7 w-12 shrink-0 border transition-colors ${discordActivityEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
+							>
+								<span
+									className={`absolute top-1 size-[18px] bg-trace-black transition-transform ${discordActivityEnabled ? "translate-x-6" : "translate-x-1"}`}
+								/>
+								<span className="sr-only">Share active simulator sessions through Discord Rich Presence</span>
+							</button>
+						</div>
 					</section>
 					<div className="flex min-h-14 items-center justify-between gap-5 border-t border-trace-divider px-5 py-2">
 						<span className="text-[11px] leading-5 text-trace-dim">
