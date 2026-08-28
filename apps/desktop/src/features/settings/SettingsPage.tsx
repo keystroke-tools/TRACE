@@ -385,10 +385,10 @@ export function SettingsPage() {
 								role="switch"
 								aria-checked={autoStreamEnabled}
 								onClick={() => setAutoStreamEnabled((value) => !value)}
-								className={`relative mt-1 h-7 w-12 shrink-0 border transition-colors ${autoStreamEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
+								className={`relative mt-1 h-7 w-12 shrink-0 overflow-hidden border transition-colors ${autoStreamEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
 							>
 								<span
-									className={`absolute top-1 size-[18px] bg-trace-black transition-transform ${autoStreamEnabled ? "translate-x-6" : "translate-x-1"}`}
+									className={`absolute left-1 top-1 size-[18px] bg-trace-black transition-transform ${autoStreamEnabled ? "translate-x-5" : "translate-x-0"}`}
 								/>
 								<span className="sr-only">Automatically stream eligible sessions</span>
 							</button>
@@ -467,10 +467,10 @@ export function SettingsPage() {
 								role="switch"
 								aria-checked={discordActivityEnabled}
 								onClick={() => setDiscordActivityEnabled((value) => !value)}
-								className={`relative mt-1 h-7 w-12 shrink-0 border transition-colors ${discordActivityEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
+								className={`relative mt-1 h-7 w-12 shrink-0 overflow-hidden border transition-colors ${discordActivityEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
 							>
 								<span
-									className={`absolute top-1 size-[18px] bg-trace-black transition-transform ${discordActivityEnabled ? "translate-x-6" : "translate-x-1"}`}
+									className={`absolute left-1 top-1 size-[18px] bg-trace-black transition-transform ${discordActivityEnabled ? "translate-x-5" : "translate-x-0"}`}
 								/>
 								<span className="sr-only">Share active simulator sessions through Discord Rich Presence</span>
 							</button>
