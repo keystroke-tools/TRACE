@@ -48,65 +48,6 @@ export function FuelUsage({ state, metrics }: { state: "loading" | "ready" | "er
 	);
 }
 
-export function TyreWearGrid({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
-	if (state === "loading") return <span className="text-[12px] text-trace-dim">LOADING…</span>;
-	const tyres = [
-		{ short: "FL", name: "Front left", index: 0 },
-		{ short: "FR", name: "Front right", index: 1 },
-		{ short: "RL", name: "Rear left", index: 2 },
-		{ short: "RR", name: "Rear right", index: 3 },
-	];
-	return (
-		<div className="grid w-fit grid-cols-2 gap-1" aria-label="Lowest tyre condition observed during this lap">
-			{tyres.map((tyre) => {
-				const start = metrics?.tyreWearStart[tyre.index];
-				const end = metrics?.tyreWearEnd[tyre.index];
-				const minimum = metrics?.tyreWearMinimum[tyre.index];
-				const observed = minimum != null && Number.isFinite(minimum) ? minimum : end;
-				const remaining = observed != null && Number.isFinite(observed) ? Math.min(100, Math.max(0, observed)) : null;
-				const colour = remaining == null ? null : tyreConditionColour(remaining);
-				const value = remaining == null ? "—" : `${wholeTyreCondition(remaining)}%`;
-				const used = start != null && remaining != null && Number.isFinite(start) ? Math.max(0, start - remaining) : null;
-				const detail =
-					remaining == null
-						? `${tyre.name}: wear telemetry unavailable`
-						: `${tyre.name}: ${value} condition remaining · ${remaining.toFixed(2)}% lowest observed${start != null ? ` · ${start.toFixed(2)}% at lap start${used != null ? ` · ${used.toFixed(2)}% used this lap` : ""}` : ""}`;
-				return (
-					<Tooltip key={tyre.short} content={detail}>
-						<span
-							className="flex size-9 items-center justify-center border font-mono text-[12px] font-bold tabular-nums"
-							style={{
-								borderRadius: "9999px",
-								borderColor: colour?.border ?? "var(--color-trace-divider)",
-								backgroundColor: colour?.background ?? "var(--color-trace-deep)",
-								color: colour?.text ?? "var(--color-trace-dim)",
-							}}
-							aria-label={`${tyre.name}: ${remaining == null ? "unavailable" : `${value} condition remaining`}`}
-						>
-							{value}
-						</span>
-					</Tooltip>
-				);
-			})}
-		</div>
-	);
-}
-
-export function wholeTyreCondition(remainingPercent: number) {
-	const condition = Math.min(100, Math.max(0, remainingPercent));
-	return condition >= 99.999 ? 100 : Math.floor(condition);
-}
-
-export function tyreConditionColour(remainingPercent: number) {
-	const condition = Math.min(1, Math.max(0, remainingPercent / 100));
-	const hue = 110 * condition;
-	return {
-		border: `hsl(${hue} 82% 48%)`,
-		background: `hsl(${hue} 82% 48% / 0.16)`,
-		text: `hsl(${hue} 88% 68%)`,
-	};
-}
-
 export function lapIsInvalid(lap: RecordedSessionSummary["laps"][number]) {
 	return lap.validity === "invalid" || (lap.maxTyresOut != null && lap.maxTyresOut >= 3);
 }

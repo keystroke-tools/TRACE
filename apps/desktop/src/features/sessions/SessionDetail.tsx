@@ -20,7 +20,6 @@ import {
 	SectorBars,
 	SectorLegend,
 	SessionDetailsEditor,
-	TyreWearGrid,
 	formatCompactSessionDate,
 	formatFuelUsed,
 	formatLapDurationNs,
@@ -302,7 +301,7 @@ export function SessionDetail({
 
 			{metricsState === "error" && (
 				<div className="mt-4 border border-trace-warning/40 bg-trace-warning/10 px-4 py-3 text-[12px] text-trace-warning">
-					Lap times are available, but the additional fuel, speed, and tyre summaries could not be loaded.
+					Lap times are available, but the additional fuel and speed summaries could not be loaded.
 				</div>
 			)}
 
@@ -311,13 +310,13 @@ export function SessionDetail({
 					<h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
 					<span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
 				</div>
-				<div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_136px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
+				<div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
 					<span>LAP</span>
 					<span>TIME</span>
 					<span>SECTORS</span>
 					<span className="border-l border-trace-divider pl-6">FUEL</span>
 					<span className="border-l border-trace-divider pl-6">TOP SPEED</span>
-					<span className="border-l border-trace-divider pl-6">TYRES</span>
+					<span aria-hidden="true" />
 				</div>
 				{session.laps.length === 0 ? (
 					<div className="p-8 text-center text-[12px] text-trace-dim">No complete laps are available.</div>
@@ -328,7 +327,7 @@ export function SessionDetail({
 						const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
 						return (
 							<div
-								className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_136px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
+								className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
 								key={lap.index}
 								role="button"
 								tabIndex={0}
@@ -361,12 +360,9 @@ export function SessionDetail({
 										value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null}
 									/>
 								</div>
-								<div className="flex min-h-16 items-center justify-between gap-3 border-l border-trace-divider pl-6">
-									<TyreWearGrid state={metricsState} metrics={lapMetrics} />
-									<svg className="size-4 shrink-0 fill-none stroke-current text-trace-dim" viewBox="0 0 16 16" aria-hidden="true">
-										<path d="m6 3 5 5-5 5" />
-									</svg>
-								</div>
+								<svg className="size-4 shrink-0 fill-none stroke-current text-trace-dim" viewBox="0 0 16 16" aria-hidden="true">
+									<path d="m6 3 5 5-5 5" />
+								</svg>
 							</div>
 						);
 					})

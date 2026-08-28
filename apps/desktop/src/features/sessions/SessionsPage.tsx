@@ -14,7 +14,6 @@ import {
 	SectorBars,
 	SectorLegend,
 	SessionDetailsEditor,
-	TyreWearGrid,
 	formatCompactSessionDate,
 	formatFuelUsed,
 	formatLapDurationNs,
