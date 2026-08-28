@@ -336,18 +336,7 @@ fn recent_sessions(
             }
             let replay = session.source_kind == "simulator_replay";
             let deletable = active_session_id.as_deref() != Some(session.id.as_str());
-            let track = session
-                .source_track_id
-                .as_deref()
-                .map(|source_id| content_names.track(source_id, session.layout_id.as_deref()))
-                .or(session.track)
-                .unwrap_or_else(|| "TRACK NOT REPORTED".into());
-            let car = session
-                .source_car_id
-                .as_deref()
-                .map(|source_id| content_names.car(source_id))
-                .or(session.car)
-                .unwrap_or_else(|| "CAR NOT REPORTED".into());
+            let (track, car) = resolved_session_content_names(&session, Some(&content_names));
             RecordedSessionSummary {
                 id: session.id,
                 simulator_name: simulator_name(&session.simulator_key),
@@ -613,9 +602,10 @@ fn saved_comparisons(app: tauri::AppHandle) -> Result<Vec<SavedComparison>, Stri
         .map_err(|error| error.to_string())?;
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    store
+    let comparisons = store
         .saved_comparisons()
-        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))?;
+    resolve_saved_comparison_names(&store, comparisons)
 }
 
 #[tauri::command]
@@ -651,9 +641,10 @@ fn save_comparison(
             &created_at,
         )
         .map_err(|error| format!("failed to save comparison: {error:?}"))?;
-    store
+    let comparisons = store
         .saved_comparisons()
-        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))?;
+    resolve_saved_comparison_names(&store, comparisons)
 }
 
 #[tauri::command]
@@ -671,9 +662,10 @@ fn delete_saved_comparison(
     store
         .delete_saved_comparison(&comparison_id)
         .map_err(|error| format!("failed to delete saved comparison: {error:?}"))?;
-    store
+    let comparisons = store
         .saved_comparisons()
-        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))?;
+    resolve_saved_comparison_names(&store, comparisons)
 }
 
 #[tauri::command]
@@ -692,9 +684,24 @@ fn rename_saved_comparison(
     store
         .rename_saved_comparison(&comparison_id, &name)
         .map_err(|error| format!("failed to rename saved comparison: {error:?}"))?;
-    store
+    let comparisons = store
         .saved_comparisons()
-        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))
+        .map_err(|error| format!("failed to read saved comparisons: {error:?}"))?;
+    resolve_saved_comparison_names(&store, comparisons)
+}
+
+fn resolve_saved_comparison_names(
+    store: &MetadataStore,
+    mut comparisons: Vec<SavedComparison>,
+) -> Result<Vec<SavedComparison>, String> {
+    let names = ac_content_names(store)?;
+    for comparison in &mut comparisons {
+        if comparison.simulator_key == "assetto-corsa" {
+            comparison.track = names.track_label(&comparison.track, None, Some(&comparison.track));
+            comparison.car = names.car_label(&comparison.car, Some(&comparison.car));
+        }
+    }
+    Ok(comparisons)
 }
 
 #[tauri::command]
@@ -937,6 +944,8 @@ fn compare_session_laps(
 
     let reference_lap_time = format_optional_lap_time(reference.duration_ns);
     let comparison_lap_time = format_optional_lap_time(comparison.duration_ns);
+    let (reference_track, reference_car) = session_content_names(&store, &reference_session)?;
+    let (comparison_track, comparison_car) = session_content_names(&store, &comparison_session)?;
     let track_map = track_map_for_session(
         &store,
         &reference_session,
@@ -945,20 +954,12 @@ fn compare_session_laps(
     Ok(LapComparison {
         reference_session_id,
         reference_session_title: reference_session.user_title,
-        reference_track: reference_session
-            .track
-            .unwrap_or_else(|| "TRACK NOT REPORTED".into()),
-        reference_car: reference_session
-            .car
-            .unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        reference_track,
+        reference_car,
         comparison_session_id,
         comparison_session_title: comparison_session.user_title,
-        comparison_track: comparison_session
-            .track
-            .unwrap_or_else(|| "TRACK NOT REPORTED".into()),
-        comparison_car: comparison_session
-            .car
-            .unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        comparison_track,
+        comparison_car,
         track_map,
         reference_lap_index,
         reference_lap_time,
@@ -1067,12 +1068,13 @@ fn visualize_session_lap(
     let lap_time = format_optional_lap_time(lap.duration_ns);
     let track_map =
         track_map_for_session(&store, &session, columns.track_configuration.as_deref())?;
+    let (track, car) = session_content_names(&store, &session)?;
     Ok(LapTrace {
         session_id,
         lap_index,
         lap_time,
-        track: session.track.unwrap_or_else(|| "TRACK NOT REPORTED".into()),
-        car: session.car.unwrap_or_else(|| "CAR NOT REPORTED".into()),
+        track,
+        car,
         lap_length_m,
         track_map,
         samples,
@@ -1099,6 +1101,60 @@ fn track_map_for_session(
             source_track_id,
             recorded_layout.or(session.layout_id.as_deref()),
         ),
+    )
+}
+
+fn ac_content_names(store: &MetadataStore) -> Result<AcContentNames, String> {
+    let configured_path = store
+        .simulator_install_path("assetto-corsa")
+        .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
+        .map(PathBuf::from);
+    Ok(AcContentNames::discover(configured_path.as_deref()))
+}
+
+fn session_content_names(
+    store: &MetadataStore,
+    session: &SessionSummary,
+) -> Result<(String, String), String> {
+    let names = if session.simulator_key == "assetto-corsa" {
+        Some(ac_content_names(store)?)
+    } else {
+        None
+    };
+    Ok(resolved_session_content_names(session, names.as_ref()))
+}
+
+fn resolved_session_content_names(
+    session: &SessionSummary,
+    names: Option<&AcContentNames>,
+) -> (String, String) {
+    let track = session
+        .track
+        .clone()
+        .or_else(|| session.source_track_id.clone())
+        .unwrap_or_else(|| "TRACK NOT REPORTED".into());
+    let car = session
+        .car
+        .clone()
+        .or_else(|| session.source_car_id.clone())
+        .unwrap_or_else(|| "CAR NOT REPORTED".into());
+    let Some(names) = names.filter(|_| session.simulator_key == "assetto-corsa") else {
+        return (track, car);
+    };
+    (
+        session
+            .source_track_id
+            .as_deref()
+            .map_or(track, |source_id| {
+                names.track_label(
+                    source_id,
+                    session.layout_id.as_deref(),
+                    session.track.as_deref(),
+                )
+            }),
+        session.source_car_id.as_deref().map_or(car, |source_id| {
+            names.car_label(source_id, session.car.as_deref())
+        }),
     )
 }
 
@@ -1401,7 +1457,8 @@ fn export_session(
             session.ownership = "mine".into();
         }
     }
-    let stem = session_export_stem(&session);
+    let (display_track, display_car) = session_content_names(&store, &session)?;
+    let stem = session_export_stem(&session, &display_track, &display_car);
     let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
     let export_result = if export_format == "trace" {
         let manifest = trace_package_manifest(&store, &session_id, locator.sample_count)?;
@@ -1456,6 +1513,9 @@ fn trace_package_manifest(
             session.ownership = "mine".into();
         }
     }
+    let (track, car) = session_content_names(store, &session)?;
+    session.track = Some(track);
+    session.car = Some(car);
     let laps = session
         .laps
         .iter()
@@ -1810,7 +1870,7 @@ fn safe_export_component(value: &str) -> String {
     sanitized.trim_matches('-').to_owned()
 }
 
-fn session_export_stem(session: &SessionSummary) -> String {
+fn session_export_stem(session: &SessionSummary, track: &str, car: &str) -> String {
     let date = session.started_at.get(..10).filter(|value| {
         value.len() == 10
             && value.as_bytes()[4] == b'-'
@@ -1825,8 +1885,8 @@ fn session_export_stem(session: &SessionSummary) -> String {
         date,
         session.user_title.as_deref(),
         session.user_driver.as_deref(),
-        session.track.as_deref(),
-        session.car.as_deref(),
+        Some(track),
+        Some(car),
     ];
     let stem = values
         .into_iter()

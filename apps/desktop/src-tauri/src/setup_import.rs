@@ -15,6 +15,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use trace_storage::metadata::{MetadataStore, NewSetupImport};
 use zip::ZipArchive;
 
+use crate::ac_content::AcContentNames;
+
 const MAX_ARCHIVES: usize = 32;
 const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 4_096;
@@ -197,9 +199,24 @@ fn index_imported_setups(
             return;
         }
     };
+    let content_names = (simulator_id == ASSETTO_CORSA_ID).then(|| {
+        let configured_path = store
+            .simulator_install_path(simulator_id)
+            .ok()
+            .flatten()
+            .map(PathBuf::from);
+        AcContentNames::discover(configured_path.as_deref())
+    });
     for result in results.iter_mut().filter(|result| result.success) {
         if let Err(error) = index_import_result(&mut store, simulator_id, result, &imported_at) {
             result.index_warning = Some(error);
+        }
+        if let Some(names) = content_names.as_ref() {
+            result.car = result.car.as_deref().map(|value| names.car(value));
+            result.track = result
+                .track
+                .as_deref()
+                .map(|value| names.track(value, None));
         }
     }
 }

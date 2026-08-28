@@ -73,6 +73,15 @@ impl AcContentNames {
             .unwrap_or_else(|| source_id.to_owned())
     }
 
+    pub(crate) fn car_label(&self, source_id: &str, stored_name: Option<&str>) -> String {
+        let resolved = self.car(source_id);
+        if resolved == source_id {
+            stored_name.unwrap_or(source_id).to_owned()
+        } else {
+            resolved
+        }
+    }
+
     pub(crate) fn track(&self, source_id: &str, layout_id: Option<&str>) -> String {
         self.root
             .as_deref()
@@ -80,6 +89,20 @@ impl AcContentNames {
             .and_then(|root| track_metadata_path(root, source_id, layout_id))
             .and_then(|path| read_name(&path))
             .unwrap_or_else(|| source_id.to_owned())
+    }
+
+    pub(crate) fn track_label(
+        &self,
+        source_id: &str,
+        layout_id: Option<&str>,
+        stored_name: Option<&str>,
+    ) -> String {
+        let resolved = self.track(source_id, layout_id);
+        if resolved == source_id {
+            stored_name.unwrap_or(source_id).to_owned()
+        } else {
+            resolved
+        }
     }
 
     pub(crate) fn track_geometry(
@@ -323,6 +346,19 @@ mod tests {
     }
 
     #[test]
+    fn packaged_display_names_survive_when_local_metadata_is_missing() {
+        let names = AcContentNames { root: None };
+        assert_eq!(
+            names.track_label("zandvoort2023", None, Some("Zandvoort")),
+            "Zandvoort"
+        );
+        assert_eq!(
+            names.car_label("ks_mazda_mx5_cup", Some("Mazda MX5 Cup")),
+            "Mazda MX5 Cup"
+        );
+    }
+
+    #[test]
     fn installed_ui_metadata_wins_over_generic_title_casing() {
         let root = env::temp_dir().join(format!("trace-ac-content-{}", std::process::id()));
         let ui = root.join("content/cars/ks_mazda_mx5_cup/ui");
@@ -330,6 +366,10 @@ mod tests {
         fs::write(ui.join("ui_car.json"), r#"{"name":"Mazda MX5 Cup"}"#).expect("fixture metadata");
         let names = AcContentNames::from_root(root.clone());
         assert_eq!(names.car("ks_mazda_mx5_cup"), "Mazda MX5 Cup");
+        assert_eq!(
+            names.car_label("ks_mazda_mx5_cup", Some("Old imported name")),
+            "Mazda MX5 Cup"
+        );
         fs::remove_dir_all(root).expect("fixture cleanup");
     }
 

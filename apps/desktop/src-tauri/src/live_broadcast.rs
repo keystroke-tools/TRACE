@@ -329,19 +329,33 @@ pub async fn start_active_live_broadcast(
         .map_err(|error| format!("failed to read Go Live settings: {error:?}"))?
         .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
     let simulator_key = capture.source.simulator.as_str();
-    let track_geometry = if simulator_key == "assetto-corsa" {
+    let content_names = if simulator_key == "assetto-corsa" {
         let configured_path = store
             .simulator_install_path(simulator_key)
             .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
             .map(std::path::PathBuf::from);
-        capture.seed.track_id.as_deref().and_then(|track| {
-            AcContentNames::discover(configured_path.as_deref())
-                .track_geometry(track, capture.seed.layout_id.as_deref())
-                .map(protocol_track_geometry)
-        })
+        Some(AcContentNames::discover(configured_path.as_deref()))
     } else {
         None
     };
+    let track_geometry = capture.seed.track_id.as_deref().and_then(|track| {
+        content_names
+            .as_ref()?
+            .track_geometry(track, capture.seed.layout_id.as_deref())
+            .map(protocol_track_geometry)
+    });
+    let car = capture.seed.car_id.as_deref().map(|source_id| {
+        content_names.as_ref().map_or_else(
+            || source_id.to_owned(),
+            |names| names.car_label(source_id, None),
+        )
+    });
+    let track = capture.seed.track_id.as_deref().map(|source_id| {
+        content_names.as_ref().map_or_else(
+            || source_id.to_owned(),
+            |names| names.track_label(source_id, capture.seed.layout_id.as_deref(), None),
+        )
+    });
     let (simulator_name, simulator_mark) = simulator_identity(simulator_key);
     let generation = state.begin("active-capture".to_owned(), 0)?;
     let endpoint = prepare_endpoint(&state, options, configured_endpoint, generation).await?;
@@ -352,8 +366,8 @@ pub async fn start_active_live_broadcast(
             simulator: simulator_key.to_owned(),
             simulator_name: Some(simulator_name),
             simulator_mark: Some(simulator_mark),
-            car: protocol_optional_text(capture.seed.car_id),
-            track: protocol_optional_text(capture.seed.track_id),
+            car: protocol_optional_text(car),
+            track: protocol_optional_text(track),
             layout: protocol_optional_text(capture.seed.layout_id),
             session_type: protocol_optional_text(capture.seed.session_type),
             status: LiveStatus::Live,
@@ -932,20 +946,22 @@ fn load_recorded_broadcast(
     let driver_name = session.user_driver.clone().or(store
         .driver_profile_name()
         .map_err(|error| format!("failed to read the local driver profile: {error:?}"))?);
-    let track_geometry = if session.simulator_key == "assetto-corsa" {
+    let content_names = if session.simulator_key == "assetto-corsa" {
         let configured_path = store
             .simulator_install_path(&session.simulator_key)
             .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
             .map(std::path::PathBuf::from);
-        session.source_track_id.as_deref().and_then(|track| {
-            AcContentNames::discover(configured_path.as_deref())
-                .track_geometry(track, session.layout_id.as_deref())
-                .map(protocol_track_geometry)
-        })
+        Some(AcContentNames::discover(configured_path.as_deref()))
     } else {
         None
     };
-    let state = session_state(&session, driver_name);
+    let track_geometry = session.source_track_id.as_deref().and_then(|track| {
+        content_names
+            .as_ref()?
+            .track_geometry(track, session.layout_id.as_deref())
+            .map(protocol_track_geometry)
+    });
+    let state = session_state(&session, driver_name, content_names.as_ref());
     Ok(RecordedBroadcast {
         endpoint,
         state,
@@ -955,29 +971,64 @@ fn load_recorded_broadcast(
     })
 }
 
-fn session_state(session: &SessionSummary, driver_name: Option<String>) -> SessionState {
+fn session_state(
+    session: &SessionSummary,
+    driver_name: Option<String>,
+    content_names: Option<&AcContentNames>,
+) -> SessionState {
     let (simulator_name, simulator_mark) = simulator_identity(&session.simulator_key);
     SessionState {
         driver_name: protocol_optional_text(driver_name),
         simulator: session.simulator_key.clone(),
         simulator_name: Some(simulator_name),
         simulator_mark: Some(simulator_mark),
-        car: protocol_optional_text(
-            session
-                .car
-                .clone()
-                .or_else(|| session.source_car_id.clone()),
-        ),
-        track: protocol_optional_text(
-            session
-                .track
-                .clone()
-                .or_else(|| session.source_track_id.clone()),
-        ),
+        car: protocol_optional_text(recorded_car_name(session, content_names)),
+        track: protocol_optional_text(recorded_track_name(session, content_names)),
         layout: protocol_optional_text(session.layout_id.clone()),
         session_type: protocol_optional_text(session.session_type.clone()),
         status: LiveStatus::Live,
     }
+}
+
+fn recorded_car_name(
+    session: &SessionSummary,
+    content_names: Option<&AcContentNames>,
+) -> Option<String> {
+    session.source_car_id.as_deref().map_or_else(
+        || session.car.clone(),
+        |source_id| {
+            Some(content_names.map_or_else(
+                || session.car.clone().unwrap_or_else(|| source_id.to_owned()),
+                |names| names.car_label(source_id, session.car.as_deref()),
+            ))
+        },
+    )
+}
+
+fn recorded_track_name(
+    session: &SessionSummary,
+    content_names: Option<&AcContentNames>,
+) -> Option<String> {
+    session.source_track_id.as_deref().map_or_else(
+        || session.track.clone(),
+        |source_id| {
+            Some(content_names.map_or_else(
+                || {
+                    session
+                        .track
+                        .clone()
+                        .unwrap_or_else(|| source_id.to_owned())
+                },
+                |names| {
+                    names.track_label(
+                        source_id,
+                        session.layout_id.as_deref(),
+                        session.track.as_deref(),
+                    )
+                },
+            ))
+        },
+    )
 }
 
 fn protocol_track_geometry(geometry: AcTrackGeometry) -> TrackGeometry {

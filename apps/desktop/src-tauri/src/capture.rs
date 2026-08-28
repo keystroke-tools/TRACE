@@ -228,11 +228,12 @@ fn handle_output(
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
             live_broadcast.capture_started(&source, &seed);
+            let label = session_label(metadata, &source, &seed);
             *active = Some(ActivePersistence::Pending {
                 source,
                 seed: seed.clone(),
             });
-            update_status(status, "recording", 60, &session_label(&seed));
+            update_status(status, "recording", 60, &label);
             clear_live_inputs(status);
         }
         RecorderOutput::FrameAccepted(frame) => {
@@ -480,13 +481,37 @@ fn hex_identity(value: &str) -> String {
     )
 }
 
-fn session_label(seed: &SessionSeed) -> String {
-    format!(
-        "{} / {}",
-        seed.track_id.as_deref().unwrap_or("TRACK NOT REPORTED"),
-        seed.car_id.as_deref().unwrap_or("CAR NOT REPORTED")
-    )
-    .to_uppercase()
+fn session_label(
+    metadata: &MetadataStore,
+    source: &SourceDescriptor,
+    seed: &SessionSeed,
+) -> String {
+    let configured_path = metadata
+        .simulator_install_path(source.simulator.as_str())
+        .ok()
+        .flatten()
+        .map(PathBuf::from);
+    let content_names = (source.simulator.as_str() == "assetto-corsa")
+        .then(|| AcContentNames::discover(configured_path.as_deref()));
+    let track = seed.track_id.as_deref().map_or_else(
+        || "TRACK NOT REPORTED".into(),
+        |source_id| {
+            content_names.as_ref().map_or_else(
+                || source_id.to_owned(),
+                |names| names.track_label(source_id, seed.layout_id.as_deref(), None),
+            )
+        },
+    );
+    let car = seed.car_id.as_deref().map_or_else(
+        || "CAR NOT REPORTED".into(),
+        |source_id| {
+            content_names.as_ref().map_or_else(
+                || source_id.to_owned(),
+                |names| names.car_label(source_id, None),
+            )
+        },
+    );
+    format!("{track} / {car}").to_uppercase()
 }
 
 fn update_status(
