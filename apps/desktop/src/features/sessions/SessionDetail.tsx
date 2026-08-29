@@ -10,6 +10,7 @@ import {
 import { Metric, SectionHeading } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
+import { ConsistencyChart } from "./ConsistencyChart";
 import {
 	DeleteConfirmation,
 	EmptySessions,
@@ -304,6 +305,10 @@ export function SessionDetail({
 					Lap times are available, but the additional fuel and speed summaries could not be loaded.
 				</div>
 			)}
+
+			<div className="mt-4">
+				<ConsistencyChart series={[{ label: "This session", session }]} />
+			</div>
 
 			<div className="mt-4 border border-trace-divider bg-trace-surface">
 				<div className="flex items-center justify-between border-b border-trace-divider px-5 py-4">

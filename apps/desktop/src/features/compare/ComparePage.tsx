@@ -23,6 +23,7 @@ import {
 } from "../sessions/session-components";
 import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringInputRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
+import { ConsistencyChart } from "../sessions/ConsistencyChart";
 import {
 	filterSamplesByDistance,
 	filterSamplesBySector,
@@ -462,6 +463,16 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 								>
 									<div className="w-full"></div>
 									<div className="min-w-0">
+										{referenceSession && comparisonSession && (
+											<div className="mb-3">
+												<ConsistencyChart
+													series={[
+														{ label: "Reference", session: referenceSession, colour: "purple" },
+														{ label: "Analysed", session: comparisonSession, colour: "accent" },
+													]}
+												/>
+											</div>
+										)}
 										{(sector != null || selectedCorner != null || telemetryWindow != null) && (
 											<div className="mb-3 flex h-10 items-center justify-between border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono">
 												<span className="text-[11px] font-black tracking-[.1em] text-trace-accent">

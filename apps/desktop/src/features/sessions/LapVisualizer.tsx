@@ -5,6 +5,7 @@ import { channelColours, ComparisonChart, formatGear, singleSeries, steeringInpu
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import { filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "../telemetry/telemetry-window";
 import { SectorPicker, TelemetryHud } from "../compare/ComparePage";
+import { ConsistencyChart } from "./ConsistencyChart";
 
 export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary; lapIndex: number }) {
 	const [trace, setTrace] = useState<LapTrace | null>(null);
@@ -77,6 +78,9 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 			)}
 			{trace && (
 				<div className="mt-7">
+					<div className="mb-3">
+						<ConsistencyChart series={[{ label: "This session", session }]} />
+					</div>
 					<div className="flex items-center justify-between border border-trace-divider bg-trace-surface px-5 py-3">
 						<SectorPicker
 							samples={chartSamples}
