@@ -1,6 +1,6 @@
 # Corner analysis
 
-Status: Implemented. Corner detection algorithm version 2.
+Status: Implemented. Corner detection algorithm version 3.
 
 TRACE detects corners and explains time loss with deterministic distance-domain
 analysis. The implementation lives in `trace-core`; it has no simulator, storage,
@@ -31,9 +31,16 @@ is true:
 - the recorded path turns at least 0.045 radians across the local trajectory window.
 
 Active regions separated by no more than 30 m are joined so a braking zone, brake
-release, turn-in, and apex remain one corner. Regions shorter than 20 m are discarded.
-Detected regions are labelled `T1`, `T2`, and so on in lap-distance order. These are
-TRACE identifiers, not claims about an official circuit corner number.
+release, turn-in, and apex remain connected. A connected region is not automatically
+treated as one corner: TRACE finds local Reference speed minima and splits the region
+at the intervening maximum speed when the minima are at least 50 m apart and speed
+recovers at least 10 km/h above both minima. This separates consecutive bends even when
+steering or path curvature never becomes inactive between them. The recovery maximum
+becomes a hard boundary for the following corner's braking search.
+
+Regions shorter than 20 m are discarded. Detected regions are labelled `T1`, `T2`, and
+so on in lap-distance order. These are TRACE identifiers, not claims about an official
+circuit corner number.
 
 Within a region, the minimum reference speed defines the approximate apex. Entry ends
 at the last observed brake application before that apex. Exit begins at the first 20%
@@ -53,16 +60,20 @@ For each detected corner, TRACE performs these steps:
    extend up to 300 m before the Reference corner start, but never crosses the end of
    the preceding detected corner.
 2. It finds each driver's approximate apex independently using that driver's minimum
-   speed inside the shared corner range. If an Analysed Lap apex cannot be measured,
-   the Reference apex is used only as the search anchor.
+   speed. The Analysed Lap search is limited to 75 m around the shared Reference apex,
+   preventing a compound corner from selecting a different bend merely because that
+   bend has a lower minimum speed. If an Analysed Lap apex cannot be measured there,
+   the Reference apex is used as the search anchor.
 3. Brake observations at or above 10% form candidate zones. Consecutive active
    observations separated by no more than 15 m remain one zone. This tolerance handles
    a brief pressure release and the 5 m analysis grid without connecting clearly
    separate braking events.
-4. Zones beginning after the driver's apex are rejected. Of the remaining candidates,
-   the zone whose final active observation is closest to the apex is selected. This
-   prevents an earlier brake application or unrelated lift-and-brake event from winning
-   merely because it appeared first in the search window.
+4. Zones beginning after the driver's apex are rejected. The Reference zone whose final
+   active observation is closest to its apex is selected first. The Analysed Lap zone is
+   then paired by braking-point proximity to that Reference zone, and candidates more
+   than 125 m away are rejected. This prevents two different bends inside a compound
+   range from producing a plausible-looking but impossible braking difference. When no
+   credible pair exists, the Analysed braking metric is unavailable rather than guessed.
 5. The first active observation is the **braking point**, the final active observation
    is the **release point**, and the maximum pressure within the selected zone is the
    **peak brake pressure**.
@@ -77,6 +88,8 @@ braking-zone length = release distance - braking-point distance
 These are distances along the normalized lap, not straight-line GPS distances. Their
 precision is limited by the 5 m comparison grid, so a displayed braking point should be
 read as approximately that location rather than centimetre-accurate ground truth.
+A qualifying input present at only one grid sample has a zero-metre derived span and is
+labelled **Brake tap** rather than being presented as a sustained braking zone.
 
 The two thresholds serve different purposes: 5% brake can help establish the broad
 corner region, while 10% is required for a driver-facing braking point. This keeps
@@ -105,9 +118,12 @@ positive corner losses and shows at most four at once. Selecting a card filters 
 synchronized graph and the map to that corner. The strongest positive phase is labelled
 as the area where most loss developed, accompanied by an available measured difference.
 When braking is available, each card shows the Reference and Analysed Lap's metres before
-apex, zone length, and peak pressure. Its short summary reports how many metres earlier
-or later the Analysed Lap began braking. The dock explicitly identifies the result as
-rule-based and non-AI.
+apex, zone length, and peak pressure. Its short summary follows the phase where most
+positive loss developed: entry may report earlier/later braking, mid-corner may report
+minimum speed, and exit may report later throttle pickup. This prevents a true braking
+difference from being presented as the main explanation when the measured loss actually
+developed after the apex. The dock explicitly identifies the result as rule-based and
+non-AI.
 
 Track maps draw recorded brake applications over the driving line in red. Segment
 opacity follows recorded brake percentage, producing a brake-intensity gradient rather
@@ -142,11 +158,14 @@ Synthetic core tests cover:
 - selection of the nearest pre-apex zone when an earlier brake event exists;
 - missing driver brake data producing no invented zone;
 - a preceding corner's braking not leaking into the following corner;
+- a continuously steered range splitting into two corners at a meaningful speed
+  recovery, with both braking zones retained;
 - missing corner signals and invalid distance ordering.
 
 ## Current limitations
 
-- Compound corners without a straight or inactive gap may be represented as one range.
+- Compound corners with less than 10 km/h speed recovery, or apexes less than 50 m
+  apart, may remain one range rather than being split speculatively.
 - A corner crossing the lap start/finish boundary is not joined across the file edge.
 - The detector does not distinguish intentional trail braking from an ordinary braking
   zone; it reports the final qualifying brake observation as the release point.
@@ -160,6 +179,9 @@ Synthetic core tests cover:
   not claim driver or setup causality.
 
 Future revisions must increment the algorithm identity when thresholds or boundary
-semantics change so cached results remain attributable. Version 2 introduced independent
-apex-centric braking-zone association, release points, and peak pressure; version 1 used
-the Reference-defined corner range for both laps' first and last threshold crossings.
+semantics change so cached results remain attributable. Version 3 splits continuously
+active ranges at meaningful speed recoveries, constrains compound-corner apex selection,
+and pairs braking zones between laps. Version 2 introduced
+independent apex-centric braking-zone association, release points, and peak pressure;
+version 1 used the Reference-defined corner range for both laps' first and last threshold
+crossings.

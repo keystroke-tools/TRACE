@@ -1220,7 +1220,7 @@ function CornerBrakingMetrics({ corner }: { corner: CornerAnalysis }) {
 					<span className="mt-0.5 block text-[9px] text-trace-dim">BEFORE APEX</span>
 					{facts && (
 						<span className="mt-1 block text-[9px] tabular-nums text-trace-muted">
-							{facts.brakeSpan} M ZONE · {facts.peak} PEAK
+							{facts.brakeSpan === 0 ? "BRAKE TAP" : `${facts.brakeSpan} M ZONE`} · {facts.peak} PEAK
 						</span>
 					)}
 				</span>
@@ -1268,18 +1268,19 @@ function cornerSummary(corner: CornerAnalysis, dominantPhase: string) {
 		corner.metrics.comparisonBrakingPointM != null && corner.metrics.referenceBrakingPointM != null
 			? corner.metrics.comparisonBrakingPointM - corner.metrics.referenceBrakingPointM
 			: null;
-	if (brakingDifference != null && Math.abs(brakingDifference) >= 3)
+	if (dominantPhase === "ENTRY" && brakingDifference != null && Math.abs(brakingDifference) >= 3)
 		return `Brakes ${Math.round(Math.abs(brakingDifference))} m ${brakingDifference > 0 ? "later" : "earlier"} than Reference`;
 	const minimumSpeedDifference =
 		corner.metrics.comparisonMinimumSpeedKmh != null && corner.metrics.referenceMinimumSpeedKmh != null
 			? corner.metrics.comparisonMinimumSpeedKmh - corner.metrics.referenceMinimumSpeedKmh
 			: null;
-	if (minimumSpeedDifference != null && minimumSpeedDifference < -1) return `${Math.round(Math.abs(minimumSpeedDifference))} km/h lower minimum speed`;
+	if (dominantPhase === "MIDDLE" && minimumSpeedDifference != null && minimumSpeedDifference < -1)
+		return `${Math.round(Math.abs(minimumSpeedDifference))} km/h lower minimum speed`;
 	const throttleDifference =
 		corner.metrics.comparisonThrottlePointM != null && corner.metrics.referenceThrottlePointM != null
 			? corner.metrics.comparisonThrottlePointM - corner.metrics.referenceThrottlePointM
 			: null;
-	if (throttleDifference != null && throttleDifference > 3) return `Throttle applied ${Math.round(throttleDifference)} m later`;
+	if (dominantPhase === "EXIT" && throttleDifference != null && throttleDifference > 3) return `Throttle applied ${Math.round(throttleDifference)} m later`;
 	return `Loss develops through ${dominantPhase.toLowerCase()}`;
 }
 
