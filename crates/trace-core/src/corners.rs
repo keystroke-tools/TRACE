@@ -8,7 +8,7 @@ use crate::analysis::{
     Derivation, MetricEvidence, UncertaintyReason,
 };
 
-const ALGORITHM_VERSION: u32 = 1;
+const ALGORITHM_VERSION: u32 = 2;
 const MINIMUM_SAMPLES: usize = 12;
 const BRAKE_ACTIVE_PERCENT: f64 = 5.0;
 const STEERING_ACTIVE_PERCENT: f64 = 5.0;
@@ -17,7 +17,10 @@ const MAXIMUM_INACTIVE_GAP_M: f64 = 30.0;
 const MINIMUM_CORNER_SPAN_M: f64 = 20.0;
 const METRIC_BRAKE_PERCENT: f64 = 10.0;
 const METRIC_THROTTLE_PERCENT: f64 = 20.0;
+/// Maximum distance searched before the reference-defined corner region. The previous
+/// detected corner remains a hard boundary even when it is closer than this limit.
 const MAXIMUM_BRAKING_LOOKBACK_M: f64 = 300.0;
+/// Joins active brake samples across a short release or a sparse distance-grid sample.
 const MAXIMUM_BRAKE_GAP_M: f64 = 15.0;
 
 /// One distance-aligned pair of lap observations used by corner analysis.
@@ -570,6 +573,7 @@ mod tests {
     #[test]
     fn detects_a_corner_and_keeps_phase_losses_coherent() {
         let result = analyze_corner_comparison(&synthetic_corner(), context());
+        assert_eq!(result.algorithm.version, 2);
         assert_eq!(result.availability, AnalysisAvailability::Available);
         let value = result.value.expect("available analysis");
         assert_eq!(value.corners.len(), 1);

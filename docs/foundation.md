@@ -305,6 +305,11 @@ the spatial pan/zoom state.
 TRACE's Analysis panel is a deterministic, rule-based telemetry comparison rather than
 AI coaching. Its suggestions are heuristic and may be incorrect; drivers should verify
 them against the graphs and track map before treating them as actionable advice.
+Corner braking is measured independently for each lap around its minimum-speed apex.
+TRACE reports the selected zone's start distance before apex, release distance, and peak
+pressure, while preventing the search from crossing into the preceding detected corner.
+The complete algorithm, thresholds, worked example, and limitations are documented in
+[Corner analysis](corner-analysis.md).
 
 The map supports zooming and panning and marks the start and current cursor position.
 Comparison driving lines remain distance-aligned, but the two car markers are placed
