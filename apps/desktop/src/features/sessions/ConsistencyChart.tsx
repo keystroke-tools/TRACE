@@ -22,11 +22,11 @@ interface ChartSeries extends ConsistencySeries {
 }
 
 const WIDTH = 1_000;
-const HEIGHT = 220;
+const HEIGHT = 96;
 const LEFT = 58;
 const RIGHT = 20;
-const TOP = 18;
-const BOTTOM = 34;
+const TOP = 7;
+const BOTTOM = 20;
 
 export function ConsistencyChart({ series }: { series: ConsistencySeries[] }) {
 	const [hovered, setHovered] = useState<{ seriesIndex: number; lapIndex: number } | null>(null);
@@ -36,30 +36,39 @@ export function ConsistencyChart({ series }: { series: ConsistencySeries[] }) {
 	);
 	const chart = useMemo(() => buildChart(uniqueSeries), [uniqueSeries]);
 	const validLapCount = chart.series.reduce((total, entry) => total + entry.laps.length, 0);
+	const excludedLapCount = chart.excludedLaps.length;
 	const activeLap = hovered == null ? null : chart.series[hovered.seriesIndex]?.laps.find((lap) => lap.lap.index === hovered.lapIndex);
 	const activeSeries = hovered == null ? null : chart.series[hovered.seriesIndex];
 
 	return (
-		<section className="border border-trace-divider bg-trace-surface" aria-labelledby="consistency-heading">
-			<div className="flex flex-wrap items-start justify-between gap-4 border-b border-trace-divider px-5 py-4">
-				<div>
-					<h2 id="consistency-heading" className="text-[13px] font-black tracking-[.04em]">
+		<section className="overflow-hidden border border-trace-divider bg-trace-surface" aria-labelledby="consistency-heading">
+			<div className="flex min-h-10 flex-wrap items-center justify-between gap-x-5 gap-y-1 border-b border-trace-divider px-4 py-1.5">
+				<div className="flex items-center gap-3">
+					<h2 id="consistency-heading" className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-soft">
 						LAP CONSISTENCY
 					</h2>
-					<p className="mt-1 text-[12px] leading-5 text-trace-muted">
-						Distance from each session&apos;s typical valid lap time. Flatter is more consistent.
-					</p>
+					<span className="font-mono text-[10px] tracking-[.04em] text-trace-dim">DEVIATION FROM TYPICAL LAP</span>
 				</div>
-				<div className="flex flex-wrap gap-x-7 gap-y-2">
+				<div className="flex flex-wrap items-center gap-x-6 gap-y-1">
 					{chart.series.map((entry) => (
-						<div key={entry.session.id} className="font-mono text-[11px] leading-5">
-							<span className={entry.colour === "purple" ? "text-trace-purple" : "text-trace-accent"}>{entry.label.toUpperCase()}</span>
-							<span className="ml-3 text-trace-dim">TYPICAL </span>
-							<strong className="text-trace-text">{formatLapDurationNs(entry.medianNs)}</strong>
-							<span className="ml-3 text-trace-dim">VARIATION </span>
-							<strong className="text-trace-text">±{entry.standardDeviationSeconds.toFixed(2)}s</strong>
+						<div key={entry.session.id} className="flex items-center gap-3 font-mono text-[11px] leading-5">
+							<span className="flex items-center gap-2">
+								<span className={`size-1.5 rounded-full ${entry.colour === "purple" ? "bg-trace-purple" : "bg-trace-accent"}`} />
+								<span className={entry.colour === "purple" ? "text-trace-purple" : "text-trace-accent"}>{entry.label.toUpperCase()}</span>
+							</span>
+							<span className="flex items-center gap-1.5">
+								<span className="text-trace-dim">MEDIAN</span>
+								<strong className="text-trace-text">{formatLapDurationNs(entry.medianNs)}</strong>
+							</span>
+							<span className="flex items-center gap-1.5">
+								<span className="text-trace-dim">VAR</span>
+								<strong className="text-trace-text">±{entry.standardDeviationSeconds.toFixed(2)}s</strong>
+							</span>
 						</div>
 					))}
+					<span className="font-mono text-[10px] text-trace-dim">
+						{validLapCount} VALID{excludedLapCount > 0 ? ` · ${excludedLapCount} EXCLUDED` : ""}
+					</span>
 				</div>
 			</div>
 			{validLapCount < 2 ? (
@@ -67,34 +76,35 @@ export function ConsistencyChart({ series }: { series: ConsistencySeries[] }) {
 					At least two valid completed laps are needed to show consistency.
 				</div>
 			) : (
-				<div className="relative px-3 py-3">
-					<svg
-						className="block h-[220px] w-full overflow-visible"
-						viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-						role="img"
-						aria-label="Lap time consistency graph"
-					>
+				<div className="relative bg-trace-deep/35 px-3 py-1">
+					<svg className="block h-24 w-full overflow-visible" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Lap time consistency graph">
 						{chart.ticks.map((tick) => (
 							<g key={tick.value}>
-								<line x1={LEFT} x2={WIDTH - RIGHT} y1={tick.y} y2={tick.y} stroke="var(--color-trace-divider)" strokeWidth="1" />
+								<line x1={LEFT} x2={WIDTH - RIGHT} y1={tick.y} y2={tick.y} stroke="var(--color-trace-divider)" strokeWidth="1" opacity=".7" />
 								<text x={LEFT - 10} y={tick.y + 4} textAnchor="end" fill="var(--color-trace-dim)" fontFamily="monospace" fontSize="11">
 									{tick.value > 0 ? "+" : ""}
 									{tick.value.toFixed(1)}s
 								</text>
 							</g>
 						))}
-						<line x1={LEFT} x2={WIDTH - RIGHT} y1={chart.zeroY} y2={chart.zeroY} stroke="var(--color-trace-soft)" strokeWidth="1.5" />
+						<line x1={LEFT} x2={WIDTH - RIGHT} y1={chart.zeroY} y2={chart.zeroY} stroke="var(--color-trace-soft)" strokeWidth="1" />
 						{chart.series.map((entry, seriesIndex) => {
 							const colour = entry.colour === "purple" ? "var(--color-trace-purple)" : "var(--color-trace-accent)";
 							return (
 								<g key={entry.session.id}>
-									<polyline points={entry.laps.map((lap) => `${lap.x},${lap.y}`).join(" ")} fill="none" stroke={colour} strokeWidth="2.5" />
+									<polyline
+										points={entry.laps.map((lap) => `${lap.x},${lap.y}`).join(" ")}
+										fill="none"
+										stroke={colour}
+										strokeWidth="2"
+										vectorEffect="non-scaling-stroke"
+									/>
 									{entry.laps.map((lap) => (
 										<circle
 											key={lap.lap.index}
 											cx={lap.x}
 											cy={lap.y}
-											r={hovered?.seriesIndex === seriesIndex && hovered.lapIndex === lap.lap.index ? 6 : 4}
+											r={hovered?.seriesIndex === seriesIndex && hovered.lapIndex === lap.lap.index ? 5 : 3}
 											fill={colour}
 											stroke="var(--color-trace-black)"
 											strokeWidth="2"
@@ -145,7 +155,7 @@ export function ConsistencyChart({ series }: { series: ConsistencySeries[] }) {
 					</svg>
 					{activeLap && activeSeries && (
 						<div
-							className={`pointer-events-none absolute z-10 -translate-x-1/2 border px-3 py-2 font-mono text-[11px] shadow-lg ${activeSeries.colour === "purple" ? "border-trace-purple bg-trace-purple-wash" : "border-trace-accent bg-trace-accent-wash"}`}
+							className={`pointer-events-none absolute z-10 -translate-x-1/2 border px-2.5 py-1.5 font-mono text-[11px] ${activeSeries.colour === "purple" ? "border-trace-purple bg-trace-purple-wash" : "border-trace-accent bg-trace-accent-wash"}`}
 							style={{ left: `${(activeLap.x / WIDTH) * 100}%`, top: `${Math.max(4, (activeLap.y / HEIGHT) * 100 - 8)}%` }}
 						>
 							<strong className="text-white">
@@ -154,10 +164,6 @@ export function ConsistencyChart({ series }: { series: ConsistencySeries[] }) {
 							<span className="ml-3 text-trace-soft">{signedSeconds(activeLap.deviationSeconds)}</span>
 						</div>
 					)}
-					<div className="mt-1 flex items-center justify-between px-12 font-mono text-[10px] text-trace-dim">
-						<span>LAP NUMBER</span>
-						<span>Invalid and incomplete laps are excluded</span>
-					</div>
 				</div>
 			)}
 		</section>
@@ -193,7 +199,7 @@ function buildChart(series: ConsistencySeries[]) {
 			y: yForDeviation(entry.deviations[index]),
 		})),
 	}));
-	const tickValues = [-roundedExtent, -roundedExtent / 2, 0, roundedExtent / 2, roundedExtent];
+	const tickValues = [-roundedExtent, 0, roundedExtent];
 	const allLapIndices = [...new Set(series.flatMap((entry) => entry.session.laps.map((lap) => lap.index)))].sort((left, right) => left - right);
 	const labelStep = Math.max(1, Math.ceil(allLapIndices.length / 12));
 	return {
