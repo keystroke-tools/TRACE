@@ -23,7 +23,6 @@ import {
 } from "../sessions/session-components";
 import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringInputRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
-import { ConsistencyChart } from "../sessions/ConsistencyChart";
 import {
 	filterSamplesByDistance,
 	filterSamplesBySector,
@@ -463,16 +462,6 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 								>
 									<div className="w-full"></div>
 									<div className="min-w-0">
-										{referenceSession && comparisonSession && (
-											<div className="mb-3">
-												<ConsistencyChart
-													series={[
-														{ label: "Reference", session: referenceSession, colour: "purple" },
-														{ label: "Analysed", session: comparisonSession, colour: "accent" },
-													]}
-												/>
-											</div>
-										)}
 										{(sector != null || selectedCorner != null || telemetryWindow != null) && (
 											<div className="mb-3 flex h-10 items-center justify-between border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono">
 												<span className="text-[11px] font-black tracking-[.1em] text-trace-accent">
@@ -1186,6 +1175,7 @@ function CornerAnalysisPanel({
 											MOST LOSS · {dominant}
 										</span>
 										<span className="mt-1 block truncate text-[11px] text-trace-muted">{cornerSummary(corner, dominant)}</span>
+										<CornerBrakingMetrics corner={corner} />
 										<span
 											className="mt-3 grid grid-cols-3 gap-1 border-t border-trace-divider pt-2"
 											aria-label={`${corner.label} time difference by phase`}
@@ -1214,6 +1204,43 @@ function CornerAnalysisPanel({
 	);
 }
 
+function CornerBrakingMetrics({ corner }: { corner: CornerAnalysis }) {
+	const reference = brakingFacts(corner, "reference");
+	const analysed = brakingFacts(corner, "comparison");
+	if (!reference && !analysed) return null;
+	return (
+		<span className="mt-3 grid grid-cols-2 gap-2 border-t border-trace-divider pt-2 font-mono">
+			{[
+				{ label: "REFERENCE", facts: reference, colour: "text-trace-purple" },
+				{ label: "ANALYSED", facts: analysed, colour: "text-trace-accent" },
+			].map(({ label, facts, colour }) => (
+				<span className="min-w-0" key={label}>
+					<span className={`block text-[9px] font-bold tracking-[.06em] ${colour}`}>{label}</span>
+					<span className="mt-1 block text-[11px] font-bold tabular-nums text-trace-text">{facts?.beforeApex ?? "—"}</span>
+					<span className="mt-0.5 block text-[9px] text-trace-dim">BEFORE APEX</span>
+					{facts && (
+						<span className="mt-1 block text-[9px] tabular-nums text-trace-muted">
+							{facts.brakeSpan} M ZONE · {facts.peak} PEAK
+						</span>
+					)}
+				</span>
+			))}
+		</span>
+	);
+}
+
+function brakingFacts(corner: CornerAnalysis, driver: "reference" | "comparison") {
+	const start = driver === "reference" ? corner.metrics.referenceBrakingPointM : corner.metrics.comparisonBrakingPointM;
+	if (start == null) return null;
+	const release = driver === "reference" ? corner.metrics.referenceBrakeReleasePointM : corner.metrics.comparisonBrakeReleasePointM;
+	const peak = driver === "reference" ? corner.metrics.referencePeakBrakePercent : corner.metrics.comparisonPeakBrakePercent;
+	return {
+		beforeApex: `${Math.max(0, Math.round(corner.apexDistanceM - start))} M`,
+		brakeSpan: Math.max(0, Math.round((release ?? start) - start)),
+		peak: peak == null ? "—" : `${Math.round(peak)}%`,
+	};
+}
+
 function cornerPhaseLabel(phase: CornerAnalysis["phases"][number]["phase"]) {
 	return phase === "entry" ? "ENTRY" : phase === "mid" ? "MIDDLE" : "EXIT";
 }
@@ -1237,6 +1264,12 @@ function dominantCornerPhase(corner: CornerAnalysis) {
 }
 
 function cornerSummary(corner: CornerAnalysis, dominantPhase: string) {
+	const brakingDifference =
+		corner.metrics.comparisonBrakingPointM != null && corner.metrics.referenceBrakingPointM != null
+			? corner.metrics.comparisonBrakingPointM - corner.metrics.referenceBrakingPointM
+			: null;
+	if (brakingDifference != null && Math.abs(brakingDifference) >= 3)
+		return `Brakes ${Math.round(Math.abs(brakingDifference))} m ${brakingDifference > 0 ? "later" : "earlier"} than Reference`;
 	const minimumSpeedDifference =
 		corner.metrics.comparisonMinimumSpeedKmh != null && corner.metrics.referenceMinimumSpeedKmh != null
 			? corner.metrics.comparisonMinimumSpeedKmh - corner.metrics.referenceMinimumSpeedKmh

@@ -63,6 +63,10 @@ pub struct CornerPhaseAnalysis {
 pub struct CornerMetrics {
     pub reference_braking_point_m: Option<f64>,
     pub comparison_braking_point_m: Option<f64>,
+    pub reference_brake_release_point_m: Option<f64>,
+    pub comparison_brake_release_point_m: Option<f64>,
+    pub reference_peak_brake_percent: Option<f64>,
+    pub comparison_peak_brake_percent: Option<f64>,
     pub reference_minimum_speed_kmh: Option<f64>,
     pub comparison_minimum_speed_kmh: Option<f64>,
     pub reference_throttle_point_m: Option<f64>,
@@ -310,6 +314,26 @@ fn build_corner(
             |sample| sample.comparison_brake_percent,
             METRIC_BRAKE_PERCENT,
         ),
+        reference_brake_release_point_m: last_threshold_point(
+            samples,
+            start,
+            end,
+            |sample| sample.reference_brake_percent,
+            METRIC_BRAKE_PERCENT,
+        ),
+        comparison_brake_release_point_m: last_threshold_point(
+            samples,
+            start,
+            end,
+            |sample| sample.comparison_brake_percent,
+            METRIC_BRAKE_PERCENT,
+        ),
+        reference_peak_brake_percent: peak_value(samples, start, end, |sample| {
+            sample.reference_brake_percent
+        }),
+        comparison_peak_brake_percent: peak_value(samples, start, end, |sample| {
+            sample.comparison_brake_percent
+        }),
         reference_minimum_speed_kmh: samples[apex].reference_speed_kmh,
         comparison_minimum_speed_kmh: comparison_apex
             .and_then(|index| samples[index].comparison_speed_kmh),
@@ -395,6 +419,35 @@ fn threshold_point(
         .copied()
         .find(|sample| value(*sample).is_some_and(|value| value >= threshold))
         .map(|sample| sample.distance_m)
+}
+
+fn last_threshold_point(
+    samples: &[CornerComparisonSample],
+    start: usize,
+    end: usize,
+    value: impl Fn(CornerComparisonSample) -> Option<f64>,
+    threshold: f64,
+) -> Option<f64> {
+    samples[start..=end]
+        .iter()
+        .copied()
+        .rev()
+        .find(|sample| value(*sample).is_some_and(|value| value >= threshold))
+        .map(|sample| sample.distance_m)
+}
+
+fn peak_value(
+    samples: &[CornerComparisonSample],
+    start: usize,
+    end: usize,
+    value: impl Fn(CornerComparisonSample) -> Option<f64>,
+) -> Option<f64> {
+    samples[start..=end]
+        .iter()
+        .copied()
+        .filter_map(value)
+        .filter(|value| value.is_finite())
+        .max_by(f64::total_cmp)
 }
 
 fn path_turn_angle(samples: &[CornerComparisonSample], index: usize) -> Option<f64> {
@@ -509,6 +562,10 @@ mod tests {
         assert!((phase_total - corner.total_loss_seconds.expect("corner delta")).abs() < 1e-9);
         assert_eq!(corner.metrics.reference_braking_point_m, Some(50.0));
         assert_eq!(corner.metrics.comparison_braking_point_m, Some(60.0));
+        assert_eq!(corner.metrics.reference_brake_release_point_m, Some(90.0));
+        assert_eq!(corner.metrics.comparison_brake_release_point_m, Some(100.0));
+        assert_eq!(corner.metrics.reference_peak_brake_percent, Some(70.0));
+        assert_eq!(corner.metrics.comparison_peak_brake_percent, Some(75.0));
         assert_eq!(corner.metrics.reference_throttle_point_m, Some(110.0));
         assert_eq!(corner.metrics.comparison_throttle_point_m, Some(125.0));
     }

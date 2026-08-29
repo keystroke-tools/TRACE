@@ -129,6 +129,10 @@ export interface CornerPhaseAnalysis {
 export interface CornerMetrics {
 	referenceBrakingPointM?: number | null;
 	comparisonBrakingPointM?: number | null;
+	referenceBrakeReleasePointM?: number | null;
+	comparisonBrakeReleasePointM?: number | null;
+	referencePeakBrakePercent?: number | null;
+	comparisonPeakBrakePercent?: number | null;
 	referenceMinimumSpeedKmh?: number | null;
 	comparisonMinimumSpeedKmh?: number | null;
 	referenceThrottlePointM?: number | null;
@@ -729,6 +733,10 @@ export const fixtureDataSource: TelemetryDataSource = {
 						metrics: {
 							referenceBrakingPointM: 450,
 							comparisonBrakingPointM: 475,
+							referenceBrakeReleasePointM: 550,
+							comparisonBrakeReleasePointM: 575,
+							referencePeakBrakePercent: 72,
+							comparisonPeakBrakePercent: 78,
 							referenceMinimumSpeedKmh: 91,
 							comparisonMinimumSpeedKmh: 84,
 							referenceThrottlePointM: 625,
@@ -750,6 +758,10 @@ export const fixtureDataSource: TelemetryDataSource = {
 						metrics: {
 							referenceBrakingPointM: 1_700,
 							comparisonBrakingPointM: 1_725,
+							referenceBrakeReleasePointM: 1_800,
+							comparisonBrakeReleasePointM: 1_825,
+							referencePeakBrakePercent: 68,
+							comparisonPeakBrakePercent: 74,
 							referenceMinimumSpeedKmh: 118,
 							comparisonMinimumSpeedKmh: 114,
 							referenceThrottlePointM: 1_875,

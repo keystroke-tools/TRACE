@@ -500,6 +500,22 @@ export function TrackMap({
 		const point = cornerLabelPoint(sample.referencePositionXM, sample.referencePositionZM);
 		return point ? [{ corner, point }] : [];
 	});
+	const visibleBrakeMarkers = corners.flatMap((corner) => {
+		const values = [
+			{ driver: "reference" as const, distanceM: corner.metrics.referenceBrakingPointM },
+			...(comparison ? [{ driver: "comparison" as const, distanceM: corner.metrics.comparisonBrakingPointM }] : []),
+		];
+		return values.flatMap(({ driver, distanceM }) => {
+			if (distanceM == null || distanceM < (samples[0]?.distanceM ?? 0) || distanceM > (samples.at(-1)?.distanceM ?? 0)) return [];
+			const sample = samples.reduce(
+				(closest, candidate) => (Math.abs(candidate.distanceM - distanceM) < Math.abs(closest.distanceM - distanceM) ? candidate : closest),
+				samples[0],
+			);
+			const x = driver === "reference" ? sample?.referencePositionXM : sample?.comparisonPositionXM;
+			const z = driver === "reference" ? sample?.referencePositionZM : sample?.comparisonPositionZM;
+			return x == null || z == null ? [] : [{ corner, driver, point: project(x, z) }];
+		});
+	});
 	const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
 	const cursor = cursorIndex == null ? null : (samples[cursorIndex] ?? null);
 	const comparisonCursorSample =
@@ -754,6 +770,26 @@ export function TrackMap({
 					)}
 					{brakeSegments("reference-brake", "referencePositionXM", "referencePositionZM", "referenceBrakePercent", 6)}
 					{comparison && brakeSegments("comparison-brake", "comparisonPositionXM", "comparisonPositionZM", "comparisonBrakePercent", 3.5)}
+					{visibleBrakeMarkers.map(({ corner, driver, point }) => {
+						const selected = corner.index === selectedCornerIndex;
+						const colour = driver === "reference" ? referenceColour : comparisonColour;
+						return (
+							<g transform={`translate(${point[0]} ${point[1]})`} pointerEvents="none" key={`${corner.index}-${driver}-brake`}>
+								<circle
+									r={selected ? (driver === "reference" ? 7 : 5.5) : driver === "reference" ? 5 : 4}
+									fill="var(--color-trace-black)"
+									stroke={colour}
+									strokeWidth={selected ? 2.5 : 1.75}
+									vectorEffect="non-scaling-stroke"
+								/>
+								{selected && (
+									<text y="3" textAnchor="middle" fill={colour} fontFamily="monospace" fontSize="8" fontWeight="900">
+										{driver === "reference" ? "R" : "A"}
+									</text>
+								)}
+							</g>
+						);
+					})}
 					{visibleCornerLabels.map(({ corner, point }) => (
 						<g transform={`translate(${point[0]} ${point[1]})`} pointerEvents="none" key={corner.index}>
 							<circle
