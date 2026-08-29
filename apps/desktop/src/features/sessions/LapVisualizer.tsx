@@ -126,6 +126,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 									onCursor={setCursorIndex}
 									onZoom={zoomTelemetry}
 									fixedRange={[-1, 8]}
+									formatValue={(value) => formatGear(value)}
 									series={singleSeries("referenceGear", channelColours.gear)}
 								/>
 							</div>

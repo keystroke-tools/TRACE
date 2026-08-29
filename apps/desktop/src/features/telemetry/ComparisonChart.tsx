@@ -48,8 +48,9 @@ export function singleSeries(key: ComparisonValueKey, colour: string): Compariso
 
 export function formatGear(gear?: number | null) {
 	if (gear == null) return "—";
-	if (gear < 0) return "R";
+	if (gear === -1) return "R";
 	if (gear === 0) return "N";
+	if (gear < -1) return `? (${gear})`;
 	return String(gear);
 }
 
@@ -82,6 +83,7 @@ export function ComparisonChart({
 	fixedRange,
 	zeroLine = false,
 	compact = false,
+	formatValue = formatChartValue,
 }: {
 	label: string;
 	unit: string;
@@ -93,6 +95,7 @@ export function ComparisonChart({
 	fixedRange?: [number, number];
 	zeroLine?: boolean;
 	compact?: boolean;
+	formatValue?: (value: number, unit: string) => string;
 }) {
 	const chart = useRef<HTMLDivElement>(null);
 	const [width, setWidth] = useState(1_000);
@@ -238,14 +241,14 @@ export function ComparisonChart({
 				style={{ top: `${headerPixelHeight + (plot.top / height) * chartPixelHeight}px` }}
 				aria-hidden="true"
 			>
-				{formatChartValue(maximum, unit)}
+				{formatValue(maximum, unit)}
 			</span>
 			<span
 				className="pointer-events-none absolute left-2 -translate-y-full font-mono text-[12px] leading-none text-trace-dim"
 				style={{ top: `${headerPixelHeight + ((height - plot.bottom) / height) * chartPixelHeight}px` }}
 				aria-hidden="true"
 			>
-				{formatChartValue(minimum, unit)}
+				{formatValue(minimum, unit)}
 			</span>
 			<span
 				className="pointer-events-none absolute -translate-y-full font-mono text-[12px] leading-none text-trace-dim"
@@ -273,10 +276,10 @@ export function ComparisonChart({
 							color: chartTooltipTextColour(item.colour),
 						}}
 						role="status"
-						aria-label={`${item.label}: ${formatChartValue(value, unit)}${unit ? ` ${unit}` : ""}`}
+						aria-label={`${item.label}: ${formatValue(value, unit)}${unit ? ` ${unit}` : ""}`}
 						key={item.label}
 					>
-						{formatChartValue(value, unit)}
+						{formatValue(value, unit)}
 						{unit ? ` ${unit}` : ""}
 					</span>
 				))}

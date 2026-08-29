@@ -607,6 +607,7 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
 												fixedRange={[-1, 8]}
+												formatValue={(value) => formatGear(value)}
 												series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear, comparisonIsFaster)}
 											/>
 										</div>

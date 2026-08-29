@@ -13,6 +13,8 @@ const MAX_RENDER_POINTS: usize = 4_000;
 const AI_HEADER_BYTES: usize = 16;
 const AI_POINT_BYTES: usize = 20;
 const AI_DETAIL_BYTES: usize = 72;
+const AI_DETAIL_HEADER_BYTES: usize = 4;
+const MAX_TRACK_HALF_WIDTH_M: f32 = 15.0;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,9 +134,11 @@ fn read_ai_spline(path: &Path) -> Option<AcTrackGeometry> {
         return None;
     }
     let points_end = AI_HEADER_BYTES.checked_add(point_count.checked_mul(AI_POINT_BYTES)?)?;
-    let details_start = points_end;
+    let details_start = points_end.checked_add(AI_DETAIL_HEADER_BYTES)?;
     let details_end = details_start.checked_add(point_count.checked_mul(AI_DETAIL_BYTES)?)?;
-    if details_end > bytes.len() {
+    if details_end > bytes.len()
+        || usize::try_from(read_i32(&bytes, points_end)?).ok()? != point_count
+    {
         return None;
     }
 
@@ -145,8 +149,8 @@ fn read_ai_spline(path: &Path) -> Option<AcTrackGeometry> {
         let x = read_f32(&bytes, point)?;
         let z = read_f32(&bytes, point + 8)?;
         let detail = details_start + index * AI_DETAIL_BYTES;
-        let left = read_f32(&bytes, detail + 24)?;
-        let right = read_f32(&bytes, detail + 28)?;
+        let left = read_f32(&bytes, detail + 20)?;
+        let right = read_f32(&bytes, detail + 24)?;
         if !x.is_finite()
             || !z.is_finite()
             || !left.is_finite()
@@ -157,7 +161,10 @@ fn read_ai_spline(path: &Path) -> Option<AcTrackGeometry> {
             return None;
         }
         centre.push(AcTrackPoint { x_m: x, z_m: z });
-        widths.push((left, right));
+        widths.push((
+            left.min(MAX_TRACK_HALF_WIDTH_M),
+            right.min(MAX_TRACK_HALF_WIDTH_M),
+        ));
     }
 
     let mut left_boundary = Vec::with_capacity(point_count);
@@ -376,13 +383,19 @@ mod tests {
     #[test]
     fn version_seven_ai_spline_produces_world_space_road_edges() {
         let point_count = 4;
-        let detail_start = AI_HEADER_BYTES + point_count * AI_POINT_BYTES;
+        let detail_header = AI_HEADER_BYTES + point_count * AI_POINT_BYTES;
+        let detail_start = detail_header + AI_DETAIL_HEADER_BYTES;
         let mut bytes = vec![0; detail_start + point_count * AI_DETAIL_BYTES];
         put_i32(&mut bytes, 0, 7);
         put_i32(
             &mut bytes,
             4,
             i32::try_from(point_count).expect("fixture point count fits in i32"),
+        );
+        put_i32(
+            &mut bytes,
+            detail_header,
+            i32::try_from(point_count).expect("fixture detail count fits in i32"),
         );
         for (index, (x, z)) in [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
             .into_iter()
@@ -392,8 +405,8 @@ mod tests {
             put_f32(&mut bytes, point, x);
             put_f32(&mut bytes, point + 8, z);
             let detail = detail_start + index * AI_DETAIL_BYTES;
-            put_f32(&mut bytes, detail + 24, 4.0);
-            put_f32(&mut bytes, detail + 28, 6.0);
+            put_f32(&mut bytes, detail + 20, 4.0);
+            put_f32(&mut bytes, detail + 24, 60.0);
         }
         let root = env::temp_dir().join(format!("trace-ac-spline-{}", std::process::id()));
         fs::create_dir_all(&root).expect("fixture directory");
@@ -406,7 +419,7 @@ mod tests {
         assert_eq!(geometry.right_boundary.len(), point_count);
         let edge_separation = (geometry.left_boundary[0].x_m - geometry.right_boundary[0].x_m)
             .hypot(geometry.left_boundary[0].z_m - geometry.right_boundary[0].z_m);
-        assert!(edge_separation > f32::EPSILON);
+        assert!((edge_separation - 19.0).abs() < 0.001);
         fs::remove_dir_all(root).expect("fixture cleanup");
     }
 }

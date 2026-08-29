@@ -1242,6 +1242,7 @@ struct AlignedLapChannels {
 
 impl AlignedLapChannels {
     fn new(columns: &TelemetryColumns, lap_length_m: f64) -> Result<Self, String> {
+        let lap_positions = normalized_lap_positions(&columns.lap_position);
         let elapsed_origin = columns.elapsed_ns.first().copied().unwrap_or_default();
         let elapsed_values = columns
             .elapsed_ns
@@ -1253,27 +1254,20 @@ impl AlignedLapChannels {
                 )
             })
             .collect::<Vec<_>>();
-        let elapsed_samples = distance_samples(
-            &columns.lap_position,
-            elapsed_values.into_iter(),
-            lap_length_m,
-        );
+        let elapsed_samples =
+            distance_samples(&lap_positions, elapsed_values.into_iter(), lap_length_m);
         let elapsed = ElapsedTimeSeries::new(elapsed_samples)
             .map_err(|error| format!("lap time cannot be aligned by distance: {error:?}"))?;
         Ok(Self {
             elapsed,
-            speed: continuous_series(&columns.lap_position, &columns.speed_mps, lap_length_m),
-            throttle: continuous_series(&columns.lap_position, &columns.throttle, lap_length_m),
-            brake: continuous_series(&columns.lap_position, &columns.brake, lap_length_m),
-            clutch: continuous_series(&columns.lap_position, &columns.clutch, lap_length_m),
-            steering: continuous_series(
-                &columns.lap_position,
-                &columns.steering_angle_rad,
-                lap_length_m,
-            ),
-            rpm: continuous_series(&columns.lap_position, &columns.engine_rpm, lap_length_m),
+            speed: continuous_series(&lap_positions, &columns.speed_mps, lap_length_m),
+            throttle: continuous_series(&lap_positions, &columns.throttle, lap_length_m),
+            brake: continuous_series(&lap_positions, &columns.brake, lap_length_m),
+            clutch: continuous_series(&lap_positions, &columns.clutch, lap_length_m),
+            steering: continuous_series(&lap_positions, &columns.steering_angle_rad, lap_length_m),
+            rpm: continuous_series(&lap_positions, &columns.engine_rpm, lap_length_m),
             sector: numeric_series(
-                &columns.lap_position,
+                &lap_positions,
                 columns
                     .sector_index
                     .iter()
@@ -1281,7 +1275,7 @@ impl AlignedLapChannels {
                 lap_length_m,
             ),
             gear: numeric_series(
-                &columns.lap_position,
+                &lap_positions,
                 columns
                     .gear_kind
                     .iter()
@@ -1290,17 +1284,17 @@ impl AlignedLapChannels {
                 lap_length_m,
             ),
             position_x: numeric_series(
-                &columns.lap_position,
+                &lap_positions,
                 columns.position_x_m.iter().copied(),
                 lap_length_m,
             ),
             position_z: numeric_series(
-                &columns.lap_position,
+                &lap_positions,
                 columns.position_z_m.iter().copied(),
                 lap_length_m,
             ),
             air_temperature: numeric_series(
-                &columns.lap_position,
+                &lap_positions,
                 columns
                     .ambient_temperature_c
                     .iter()
@@ -1308,7 +1302,7 @@ impl AlignedLapChannels {
                 lap_length_m,
             ),
             track_temperature: numeric_series(
-                &columns.lap_position,
+                &lap_positions,
                 columns
                     .track_temperature_c
                     .iter()
@@ -1317,6 +1311,43 @@ impl AlignedLapChannels {
             ),
         })
     }
+}
+
+fn normalized_lap_positions(positions: &[Option<f32>]) -> Vec<Option<f32>> {
+    let mut forward_travel = 0.0_f32;
+    let mut reverse_travel = 0.0_f32;
+    let mut previous: Option<f32> = None;
+    for position in positions.iter().filter_map(|position| {
+        position.filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+    }) {
+        if let Some(previous) = previous {
+            let delta = position - previous;
+            if delta.abs() <= 0.5 {
+                if delta > 0.0 {
+                    forward_travel += delta;
+                } else {
+                    reverse_travel -= delta;
+                }
+            }
+        }
+        previous = Some(position);
+    }
+    let reversed = reverse_travel > forward_travel;
+    let origin = positions
+        .iter()
+        .flatten()
+        .copied()
+        .find(|position| position.is_finite() && (0.0..=1.0).contains(position))
+        .map(|position| if reversed { 1.0 - position } else { position });
+    positions
+        .iter()
+        .map(|position| {
+            position.map(|position| {
+                let position = if reversed { 1.0 - position } else { position };
+                origin.map_or(position, |origin| (position - origin).rem_euclid(1.0))
+            })
+        })
+        .collect()
 }
 
 fn continuous_series(
@@ -2396,6 +2427,37 @@ mod tests {
     #[test]
     fn unknown_simulator_keys_have_a_readable_fallback_name() {
         assert_eq!(simulator_name("example-racing-sim"), "Example Racing Sim");
+    }
+
+    #[test]
+    fn forward_lap_positions_are_unchanged() {
+        let positions = [Some(0.0), Some(0.25), None, Some(0.75), Some(0.99)];
+        assert_eq!(normalized_lap_positions(&positions), positions);
+    }
+
+    #[test]
+    fn reverse_lap_positions_are_normalized_to_increasing_distance() {
+        let positions = [Some(1.0), Some(0.75), None, Some(0.25), Some(0.01)];
+        assert_eq!(
+            normalized_lap_positions(&positions),
+            [Some(0.0), Some(0.25), None, Some(0.75), Some(0.99)]
+        );
+    }
+
+    #[test]
+    fn lap_positions_are_unwrapped_relative_to_the_recorded_boundary() {
+        let positions = [
+            Some(0.992),
+            Some(0.998),
+            Some(0.002),
+            Some(0.5),
+            Some(0.991),
+        ];
+        let normalized = normalized_lap_positions(&positions);
+        let expected = [0.0, 0.006, 0.01, 0.508, 0.999];
+        for (actual, expected) in normalized.into_iter().flatten().zip(expected) {
+            assert!((actual - expected).abs() < 0.000_01);
+        }
     }
 
     #[test]
