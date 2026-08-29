@@ -17,6 +17,8 @@ const MAXIMUM_INACTIVE_GAP_M: f64 = 30.0;
 const MINIMUM_CORNER_SPAN_M: f64 = 20.0;
 const METRIC_BRAKE_PERCENT: f64 = 10.0;
 const METRIC_THROTTLE_PERCENT: f64 = 20.0;
+const MAXIMUM_BRAKING_LOOKBACK_M: f64 = 300.0;
+const MAXIMUM_BRAKE_GAP_M: f64 = 15.0;
 
 /// One distance-aligned pair of lap observations used by corner analysis.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -177,9 +179,22 @@ pub fn analyze_corner_comparison(
         .collect::<Vec<_>>();
     let ranges = active_ranges(samples, &active);
     let corners = ranges
-        .into_iter()
+        .iter()
+        .copied()
         .enumerate()
-        .filter_map(|(index, (start, end))| build_corner(samples, index, start, end))
+        .filter_map(|(index, (start, end))| {
+            let lower_bound = index
+                .checked_sub(1)
+                .and_then(|previous| ranges.get(previous))
+                .map_or(0, |(_, previous_end)| {
+                    previous_end.saturating_add(1).min(start)
+                });
+            let distance_floor = samples[start].distance_m - MAXIMUM_BRAKING_LOOKBACK_M;
+            let braking_search_start = (lower_bound..=start)
+                .find(|sample_index| samples[*sample_index].distance_m >= distance_floor)
+                .unwrap_or(lower_bound);
+            build_corner(samples, index, start, end, braking_search_start)
+        })
         .collect::<Vec<_>>();
 
     let evidence = corners
@@ -270,6 +285,7 @@ fn build_corner(
     zero_based_index: usize,
     start: usize,
     end: usize,
+    braking_search_start: usize,
 ) -> Option<CornerAnalysis> {
     let apex = minimum_speed_index(samples, start, end, true)?;
     let mut entry_end = (start..=apex)
@@ -299,41 +315,24 @@ fn build_corner(
     ];
     let total_loss_seconds = loss_between(samples, start, end);
     let comparison_apex = minimum_speed_index(samples, start, end, false);
+    let reference_braking_zone = braking_zone(samples, braking_search_start, apex, end, |sample| {
+        sample.reference_brake_percent
+    });
+    let comparison_braking_zone = braking_zone(
+        samples,
+        braking_search_start,
+        comparison_apex.unwrap_or(apex),
+        end,
+        |sample| sample.comparison_brake_percent,
+    );
     let metrics = CornerMetrics {
-        reference_braking_point_m: threshold_point(
-            samples,
-            start,
-            apex,
-            |sample| sample.reference_brake_percent,
-            METRIC_BRAKE_PERCENT,
-        ),
-        comparison_braking_point_m: threshold_point(
-            samples,
-            start,
-            apex,
-            |sample| sample.comparison_brake_percent,
-            METRIC_BRAKE_PERCENT,
-        ),
-        reference_brake_release_point_m: last_threshold_point(
-            samples,
-            start,
-            end,
-            |sample| sample.reference_brake_percent,
-            METRIC_BRAKE_PERCENT,
-        ),
-        comparison_brake_release_point_m: last_threshold_point(
-            samples,
-            start,
-            end,
-            |sample| sample.comparison_brake_percent,
-            METRIC_BRAKE_PERCENT,
-        ),
-        reference_peak_brake_percent: peak_value(samples, start, end, |sample| {
-            sample.reference_brake_percent
-        }),
-        comparison_peak_brake_percent: peak_value(samples, start, end, |sample| {
-            sample.comparison_brake_percent
-        }),
+        reference_braking_point_m: reference_braking_zone.map(|zone| zone.start_distance_m),
+        comparison_braking_point_m: comparison_braking_zone.map(|zone| zone.start_distance_m),
+        reference_brake_release_point_m: reference_braking_zone.map(|zone| zone.release_distance_m),
+        comparison_brake_release_point_m: comparison_braking_zone
+            .map(|zone| zone.release_distance_m),
+        reference_peak_brake_percent: reference_braking_zone.map(|zone| zone.peak_percent),
+        comparison_peak_brake_percent: comparison_braking_zone.map(|zone| zone.peak_percent),
         reference_minimum_speed_kmh: samples[apex].reference_speed_kmh,
         comparison_minimum_speed_kmh: comparison_apex
             .and_then(|index| samples[index].comparison_speed_kmh),
@@ -421,33 +420,55 @@ fn threshold_point(
         .map(|sample| sample.distance_m)
 }
 
-fn last_threshold_point(
-    samples: &[CornerComparisonSample],
-    start: usize,
-    end: usize,
-    value: impl Fn(CornerComparisonSample) -> Option<f64>,
-    threshold: f64,
-) -> Option<f64> {
-    samples[start..=end]
-        .iter()
-        .copied()
-        .rev()
-        .find(|sample| value(*sample).is_some_and(|value| value >= threshold))
-        .map(|sample| sample.distance_m)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BrakingZone {
+    start_distance_m: f64,
+    release_distance_m: f64,
+    peak_percent: f64,
 }
 
-fn peak_value(
+fn braking_zone(
     samples: &[CornerComparisonSample],
     start: usize,
+    apex: usize,
     end: usize,
     value: impl Fn(CornerComparisonSample) -> Option<f64>,
-) -> Option<f64> {
-    samples[start..=end]
-        .iter()
-        .copied()
-        .filter_map(value)
-        .filter(|value| value.is_finite())
-        .max_by(f64::total_cmp)
+) -> Option<BrakingZone> {
+    let mut zones = Vec::new();
+    let mut current: Option<(usize, usize, f64)> = None;
+    for index in start..=end {
+        let Some(pressure) = value(samples[index])
+            .filter(|pressure| pressure.is_finite() && *pressure >= METRIC_BRAKE_PERCENT)
+        else {
+            continue;
+        };
+        if let Some((zone_start, last_active, peak)) = current {
+            if samples[index].distance_m - samples[last_active].distance_m <= MAXIMUM_BRAKE_GAP_M {
+                current = Some((zone_start, index, peak.max(pressure)));
+            } else {
+                zones.push((zone_start, last_active, peak));
+                current = Some((index, index, pressure));
+            }
+        } else {
+            current = Some((index, index, pressure));
+        }
+    }
+    if let Some(zone) = current {
+        zones.push(zone);
+    }
+    zones
+        .into_iter()
+        .filter(|(zone_start, _, _)| *zone_start <= apex)
+        .min_by(|left, right| {
+            let left_distance = (samples[left.1].distance_m - samples[apex].distance_m).abs();
+            let right_distance = (samples[right.1].distance_m - samples[apex].distance_m).abs();
+            left_distance.total_cmp(&right_distance)
+        })
+        .map(|(zone_start, release, peak_percent)| BrakingZone {
+            start_distance_m: samples[zone_start].distance_m,
+            release_distance_m: samples[release].distance_m,
+            peak_percent,
+        })
 }
 
 fn path_turn_angle(samples: &[CornerComparisonSample], index: usize) -> Option<f64> {
@@ -568,6 +589,132 @@ mod tests {
         assert_eq!(corner.metrics.comparison_peak_brake_percent, Some(75.0));
         assert_eq!(corner.metrics.reference_throttle_point_m, Some(110.0));
         assert_eq!(corner.metrics.comparison_throttle_point_m, Some(125.0));
+    }
+
+    #[test]
+    fn comparison_braking_can_begin_before_the_reference_corner_range() {
+        let mut samples = synthetic_corner();
+        for (index, sample) in samples.iter_mut().enumerate() {
+            sample.comparison_brake_percent =
+                Some(if (6..=18).contains(&index) { 64.0 } else { 0.0 });
+        }
+        let result = analyze_corner_comparison(&samples, context());
+        let corner = &result.value.expect("available analysis").corners[0];
+        assert_eq!(corner.metrics.comparison_braking_point_m, Some(30.0));
+        assert_eq!(corner.metrics.comparison_brake_release_point_m, Some(90.0));
+        assert_eq!(corner.metrics.comparison_peak_brake_percent, Some(64.0));
+    }
+
+    #[test]
+    fn brief_pressure_gap_does_not_split_a_braking_zone() {
+        let mut samples = synthetic_corner();
+        for (index, sample) in samples.iter_mut().enumerate() {
+            sample.comparison_brake_percent = Some(if (6..=18).contains(&index) && index != 10 {
+                if index == 14 { 82.0 } else { 64.0 }
+            } else {
+                0.0
+            });
+        }
+        let result = analyze_corner_comparison(&samples, context());
+        let corner = &result.value.expect("available analysis").corners[0];
+        assert_eq!(corner.metrics.comparison_braking_point_m, Some(30.0));
+        assert_eq!(corner.metrics.comparison_brake_release_point_m, Some(90.0));
+        assert_eq!(corner.metrics.comparison_peak_brake_percent, Some(82.0));
+    }
+
+    #[test]
+    fn nearest_pre_apex_zone_wins_over_an_earlier_brake_application() {
+        let mut samples = synthetic_corner();
+        for (index, sample) in samples.iter_mut().enumerate() {
+            sample.comparison_brake_percent = Some(if (1..=3).contains(&index) {
+                40.0
+            } else if (12..=18).contains(&index) {
+                70.0
+            } else {
+                0.0
+            });
+        }
+        let result = analyze_corner_comparison(&samples, context());
+        let corner = &result.value.expect("available analysis").corners[0];
+        assert_eq!(corner.metrics.comparison_braking_point_m, Some(60.0));
+        assert_eq!(corner.metrics.comparison_brake_release_point_m, Some(90.0));
+    }
+
+    #[test]
+    fn missing_driver_brake_input_does_not_invent_a_zone() {
+        let mut samples = synthetic_corner();
+        for sample in &mut samples {
+            sample.comparison_brake_percent = None;
+        }
+        let result = analyze_corner_comparison(&samples, context());
+        let corner = &result.value.expect("available analysis").corners[0];
+        assert_eq!(corner.metrics.comparison_braking_point_m, None);
+        assert_eq!(corner.metrics.comparison_brake_release_point_m, None);
+        assert_eq!(corner.metrics.comparison_peak_brake_percent, None);
+    }
+
+    #[test]
+    fn preceding_corner_braking_is_not_attached_to_the_next_corner() {
+        let samples = (0..=80)
+            .map(|index| {
+                let first_corner = (10..=25).contains(&index);
+                let second_corner = (45..=60).contains(&index);
+                let nearest_apex = if first_corner { 18 } else { 52 };
+                let speed = if first_corner || second_corner {
+                    150.0
+                        - (10.0 - (f64::from(index) - f64::from(nearest_apex)).abs()).max(0.0) * 5.0
+                } else {
+                    150.0
+                };
+                CornerComparisonSample {
+                    distance_m: f64::from(index) * 5.0,
+                    delta_s: Some(f64::from(index) * 0.001),
+                    reference_speed_kmh: Some(speed),
+                    comparison_speed_kmh: Some(speed - 2.0),
+                    reference_throttle_percent: Some(if index > nearest_apex {
+                        100.0
+                    } else {
+                        0.0
+                    }),
+                    comparison_throttle_percent: Some(if index > nearest_apex {
+                        100.0
+                    } else {
+                        0.0
+                    }),
+                    reference_brake_percent: Some(
+                        if (8..=14).contains(&index) || (43..=49).contains(&index) {
+                            70.0
+                        } else {
+                            0.0
+                        },
+                    ),
+                    comparison_brake_percent: Some(if (12..=16).contains(&index) {
+                        60.0
+                    } else {
+                        0.0
+                    }),
+                    reference_steering_percent: Some(if first_corner || second_corner {
+                        25.0
+                    } else {
+                        0.0
+                    }),
+                    comparison_steering_percent: Some(if first_corner || second_corner {
+                        25.0
+                    } else {
+                        0.0
+                    }),
+                    reference_position_x_m: None,
+                    reference_position_z_m: None,
+                    comparison_position_x_m: None,
+                    comparison_position_z_m: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let result = analyze_corner_comparison(&samples, context());
+        let corners = result.value.expect("available analysis").corners;
+        assert_eq!(corners.len(), 2);
+        assert_eq!(corners[0].metrics.comparison_braking_point_m, Some(60.0));
+        assert_eq!(corners[1].metrics.comparison_braking_point_m, None);
     }
 
     #[test]
