@@ -1096,6 +1096,7 @@ function CornerAnalysisPanel({
 	onCollapsed: (collapsed: boolean) => void;
 	onSelect: (index: number) => void;
 }) {
+	const [analysisTab, setAnalysisTab] = useState<"insights" | "corners">("insights");
 	const opportunities = corners
 		.filter((corner) => corner.totalLossSeconds != null && corner.totalLossSeconds > 0.005)
 		.slice()
@@ -1150,30 +1151,55 @@ function CornerAnalysisPanel({
 					<p className="border-b border-trace-divider bg-trace-warning/5 px-3 py-2 text-[10px] leading-4 text-trace-dim">
 						This analysis uses simple telemetry rules and may be incorrect. Verify its suggestions against the graphs and track map.
 					</p>
-					{highConfidenceObservations.length > 0 && (
-						<div className="border-b border-trace-divider px-3 py-3">
-							<strong className="font-mono text-[10px] tracking-[.08em] text-trace-soft">REPEATED PATTERNS</strong>
-							<div className="mt-2 space-y-2">
-								{highConfidenceObservations.map((observation) => (
-									<DrivingObservationRow observation={observation} key={observation.kind} />
-								))}
-							</div>
+					<div className="grid grid-cols-2 border-b border-trace-divider" role="tablist" aria-label="Analysis view">
+						{(["insights", "corners"] as const).map((tab) => (
+							<button
+								type="button"
+								role="tab"
+								aria-selected={analysisTab === tab}
+								onClick={() => {
+									setAnalysisTab(tab);
+									if (tab === "insights" && selectedCornerIndex != null) onSelect(selectedCornerIndex);
+								}}
+								className={`h-9 border-b-2 font-mono text-[10px] font-bold tracking-[.08em] transition-colors ${analysisTab === tab ? "border-trace-accent bg-trace-deep text-trace-text" : "border-transparent text-trace-dim hover:bg-trace-deep hover:text-trace-text"}`}
+								key={tab}
+							>
+								{tab.toUpperCase()}
+								{tab === "insights" && drivingObservations.length > 0 ? ` · ${drivingObservations.length}` : ""}
+							</button>
+						))}
+					</div>
+					{analysisTab === "insights" ? (
+						<div role="tabpanel">
+							{highConfidenceObservations.length > 0 && (
+								<div className="border-b border-trace-divider px-3 py-3">
+									<div className="space-y-2">
+										{highConfidenceObservations.map((observation) => (
+											<DrivingObservationRow observation={observation} key={observation.kind} />
+										))}
+									</div>
+								</div>
+							)}
+							{lowConfidenceObservations.length > 0 && (
+								<details className="border-b border-trace-divider px-3 py-2">
+									<summary className="cursor-pointer select-none font-mono text-[10px] font-bold tracking-[.06em] text-trace-dim hover:text-trace-text">
+										LOW CONFIDENCE · {lowConfidenceObservations.length}
+									</summary>
+									<div className="mt-2 space-y-2">
+										{lowConfidenceObservations.map((observation) => (
+											<DrivingObservationRow observation={observation} key={observation.kind} />
+										))}
+									</div>
+								</details>
+							)}
+							{drivingObservations.length === 0 && (
+								<p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">No repeated driving insights were detected for this lap pair.</p>
+							)}
 						</div>
-					)}
-					{lowConfidenceObservations.length > 0 && (
-						<details className="border-b border-trace-divider px-3 py-2">
-							<summary className="cursor-pointer select-none font-mono text-[10px] font-bold tracking-[.06em] text-trace-dim hover:text-trace-text">
-								LOW CONFIDENCE · {lowConfidenceObservations.length}
-							</summary>
-							<div className="mt-2 space-y-2">
-								{lowConfidenceObservations.map((observation) => (
-									<DrivingObservationRow observation={observation} key={observation.kind} />
-								))}
-							</div>
-						</details>
-					)}
-					{opportunities.length === 0 ? (
-						<p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">The rule-based comparison did not detect any meaningful corner losses.</p>
+					) : opportunities.length === 0 ? (
+						<p className="px-4 py-4 text-[12px] leading-5 text-trace-dim" role="tabpanel">
+							The rule-based comparison did not detect any meaningful corner losses.
+						</p>
 					) : (
 						<div className="divide-y divide-trace-divider">
 							{selectedCornerIndex != null && (
