@@ -169,6 +169,15 @@ pub struct NewSetupImport {
     pub imported_at: String,
 }
 
+/// Canonical source identities needed to attach a setup to one recorded session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionSetupIdentity {
+    pub simulator_key: String,
+    pub source_car_id: String,
+    pub source_track_id: String,
+    pub layout_id: Option<String>,
+}
+
 /// A setup whose source identities exactly match a recorded session.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -610,6 +619,39 @@ impl MetadataStore {
             )
             .map_err(MetadataError::from)?;
         Ok(())
+    }
+
+    /// Returns the canonical simulator, car, track, and layout identity for setup matching.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the session is unknown or its identity cannot be read.
+    pub fn session_setup_identity(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionSetupIdentity, MetadataError> {
+        self.connection
+            .query_row(
+                "SELECT sim.key, c.source_car_id, t.source_track_id, t.layout_id
+                 FROM sessions s
+                 JOIN simulators sim ON sim.id = s.simulator_id
+                 JOIN cars c ON c.id = s.car_id
+                 JOIN tracks t ON t.id = s.track_id
+                 WHERE s.id = ?1",
+                [session_id],
+                |row| {
+                    let layout: String = row.get(3)?;
+                    Ok(SessionSetupIdentity {
+                        simulator_key: row.get(0)?,
+                        source_car_id: row.get(1)?,
+                        source_track_id: row.get(2)?,
+                        layout_id: (!layout.is_empty()).then_some(layout),
+                    })
+                },
+            )
+            .optional()
+            .map_err(MetadataError::from)?
+            .ok_or(MetadataError::RecordNotFound)
     }
 
     /// Returns imported setups whose simulator, source car, source track, and layout
@@ -1830,6 +1872,17 @@ mod tests {
         store
             .create_session(&session("session-1"))
             .expect("session");
+        assert_eq!(
+            store
+                .session_setup_identity("session-1")
+                .expect("session setup identity"),
+            SessionSetupIdentity {
+                simulator_key: "assetto-corsa".into(),
+                source_car_id: "tatuusfa1".into(),
+                source_track_id: "mugello".into(),
+                layout_id: None,
+            }
+        );
         store
             .save_setup_import(&NewSetupImport {
                 id: "setup-race".into(),

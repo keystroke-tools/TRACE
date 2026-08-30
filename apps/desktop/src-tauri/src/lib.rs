@@ -49,7 +49,10 @@ use live_broadcast::{
     start_recorded_live_broadcast, stop_live_broadcast,
 };
 use setup_analysis::compare_setups;
-use setup_import::{detect_setup_folder, import_setup_archives, setup_importers};
+use setup_import::{
+    attach_session_setup, detect_setup_folder, import_setup_archives, import_setup_files,
+    index_existing_setups, setup_importers,
+};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2388,6 +2391,9 @@ pub fn run() {
             set_game_install_directory,
             detect_setup_folder,
             import_setup_archives,
+            import_setup_files,
+            attach_session_setup,
+            index_existing_setups,
             setup_importers,
             driver_profile,
             set_driver_profile,
