@@ -1152,20 +1152,25 @@ function CornerAnalysisPanel({
 						This analysis uses simple telemetry rules and may be incorrect. Verify its suggestions against the graphs and track map.
 					</p>
 					<div className="grid grid-cols-2 border-b border-trace-divider" role="tablist" aria-label="Analysis view">
-						{(["insights", "corners"] as const).map((tab) => (
+						{(
+							[
+								{ id: "insights", label: "INSIGHTS" },
+								{ id: "corners", label: "BREAKDOWN" },
+							] as const
+						).map((tab) => (
 							<button
 								type="button"
 								role="tab"
-								aria-selected={analysisTab === tab}
+								aria-selected={analysisTab === tab.id}
 								onClick={() => {
-									setAnalysisTab(tab);
-									if (tab === "insights" && selectedCornerIndex != null) onSelect(selectedCornerIndex);
+									setAnalysisTab(tab.id);
+									if (tab.id === "insights" && selectedCornerIndex != null) onSelect(selectedCornerIndex);
 								}}
-								className={`h-9 border-b-2 font-mono text-[10px] font-bold tracking-[.08em] transition-colors ${analysisTab === tab ? "border-trace-accent bg-trace-deep text-trace-text" : "border-transparent text-trace-dim hover:bg-trace-deep hover:text-trace-text"}`}
-								key={tab}
+								className={`h-9 border-b-2 font-mono text-[10px] font-bold tracking-[.08em] transition-colors ${analysisTab === tab.id ? "border-trace-accent bg-trace-deep text-trace-text" : "border-transparent text-trace-dim hover:bg-trace-deep hover:text-trace-text"}`}
+								key={tab.id}
 							>
-								{tab.toUpperCase()}
-								{tab === "insights" && drivingObservations.length > 0 ? ` · ${drivingObservations.length}` : ""}
+								{tab.label}
+								{tab.id === "insights" && drivingObservations.length > 0 ? ` · ${drivingObservations.length}` : ""}
 							</button>
 						))}
 					</div>
@@ -1173,7 +1178,7 @@ function CornerAnalysisPanel({
 						<div role="tabpanel">
 							{highConfidenceObservations.length > 0 && (
 								<div className="border-b border-trace-divider px-3 py-3">
-									<div className="space-y-2">
+									<div className="divide-y divide-trace-divider">
 										{highConfidenceObservations.map((observation) => (
 											<DrivingObservationRow observation={observation} key={observation.kind} />
 										))}
@@ -1185,7 +1190,7 @@ function CornerAnalysisPanel({
 									<summary className="cursor-pointer select-none font-mono text-[10px] font-bold tracking-[.06em] text-trace-dim hover:text-trace-text">
 										LOW CONFIDENCE · {lowConfidenceObservations.length}
 									</summary>
-									<div className="mt-2 space-y-2">
+									<div className="mt-2 divide-y divide-trace-divider">
 										{lowConfidenceObservations.map((observation) => (
 											<DrivingObservationRow observation={observation} key={observation.kind} />
 										))}
@@ -1262,7 +1267,7 @@ function CornerAnalysisPanel({
 function DrivingObservationRow({ observation }: { observation: DrivingObservation }) {
 	const [title, value] = drivingObservationCopy(observation);
 	return (
-		<div className="border-l-2 border-trace-accent bg-trace-deep px-2.5 py-2">
+		<div className="py-2.5">
 			<span className="block text-[12px] font-semibold leading-4 text-trace-text">{title}</span>
 			<span className="mt-0.5 block text-[10px] leading-4 text-trace-muted">
 				{value} · T{observation.cornerIndices.join(", T")}
