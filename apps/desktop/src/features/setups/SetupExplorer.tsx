@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { telemetryDataSource, type SetupLibraryEntry } from "../../data-source";
 import { formatCompactSessionDate } from "../sessions/session-components";
+import { SetupEditor } from "./SetupEditor";
 
 interface TrackGroup {
 	key: string;
@@ -30,6 +31,8 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 	const [simulatorId, setSimulatorId] = useState("");
 	const [selectedCarKey, setSelectedCarKey] = useState("");
 	const [selectedTrackKey, setSelectedTrackKey] = useState("");
+	const [editingSetup, setEditingSetup] = useState<SetupLibraryEntry | null>(null);
+	const [libraryRevision, setLibraryRevision] = useState(0);
 
 	useEffect(() => {
 		let active = true;
@@ -47,7 +50,7 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 		return () => {
 			active = false;
 		};
-	}, [refreshKey]);
+	}, [refreshKey, libraryRevision]);
 
 	const simulators = useMemo(
 		() => [...new Map(entries.map((entry) => [entry.simulatorId, entry.simulatorName])).entries()].sort((left, right) => left[1].localeCompare(right[1])),
@@ -87,6 +90,21 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 	useEffect(() => {
 		if (selectedTrack && selectedTrack.key !== selectedTrackKey) setSelectedTrackKey(selectedTrack.key);
 	}, [selectedTrack, selectedTrackKey]);
+
+	if (editingSetup) {
+		return (
+			<section className="mt-4 border border-trace-divider bg-trace-surface" aria-label={`Edit ${editingSetup.name}`}>
+				<SetupEditor
+					setup={editingSetup}
+					onClose={() => setEditingSetup(null)}
+					onSaved={() => {
+						setLibraryRevision((value) => value + 1);
+						setEditingSetup(null);
+					}}
+				/>
+			</section>
+		);
+	}
 
 	return (
 		<section className="mt-4 border border-trace-divider bg-trace-surface" aria-labelledby="setup-library-heading">
@@ -213,7 +231,7 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 						)}
 						<div className="min-h-0 flex-1 overflow-y-auto py-1">
 							{selectedTrack?.setups.map((setup) => (
-								<SetupFileRow setup={setup} key={setup.id} />
+								<SetupFileRow setup={setup} onOpen={() => setEditingSetup(setup)} key={setup.id} />
 							))}
 						</div>
 					</section>
@@ -232,9 +250,14 @@ function ExplorerHeading({ label, count }: { label: string; count: number }) {
 	);
 }
 
-function SetupFileRow({ setup }: { setup: SetupLibraryEntry }) {
+function SetupFileRow({ setup, onOpen }: { setup: SetupLibraryEntry; onOpen: () => void }) {
 	return (
-		<article className="grid min-w-0 grid-cols-[30px_minmax(0,1fr)] gap-3 border-l-2 border-transparent px-4 py-3 xl:grid-cols-[30px_minmax(0,1fr)_auto] xl:items-center">
+		<button
+			type="button"
+			onClick={onOpen}
+			disabled={!setup.available}
+			className="grid w-full min-w-0 grid-cols-[30px_minmax(0,1fr)] gap-3 border-l-2 border-transparent px-4 py-3 text-left hover:border-trace-accent hover:bg-trace-accent/10 disabled:cursor-not-allowed disabled:opacity-50 xl:grid-cols-[30px_minmax(0,1fr)_auto] xl:items-center"
+		>
 			<span className="grid size-[30px] place-items-center bg-trace-deep font-mono text-[8px] font-black text-trace-muted" aria-hidden="true">
 				INI
 			</span>
@@ -254,7 +277,7 @@ function SetupFileRow({ setup }: { setup: SetupLibraryEntry }) {
 					<span className="border border-trace-warning/50 px-1.5 py-1 font-mono text-[8px] font-bold text-trace-warning">FILE MISSING</span>
 				)}
 			</div>
-		</article>
+		</button>
 	);
 }
 

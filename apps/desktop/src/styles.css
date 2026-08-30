@@ -118,6 +118,16 @@
 		background: var(--color-trace-divider);
 	}
 
+	.trace-value-slider::-webkit-slider-runnable-track {
+		background: linear-gradient(
+			to right,
+			var(--color-trace-accent) 0,
+			var(--color-trace-accent) var(--trace-slider-fill, 0%),
+			var(--color-trace-divider) var(--trace-slider-fill, 0%),
+			var(--color-trace-divider) 100%
+		);
+	}
+
 	.trace-seek::-webkit-slider-thumb {
 		width: 12px;
 		height: 12px;
