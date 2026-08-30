@@ -38,6 +38,7 @@ mod discord_activity;
 mod live_broadcast;
 mod obs_overlay;
 mod setup_analysis;
+mod setup_editor;
 mod setup_import;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
@@ -49,6 +50,7 @@ use live_broadcast::{
     start_recorded_live_broadcast, stop_live_broadcast,
 };
 use setup_analysis::compare_setups;
+use setup_editor::{save_setup_copy, setup_document};
 use setup_import::{
     attach_session_setup, detect_setup_folder, import_setup_archives, import_setup_files,
     index_existing_setups, setup_importers, setup_library,
@@ -2395,6 +2397,8 @@ pub fn run() {
             attach_session_setup,
             index_existing_setups,
             setup_library,
+            setup_document,
+            save_setup_copy,
             setup_importers,
             driver_profile,
             set_driver_profile,

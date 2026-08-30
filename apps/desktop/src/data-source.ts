@@ -333,6 +333,42 @@ export interface SetupLibraryEntry {
 	available: boolean;
 }
 
+export interface SetupDocumentValue {
+	section: string;
+	label: string;
+	value: string;
+	editable: boolean;
+	description?: string | null;
+	minimum?: string | null;
+	maximum?: string | null;
+	step?: string | null;
+}
+
+export interface SetupDocumentGroup {
+	name: string;
+	values: SetupDocumentValue[];
+}
+
+export interface SetupDocument {
+	setupId: string;
+	name: string;
+	simulatorId: string;
+	sourceCarId: string;
+	metadataAvailable: boolean;
+	groups: SetupDocumentGroup[];
+}
+
+export interface SaveSetupCopyOptions {
+	sourceSetupId: string;
+	name: string;
+	values: { section: string; value: string }[];
+}
+
+export interface SetupSaveResult {
+	setupId: string;
+	name: string;
+}
+
 export interface SetupImportResult {
 	archiveName: string;
 	car?: string | null;
@@ -444,6 +480,8 @@ export interface TelemetryDataSource {
 	attachSessionSetup(options: SessionSetupAttachmentOptions): Promise<CompatibleSetup[]>;
 	indexExistingSetups(simulatorId: string, setupsFolder: string): Promise<SetupDiscoveryResult>;
 	getSetupLibrary(): Promise<SetupLibraryEntry[]>;
+	getSetupDocument(setupId: string): Promise<SetupDocument>;
+	saveSetupCopy(options: SaveSetupCopyOptions): Promise<SetupSaveResult>;
 	getCompatibleSetups(sessionId: string): Promise<CompatibleSetup[]>;
 	confirmSessionSetup(sessionId: string, setupId: string): Promise<CompatibleSetup[]>;
 	clearSessionSetup(sessionId: string): Promise<CompatibleSetup[]>;
@@ -1009,6 +1047,51 @@ export const fixtureDataSource: TelemetryDataSource = {
 			},
 		];
 	},
+	async getSetupDocument(setupId) {
+		return {
+			setupId,
+			name: setupId === "setup-qualifying" ? "qualifying.ini" : "race.ini",
+			simulatorId: "assetto-corsa",
+			sourceCarId: "ks_mazda_mx5_cup",
+			metadataAvailable: true,
+			groups: [
+				{
+					name: "Tyres",
+					values: [
+						{
+							section: "PRESSURE_LF",
+							label: "Pressure LF",
+							value: "18",
+							editable: true,
+							description: "Adjust the starting pressure for the left-front tyre.",
+							minimum: "15",
+							maximum: "35",
+							step: "1",
+						},
+						{ section: "PRESSURE_RF", label: "Pressure RF", value: "18", editable: true, minimum: "15", maximum: "35", step: "1" },
+					],
+				},
+				{
+					name: "Suspension",
+					values: [
+						{
+							section: "ARB_FRONT",
+							label: "Front anti-roll bar",
+							value: "3",
+							editable: true,
+							description: "Higher values reduce front roll and sharpen initial response.",
+							minimum: "0",
+							maximum: "5",
+							step: "1",
+						},
+					],
+				},
+			],
+		};
+	},
+	async saveSetupCopy(options) {
+		return { setupId: `fixture-${options.name}`, name: options.name.toLowerCase().endsWith(".ini") ? options.name : `${options.name}.ini` };
+	},
 	async getCompatibleSetups(_sessionId) {
 		return [
 			{
@@ -1199,6 +1282,12 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	getSetupLibrary() {
 		return invoke<SetupLibraryEntry[]>("setup_library");
+	},
+	getSetupDocument(setupId) {
+		return invoke<SetupDocument>("setup_document", { setupId });
+	},
+	saveSetupCopy(options) {
+		return invoke<SetupSaveResult>("save_setup_copy", { options });
 	},
 	getCompatibleSetups(sessionId) {
 		return invoke<CompatibleSetup[]>("compatible_setups", { sessionId });
