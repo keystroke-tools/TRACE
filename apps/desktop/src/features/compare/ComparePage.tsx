@@ -426,7 +426,6 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 						corners={corners}
 						drivingObservations={drivingObservations}
 						selectedCornerIndex={cornerIndex}
-						comparisonIsFaster={comparisonIsFaster}
 						collapsed={analysisCollapsed}
 						onCollapsed={setAnalysisCollapsed}
 						onSelect={(value) => {
@@ -1083,7 +1082,6 @@ function CornerAnalysisPanel({
 	corners,
 	drivingObservations,
 	selectedCornerIndex,
-	comparisonIsFaster,
 	collapsed,
 	onCollapsed,
 	onSelect,
@@ -1091,7 +1089,6 @@ function CornerAnalysisPanel({
 	corners: CornerAnalysis[];
 	drivingObservations: DrivingObservation[];
 	selectedCornerIndex: number | null;
-	comparisonIsFaster: boolean;
 	collapsed: boolean;
 	onCollapsed: (collapsed: boolean) => void;
 	onSelect: (index: number) => void;
@@ -1115,10 +1112,7 @@ function CornerAnalysisPanel({
 				{!collapsed && (
 					<div className="min-w-0">
 						<strong className="block font-mono text-[11px] tracking-[.1em] text-trace-soft">ANALYSIS</strong>
-						<span className="mt-1 block text-[11px] leading-4 text-trace-dim">Rule-based comparison · No AI</span>
-						<span className="mt-1 block text-[10px] leading-4 text-trace-faint">
-							{comparisonIsFaster ? "Analysed Lap is faster than Reference" : "Analysed Lap against faster Reference"}
-						</span>
+						<span className="mt-1 block text-[11px] leading-4 text-trace-dim">Telemetry rules · Not AI-generated</span>
 					</div>
 				)}
 				<button
@@ -1149,7 +1143,7 @@ function CornerAnalysisPanel({
 			) : (
 				<div>
 					<p className="border-b border-trace-divider bg-trace-warning/5 px-3 py-2 text-[10px] leading-4 text-trace-dim">
-						This analysis uses simple telemetry rules and may be incorrect. Verify its suggestions against the graphs and track map.
+						Estimates may be wrong. Verify them against the graphs and track map.
 					</p>
 					<div className="grid grid-cols-2 border-b border-trace-divider" role="tablist" aria-label="Analysis view">
 						{(
