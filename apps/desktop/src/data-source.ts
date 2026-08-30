@@ -316,6 +316,23 @@ export interface SetupDiscoveryResult {
 	limited: boolean;
 }
 
+export interface SetupLibraryEntry {
+	id: string;
+	simulatorId: string;
+	simulatorName: string;
+	sourceCarId: string;
+	carName: string;
+	sourceTrackId: string;
+	trackName: string;
+	layoutId?: string | null;
+	name: string;
+	installedPath: string;
+	sourceArchive?: string | null;
+	importedAt: string;
+	linkedSessionCount: number;
+	available: boolean;
+}
+
 export interface SetupImportResult {
 	archiveName: string;
 	car?: string | null;
@@ -426,6 +443,7 @@ export interface TelemetryDataSource {
 	importSetupFiles(options: SetupFileImportOptions): Promise<SetupImportResult[]>;
 	attachSessionSetup(options: SessionSetupAttachmentOptions): Promise<CompatibleSetup[]>;
 	indexExistingSetups(simulatorId: string, setupsFolder: string): Promise<SetupDiscoveryResult>;
+	getSetupLibrary(): Promise<SetupLibraryEntry[]>;
 	getCompatibleSetups(sessionId: string): Promise<CompatibleSetup[]>;
 	confirmSessionSetup(sessionId: string, setupId: string): Promise<CompatibleSetup[]>;
 	clearSessionSetup(sessionId: string): Promise<CompatibleSetup[]>;
@@ -958,6 +976,39 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async indexExistingSetups() {
 		return { indexed: 24, ignored: 2, errors: [], limited: false };
 	},
+	async getSetupLibrary() {
+		return [
+			{
+				id: "setup-race",
+				simulatorId: "assetto-corsa",
+				simulatorName: "Assetto Corsa",
+				sourceCarId: "ks_mazda_mx5_cup",
+				carName: "Mazda MX-5 Cup",
+				sourceTrackId: "ks_zandvoort",
+				trackName: "Zandvoort",
+				name: "race.ini",
+				installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\race.ini",
+				sourceArchive: "team-pack.zip",
+				importedAt: "2026-08-29T18:45:00Z",
+				linkedSessionCount: 2,
+				available: true,
+			},
+			{
+				id: "setup-qualifying",
+				simulatorId: "assetto-corsa",
+				simulatorName: "Assetto Corsa",
+				sourceCarId: "ks_mazda_mx5_cup",
+				carName: "Mazda MX-5 Cup",
+				sourceTrackId: "ks_zandvoort",
+				trackName: "Zandvoort",
+				name: "qualifying.ini",
+				installedPath: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups\\ks_mazda_mx5_cup\\ks_zandvoort\\qualifying.ini",
+				importedAt: "2026-08-28T12:10:00Z",
+				linkedSessionCount: 0,
+				available: true,
+			},
+		];
+	},
 	async getCompatibleSetups(_sessionId) {
 		return [
 			{
@@ -1145,6 +1196,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	indexExistingSetups(simulatorId, setupsFolder) {
 		return invoke<SetupDiscoveryResult>("index_existing_setups", { simulatorId, setupsFolder });
+	},
+	getSetupLibrary() {
+		return invoke<SetupLibraryEntry[]>("setup_library");
 	},
 	getCompatibleSetups(sessionId) {
 		return invoke<CompatibleSetup[]>("compatible_setups", { sessionId });

@@ -61,6 +61,20 @@ A manually selected setup-library folder is retained per simulator and takes pre
 over autodetection for individual imports, session attachment, explicit indexing, and
 automatic startup indexing.
 
+### Library explorer
+
+The **Setups → Library** workspace lists every indexed setup in stable
+simulator/car/track/layout order. Cars and tracks show both content-derived friendly
+names and their canonical simulator identifiers. Friendly names come from each
+simulator adapter's installed-content metadata; TRACE does not maintain a hardcoded
+alias list, and unknown or modded content therefore keeps its raw name.
+
+Search covers setup filenames, friendly names, raw IDs, layouts, simulators, and source
+archive names. A simulator filter narrows larger libraries. Track groups are collapsible
+and expose the indexed files, import source and time, missing-file state, and the number
+of sessions that explicitly identify a setup as used. The explorer is read-only; setup
+editing belongs to the separate editor capability.
+
 The session overview queries this library using the session's preserved source
 identities. A setup is suggested only when simulator, car, track, and layout all match
 exactly (case-insensitively for simulator-provided identifiers). Friendly display names
