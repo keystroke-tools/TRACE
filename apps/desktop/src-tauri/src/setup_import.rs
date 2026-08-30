@@ -203,6 +203,25 @@ pub(crate) struct SetupDiscoveryResult {
     limited: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetupLibraryEntry {
+    id: String,
+    simulator_id: String,
+    simulator_name: String,
+    source_car_id: String,
+    car_name: String,
+    source_track_id: String,
+    track_name: String,
+    layout_id: Option<String>,
+    name: String,
+    installed_path: String,
+    source_archive: Option<String>,
+    imported_at: String,
+    linked_session_count: u32,
+    available: bool,
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri IPC owns deserialized options.
 pub(crate) fn import_setup_files(
@@ -363,6 +382,55 @@ pub(crate) fn index_existing_setups(
         ));
     }
     discover_assetto_corsa_setups(&app, Path::new(setups_folder.trim()))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri IPC owns the application handle.
+pub(crate) fn setup_library(app: tauri::AppHandle) -> Result<Vec<SetupLibraryEntry>, String> {
+    let store = open_metadata_store(&app)?;
+    let configured_ac_path = store
+        .simulator_install_path(ASSETTO_CORSA_ID)
+        .map_err(|error| format!("could not read simulator settings: {error:?}"))?
+        .map(PathBuf::from);
+    let ac_names = AcContentNames::discover(configured_ac_path.as_deref());
+    let entries = store
+        .setup_library(MAX_DISCOVERED_SETUPS)
+        .map_err(|error| format!("could not read setup library: {error:?}"))?
+        .into_iter()
+        .map(|record| {
+            let (simulator_name, car_name, track_name) = if record.simulator_key == ASSETTO_CORSA_ID
+            {
+                (
+                    "Assetto Corsa".to_owned(),
+                    ac_names.car(&record.source_car_id),
+                    ac_names.track(&record.source_track_id, record.layout_id.as_deref()),
+                )
+            } else {
+                (
+                    record.simulator_key.clone(),
+                    record.source_car_id.clone(),
+                    record.source_track_id.clone(),
+                )
+            };
+            SetupLibraryEntry {
+                id: record.id,
+                simulator_id: record.simulator_key,
+                simulator_name,
+                source_car_id: record.source_car_id,
+                car_name,
+                source_track_id: record.source_track_id,
+                track_name,
+                layout_id: record.layout_id,
+                name: record.name,
+                available: Path::new(&record.installed_path).is_file(),
+                installed_path: record.installed_path,
+                source_archive: record.source_archive,
+                imported_at: record.imported_at,
+                linked_session_count: record.linked_session_count,
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(entries)
 }
 
 fn open_metadata_store(app: &tauri::AppHandle) -> Result<MetadataStore, String> {

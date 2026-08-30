@@ -178,6 +178,21 @@ pub struct SessionSetupIdentity {
     pub layout_id: Option<String>,
 }
 
+/// One setup-library row for simulator-neutral browsing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SetupLibraryRecord {
+    pub id: String,
+    pub simulator_key: String,
+    pub source_car_id: String,
+    pub source_track_id: String,
+    pub layout_id: Option<String>,
+    pub name: String,
+    pub installed_path: String,
+    pub source_archive: Option<String>,
+    pub imported_at: String,
+    pub linked_session_count: u32,
+}
+
 /// A setup whose source identities exactly match a recorded session.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -652,6 +667,57 @@ impl MetadataStore {
             .optional()
             .map_err(MetadataError::from)?
             .ok_or(MetadataError::RecordNotFound)
+    }
+
+    /// Lists setup-library records in stable simulator/car/track/name order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] for an invalid limit or query failure.
+    pub fn setup_library(&self, limit: usize) -> Result<Vec<SetupLibraryRecord>, MetadataError> {
+        if limit == 0 || limit > 5_000 {
+            return Err(MetadataError::InvalidRecord(
+                "setup library limit must be between 1 and 5000".into(),
+            ));
+        }
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT sl.id, sl.simulator_key, sl.source_car_id, sl.source_track_id,
+                        sl.layout_id, sl.name, sl.installed_path, sl.source_archive,
+                        sl.imported_at, COUNT(ssl.session_id)
+                 FROM setup_library sl
+                 LEFT JOIN session_setup_links ssl ON ssl.setup_id = sl.id
+                 GROUP BY sl.id
+                 ORDER BY sl.simulator_key COLLATE NOCASE,
+                          sl.source_car_id COLLATE NOCASE,
+                          sl.source_track_id COLLATE NOCASE,
+                          sl.layout_id COLLATE NOCASE,
+                          sl.name COLLATE NOCASE,
+                          sl.id
+                 LIMIT ?1",
+            )
+            .map_err(MetadataError::from)?;
+        let limit = i64::try_from(limit).map_err(|_| MetadataError::IntegerOverflow)?;
+        let rows = statement
+            .query_map([limit], |row| {
+                let layout: String = row.get(4)?;
+                Ok(SetupLibraryRecord {
+                    id: row.get(0)?,
+                    simulator_key: row.get(1)?,
+                    source_car_id: row.get(2)?,
+                    source_track_id: row.get(3)?,
+                    layout_id: (!layout.is_empty()).then_some(layout),
+                    name: row.get(5)?,
+                    installed_path: row.get(6)?,
+                    source_archive: row.get(7)?,
+                    imported_at: row.get(8)?,
+                    linked_session_count: row_u32(row, 9)?,
+                })
+            })
+            .map_err(MetadataError::from)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(MetadataError::from)
     }
 
     /// Returns imported setups whose simulator, source car, source track, and layout
@@ -1911,6 +1977,12 @@ mod tests {
                 imported_at: "2026-08-23T08:01:00Z".into(),
             })
             .expect("save other setup");
+
+        let library = store.setup_library(50).expect("setup library");
+        assert_eq!(library.len(), 2);
+        assert_eq!(library[0].source_car_id, "ks_mazda_mx5_cup");
+        assert_eq!(library[1].source_car_id, "tatuusfa1");
+        assert_eq!(library[1].linked_session_count, 0);
 
         let suggestions = store
             .compatible_setups("session-1", 10)

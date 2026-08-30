@@ -51,7 +51,7 @@ use live_broadcast::{
 use setup_analysis::compare_setups;
 use setup_import::{
     attach_session_setup, detect_setup_folder, import_setup_archives, import_setup_files,
-    index_existing_setups, setup_importers,
+    index_existing_setups, setup_importers, setup_library,
 };
 
 #[derive(Serialize)]
@@ -2394,6 +2394,7 @@ pub fn run() {
             import_setup_files,
             attach_session_setup,
             index_existing_setups,
+            setup_library,
             setup_importers,
             driver_profile,
             set_driver_profile,
