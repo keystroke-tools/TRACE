@@ -1206,61 +1206,94 @@ function CornerAnalysisPanel({
 							The rule-based comparison did not detect any meaningful corner losses.
 						</p>
 					) : (
-						<div className="divide-y divide-trace-divider">
+						<div>
 							{selectedCornerIndex != null && (
 								<button
 									type="button"
 									onClick={() => onSelect(selectedCornerIndex)}
-									className="w-full px-4 py-3 text-left font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent hover:bg-trace-deep hover:text-trace-text"
+									className="w-full border-b border-trace-divider px-4 py-3 text-left font-mono text-[10px] font-bold tracking-[.08em] text-trace-accent hover:bg-trace-deep hover:text-trace-text"
 								>
 									SHOW FULL LAP
 								</button>
 							)}
-							{opportunities.map((corner) => {
-								const selected = selectedCornerIndex === corner.index;
-								const dominant = dominantCornerPhase(corner);
-								return (
-									<button
-										type="button"
-										onClick={() => onSelect(corner.index)}
-										className={`block w-full min-w-0 px-4 py-3 text-left transition-colors ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : "hover:bg-trace-deep"}`}
-										aria-pressed={selected}
-										key={corner.index}
-									>
-										<span className="flex items-baseline justify-between gap-3 font-mono">
-											<strong className="text-[15px] text-trace-text">{corner.label}</strong>
-											<strong className="text-[15px] tabular-nums text-[#ff5263]">+{corner.totalLossSeconds?.toFixed(3)}s</strong>
-										</span>
-										<span className="mt-2 block truncate text-[10px] font-black tracking-[.08em] text-trace-dim">
-											MOST LOSS · {dominant}
-										</span>
-										<span className="mt-1 block truncate text-[11px] text-trace-muted">{cornerSummary(corner, dominant)}</span>
-										<CornerBrakingMetrics corner={corner} />
-										<span
-											className="mt-3 grid grid-cols-3 gap-1 border-t border-trace-divider pt-2"
-											aria-label={`${corner.label} time difference by phase`}
-										>
-											{corner.phases.map((phase) => (
-												<span className="min-w-0" key={phase.phase}>
-													<span className="block truncate font-mono text-[9px] font-bold tracking-[.06em] text-trace-dim">
-														{cornerPhaseLabel(phase.phase)}
-													</span>
-													<span
-														className={`mt-0.5 block font-mono text-[11px] font-bold tabular-nums ${phase.lossSeconds == null ? "text-trace-dim" : phase.lossSeconds > 0 ? "text-[#ff5263]" : "text-[#42db76]"}`}
-													>
-														{formatPhaseDelta(phase.lossSeconds)}
-													</span>
-												</span>
-											))}
-										</span>
-									</button>
-								);
-							})}
+							{opportunities.map((corner) => (
+								<CornerBreakdownRow
+									corner={corner}
+									selected={selectedCornerIndex === corner.index}
+									onSelect={() => onSelect(corner.index)}
+									key={corner.index}
+								/>
+							))}
 						</div>
 					)}
 				</div>
 			)}
 		</section>
+	);
+}
+
+function CornerBreakdownRow({ corner, selected, onSelect }: { corner: CornerAnalysis; selected: boolean; onSelect: () => void }) {
+	const [expanded, setExpanded] = useState(false);
+	const dominant = dominantCornerPhase(corner);
+	return (
+		<article className={`border-b border-trace-divider ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : ""}`}>
+			<div className="flex min-w-0 items-stretch">
+				<button
+					type="button"
+					onClick={onSelect}
+					className="grid min-w-0 flex-1 grid-cols-[40px_minmax(0,1fr)] items-start gap-2.5 px-3 py-3 text-left hover:bg-trace-deep"
+					aria-pressed={selected}
+					aria-label={`${selected ? "Clear" : "View"} ${corner.label} telemetry`}
+				>
+					<span className="font-mono text-[18px] font-black leading-none text-trace-text">{corner.label}</span>
+					<span className="min-w-0">
+						<span className="flex items-start justify-between gap-2">
+							<strong className="min-w-0 text-[11px] font-bold leading-4 text-trace-soft">{cornerSummary(corner, dominant)}</strong>
+							<strong className="shrink-0 font-mono text-[13px] leading-4 tabular-nums text-[#ff5263]">
+								+{corner.totalLossSeconds?.toFixed(3)}s
+							</strong>
+						</span>
+						<span className="mt-1 block font-mono text-[9px] font-bold leading-3 tracking-[.06em] text-trace-dim">
+							{dominant} LOSS · {Math.round(corner.startDistanceM)}–{Math.round(corner.endDistanceM)} M
+						</span>
+					</span>
+				</button>
+				<button
+					type="button"
+					onClick={() => setExpanded((value) => !value)}
+					className="grid w-9 shrink-0 place-items-center border-l border-trace-divider text-trace-dim hover:bg-trace-deep hover:text-trace-text"
+					aria-label={`${expanded ? "Hide" : "Show"} ${corner.label} details`}
+					aria-expanded={expanded}
+				>
+					<svg
+						className={`size-3.5 fill-none stroke-current transition-transform ${expanded ? "rotate-180" : ""}`}
+						viewBox="0 0 16 16"
+						aria-hidden="true"
+					>
+						<path d="m3 6 5 5 5-5" />
+					</svg>
+				</button>
+			</div>
+			{expanded && (
+				<div className="border-t border-trace-divider px-4 pb-3">
+					<CornerBrakingMetrics corner={corner} />
+					<div className="mt-3 grid grid-cols-3 gap-3 border-t border-trace-divider pt-2" aria-label={`${corner.label} time difference by phase`}>
+						{corner.phases.map((phase) => (
+							<span className="min-w-0" key={phase.phase}>
+								<span className="block truncate font-mono text-[9px] font-bold tracking-[.06em] text-trace-dim">
+									{cornerPhaseLabel(phase.phase)}
+								</span>
+								<span
+									className={`mt-0.5 block font-mono text-[11px] font-bold tabular-nums ${phase.lossSeconds == null ? "text-trace-dim" : phase.lossSeconds > 0 ? "text-[#ff5263]" : "text-[#42db76]"}`}
+								>
+									{formatPhaseDelta(phase.lossSeconds)}
+								</span>
+							</span>
+						))}
+					</div>
+				</div>
+			)}
+		</article>
 	);
 }
 
@@ -1311,7 +1344,7 @@ function CornerBrakingMetrics({ corner }: { corner: CornerAnalysis }) {
 	const analysed = brakingFacts(corner, "comparison");
 	if (!reference && !analysed) return null;
 	return (
-		<span className="mt-3 grid grid-cols-2 gap-2 border-t border-trace-divider pt-2 font-mono">
+		<span className="grid grid-cols-2 gap-2 pt-3 font-mono">
 			{[
 				{ label: "REFERENCE", facts: reference, colour: "text-trace-purple" },
 				{ label: "ANALYSED", facts: analysed, colour: "text-trace-accent" },
