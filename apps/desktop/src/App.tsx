@@ -18,6 +18,7 @@ import { SessionDetail } from "./features/sessions/SessionDetail";
 import { SessionsPage } from "./features/sessions/SessionsPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SetupsPage } from "./features/setups/SetupsPage";
+import { autoIndexSetupsEnabled, indexDetectedSetupLibraries } from "./features/setups/setup-preferences";
 import { TitleBar } from "./TitleBar";
 import { useToast } from "./Toast";
 
@@ -34,6 +35,10 @@ export function App() {
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
+
+	useEffect(() => {
+		if (autoIndexSetupsEnabled()) void indexDetectedSetupLibraries();
+	}, []);
 	const selectLiveMode = async (mode: LiveBroadcastOptions["mode"]) => {
 		if (!liveSettings || liveSettings.autoStream.mode === mode) return;
 		try {

@@ -287,6 +287,33 @@ export interface SetupImporterDescriptor {
 	folderLabel: string;
 	folderHint: string;
 	archiveHint: string;
+	fileLabel: string;
+	fileExtensions: string[];
+	fileHint: string;
+}
+
+export interface SetupFileImportOptions {
+	simulatorId: string;
+	setupPaths: string[];
+	setupsFolder: string;
+	sourceCarId?: string | null;
+	sourceTrackId: string;
+	layoutId?: string | null;
+	overwrite: boolean;
+}
+
+export interface SessionSetupAttachmentOptions {
+	sessionId: string;
+	setupPath: string;
+	setupsFolder: string;
+	overwrite: boolean;
+}
+
+export interface SetupDiscoveryResult {
+	indexed: number;
+	ignored: number;
+	errors: string[];
+	limited: boolean;
 }
 
 export interface SetupImportResult {
@@ -396,6 +423,9 @@ export interface TelemetryDataSource {
 	getSetupImporters(): Promise<SetupImporterDescriptor[]>;
 	detectSetupFolder(simulatorId: string): Promise<SetupFolder>;
 	importSetupArchives(simulatorId: string, archivePaths: string[], setupsFolder: string, overwrite: boolean): Promise<SetupImportResult[]>;
+	importSetupFiles(options: SetupFileImportOptions): Promise<SetupImportResult[]>;
+	attachSessionSetup(options: SessionSetupAttachmentOptions): Promise<CompatibleSetup[]>;
+	indexExistingSetups(simulatorId: string, setupsFolder: string): Promise<SetupDiscoveryResult>;
 	getCompatibleSetups(sessionId: string): Promise<CompatibleSetup[]>;
 	confirmSessionSetup(sessionId: string, setupId: string): Promise<CompatibleSetup[]>;
 	clearSessionSetup(sessionId: string): Promise<CompatibleSetup[]>;
@@ -891,6 +921,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 				folderLabel: "Assetto Corsa setups folder",
 				folderHint: "Usually Documents\\Assetto Corsa\\setups. Change it if your Documents folder lives elsewhere.",
 				archiveHint: "TRACE uses an .ld telemetry filename to identify the car and track, then installs every .ini setup in the archive.",
+				fileLabel: "Assetto Corsa setup files",
+				fileExtensions: ["ini"],
+				fileHint: "Choose standalone .ini files, then provide the track.",
 			},
 		];
 	},
@@ -907,6 +940,23 @@ export const fixtureDataSource: TelemetryDataSource = {
 			skipped: [],
 			success: true,
 		}));
+	},
+	async importSetupFiles(options) {
+		return options.setupPaths.map((path) => ({
+			archiveName: path.split(/[\\/]/).pop() ?? path,
+			car: options.sourceCarId || "ks_mazda_mx5_cup",
+			track: options.sourceTrackId,
+			files: [path.split(/[\\/]/).pop() ?? path],
+			destination: `${options.setupsFolder}\\${options.sourceCarId || "ks_mazda_mx5_cup"}\\${options.sourceTrackId}`,
+			skipped: [],
+			success: true,
+		}));
+	},
+	async attachSessionSetup(options) {
+		return (await this.getCompatibleSetups(options.sessionId)).map((setup, index) => ({ ...setup, confirmed: index === 0 }));
+	},
+	async indexExistingSetups() {
+		return { indexed: 24, ignored: 2, errors: [], limited: false };
 	},
 	async getCompatibleSetups(_sessionId) {
 		return [
@@ -1086,6 +1136,15 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	importSetupArchives(simulatorId, archivePaths, setupsFolder, overwrite) {
 		return invoke<SetupImportResult[]>("import_setup_archives", { simulatorId, archivePaths, setupsFolder, overwrite });
+	},
+	importSetupFiles(options) {
+		return invoke<SetupImportResult[]>("import_setup_files", { options });
+	},
+	attachSessionSetup(options) {
+		return invoke<CompatibleSetup[]>("attach_session_setup", { options });
+	},
+	indexExistingSetups(simulatorId, setupsFolder) {
+		return invoke<SetupDiscoveryResult>("index_existing_setups", { simulatorId, setupsFolder });
 	},
 	getCompatibleSetups(sessionId) {
 		return invoke<CompatibleSetup[]>("compatible_setups", { sessionId });

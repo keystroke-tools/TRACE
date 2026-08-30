@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
 	telemetryDataSource,
 	type CompatibleSetup,
@@ -11,6 +12,7 @@ import { Metric, SectionHeading } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
 import { ConsistencyChart } from "./ConsistencyChart";
+import { savedSetupFolder } from "../setups/setup-preferences";
 import {
 	DeleteConfirmation,
 	EmptySessions,
@@ -59,6 +61,7 @@ export function SessionDetail({
 	const [compatibleSetups, setCompatibleSetups] = useState<CompatibleSetup[]>([]);
 	const [setupsState, setSetupsState] = useState<"loading" | "ready" | "error">("loading");
 	const [savingSetupId, setSavingSetupId] = useState<string | null>(null);
+	const [attachingSetup, setAttachingSetup] = useState(false);
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
@@ -135,6 +138,40 @@ export function SessionDetail({
 			showToast({ kind: "error", title: "Could not compare setups", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
 		} finally {
 			setComparingSetupId(null);
+		}
+	}
+
+	async function attachSetup() {
+		setAttachingSetup(true);
+		try {
+			const savedFolder = savedSetupFolder(session.simulatorId);
+			const folder = savedFolder ? { path: savedFolder } : await telemetryDataSource.detectSetupFolder(session.simulatorId);
+			if (!folder.path) throw new Error(`Choose the ${session.simulatorName} setups folder on the Setups page first.`);
+			const selected = await openDialog({
+				multiple: false,
+				directory: false,
+				title: `Attach a setup to ${session.title ?? session.track}`,
+				filters: [{ name: "Setup files", extensions: ["ini"] }],
+			});
+			if (typeof selected !== "string") return;
+			const values = await telemetryDataSource.attachSessionSetup({
+				sessionId: session.id,
+				setupPath: selected,
+				setupsFolder: folder.path,
+				overwrite: false,
+			});
+			setCompatibleSetups(values);
+			setSetupComparison(null);
+			showToast({
+				kind: "success",
+				title: "Setup attached",
+				message: "The setup is marked as used and will be included in .trace exports.",
+				timeoutMs: 6_000,
+			});
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not attach setup", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
+		} finally {
+			setAttachingSetup(false);
 		}
 	}
 
@@ -287,9 +324,11 @@ export function SessionDetail({
 				savingSetupId={savingSetupId}
 				comparingSetupId={comparingSetupId}
 				comparison={setupComparison}
+				attachingSetup={attachingSetup}
 				onConfirm={confirmSetup}
 				onClear={clearSetup}
 				onCompare={compareSetup}
+				onAttach={attachSetup}
 				onCloseComparison={() => setSetupComparison(null)}
 			/>
 
@@ -395,9 +434,11 @@ function CompatibleSetupsDock({
 	savingSetupId,
 	comparingSetupId,
 	comparison,
+	attachingSetup,
 	onConfirm,
 	onClear,
 	onCompare,
+	onAttach,
 	onCloseComparison,
 }: {
 	setups: CompatibleSetup[];
@@ -406,9 +447,11 @@ function CompatibleSetupsDock({
 	savingSetupId: string | null;
 	comparingSetupId: string | null;
 	comparison: SetupComparison | null;
+	attachingSetup: boolean;
 	onConfirm: (setup: CompatibleSetup) => Promise<void>;
 	onClear: () => Promise<void>;
 	onCompare: (baseline: CompatibleSetup, alternative: CompatibleSetup) => Promise<void>;
+	onAttach: () => Promise<void>;
 	onCloseComparison: () => void;
 }) {
 	const [open, setOpen] = useState(false);
@@ -465,20 +508,30 @@ function CompatibleSetupsDock({
 						aria-label="Compatible setups"
 					>
 						<div className="flex items-start justify-between gap-4 border-b border-trace-divider px-4 py-3">
-							<div>
+							<div className="min-w-0">
 								<strong className="font-mono text-[11px] tracking-[.08em] text-white">SETUPS FOR THIS SESSION</strong>
 								<p className="mt-1 text-[11px] leading-4 text-trace-dim">
 									Exact simulator, car, track, and layout matches. Only mark one as used when you know it was loaded.
 								</p>
 							</div>
-							<button
-								type="button"
-								onClick={() => setOpen(false)}
-								className="grid size-8 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-base leading-none text-trace-muted hover:text-white"
-								aria-label="Close compatible setups"
-							>
-								×
-							</button>
+							<div className="flex shrink-0 items-center gap-2">
+								<button
+									type="button"
+									disabled={attachingSetup}
+									onClick={() => void onAttach()}
+									className="h-8 border border-trace-accent bg-trace-accent px-3 font-mono text-[9px] font-black tracking-[.05em] text-trace-black hover:bg-white disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+								>
+									{attachingSetup ? "ATTACHING…" : "ATTACH SETUP"}
+								</button>
+								<button
+									type="button"
+									onClick={() => setOpen(false)}
+									className="grid size-8 place-items-center border border-trace-divider bg-trace-deep text-base leading-none text-trace-muted hover:text-white"
+									aria-label="Close compatible setups"
+								>
+									×
+								</button>
+							</div>
 						</div>
 						<div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
 							{state === "ready" && setups.length > 0 ? (

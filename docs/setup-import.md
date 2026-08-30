@@ -2,7 +2,7 @@
 
 TRACE exposes setup importing as a simulator capability. The desktop asks the backend
 for available importers and passes the selected simulator ID into folder detection and
-archive import. The Setups page does not equate “setup” with one simulator, even though
+file or archive import. The Setups page does not equate “setup” with one simulator, even though
 Assetto Corsa is the first implemented provider.
 
 Each future provider owns its folder convention, accepted archive extensions, identity
@@ -11,9 +11,9 @@ native command boundary instead of falling through to Assetto Corsa behavior.
 
 ## Assetto Corsa provider
 
-The Assetto Corsa provider installs setup INIs from ZIP archives into the game's normal
-saved-setup tree. This is a local workflow: it does not upload an archive, modify a
-recorded TRACE session, or claim that a setup was active for a lap.
+The Assetto Corsa provider installs standalone setup INIs or setup INIs from ZIP
+archives into the game's normal saved-setup tree. This is a local workflow: it does not
+upload setup data.
 
 The behavior is a native Rust port of the workflow first explored in
 [`ac-setup-importer-proto`](https://github.com/aosasona/ac-setup-importer-proto). TRACE
@@ -28,6 +28,18 @@ prototype's local HTTP server.
 3. Drop one or more ZIP files onto the import area, or click it to use the file picker.
 4. Review the destination, installed-file count, and skipped-file count per archive.
 
+For a standalone file, choose **Individual files**, enter the source track identifier,
+and optionally enter the source car and layout identifiers. TRACE reads `MODEL=` from the INI's
+`[CAR]` section when available. A declared car that conflicts with an explicitly entered
+car is rejected. Because AC setup files do not reliably contain a track identity, TRACE
+never guesses the destination track.
+
+From a session overview, open **Compatible setups** and choose **Attach setup**. TRACE
+uses the session's preserved simulator/car/track/layout identity, installs and indexes
+the selected file, then explicitly marks it as used for that session. This setup will be
+included in future `.trace` exports. A same-named but different existing file is not
+silently associated.
+
 Existing setup files are preserved by default. Enable **Replace existing files** only
 when the archive should overwrite files with the same names.
 
@@ -38,6 +50,16 @@ SQLite setup library with its simulator ID, source car ID, source track ID, layo
 filename, installed path, source archive, content digest, and import time. Setup file
 contents remain in the simulator's setup directory; the database stores metadata and a
 SHA-256 digest, not a second copy.
+
+**Index existing** scans the selected simulator setup folder without copying files.
+Automatic indexing can be enabled under **Settings → General → Setup library**. It is
+off by default because large libraries add disk activity at startup. Discovery is
+bounded to 5,000 setup files and, for AC, only reads the expected
+`<car>/<track>/*.ini` depth.
+
+A manually selected setup-library folder is retained per simulator and takes precedence
+over autodetection for individual imports, session attachment, explicit indexing, and
+automatic startup indexing.
 
 The session overview queries this library using the session's preserved source
 identities. A setup is suggested only when simulator, car, track, and layout all match
@@ -108,7 +130,7 @@ Imports are bounded to protect the desktop process and the user's setup tree:
 
 - at most 32 archives in one operation;
 - at most 512 MiB per ZIP and 4,096 ZIP entries;
-- at most 512 setup INIs, 4 MiB per INI, and 64 MiB of expanded INIs per archive;
+- at most 512 setup INIs per import, 4 MiB per INI, and 64 MiB of expanded INIs per archive;
 - `.zip` inputs and `.ini` setup entries only;
 - no path traversal, Windows device names, unsafe car/track identifiers, or duplicate
   flattened filenames.

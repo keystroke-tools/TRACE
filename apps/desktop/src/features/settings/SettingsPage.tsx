@@ -4,6 +4,7 @@ import { telemetryDataSource, type GameInstallDirectory, type LiveBroadcastOptio
 import { PageIntro } from "../../components/layout";
 import { useToast } from "../../Toast";
 import { useUpdater } from "../update/UpdateContext";
+import { autoIndexSetupsEnabled, indexDetectedSetupLibraries, setAutoIndexSetupsEnabled } from "../setups/setup-preferences";
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://live.simtrace.run";
 const AC_SESSION_TYPES = [
@@ -54,6 +55,26 @@ export function SettingsPage() {
 	const [discordActivityEnabled, setDiscordActivityEnabled] = useState(false);
 	const [liveMode, setLiveMode] = useState<LiveBroadcastOptions["mode"]>("hosted");
 	const [acSessionTypes, setAcSessionTypes] = useState<string[]>(AC_SESSION_TYPES.map((value) => value.id));
+	const [autoIndexSetups, setAutoIndexSetups] = useState(autoIndexSetupsEnabled);
+	const [indexingSetups, setIndexingSetups] = useState(false);
+
+	async function changeAutoIndexSetups(enabled: boolean) {
+		setAutoIndexSetups(enabled);
+		setAutoIndexSetupsEnabled(enabled);
+		if (!enabled) return;
+		setIndexingSetups(true);
+		try {
+			const result = await indexDetectedSetupLibraries();
+			showToast({
+				kind: result.errors > 0 ? "error" : "success",
+				title: "Setup library indexing enabled",
+				message: `${result.indexed} existing setup files indexed${result.errors > 0 ? ` · ${result.errors} locations could not be read` : ""}.`,
+				timeoutMs: result.errors > 0 ? 8_000 : 5_000,
+			});
+		} finally {
+			setIndexingSetups(false);
+		}
+	}
 
 	useEffect(() => {
 		let active = true;
@@ -325,6 +346,30 @@ export function SettingsPage() {
 						</div>
 					</label>
 				</form>
+				<section className="mt-5 border border-trace-divider bg-trace-surface">
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 className="text-[14px] font-black tracking-[.04em]">SETUP LIBRARY</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+							Control whether TRACE discovers setup files already installed by supported simulators.
+						</p>
+					</div>
+					<label className="flex cursor-pointer items-start gap-3 p-5">
+						<input
+							type="checkbox"
+							checked={autoIndexSetups}
+							disabled={indexingSetups}
+							onChange={(event) => void changeAutoIndexSetups(event.target.checked)}
+							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
+						/>
+						<span>
+							<strong className="block text-[12px] text-trace-text">Index existing setups automatically</strong>
+							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
+								Off by default. Enabling this scans detected setup folders now and at startup. Large libraries can cause additional disk
+								activity.
+							</span>
+						</span>
+					</label>
+				</section>
 			</div>
 			<div id="settings-panel-connectivity" role="tabpanel" aria-labelledby="settings-tab-connectivity" hidden={activeTab !== "connectivity"}>
 				<form
