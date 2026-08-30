@@ -154,6 +154,32 @@ export interface CornerComparisonAnalysis {
 	corners: CornerAnalysis[];
 }
 
+export type DrivingObservationKind =
+	| "braking_earlier"
+	| "braking_later"
+	| "brake_release_earlier"
+	| "brake_release_later"
+	| "lower_minimum_speed"
+	| "later_throttle"
+	| "entry_loss"
+	| "mid_corner_loss"
+	| "exit_loss"
+	| "more_steering_corrections";
+
+export interface DrivingObservation {
+	kind: DrivingObservationKind;
+	tier: "high" | "low";
+	confidence: number;
+	cornerIndices: number[];
+	eligibleCornerCount: number;
+	meanDifference: number;
+	unit: "metre" | "kilometres_per_hour" | "second" | "count";
+}
+
+export interface DrivingAnalysis {
+	observations: DrivingObservation[];
+}
+
 export interface StructuredAnalysisResult<T> {
 	availability: unknown;
 	value?: T | null;
@@ -216,6 +242,7 @@ export interface LapComparison {
 	comparisonLapTime: string;
 	lapLengthM: number;
 	cornerAnalysis: StructuredAnalysisResult<CornerComparisonAnalysis>;
+	drivingAnalysis: StructuredAnalysisResult<DrivingAnalysis>;
 	samples: LapComparisonSample[];
 }
 
@@ -771,6 +798,32 @@ export const fixtureDataSource: TelemetryDataSource = {
 				],
 			},
 		};
+		const drivingAnalysis: StructuredAnalysisResult<DrivingAnalysis> = {
+			availability: "Available",
+			confidence: 0.88,
+			value: {
+				observations: [
+					{
+						kind: "later_throttle",
+						tier: "high",
+						confidence: 0.88,
+						cornerIndices: [1, 2, 3],
+						eligibleCornerCount: 4,
+						meanDifference: 18,
+						unit: "metre",
+					},
+					{
+						kind: "lower_minimum_speed",
+						tier: "low",
+						confidence: 0.61,
+						cornerIndices: [1, 2],
+						eligibleCornerCount: 4,
+						meanDifference: -5.5,
+						unit: "kilometres_per_hour",
+					},
+				],
+			},
+		};
 		return {
 			referenceSessionId,
 			referenceSessionTitle: "Sunday practice",
@@ -786,6 +839,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			comparisonLapTime: "1:51.328",
 			lapLengthM: 5_000,
 			cornerAnalysis,
+			drivingAnalysis,
 			samples,
 		};
 	},

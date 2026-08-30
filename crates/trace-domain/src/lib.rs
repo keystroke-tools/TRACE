@@ -87,6 +87,7 @@ pub enum Unit {
     Ratio,
     Metre,
     MetresPerSecond,
+    KilometresPerHour,
     MetresPerSecondSquared,
     Radian,
     RevolutionsPerMinute,
@@ -94,6 +95,7 @@ pub enum Unit {
     DegreeCelsius,
     Litre,
     Second,
+    Count,
     Unitless,
 }
 

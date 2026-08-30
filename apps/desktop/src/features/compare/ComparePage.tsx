@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
 	telemetryDataSource,
 	type CornerAnalysis,
+	type DrivingObservation,
 	type LapComparison,
 	type LapComparisonSample,
 	type RecordedSessionSummary,
@@ -193,6 +194,7 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 	}, [comparisonLap, comparisonRequestVersion, comparisonSessionId, referenceLap, referenceSessionId]);
 
 	const corners = comparison?.cornerAnalysis.value?.corners ?? [];
+	const drivingObservations = comparison?.drivingAnalysis?.value?.observations ?? [];
 	const finalDelta =
 		comparison?.samples
 			.slice()
@@ -422,6 +424,7 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 					/>
 					<CornerAnalysisPanel
 						corners={corners}
+						drivingObservations={drivingObservations}
 						selectedCornerIndex={cornerIndex}
 						comparisonIsFaster={comparisonIsFaster}
 						collapsed={analysisCollapsed}
@@ -1078,6 +1081,7 @@ function savedComparisonDriver(session?: RecordedSessionSummary) {
 
 function CornerAnalysisPanel({
 	corners,
+	drivingObservations,
 	selectedCornerIndex,
 	comparisonIsFaster,
 	collapsed,
@@ -1085,6 +1089,7 @@ function CornerAnalysisPanel({
 	onSelect,
 }: {
 	corners: CornerAnalysis[];
+	drivingObservations: DrivingObservation[];
 	selectedCornerIndex: number | null;
 	comparisonIsFaster: boolean;
 	collapsed: boolean;
@@ -1096,6 +1101,8 @@ function CornerAnalysisPanel({
 		.slice()
 		.sort((left, right) => (right.totalLossSeconds ?? 0) - (left.totalLossSeconds ?? 0))
 		.slice(0, 4);
+	const highConfidenceObservations = drivingObservations.filter((observation) => observation.tier === "high");
+	const lowConfidenceObservations = drivingObservations.filter((observation) => observation.tier === "low");
 	return (
 		<section
 			className={`fixed bottom-[252px] left-[calc(var(--trace-sidebar)+28px)] top-[76px] z-50 overflow-y-auto border border-trace-divider bg-trace-surface shadow-[0_18px_55px_rgba(0,0,0,.45)] transition-[width] ${collapsed ? "w-11" : "w-72"}`}
@@ -1143,6 +1150,28 @@ function CornerAnalysisPanel({
 					<p className="border-b border-trace-divider bg-trace-warning/5 px-3 py-2 text-[10px] leading-4 text-trace-dim">
 						This analysis uses simple telemetry rules and may be incorrect. Verify its suggestions against the graphs and track map.
 					</p>
+					{highConfidenceObservations.length > 0 && (
+						<div className="border-b border-trace-divider px-3 py-3">
+							<strong className="font-mono text-[10px] tracking-[.08em] text-trace-soft">REPEATED PATTERNS</strong>
+							<div className="mt-2 space-y-2">
+								{highConfidenceObservations.map((observation) => (
+									<DrivingObservationRow observation={observation} key={observation.kind} />
+								))}
+							</div>
+						</div>
+					)}
+					{lowConfidenceObservations.length > 0 && (
+						<details className="border-b border-trace-divider px-3 py-2">
+							<summary className="cursor-pointer select-none font-mono text-[10px] font-bold tracking-[.06em] text-trace-dim hover:text-trace-text">
+								LOW CONFIDENCE · {lowConfidenceObservations.length}
+							</summary>
+							<div className="mt-2 space-y-2">
+								{lowConfidenceObservations.map((observation) => (
+									<DrivingObservationRow observation={observation} key={observation.kind} />
+								))}
+							</div>
+						</details>
+					)}
 					{opportunities.length === 0 ? (
 						<p className="px-4 py-4 text-[12px] leading-5 text-trace-dim">The rule-based comparison did not detect any meaningful corner losses.</p>
 					) : (
@@ -1202,6 +1231,48 @@ function CornerAnalysisPanel({
 			)}
 		</section>
 	);
+}
+
+function DrivingObservationRow({ observation }: { observation: DrivingObservation }) {
+	const [title, value] = drivingObservationCopy(observation);
+	return (
+		<div className="border-l-2 border-trace-accent bg-trace-deep px-2.5 py-2">
+			<span className="block text-[12px] font-semibold leading-4 text-trace-text">{title}</span>
+			<span className="mt-0.5 block text-[10px] leading-4 text-trace-muted">
+				{value} · T{observation.cornerIndices.join(", T")}
+			</span>
+		</div>
+	);
+}
+
+function drivingObservationCopy(observation: DrivingObservation): [string, string] {
+	const corners = `${observation.cornerIndices.length} of ${observation.eligibleCornerCount} measured corners`;
+	const distance = `${Math.abs(Math.round(observation.meanDifference))} m`;
+	const speed = `${Math.abs(Math.round(observation.meanDifference))} km/h`;
+	const seconds = `${Math.abs(observation.meanDifference).toFixed(3)} s total`;
+	const count = `${Math.abs(observation.meanDifference).toFixed(1)} extra reversals on average`;
+	switch (observation.kind) {
+		case "braking_earlier":
+			return ["Braking starts earlier", `${distance} earlier across ${corners}`];
+		case "braking_later":
+			return ["Braking starts later", `${distance} later across ${corners}`];
+		case "brake_release_earlier":
+			return ["Brake release is earlier", `${distance} earlier across ${corners}`];
+		case "brake_release_later":
+			return ["Brake release is later", `${distance} later across ${corners}`];
+		case "lower_minimum_speed":
+			return ["Lower minimum corner speed", `${speed} lower across ${corners}`];
+		case "later_throttle":
+			return ["Throttle application is later", `${distance} later across ${corners}`];
+		case "entry_loss":
+			return ["Most repeated loss is on entry", `${seconds} across ${corners}`];
+		case "mid_corner_loss":
+			return ["Most repeated loss is mid-corner", `${seconds} across ${corners}`];
+		case "exit_loss":
+			return ["Most repeated loss is on exit", `${seconds} across ${corners}`];
+		case "more_steering_corrections":
+			return ["More steering corrections detected", `${count} across ${corners}`];
+	}
 }
 
 function CornerBrakingMetrics({ corner }: { corner: CornerAnalysis }) {

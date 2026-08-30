@@ -16,6 +16,7 @@ use trace_core::{
     corners::{CornerComparison, CornerComparisonSample, analyze_corner_comparison},
     delta::{ElapsedTimeSeries, calculate_delta},
     distance::{DistanceSample, DistanceSeries, InterpolationMethod, uniform_grid},
+    driving::{DrivingAnalysis, analyze_driving_comparison},
 };
 use trace_storage::{
     BlobCommit, BlobFormat, FileBlobStore, RelativeBlobPath, TelemetryBlobStore,
@@ -173,6 +174,7 @@ struct LapComparison {
     comparison_lap_time: String,
     lap_length_m: f64,
     corner_analysis: AnalysisResult<CornerComparison>,
+    driving_analysis: AnalysisResult<DrivingAnalysis>,
     samples: Vec<LapComparisonSample>,
 }
 
@@ -922,15 +924,18 @@ fn compare_session_laps(
         (Some(reference), Some(comparison)) => reference == comparison,
         _ => reference_session.car == comparison_session.car,
     };
-    let corner_analysis = analyze_corner_comparison(
+    let comparison_context = ComparisonContext {
+        same_simulator: true,
+        same_car,
+        same_track_layout: true,
+        setup_differs: None,
+        conditions_differ: None,
+    };
+    let corner_analysis = analyze_corner_comparison(&corner_samples, comparison_context.clone());
+    let driving_analysis = analyze_driving_comparison(
+        corner_analysis.value.as_ref(),
         &corner_samples,
-        ComparisonContext {
-            same_simulator: true,
-            same_car,
-            same_track_layout: true,
-            setup_differs: None,
-            conditions_differ: None,
-        },
+        comparison_context,
     );
 
     let samples = grid
@@ -990,6 +995,7 @@ fn compare_session_laps(
         comparison_lap_time,
         lap_length_m,
         corner_analysis,
+        driving_analysis,
         samples,
     })
 }

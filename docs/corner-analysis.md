@@ -125,6 +125,37 @@ difference from being presented as the main explanation when the measured loss a
 developed after the apex. The dock explicitly identifies the result as rule-based and
 non-AI.
 
+## Repeated driving observations
+
+TRACE also runs driving-observation algorithm version 1 over the detected corners. It
+does not classify a driver globally or use a learned model. It looks for the same
+measured difference recurring across multiple corners in the selected lap pair:
+
+- braking or brake release at least 5 m earlier or later;
+- minimum speed at least 3 km/h lower;
+- throttle application at least 5 m later;
+- a majority of positive measured time loss accumulating on entry, mid-corner, or exit;
+- more steering-direction reversals above the noise threshold.
+
+A pattern needs evidence from at least two corners and at least 40% of the corners where
+that measurement was available. Three or more supporting corners with at least 60%
+coverage are shown as **high confidence**. Two-corner patterns remain **low confidence**
+and are hidden in a collapsed section by default. Steering-correction observations are
+always low confidence because steering ratio, car behaviour, and driving technique can
+all change the measured input without indicating a mistake.
+
+The result is returned as a versioned structured analysis alongside the individual
+corner analysis. Each observation retains its confidence score, supporting corner
+indices, eligible-corner count, average measured difference, unit, source channels, and
+comparison context. This makes the UI wording auditable and keeps future consumers from
+having to parse display text.
+
+TRACE deliberately does **not** claim that a lap or car is understeering. Steering input
+alone cannot establish understeer: that requires trustworthy vehicle-response evidence
+such as yaw rate, lateral acceleration, slip angle, speed, and track curvature, plus
+validation across simulators and cars. Until that evidence is implemented and tested,
+an understeer label would be more confident than the telemetry permits.
+
 Track maps draw recorded brake applications over the driving line in red. Segment
 opacity follows recorded brake percentage, producing a brake-intensity gradient rather
 than a binary braking marker. Reference uses the wider overlay; the Analysed Lap uses
