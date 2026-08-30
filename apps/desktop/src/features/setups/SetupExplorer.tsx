@@ -27,7 +27,9 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 	const [entries, setEntries] = useState<SetupLibraryEntry[]>([]);
 	const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 	const [query, setQuery] = useState("");
-	const [simulatorId, setSimulatorId] = useState("all");
+	const [simulatorId, setSimulatorId] = useState("");
+	const [selectedCarKey, setSelectedCarKey] = useState("");
+	const [selectedTrackKey, setSelectedTrackKey] = useState("");
 
 	useEffect(() => {
 		let active = true;
@@ -51,11 +53,14 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 		() => [...new Map(entries.map((entry) => [entry.simulatorId, entry.simulatorName])).entries()].sort((left, right) => left[1].localeCompare(right[1])),
 		[entries],
 	);
+	useEffect(() => {
+		if (simulators.length > 0 && !simulators.some(([id]) => id === simulatorId)) setSimulatorId(simulators[0][0]);
+	}, [simulatorId, simulators]);
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLocaleLowerCase();
 		return entries.filter(
 			(entry) =>
-				(simulatorId === "all" || entry.simulatorId === simulatorId) &&
+				(!simulatorId || entry.simulatorId === simulatorId) &&
 				(!needle ||
 					[
 						entry.name,
@@ -71,6 +76,17 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 		);
 	}, [entries, query, simulatorId]);
 	const groups = useMemo(() => groupSetups(filtered), [filtered]);
+	const activeSimulator = groups.find((group) => group.key === simulatorId) ?? groups[0] ?? null;
+	const selectedCar = activeSimulator?.cars.find((car) => car.key === selectedCarKey) ?? activeSimulator?.cars[0] ?? null;
+	const selectedTrack = selectedCar?.tracks.find((track) => track.key === selectedTrackKey) ?? selectedCar?.tracks[0] ?? null;
+
+	useEffect(() => {
+		if (selectedCar && selectedCar.key !== selectedCarKey) setSelectedCarKey(selectedCar.key);
+	}, [selectedCar, selectedCarKey]);
+
+	useEffect(() => {
+		if (selectedTrack && selectedTrack.key !== selectedTrackKey) setSelectedTrackKey(selectedTrack.key);
+	}, [selectedTrack, selectedTrackKey]);
 
 	return (
 		<section className="mt-4 border border-trace-divider bg-trace-surface" aria-labelledby="setup-library-heading">
@@ -95,11 +111,15 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 				</label>
 				<select
 					value={simulatorId}
-					onChange={(event) => setSimulatorId(event.target.value)}
+					onChange={(event) => {
+						setSimulatorId(event.target.value);
+						setSelectedCarKey("");
+						setSelectedTrackKey("");
+					}}
+					disabled={simulators.length < 2}
 					className="trace-select h-10 border border-trace-divider bg-trace-black px-3 text-[12px] font-bold text-trace-text outline-none"
 					aria-label="Filter setup library by simulator"
 				>
-					<option value="all">All simulators</option>
 					{simulators.map(([id, name]) => (
 						<option value={id} key={id}>
 							{name}
@@ -121,83 +141,120 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 					</p>
 				</div>
 			) : (
-				<div className="divide-y divide-trace-divider">
-					{groups.map((simulator) => (
-						<section key={simulator.key}>
-							<div className="flex items-center justify-between bg-trace-black px-5 py-3">
-								<div>
-									<strong className="text-[13px] text-white">{simulator.name}</strong>
-									{simulator.name !== simulator.key && <span className="ml-2 font-mono text-[9px] text-trace-dim">{simulator.key}</span>}
-								</div>
-								<span className="font-mono text-[9px] text-trace-dim">{simulator.cars.length} CARS</span>
+				<div className="grid h-[clamp(430px,58vh,620px)] grid-cols-[minmax(180px,0.8fr)_minmax(210px,0.95fr)_minmax(300px,1.65fr)] overflow-hidden bg-trace-black">
+					<section className="flex min-h-0 min-w-0 flex-col border-r border-trace-divider" aria-label="Cars">
+						<ExplorerHeading label="Cars" count={activeSimulator?.cars.length ?? 0} />
+						<div className="min-h-0 flex-1 overflow-y-auto py-1">
+							{activeSimulator?.cars.map((car) => {
+								const isSelected = car.key === selectedCar?.key;
+								return (
+									<button
+										type="button"
+										key={car.key}
+										onClick={() => {
+											setSelectedCarKey(car.key);
+											setSelectedTrackKey(car.tracks[0]?.key ?? "");
+										}}
+										aria-pressed={isSelected}
+										className={`block w-full min-w-0 border-l-2 px-4 py-3 text-left transition-colors ${
+											isSelected ? "border-trace-accent bg-trace-accent/15" : "border-transparent bg-trace-black hover:bg-trace-deep"
+										}`}
+									>
+										<span className={`block text-[12px] font-bold leading-5 ${isSelected ? "text-white" : "text-trace-soft"}`}>
+											{car.name}
+										</span>
+										<span className="block truncate font-mono text-[9px] leading-4 text-trace-dim">{car.rawName}</span>
+										<span className="mt-1 block font-mono text-[8px] font-bold text-trace-muted">{car.tracks.length} TRACKS</span>
+									</button>
+								);
+							})}
+						</div>
+					</section>
+
+					<section className="flex min-h-0 min-w-0 flex-col border-r border-trace-divider" aria-label="Tracks">
+						<ExplorerHeading label="Tracks" count={selectedCar?.tracks.length ?? 0} />
+						<div className="min-h-0 flex-1 overflow-y-auto py-1">
+							{selectedCar?.tracks.map((track) => {
+								const isSelected = track.key === selectedTrack?.key;
+								return (
+									<button
+										type="button"
+										key={track.key}
+										onClick={() => setSelectedTrackKey(track.key)}
+										aria-pressed={isSelected}
+										className={`block w-full min-w-0 border-l-2 px-4 py-3 text-left transition-colors ${
+											isSelected ? "border-trace-accent bg-trace-accent/15" : "border-transparent bg-trace-black hover:bg-trace-deep"
+										}`}
+									>
+										<span className={`block text-[12px] font-bold leading-5 ${isSelected ? "text-white" : "text-trace-soft"}`}>
+											{track.name}
+										</span>
+										<span className="block truncate font-mono text-[9px] leading-4 text-trace-dim">
+											{track.rawName}
+											{track.layoutId ? ` · ${track.layoutId}` : ""}
+										</span>
+										<span className="mt-1 block font-mono text-[8px] font-bold text-trace-muted">{track.setups.length} SETUPS</span>
+									</button>
+								);
+							})}
+						</div>
+					</section>
+
+					<section className="flex min-h-0 min-w-0 flex-col" aria-label="Setup files">
+						<ExplorerHeading label="Setup files" count={selectedTrack?.setups.length ?? 0} />
+						{selectedTrack && (
+							<div className="bg-trace-deep px-4 py-3">
+								<strong className="block text-[12px] text-white">{selectedTrack.name}</strong>
+								<span className="mt-0.5 block truncate font-mono text-[9px] text-trace-dim">
+									{selectedCar?.name} · {selectedTrack.rawName}
+									{selectedTrack.layoutId ? ` · ${selectedTrack.layoutId}` : ""}
+								</span>
 							</div>
-							<div className="divide-y divide-trace-divider">
-								{simulator.cars.map((car) => (
-									<div className="grid min-w-0 lg:grid-cols-[240px_minmax(0,1fr)]" key={car.key}>
-										<div className="border-b border-trace-divider bg-trace-deep px-5 py-4 lg:border-b-0 lg:border-r">
-											<strong className="block text-[13px] leading-5 text-trace-text">{car.name}</strong>
-											<span className="mt-1 block break-all font-mono text-[9px] leading-4 text-trace-dim">{car.rawName}</span>
-											<span className="mt-2 block font-mono text-[9px] text-trace-muted">{car.tracks.length} TRACKS</span>
-										</div>
-										<div className="divide-y divide-trace-divider">
-											{car.tracks.map((track) => (
-												<TrackSetups track={track} forceOpen={Boolean(query.trim())} key={track.key} />
-											))}
-										</div>
-									</div>
-								))}
-							</div>
-						</section>
-					))}
+						)}
+						<div className="min-h-0 flex-1 overflow-y-auto py-1">
+							{selectedTrack?.setups.map((setup) => (
+								<SetupFileRow setup={setup} key={setup.id} />
+							))}
+						</div>
+					</section>
 				</div>
 			)}
 		</section>
 	);
 }
 
-function TrackSetups({ track, forceOpen }: { track: TrackGroup; forceOpen: boolean }) {
+function ExplorerHeading({ label, count }: { label: string; count: number }) {
 	return (
-		<details className="group" open={forceOpen || undefined}>
-			<summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 hover:bg-trace-deep">
-				<span className="min-w-0">
-					<strong className="block text-[12px] text-trace-soft">{track.name}</strong>
-					<span className="mt-0.5 block break-all font-mono text-[9px] text-trace-dim">
-						{track.rawName}
-						{track.layoutId ? ` · ${track.layoutId}` : ""}
-					</span>
-				</span>
-				<span className="flex shrink-0 items-center gap-2 font-mono text-[9px] font-bold text-trace-muted">
-					{track.setups.length} SETUPS
-					<svg className="size-3 fill-none stroke-current transition-transform group-open:rotate-180" viewBox="0 0 12 12" aria-hidden="true">
-						<path d="m2.5 4 3.5 3.5L9.5 4" />
-					</svg>
-				</span>
-			</summary>
-			<div className="divide-y divide-trace-divider border-t border-trace-divider bg-trace-black/30">
-				{track.setups.map((setup) => (
-					<article className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={setup.id}>
-						<div className="min-w-0">
-							<strong className="block break-words text-[12px] text-trace-text">{setup.name}</strong>
-							<p className="mt-1 break-words text-[10px] leading-4 text-trace-dim">
-								{setup.sourceArchive ?? "Local setup"} · indexed {formatCompactSessionDate(setup.importedAt)}
-							</p>
-						</div>
-						<div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-							{setup.linkedSessionCount > 0 && (
-								<span className="border border-trace-divider px-1.5 py-1 font-mono text-[8px] font-bold text-trace-soft">
-									USED BY {setup.linkedSessionCount} SESSION{setup.linkedSessionCount === 1 ? "" : "S"}
-								</span>
-							)}
-							{!setup.available && (
-								<span className="border border-trace-warning/50 px-1.5 py-1 font-mono text-[8px] font-bold text-trace-warning">
-									FILE MISSING
-								</span>
-							)}
-						</div>
-					</article>
-				))}
+		<header className="flex h-10 shrink-0 items-center justify-between bg-trace-surface px-4">
+			<h3 className="font-mono text-[9px] font-black uppercase tracking-[.12em] text-trace-soft">{label}</h3>
+			<span className="font-mono text-[8px] font-bold text-trace-muted">{count}</span>
+		</header>
+	);
+}
+
+function SetupFileRow({ setup }: { setup: SetupLibraryEntry }) {
+	return (
+		<article className="grid min-w-0 grid-cols-[30px_minmax(0,1fr)] gap-3 border-l-2 border-transparent px-4 py-3 xl:grid-cols-[30px_minmax(0,1fr)_auto] xl:items-center">
+			<span className="grid size-[30px] place-items-center bg-trace-deep font-mono text-[8px] font-black text-trace-muted" aria-hidden="true">
+				INI
+			</span>
+			<div className="min-w-0">
+				<strong className="block break-words text-[12px] text-trace-text">{setup.name}</strong>
+				<p className="mt-1 break-words text-[10px] leading-4 text-trace-dim">
+					{setup.sourceArchive ?? "Local setup"} · indexed {formatCompactSessionDate(setup.importedAt)}
+				</p>
 			</div>
-		</details>
+			<div className="col-start-2 flex flex-wrap items-center gap-1.5 xl:col-start-auto xl:justify-end">
+				{setup.linkedSessionCount > 0 && (
+					<span className="border border-trace-divider px-1.5 py-1 font-mono text-[8px] font-bold text-trace-soft">
+						USED BY {setup.linkedSessionCount} SESSION{setup.linkedSessionCount === 1 ? "" : "S"}
+					</span>
+				)}
+				{!setup.available && (
+					<span className="border border-trace-warning/50 px-1.5 py-1 font-mono text-[8px] font-bold text-trace-warning">FILE MISSING</span>
+				)}
+			</div>
+		</article>
 	);
 }
 
