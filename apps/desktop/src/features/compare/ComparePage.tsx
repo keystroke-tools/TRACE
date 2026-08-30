@@ -1145,7 +1145,11 @@ function CornerAnalysisPanel({
 					<p className="border-b border-trace-divider bg-trace-warning/5 px-3 py-2 text-[10px] leading-4 text-trace-dim">
 						Estimates may be wrong. Verify them against the graphs and track map.
 					</p>
-					<div className="grid grid-cols-2 border-b border-trace-divider" role="tablist" aria-label="Analysis view">
+					<div
+						className="sticky top-0 z-10 grid grid-cols-2 border-b border-trace-divider bg-trace-surface"
+						role="tablist"
+						aria-label="Analysis view"
+					>
 						{(
 							[
 								{ id: "insights", label: "INSIGHTS" },
@@ -1164,7 +1168,9 @@ function CornerAnalysisPanel({
 								key={tab.id}
 							>
 								{tab.label}
-								{tab.id === "insights" && drivingObservations.length > 0 ? ` · ${drivingObservations.length}` : ""}
+								{(tab.id === "insights" ? drivingObservations.length : opportunities.length) > 0
+									? ` · ${tab.id === "insights" ? drivingObservations.length : opportunities.length}`
+									: ""}
 							</button>
 						))}
 					</div>
