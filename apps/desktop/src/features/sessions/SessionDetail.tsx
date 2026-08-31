@@ -42,6 +42,7 @@ export function SessionDetail({
 	session,
 	onOpenLap,
 	liveBroadcast,
+	onShowSummary,
 	onStartLive,
 	onStopLive,
 	onCopyLiveLink,
@@ -50,6 +51,7 @@ export function SessionDetail({
 	session: RecordedSessionSummary;
 	onOpenLap: (lapIndex: number) => void;
 	liveBroadcast: LiveBroadcastStatus | null;
+	onShowSummary: () => void;
 	onStartLive: () => void;
 	onStopLive: () => void;
 	onCopyLiveLink: () => void;
@@ -211,6 +213,13 @@ export function SessionDetail({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
+					<button
+						type="button"
+						onClick={onShowSummary}
+						className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-purple/70 hover:text-trace-purple"
+					>
+						SUMMARY
+					</button>
 					{thisSessionIsLive && liveBroadcast?.spectatorUrl && (
 						<>
 							<button

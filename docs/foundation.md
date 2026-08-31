@@ -412,6 +412,15 @@ stores it with the recording. The archive therefore distinguishes practice,
 qualifying, race, hotlap, time attack, drift, and drag sessions instead of reducing
 all native drives to a generic session label.
 
+After a recording is finalized, the capture status exposes its completed session ID.
+The desktop app refreshes the archive, opens that session overview, and presents a
+summary only after Arrow and SQLite persistence have succeeded. The same summary is
+available on every existing session overview. It highlights the quickest valid lap,
+combines the quickest valid sectors into a theoretical best, counts valid laps, and
+compares the best lap with the most recent earlier session for the same simulator,
+car, and track. Missing sector timing or a missing comparable session remains visibly
+unavailable rather than being estimated.
+
 AC's physics temperature slots are treated as unavailable when the simulator emits
 the all-zero sentinel observed in real recordings. At session start TRACE snapshots
 ambient and road temperature, weather name, and starting dynamic-track grip from AC's

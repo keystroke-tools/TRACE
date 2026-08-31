@@ -101,6 +101,7 @@ struct FoundationStatus {
     source: String,
     sample_rate_hz: u16,
     session: String,
+    completed_session_id: Option<String>,
     channels: Vec<ChannelCapability>,
 }
 
@@ -2146,6 +2147,7 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
         source: snapshot.source,
         sample_rate_hz: snapshot.sample_rate_hz,
         session: snapshot.session,
+        completed_session_id: snapshot.completed_session_id,
         channels,
     }
 }

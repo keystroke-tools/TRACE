@@ -16,6 +16,7 @@ import { OverlaysPage } from "./features/overlays/OverlaysPage";
 import { LapVisualizer } from "./features/sessions/LapVisualizer";
 import { SessionDetail } from "./features/sessions/SessionDetail";
 import { SessionsPage } from "./features/sessions/SessionsPage";
+import { SessionSummaryModal } from "./features/sessions/SessionSummaryModal";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SetupsPage } from "./features/setups/SetupsPage";
 import { autoIndexSetupsEnabled, indexDetectedSetupLibraries } from "./features/setups/setup-preferences";
@@ -32,9 +33,12 @@ export function App() {
 	const [section, setSection] = useState<Section>("LIVE");
 	const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 	const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
+	const [summarySessionId, setSummarySessionId] = useState<string | null>(null);
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
+	const handledCompletedSession = useRef<string | null>(null);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
+	const summarySession = sessions.find((session) => session.id === summarySessionId) ?? null;
 
 	useEffect(() => {
 		if (autoIndexSetupsEnabled()) void indexDetectedSetupLibraries();
@@ -157,6 +161,20 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		const completedSessionId = status?.completedSessionId;
+		if (!completedSessionId || handledCompletedSession.current === completedSessionId) return;
+		handledCompletedSession.current = completedSessionId;
+		void telemetryDataSource.getSessions().then((nextSessions) => {
+			if (!nextSessions.some((session) => session.id === completedSessionId)) return;
+			setSessions(nextSessions);
+			setSection("SESSIONS");
+			setOpenSessionId(completedSessionId);
+			setOpenLapIndex(null);
+			setSummarySessionId(completedSessionId);
+		});
+	}, [status?.completedSessionId]);
+
+	useEffect(() => {
 		if (!liveBroadcast?.automatic) return;
 		if (liveBroadcast.phase === "live" && liveBroadcast.liveSessionId && announcedAutomaticSession.current !== liveBroadcast.liveSessionId) {
 			announcedAutomaticSession.current = liveBroadcast.liveSessionId;
@@ -221,6 +239,7 @@ export function App() {
 								session={openSession}
 								onOpenLap={setOpenLapIndex}
 								liveBroadcast={liveBroadcast}
+								onShowSummary={() => setSummarySessionId(openSession.id)}
 								onStartLive={() => void startRecordedBroadcast(openSession.id, liveOptions())}
 								onStopLive={() => void stopLiveBroadcast()}
 								onCopyLiveLink={() => void copyLiveLink()}
@@ -247,6 +266,7 @@ export function App() {
 				{section === "SETTINGS" && <SettingsPage />}
 			</section>
 			<Footer status={status} />
+			{summarySession && <SessionSummaryModal session={summarySession} sessions={sessions} onClose={() => setSummarySessionId(null)} />}
 		</main>
 	);
 }

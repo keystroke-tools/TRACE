@@ -34,6 +34,7 @@ pub struct CaptureStatus {
     pub sample_rate_hz: u16,
     pub session: String,
     pub active_session_id: Option<String>,
+    pub completed_session_id: Option<String>,
     pub presence_session: Option<PresenceSession>,
     pub live_inputs: LiveInputs,
 }
@@ -75,6 +76,7 @@ impl CaptureStatus {
             sample_rate_hz: 0,
             session: "NO ACTIVE SESSION".into(),
             active_session_id: None,
+            completed_session_id: None,
             presence_session: None,
             live_inputs: LiveInputs::default(),
         }
@@ -237,6 +239,7 @@ fn handle_output(
 ) -> Result<(), String> {
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
+            set_completed_session(context.status, None);
             context.live_broadcast.capture_started(&source, &seed);
             context.live_broadcast.start_automatically_if_configured(
                 context.data_directory,
@@ -313,10 +316,12 @@ fn handle_output(
                 return Ok(());
             }
             descriptor.ended_at = now_rfc3339()?;
+            let completed_session_id = descriptor.session_id.clone();
             let result =
                 persist_streamed_recording(blobs, metadata, &recording, &descriptor, *writer);
             set_active_session(context.status, None);
             result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
+            set_completed_session(context.status, Some(completed_session_id));
             update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
         }
     }
@@ -558,6 +563,12 @@ fn update_status(
 fn set_active_session(status: &SharedCaptureStatus, session_id: Option<String>) {
     if let Ok(mut value) = status.lock() {
         value.active_session_id = session_id;
+    }
+}
+
+fn set_completed_session(status: &SharedCaptureStatus, session_id: Option<String>) {
+    if let Ok(mut value) = status.lock() {
+        value.completed_session_id = session_id;
     }
 }
 

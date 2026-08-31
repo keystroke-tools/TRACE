@@ -24,6 +24,7 @@ export interface TelemetryStatus {
 	source: string;
 	sampleRateHz: number | null;
 	session: string | null;
+	completedSessionId?: string | null;
 	channels: ChannelCapability[];
 }
 
