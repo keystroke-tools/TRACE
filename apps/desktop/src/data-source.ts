@@ -426,6 +426,15 @@ export interface LiveSettings {
 	discordActivityEnabled: boolean;
 }
 
+export interface DiscordReviewActivity {
+	kind: "sessions" | "session" | "lap" | "comparison";
+	simulator?: string | null;
+	track?: string | null;
+	car?: string | null;
+	sessionType?: string | null;
+	lapIndex?: number | null;
+}
+
 export interface LiveAutomationSettings {
 	enabled: boolean;
 	mode: LiveBroadcastOptions["mode"];
@@ -497,6 +506,7 @@ export interface TelemetryDataSource {
 	setLaunchOnStartup(enabled: boolean): Promise<StartupSettings>;
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
+	setDiscordReviewActivity(activity: DiscordReviewActivity | null): Promise<void>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
 	startActiveLiveBroadcast(options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
 	startRecordedLiveBroadcast(sessionId: string, options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
@@ -1173,6 +1183,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureLiveSettings = settings;
 		return fixtureLiveSettings;
 	},
+	async setDiscordReviewActivity(_activity) {},
 	async getLiveBroadcastStatus() {
 		return fixtureLiveBroadcastStatus;
 	},
@@ -1337,6 +1348,9 @@ export const tauriDataSource: TelemetryDataSource = {
 			autoStream: settings.autoStream,
 			discordActivityEnabled: settings.discordActivityEnabled,
 		});
+	},
+	setDiscordReviewActivity(activity) {
+		return invoke<void>("set_discord_review_activity", { activity });
 	},
 	getLiveBroadcastStatus() {
 		return invoke<LiveBroadcastStatus>("live_broadcast_status");

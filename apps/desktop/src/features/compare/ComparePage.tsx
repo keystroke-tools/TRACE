@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
 	telemetryDataSource,
 	type CornerAnalysis,
+	type DiscordReviewActivity,
 	type DrivingObservation,
 	type LapComparison,
 	type LapComparisonSample,
@@ -24,6 +25,8 @@ import {
 } from "../sessions/session-components";
 import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
+import { ComparisonSessionPicker } from "./ComparisonSessionPicker";
+import { FEATURE_FLAGS_CHANGED_EVENT, richComparisonPickerEnabled } from "../settings/feature-flags";
 import {
 	filterSamplesByDistance,
 	filterSamplesBySector,
@@ -34,7 +37,13 @@ import {
 
 const COMPARISON_PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4] as const;
 
-export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }) {
+export function ComparePage({
+	sessions,
+	onReviewActivity,
+}: {
+	sessions: RecordedSessionSummary[];
+	onReviewActivity: (activity: DiscordReviewActivity | null) => void;
+}) {
 	const showToast = useToast();
 	const eligibleSessions = useMemo(() => sessions.filter((session) => validComparisonLaps(session).length > 0), [sessions]);
 	const [referenceSessionId, setReferenceSessionId] = useState("");
@@ -83,6 +92,29 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 		comparisonSessionId,
 		comparisonLap,
 	);
+
+	useEffect(() => {
+		const context = referenceSession ?? comparisonSession;
+		onReviewActivity({
+			kind: "comparison",
+			simulator: context?.simulatorId,
+			track: context?.track,
+			car: context?.car,
+			sessionType: context?.sessionType,
+		});
+	}, [
+		comparisonSession?.car,
+		comparisonSession?.id,
+		comparisonSession?.sessionType,
+		comparisonSession?.simulatorId,
+		comparisonSession?.track,
+		onReviewActivity,
+		referenceSession?.car,
+		referenceSession?.id,
+		referenceSession?.sessionType,
+		referenceSession?.simulatorId,
+		referenceSession?.track,
+	]);
 
 	useEffect(() => {
 		void telemetryDataSource
@@ -1543,6 +1575,12 @@ function ComparisonHud({
 	playbackSpeed,
 	onPlaybackSpeed,
 }: ComparisonHudProps) {
+	const [richSessionPicker, setRichSessionPicker] = useState(richComparisonPickerEnabled);
+	useEffect(() => {
+		const update = () => setRichSessionPicker(richComparisonPickerEnabled());
+		window.addEventListener(FEATURE_FLAGS_CHANGED_EVENT, update);
+		return () => window.removeEventListener(FEATURE_FLAGS_CHANGED_EVENT, update);
+	}, []);
 	const sample = samples[cursorIndex ?? 0] ?? null;
 	const finalDelta = comparison?.samples
 		.slice()
@@ -1595,6 +1633,7 @@ function ComparisonHud({
 						laps={referenceLaps}
 						lapIndex={referenceLap}
 						onLap={onReferenceLap}
+						richSessionPicker={richSessionPicker}
 					/>
 					<div className="flex min-w-0 items-center justify-center">
 						<button
@@ -1620,6 +1659,7 @@ function ComparisonHud({
 						lapIndex={comparisonLap}
 						onLap={onComparisonLap}
 						disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null}
+						richSessionPicker={richSessionPicker}
 					/>
 				</div>
 				<HudValue
@@ -1862,6 +1902,7 @@ function HudLapChoice({
 	lapIndex,
 	onLap,
 	disabledLap = null,
+	richSessionPicker,
 }: {
 	label: string;
 	role: string;
@@ -1873,25 +1914,15 @@ function HudLapChoice({
 	lapIndex: number | null;
 	onLap: (value: number) => void;
 	disabledLap?: number | null;
+	richSessionPicker: boolean;
 }) {
 	return (
-		<div className="grid min-w-0 grid-cols-[112px_minmax(150px,1fr)_150px] items-center gap-2">
+		<div className="grid min-w-0 grid-cols-[112px_minmax(190px,1fr)_140px] items-center gap-2">
 			<span className="min-w-0 font-mono">
 				<strong className={`block truncate text-[10px] font-black leading-3 tracking-[.1em] ${colour}`}>{label}</strong>
 				<span className="mt-0.5 block truncate text-[8px] font-bold leading-3 tracking-[.07em] text-trace-dim">{role}</span>
 			</span>
-			<select
-				value={sessionId}
-				onChange={(event) => onSession(event.target.value)}
-				className="trace-select h-9 min-w-0 border border-trace-divider bg-trace-deep px-3 text-[11px] font-bold leading-none text-trace-text outline-none"
-				aria-label={`${label} session`}
-			>
-				{sessions.map((session) => (
-					<option value={session.id} key={session.id}>
-						{comparisonSessionLabel(session)}
-					</option>
-				))}
-			</select>
+			<ComparisonSessionPicker sessions={sessions} value={sessionId} onChange={onSession} label={role} rich={richSessionPicker} />
 			<select
 				value={lapIndex?.toString() ?? ""}
 				onChange={(event) => onLap(Number(event.target.value))}
@@ -1911,11 +1942,6 @@ function HudLapChoice({
 			</select>
 		</div>
 	);
-}
-
-function comparisonSessionLabel(session: RecordedSessionSummary) {
-	const identity = session.driver ?? session.title ?? "Unnamed session";
-	return `${session.car} @ ${session.track} · ${identity} · ${friendlySessionType(session)} · ${formatCompactSessionDate(session.startedAt)}`;
 }
 
 function formatComparisonGap(seconds?: number | null) {

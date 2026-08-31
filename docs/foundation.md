@@ -421,6 +421,21 @@ compares the best lap with the most recent earlier session for the same simulato
 car, and track. Missing sector timing or a missing comparable session remains visibly
 unavailable rather than being estimated.
 
+Comparison session selection uses a structured picker that keeps driver or session
+identity, best valid lap, full local date and time, car, track, and session type visible
+as separate fields. Each Reference and Analysed Lap picker has independent token-based
+search across those fields, so a query such as `mx interl` can match the car and track
+simultaneously. A device-local flag under Settings → Flags switches back to the basic
+system dropdown for compatibility; changing it updates an open comparison page without
+restarting the app.
+
+When Discord Activity is enabled, an active simulator capture remains the highest
+priority presence and retains its public Watch Live link where applicable. Outside a
+capture, TRACE reports browsing sessions, reviewing a session or lap, and comparing
+laps. Review presence includes only simulator, car, track, session type, and lap number;
+it does not publish driver names, custom titles, tags, or local spectator addresses.
+Leaving the Sessions or Compare workspace clears the review activity.
+
 AC's physics temperature slots are treated as unavailable when the simulator emits
 the all-zero sentinel observed in real recordings. At session start TRACE snapshots
 ambient and road temperature, weather name, and starting dynamic-track grip from AC's

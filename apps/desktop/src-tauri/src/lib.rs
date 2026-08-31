@@ -48,7 +48,7 @@ mod startup;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
-use discord_activity::SharedDiscordActivity;
+use discord_activity::{ReviewActivity, ReviewKind, SharedDiscordActivity};
 use live_broadcast::{
     LiveAutomationSettings, SharedLiveBroadcast, live_broadcast_status,
     load_live_automation_settings, save_live_automation_settings, start_active_live_broadcast,
@@ -88,6 +88,17 @@ struct LiveSettings {
     endpoint: String,
     auto_stream: LiveAutomationSettings,
     discord_activity_enabled: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordReviewActivityInput {
+    kind: String,
+    simulator: Option<String>,
+    track: Option<String>,
+    car: Option<String>,
+    session_type: Option<String>,
+    lap_index: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -655,6 +666,43 @@ fn set_live_settings(
         endpoint: endpoint.to_owned(),
         auto_stream,
         discord_activity_enabled,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_discord_review_activity(
+    discord: tauri::State<'_, SharedDiscordActivity>,
+    activity: Option<DiscordReviewActivityInput>,
+) -> Result<(), String> {
+    let review = activity
+        .map(|activity| {
+            let kind = match activity.kind.as_str() {
+                "sessions" => ReviewKind::Sessions,
+                "session" => ReviewKind::Session,
+                "lap" => ReviewKind::Lap,
+                "comparison" => ReviewKind::Comparison,
+                _ => return Err("unknown Discord review activity kind".to_owned()),
+            };
+            Ok(ReviewActivity {
+                kind,
+                simulator: normalized_activity_field(activity.simulator),
+                track: normalized_activity_field(activity.track),
+                car: normalized_activity_field(activity.car),
+                session_type: normalized_activity_field(activity.session_type),
+                lap_index: activity.lap_index,
+                started_at_unix: OffsetDateTime::now_utc().unix_timestamp(),
+            })
+        })
+        .transpose()?;
+    discord.set_review(review);
+    Ok(())
+}
+
+fn normalized_activity_field(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.chars().take(128).collect())
     })
 }
 
@@ -2546,6 +2594,7 @@ pub fn run() {
             set_driver_profile,
             live_settings,
             set_live_settings,
+            set_discord_review_activity,
             live_broadcast_status,
             start_active_live_broadcast,
             start_recorded_live_broadcast,

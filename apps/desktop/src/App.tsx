@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	telemetryDataSource,
+	type DiscordReviewActivity,
 	type LiveBroadcastOptions,
 	type LiveBroadcastStatus,
 	type LiveSettings,
@@ -22,6 +23,12 @@ import { SetupsPage } from "./features/setups/SetupsPage";
 import { autoIndexSetupsEnabled, indexDetectedSetupLibraries } from "./features/setups/setup-preferences";
 import { TitleBar } from "./TitleBar";
 import { useToast } from "./Toast";
+
+function updateDiscordReviewActivity(activity: DiscordReviewActivity | null) {
+	void telemetryDataSource.setDiscordReviewActivity(activity).catch(() => {
+		// Discord may be closed or unavailable; review navigation must remain unaffected.
+	});
+}
 
 export function App() {
 	const showToast = useToast();
@@ -175,6 +182,26 @@ export function App() {
 	}, [status?.completedSessionId]);
 
 	useEffect(() => {
+		if (section === "COMPARE") return;
+		if (section !== "SESSIONS") {
+			updateDiscordReviewActivity(null);
+			return;
+		}
+		if (!openSession) {
+			updateDiscordReviewActivity({ kind: "sessions" });
+			return;
+		}
+		updateDiscordReviewActivity({
+			kind: openLapIndex == null ? "session" : "lap",
+			simulator: openSession.simulatorId,
+			track: openSession.track,
+			car: openSession.car,
+			sessionType: openSession.sessionType,
+			lapIndex: openLapIndex,
+		});
+	}, [openLapIndex, openSession?.car, openSession?.id, openSession?.sessionType, openSession?.simulatorId, openSession?.track, section]);
+
+	useEffect(() => {
 		if (!liveBroadcast?.automatic) return;
 		if (liveBroadcast.phase === "live" && liveBroadcast.liveSessionId && announcedAutomaticSession.current !== liveBroadcast.liveSessionId) {
 			announcedAutomaticSession.current = liveBroadcast.liveSessionId;
@@ -260,7 +287,7 @@ export function App() {
 							onImported={async () => setSessions(await telemetryDataSource.getSessions())}
 						/>
 					))}
-				{section === "COMPARE" && <ComparePage sessions={sessions} />}
+				{section === "COMPARE" && <ComparePage sessions={sessions} onReviewActivity={updateDiscordReviewActivity} />}
 				{section === "OVERLAYS" && <OverlaysPage sessions={sessions} status={status} />}
 				{section === "SETUPS" && <SetupsPage />}
 				{section === "SETTINGS" && <SettingsPage />}

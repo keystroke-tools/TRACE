@@ -5,6 +5,7 @@ import { PageIntro } from "../../components/layout";
 import { useToast } from "../../Toast";
 import { useUpdater } from "../update/UpdateContext";
 import { autoIndexSetupsEnabled, indexDetectedSetupLibraries, setAutoIndexSetupsEnabled } from "../setups/setup-preferences";
+import { richComparisonPickerEnabled, setRichComparisonPickerEnabled } from "./feature-flags";
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT = "https://live.simtrace.run";
 const AC_SESSION_TYPES = [
@@ -21,6 +22,7 @@ const settingsTabs = [
 	{ id: "general", label: "GENERAL", description: "Driver identity and app preferences" },
 	{ id: "games", label: "GAMES", description: "Simulator installations and adapters" },
 	{ id: "connectivity", label: "CONNECTIVITY", description: "Live services and integrations" },
+	{ id: "flags", label: "FLAGS", description: "Preview and compatibility options" },
 	{ id: "updates", label: "UPDATES & ABOUT", description: "Version and release channel" },
 ] as const;
 
@@ -60,6 +62,7 @@ export function SettingsPage() {
 	const [startupSettings, setStartupSettings] = useState<StartupSettings>({ supported: false, enabled: false });
 	const [startupLoading, setStartupLoading] = useState(true);
 	const [savingStartup, setSavingStartup] = useState(false);
+	const [richComparisonPicker, setRichComparisonPicker] = useState(richComparisonPickerEnabled);
 
 	async function changeAutoIndexSetups(enabled: boolean) {
 		setAutoIndexSetups(enabled);
@@ -331,11 +334,7 @@ export function SettingsPage() {
 				title="SETTINGS"
 				description="Control how TRACE connects to your simulators and works with their data. Recording, storage, analysis, and appearance preferences will also live here as those features become configurable."
 			/>
-			<div
-				className="mt-7 grid grid-cols-4 border border-trace-divider bg-trace-surface max-[1050px]:grid-cols-2"
-				role="tablist"
-				aria-label="Settings categories"
-			>
+			<div className="mt-7 grid grid-cols-5 border border-trace-divider bg-trace-surface" role="tablist" aria-label="Settings categories">
 				{settingsTabs.map((tab, index) => {
 					const selected = activeTab === tab.id;
 					return (
@@ -349,7 +348,7 @@ export function SettingsPage() {
 							tabIndex={selected ? 0 : -1}
 							onClick={() => setActiveTab(tab.id)}
 							onKeyDown={(event) => handleTabKeyDown(event, index)}
-							className={`relative min-h-[72px] min-w-0 border-0 border-r border-trace-divider px-4 py-3 text-left last:border-r-0 max-[1050px]:border-b max-[1050px]:nth-[2]:border-r-0 max-[1050px]:nth-[3]:border-b-0 max-[1050px]:nth-[4]:border-b-0 ${
+							className={`relative min-h-[72px] min-w-0 border-0 border-r border-trace-divider px-4 py-3 text-left last:border-r-0 ${
 								selected ? "bg-trace-deep text-trace-text" : "bg-trace-surface text-trace-muted hover:bg-trace-raised hover:text-trace-text"
 							}`}
 						>
@@ -578,8 +577,8 @@ export function SettingsPage() {
 									DISCORD ACTIVITY
 								</h3>
 								<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
-									Show your simulator, session type, car, and track in Discord while TRACE records. Online broadcasts include a public Watch
-									Live button; local spectator addresses are never shared.
+									Show your simulator, session type, car, and track in Discord while TRACE records or you review telemetry. Online broadcasts
+									include a public Watch Live button; driver names, custom titles, tags, and local spectator addresses are never shared.
 								</p>
 							</div>
 							<button
@@ -611,6 +610,36 @@ export function SettingsPage() {
 						</button>
 					</div>
 				</form>
+			</div>
+			<div id="settings-panel-flags" role="tabpanel" aria-labelledby="settings-tab-flags" hidden={activeTab !== "flags"}>
+				<section className="mt-7 border border-trace-divider bg-trace-surface" aria-labelledby="interface-flags-heading">
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 id="interface-flags-heading" className="text-[14px] font-black tracking-[.04em]">
+							INTERFACE FLAGS
+						</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">
+							Try newer interfaces or retain a simpler compatibility fallback. Flags are stored on this device and take effect immediately.
+						</p>
+					</div>
+					<label className="flex cursor-pointer items-start gap-3 p-5">
+						<input
+							type="checkbox"
+							checked={richComparisonPicker}
+							onChange={(event) => {
+								setRichComparisonPicker(event.target.checked);
+								setRichComparisonPickerEnabled(event.target.checked);
+							}}
+							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
+						/>
+						<span>
+							<strong className="block text-[12px] text-trace-text">Rich comparison session picker</strong>
+							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
+								Show driver, best valid lap, full session date and time, car, track, and session type in a structured picker. Turn this off to
+								use the basic system dropdown.
+							</span>
+						</span>
+					</label>
+				</section>
 			</div>
 			<div id="settings-panel-updates" role="tabpanel" aria-labelledby="settings-tab-updates" hidden={activeTab !== "updates"}>
 				<section className="mt-7 border border-trace-divider bg-trace-surface" aria-labelledby="application-update-heading">
