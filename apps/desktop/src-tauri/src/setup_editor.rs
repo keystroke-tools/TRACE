@@ -273,7 +273,7 @@ fn parse_document(record: &SetupFileRecord, source: &str, ac_root: Option<&Path>
 
 fn load_ac_metadata(root: &Path, source_car_id: &str) -> AcSetupMetadata {
     if !valid_path_component(source_car_id) {
-        return Default::default();
+        return AcSetupMetadata::default();
     }
     let setup_path = root
         .join("content/cars")
