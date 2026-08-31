@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { telemetryDataSource, type RecordedSessionSummary, type SessionExportFormat } from "../../data-source";
 import { PageIntro, SectionHeading } from "../../components/layout";
@@ -29,6 +31,18 @@ import {
 	theoreticalBestLap,
 } from "./session-components";
 
+function extension(path: string) {
+	const fileName = path.replaceAll("\\", "/").split("/").pop() ?? "";
+	const separator = fileName.lastIndexOf(".");
+	return separator >= 0 ? fileName.slice(separator + 1).toLowerCase() : "";
+}
+
+function pairKey(path: string) {
+	const normalized = path.replaceAll("\\", "/");
+	const separator = normalized.lastIndexOf(".");
+	return (separator >= 0 ? normalized.slice(0, separator) : normalized).toLowerCase();
+}
+
 export function SessionsPage({
 	sessions,
 	onOpen,
@@ -48,6 +62,7 @@ export function SessionsPage({
 	const [simulatorFilter, setSimulatorFilter] = useState("all");
 	const [sortOrder, setSortOrder] = useState("newest");
 	const [importing, setImporting] = useState(false);
+	const [draggingTelemetry, setDraggingTelemetry] = useState(false);
 	const visibleSessions = useMemo(() => {
 		const normalizedQuery = query.trim().toLocaleLowerCase();
 		return sessions
@@ -113,17 +128,10 @@ export function SessionsPage({
 		}
 	}
 
-	async function importTelemetry() {
-		const selected = await open({
-			multiple: false,
-			directory: false,
-			title: "Import telemetry",
-			filters: [{ name: "TRACE or MoTeC telemetry", extensions: ["trace", "ld"] }],
-		});
-		if (typeof selected !== "string") return;
+	async function importTelemetryPath(path: string) {
 		setImporting(true);
 		try {
-			const result = await telemetryDataSource.importSession(selected);
+			const result = await telemetryDataSource.importSession(path);
 			await onImported();
 			showToast({
 				kind: "success",
@@ -138,8 +146,81 @@ export function SessionsPage({
 		}
 	}
 
+	async function chooseTelemetry() {
+		const selected = await open({
+			multiple: false,
+			directory: false,
+			title: "Import telemetry",
+			filters: [{ name: "TRACE or MoTeC telemetry", extensions: ["trace", "ld"] }],
+		});
+		if (typeof selected !== "string") return;
+		await importTelemetryPath(selected);
+	}
+
+	async function importDroppedTelemetry(paths: string[]) {
+		const tracePackages = paths.filter((path) => extension(path) === "trace");
+		const logs = paths.filter((path) => extension(path) === "ld");
+		const sidecars = paths.filter((path) => extension(path) === "ldx");
+		if (tracePackages.length === 1 && logs.length === 0 && sidecars.length === 0) {
+			await importTelemetryPath(tracePackages[0]);
+			return;
+		}
+		if (logs.length !== 1 || tracePackages.length > 0 || sidecars.length > 1) {
+			showToast({
+				kind: "error",
+				title: "Choose one telemetry outing",
+				message: "Drop one .trace package, one .ld log, or one matching .ld and .ldx pair.",
+				timeoutMs: 6_000,
+			});
+			return;
+		}
+		if (sidecars.length === 1 && pairKey(logs[0]) !== pairKey(sidecars[0])) {
+			showToast({
+				kind: "error",
+				title: "MoTeC files do not match",
+				message: "The .ld and .ldx must have the same name and be in the same folder.",
+				timeoutMs: 6_000,
+			});
+			return;
+		}
+		await importTelemetryPath(logs[0]);
+	}
+
+	useEffect(() => {
+		if (!isTauri()) return undefined;
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void getCurrentWebview()
+			.onDragDropEvent((event) => {
+				if (event.payload.type === "enter") {
+					setDraggingTelemetry(event.payload.paths.some((path) => ["trace", "ld", "ldx"].includes(extension(path))));
+				}
+				if (event.payload.type === "leave") setDraggingTelemetry(false);
+				if (event.payload.type === "drop") {
+					setDraggingTelemetry(false);
+					if (!importing) void importDroppedTelemetry(event.payload.paths);
+				}
+			})
+			.then((stop) => {
+				if (disposed) stop();
+				else unlisten = stop;
+			});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, [importing]);
+
 	return (
 		<>
+			{draggingTelemetry && (
+				<div className="pointer-events-none fixed inset-3 z-[90] grid place-items-center border-2 border-dashed border-trace-accent bg-trace-deep/95">
+					<div className="text-center">
+						<span className="font-mono text-[12px] font-black tracking-[.14em] text-trace-accent">DROP TELEMETRY TO IMPORT</span>
+						<p className="mt-2 text-[13px] text-trace-soft">.trace, .ld, or a matching .ld + .ldx pair</p>
+					</div>
+				</div>
+			)}
 			<div className="flex items-end justify-between gap-6">
 				<div>
 					<SectionHeading index="02">SESSION LIBRARY</SectionHeading>
@@ -153,7 +234,7 @@ export function SessionsPage({
 					<button
 						type="button"
 						disabled={importing}
-						onClick={() => void importTelemetry()}
+						onClick={() => void chooseTelemetry()}
 						className="h-10 border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.08em] text-trace-accent hover:border-trace-accent hover:text-white disabled:border-trace-divider disabled:text-trace-dim"
 					>
 						{importing ? "IMPORTING…" : "IMPORT TELEMETRY"}
