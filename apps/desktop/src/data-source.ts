@@ -415,6 +415,11 @@ export interface DriverProfile {
 	name?: string | null;
 }
 
+export interface StartupSettings {
+	supported: boolean;
+	enabled: boolean;
+}
+
 export interface LiveSettings {
 	endpoint: string;
 	autoStream: LiveAutomationSettings;
@@ -488,6 +493,8 @@ export interface TelemetryDataSource {
 	compareSetups(baselineSetupId: string, alternativeSetupId: string): Promise<SetupComparison>;
 	getDriverProfile(): Promise<DriverProfile>;
 	setDriverProfile(name: string | null): Promise<DriverProfile>;
+	getStartupSettings(): Promise<StartupSettings>;
+	setLaunchOnStartup(enabled: boolean): Promise<StartupSettings>;
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
@@ -522,6 +529,7 @@ const fixtureSessionDetails = new Map<
 	{ title: string | null; driver: string | null; ownership: RecordedSessionSummary["ownership"]; tags: string[] }
 >();
 let fixtureDriverProfile: DriverProfile = { name: null };
+let fixtureStartupSettings: StartupSettings = { supported: true, enabled: false };
 let fixtureLiveSettings: LiveSettings = {
 	endpoint: "https://live.simtrace.run",
 	discordActivityEnabled: false,
@@ -1151,6 +1159,13 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureDriverProfile = { name };
 		return fixtureDriverProfile;
 	},
+	async getStartupSettings() {
+		return fixtureStartupSettings;
+	},
+	async setLaunchOnStartup(enabled) {
+		fixtureStartupSettings = { supported: true, enabled };
+		return fixtureStartupSettings;
+	},
 	async getLiveSettings() {
 		return fixtureLiveSettings;
 	},
@@ -1306,6 +1321,12 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	setDriverProfile(name) {
 		return invoke<DriverProfile>("set_driver_profile", { name });
+	},
+	getStartupSettings() {
+		return invoke<StartupSettings>("startup_settings");
+	},
+	setLaunchOnStartup(enabled) {
+		return invoke<StartupSettings>("set_launch_on_startup", { enabled });
 	},
 	getLiveSettings() {
 		return invoke<LiveSettings>("live_settings");

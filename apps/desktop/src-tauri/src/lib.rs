@@ -40,6 +40,7 @@ mod obs_overlay;
 mod setup_analysis;
 mod setup_editor;
 mod setup_import;
+mod startup;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
@@ -55,6 +56,7 @@ use setup_import::{
     attach_session_setup, detect_setup_folder, import_setup_archives, import_setup_files,
     index_existing_setups, setup_importers, setup_library,
 };
+use startup::{set_launch_on_startup, startup_settings};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2400,6 +2402,8 @@ pub fn run() {
             setup_document,
             save_setup_copy,
             setup_importers,
+            startup_settings,
+            set_launch_on_startup,
             driver_profile,
             set_driver_profile,
             live_settings,

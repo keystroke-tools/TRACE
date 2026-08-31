@@ -1,6 +1,6 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { telemetryDataSource, type GameInstallDirectory, type LiveBroadcastOptions, type LiveSettings } from "../../data-source";
+import { telemetryDataSource, type GameInstallDirectory, type LiveBroadcastOptions, type LiveSettings, type StartupSettings } from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { useToast } from "../../Toast";
 import { useUpdater } from "../update/UpdateContext";
@@ -57,6 +57,9 @@ export function SettingsPage() {
 	const [acSessionTypes, setAcSessionTypes] = useState<string[]>(AC_SESSION_TYPES.map((value) => value.id));
 	const [autoIndexSetups, setAutoIndexSetups] = useState(autoIndexSetupsEnabled);
 	const [indexingSetups, setIndexingSetups] = useState(false);
+	const [startupSettings, setStartupSettings] = useState<StartupSettings>({ supported: false, enabled: false });
+	const [startupLoading, setStartupLoading] = useState(true);
+	const [savingStartup, setSavingStartup] = useState(false);
 
 	async function changeAutoIndexSetups(enabled: boolean) {
 		setAutoIndexSetups(enabled);
@@ -103,6 +106,53 @@ export function SettingsPage() {
 			active = false;
 		};
 	}, [showToast]);
+
+	useEffect(() => {
+		let active = true;
+		void telemetryDataSource
+			.getStartupSettings()
+			.then((settings) => {
+				if (!active) return;
+				setStartupSettings(settings);
+				setStartupLoading(false);
+			})
+			.catch((error) => {
+				if (!active) return;
+				setStartupLoading(false);
+				showToast({
+					kind: "error",
+					title: "Startup setting unavailable",
+					message: error instanceof Error ? error.message : String(error),
+					timeoutMs: 8_000,
+				});
+			});
+		return () => {
+			active = false;
+		};
+	}, [showToast]);
+
+	async function changeLaunchOnStartup(enabled: boolean) {
+		setSavingStartup(true);
+		try {
+			const settings = await telemetryDataSource.setLaunchOnStartup(enabled);
+			setStartupSettings(settings);
+			showToast({
+				kind: "success",
+				title: settings.enabled ? "Windows startup enabled" : "Windows startup disabled",
+				message: settings.enabled ? "TRACE will open after you sign in to Windows." : "TRACE will no longer open automatically after sign-in.",
+				timeoutMs: 5_000,
+			});
+		} catch (error) {
+			showToast({
+				kind: "error",
+				title: "Could not update Windows startup",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setSavingStartup(false);
+		}
+	}
 
 	async function saveProfile() {
 		setSavingProfile(true);
@@ -346,6 +396,31 @@ export function SettingsPage() {
 						</div>
 					</label>
 				</form>
+				<section className="mt-5 border border-trace-divider bg-trace-surface">
+					<div className="border-b border-trace-divider px-5 py-4">
+						<h2 className="text-[14px] font-black tracking-[.04em]">APPLICATION</h2>
+						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">Choose how TRACE behaves when you sign in to your computer.</p>
+					</div>
+					<label className={`flex items-start gap-3 p-5 ${startupSettings.supported && !startupLoading ? "cursor-pointer" : "cursor-not-allowed"}`}>
+						<input
+							type="checkbox"
+							checked={startupSettings.enabled}
+							disabled={startupLoading || savingStartup || !startupSettings.supported}
+							onChange={(event) => void changeLaunchOnStartup(event.target.checked)}
+							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
+						/>
+						<span>
+							<strong className="block text-[12px] text-trace-text">Launch TRACE when Windows starts</strong>
+							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
+								{startupLoading
+									? "Checking the Windows startup setting…"
+									: startupSettings.supported
+										? "Opens the current TRACE installation automatically after you sign in. You can disable it here at any time."
+										: "This setting is available in the Windows desktop build."}
+							</span>
+						</span>
+					</label>
+				</section>
 				<section className="mt-5 border border-trace-divider bg-trace-surface">
 					<div className="border-b border-trace-divider px-5 py-4">
 						<h2 className="text-[14px] font-black tracking-[.04em]">SETUP LIBRARY</h2>
