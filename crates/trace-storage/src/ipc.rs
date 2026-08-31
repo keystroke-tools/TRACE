@@ -40,12 +40,13 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 11] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 12] = [
     "static.max_fuel_litres",
     "Max Fuel",
     "static.track_spline_length_m",
     "trace.derived_track_length_m",
     "Last Sector Time",
+    "trace.steering_total_rotation_degrees",
     "physics.steer_angle",
     "physics.clutch",
     "physics.tyre_wear.0",
@@ -83,6 +84,7 @@ pub struct TelemetryColumns {
     pub in_pit_lane: Vec<Option<bool>>,
     pub track_length_m: Option<f64>,
     pub track_configuration: Option<String>,
+    pub native_schema: Option<String>,
 }
 
 /// Bounded summary derived from one lap's immutable telemetry sample range.
@@ -188,6 +190,9 @@ impl TelemetryColumns {
                     .filter(|value| !value.is_empty())
                     .cloned()
             }),
+            native_schema: frames
+                .iter()
+                .find_map(|frame| frame.native.as_deref().map(|native| native.schema.clone())),
         }
     }
 
@@ -227,6 +232,7 @@ impl TelemetryColumns {
             in_pit_lane: Vec::new(),
             track_length_m: None,
             track_configuration: None,
+            native_schema: None,
         }
     }
 }
@@ -1262,6 +1268,9 @@ fn extend_projection(
     {
         for offset in 0..length {
             let source_row = start + offset;
+            if decoded.native_schema.is_none() && !schemas.is_null(source_row) {
+                decoded.native_schema = Some(schemas.value(source_row).to_owned());
+            }
             if !schemas.is_null(source_row)
                 && schemas.value(source_row) == "motec.i2.ld/community-1"
                 && let Some(position_x) = decoded.position_x_m[projection_start + offset].as_mut()

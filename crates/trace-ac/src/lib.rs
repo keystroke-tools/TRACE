@@ -88,7 +88,9 @@ pub fn map_frame(
             throttle: ratio(physics.gas()),
             brake: ratio(physics.brake()),
             clutch: physics.clutch().and_then(ratio),
-            steering_angle_rad: finite(physics.steering_angle_rad()),
+            // Vanilla AC publishes normalized steering input, not an angle.
+            // The adapter applies the configured wheel rotation when available.
+            steering_angle_rad: None,
         },
         vehicle: VehicleState {
             speed_mps: non_negative(physics.speed_kmh()).map(|speed| speed / 3.6),
@@ -253,7 +255,7 @@ mod tests {
         assert_eq!(frame.lap.current_sector_index, Some(1));
         assert_eq!(frame.lap.last_sector_time_ns, Some(36_370_000_000));
         assert_eq!(frame.lap.tyres_out, Some(2));
-        assert_eq!(frame.inputs.steering_angle_rad, Some(-0.3));
+        assert_eq!(frame.inputs.steering_angle_rad, None);
         assert_eq!(
             frame
                 .environment

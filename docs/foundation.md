@@ -416,10 +416,11 @@ AC's physics temperature slots are treated as unavailable when the simulator emi
 the all-zero sentinel observed in real recordings. At session start TRACE snapshots
 ambient and road temperature, weather name, and starting dynamic-track grip from AC's
 `Documents/Assetto Corsa/cfg/race.ini`. Session details preserve those values and the
-telemetry HUD uses them only as a session-level fallback. AC's `steerAngle` is retained
-as a signed source angle and displayed in degrees rather than as a pedal-style
-percentage. Absolute wheel rotation still depends on controller range and car steering
-lock.
+telemetry HUD uses them only as a session-level fallback. AC's `steerAngle` is a
+normalized steering input, not radians. TRACE combines it with the total wheel rotation
+from `[STEER] LOCK` in `Documents/Assetto Corsa/cfg/controls.ini`, stores the resulting
+signed angle in radians, and displays it in degrees. The reader applies the same
+conversion to legacy local recordings that retained the normalized source field.
 
 The Settings page stores an optional local driver profile as a nickname or full name.
 TRACE attaches it to future self-owned captures and uses it as attribution when an older

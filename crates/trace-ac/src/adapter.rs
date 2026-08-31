@@ -131,12 +131,20 @@ pub struct AcAdapter<S = SystemAcSource> {
     next_sequence: u64,
     stream_started: Option<Instant>,
     stale_packets: StalePacketTracker,
+    steering_lock_degrees: Option<f32>,
 }
 
 impl AcAdapter<SystemAcSource> {
     /// Creates the production Assetto Corsa adapter.
     pub fn new() -> Self {
         Self::with_source(SystemAcSource::default())
+    }
+
+    /// Creates the production adapter with the total steering rotation configured in AC.
+    pub fn with_steering_lock_degrees(steering_lock_degrees: Option<f32>) -> Self {
+        let mut adapter = Self::new();
+        adapter.steering_lock_degrees = valid_steering_lock(steering_lock_degrees);
+        adapter
     }
 }
 
@@ -160,6 +168,7 @@ impl<S> AcAdapter<S> {
             next_sequence: 0,
             stream_started: None,
             stale_packets: StalePacketTracker::new(DEFAULT_STALE_PACKET_TIMEOUT),
+            steering_lock_degrees: None,
         }
     }
 }
@@ -213,6 +222,7 @@ impl<S: AcSource> AcAdapter<S> {
                 let mut frame = snapshot
                     .map_frame(FrameSequence(0), ElapsedNanoseconds(0))
                     .map_err(adapter_error)?;
+                apply_steering_lock(&mut frame, self.steering_lock_degrees);
                 frame.environment = environment;
                 self.next_sequence = 1;
 
@@ -297,6 +307,7 @@ impl<S: AcSource> AcAdapter<S> {
                 ElapsedNanoseconds(elapsed),
             )
             .map_err(adapter_error)?;
+        apply_steering_lock(&mut frame, self.steering_lock_degrees);
         frame.environment = environment;
         self.next_sequence = self.next_sequence.saturating_add(1);
         events.push(AdapterEvent::Frame(frame));
@@ -309,6 +320,38 @@ impl<S: AcSource> AcAdapter<S> {
         self.stream_started = None;
         self.stale_packets.reset();
     }
+}
+
+fn valid_steering_lock(value: Option<f32>) -> Option<f32> {
+    value.filter(|value| value.is_finite() && (90.0..=2_160.0).contains(value))
+}
+
+fn apply_steering_lock(
+    frame: &mut trace_domain::TelemetryFrame,
+    total_rotation_degrees: Option<f32>,
+) {
+    let Some(total_rotation_degrees) = valid_steering_lock(total_rotation_degrees) else {
+        return;
+    };
+    let Some(native) = frame.native.as_deref_mut() else {
+        return;
+    };
+    let Some(input) = native
+        .float_fields
+        .get("physics.steer_angle")
+        .copied()
+        .filter(|value| value.is_finite() && (-1.0..=1.0).contains(value))
+    else {
+        return;
+    };
+    let half_rotation_radians = f64::from(total_rotation_degrees).to_radians() / 2.0;
+    #[allow(clippy::cast_possible_truncation)]
+    let angle = (input * half_rotation_radians) as f32;
+    frame.inputs.steering_angle_rad = angle.is_finite().then_some(angle);
+    native.float_fields.insert(
+        "trace.steering_total_rotation_degrees".into(),
+        f64::from(total_rotation_degrees),
+    );
 }
 
 fn source_descriptor(simulator_version: Option<String>, replay: bool) -> SourceDescriptor {
@@ -418,7 +461,7 @@ fn adapter_error(error: AcCaptureError) -> AdapterError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use std::collections::{BTreeMap, VecDeque};
 
     use super::*;
     use crate::pages;
@@ -486,6 +529,25 @@ mod tests {
             connects: 0,
             disconnects: 0,
         }
+    }
+
+    #[test]
+    fn configured_wheel_rotation_converts_normalized_input_to_radians() {
+        let mut frame = trace_domain::TelemetryFrame {
+            native: Some(Box::new(trace_domain::NativeTelemetrySample {
+                schema: crate::AC_NATIVE_SCHEMA.into(),
+                float_fields: BTreeMap::from([("physics.steer_angle".into(), -0.4)]),
+                ..trace_domain::NativeTelemetrySample::default()
+            })),
+            ..trace_domain::TelemetryFrame::default()
+        };
+        apply_steering_lock(&mut frame, Some(900.0));
+        assert!(
+            frame
+                .inputs
+                .steering_angle_rad
+                .is_some_and(|angle| (angle + std::f32::consts::PI).abs() < 0.000_01)
+        );
     }
 
     #[test]

@@ -417,7 +417,7 @@ fn enrich_legacy_motec_sectors(
             let Some(duration_ns) = lap.duration_ns else {
                 continue;
             };
-            let Ok(columns) = read_recorded_lap(directory, store, &lap.id) else {
+            let Ok(columns) = read_recorded_lap(directory, store, &lap.id, None) else {
                 continue;
             };
             lap.sectors = derive_sector_durations(&columns, duration_ns)
@@ -869,8 +869,9 @@ fn compare_session_laps(
         return Err("invalid or incomplete laps cannot be compared".into());
     }
 
-    let reference_columns = read_recorded_lap(&directory, &store, &reference.id)?;
-    let comparison_columns = read_recorded_lap(&directory, &store, &comparison.id)?;
+    let steering_lock = configured_ac_steering_lock_degrees(&app);
+    let reference_columns = read_recorded_lap(&directory, &store, &reference.id, steering_lock)?;
+    let comparison_columns = read_recorded_lap(&directory, &store, &comparison.id, steering_lock)?;
     let lap_length_m = shared_track_length(&reference_columns, &comparison_columns)?;
     let reference_channels = AlignedLapChannels::new(&reference_columns, lap_length_m)?;
     let comparison_channels = AlignedLapChannels::new(&comparison_columns, lap_length_m)?;
@@ -1085,7 +1086,12 @@ fn visualize_session_lap(
         .iter()
         .find(|lap| lap.index == lap_index)
         .ok_or_else(|| "lap was not found".to_owned())?;
-    let columns = read_recorded_lap(&directory, &store, &lap.id)?;
+    let columns = read_recorded_lap(
+        &directory,
+        &store,
+        &lap.id,
+        configured_ac_steering_lock_degrees(&app),
+    )?;
     let lap_length_m = columns
         .track_length_m
         .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value))
@@ -1243,6 +1249,7 @@ fn read_recorded_lap(
     directory: &Path,
     store: &MetadataStore,
     lap_id: &str,
+    legacy_ac_total_rotation_degrees: Option<f32>,
 ) -> Result<TelemetryColumns, String> {
     let locator = store
         .lap_telemetry(lap_id)
@@ -1250,8 +1257,50 @@ fn read_recorded_lap(
     let path = directory.join("telemetry").join(locator.blob_path.as_str());
     let file =
         File::open(path).map_err(|error| format!("failed to open lap telemetry: {error}"))?;
-    read_columns_range(file, locator.sample_start, locator.sample_count)
-        .map_err(|error| format!("failed to read lap telemetry: {error:?}"))
+    let mut columns = read_columns_range(file, locator.sample_start, locator.sample_count)
+        .map_err(|error| format!("failed to read lap telemetry: {error:?}"))?;
+    repair_legacy_ac_steering(&mut columns, legacy_ac_total_rotation_degrees);
+    Ok(columns)
+}
+
+fn repair_legacy_ac_steering(columns: &mut TelemetryColumns, total_rotation_degrees: Option<f32>) {
+    repair_legacy_ac_steering_values(
+        columns.native_schema.as_deref(),
+        &mut columns.steering_angle_rad,
+        total_rotation_degrees,
+    );
+}
+
+fn repair_legacy_ac_steering_values(
+    native_schema: Option<&str>,
+    steering: &mut [Option<f32>],
+    total_rotation_degrees: Option<f32>,
+) {
+    if native_schema != Some("assetto-corsa.shared-memory/1") {
+        return;
+    }
+    let Some(total_rotation_degrees) = total_rotation_degrees
+        .filter(|value| value.is_finite() && (90.0..=2_160.0).contains(value))
+    else {
+        steering.fill(None);
+        return;
+    };
+    let half_rotation_radians = total_rotation_degrees.to_radians() / 2.0;
+    for value in steering {
+        *value = value
+            .filter(|input| (-1.0..=1.0).contains(input))
+            .map(|input| input * half_rotation_radians);
+    }
+}
+
+fn configured_ac_steering_lock_degrees(app: &tauri::AppHandle) -> Option<f32> {
+    let controls = app.path().document_dir().ok().map(|documents| {
+        documents
+            .join("Assetto Corsa")
+            .join("cfg")
+            .join("controls.ini")
+    });
+    capture::assetto_corsa_steering_lock_degrees(controls.as_deref())
 }
 
 fn shared_track_length(
@@ -2435,11 +2484,18 @@ pub fn run() {
         .manage(SharedDiscordActivity::default())
         .setup(move |app| {
             let directory = app.path().app_data_dir()?;
-            let ac_race_config = app
-                .path()
-                .document_dir()
-                .ok()
+            let documents = app.path().document_dir().ok();
+            let ac_race_config = documents
+                .as_deref()
                 .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
+            let ac_controls_config = documents.as_deref().map(|documents| {
+                documents
+                    .join("Assetto Corsa")
+                    .join("cfg")
+                    .join("controls.ini")
+            });
+            let steering_lock =
+                capture::assetto_corsa_steering_lock_degrees(ac_controls_config.as_deref());
             let status = app.state::<SharedCaptureStatus>().inner().clone();
             let live_broadcast = app.state::<SharedLiveBroadcast>().inner().clone();
             let discord_activity = app.state::<SharedDiscordActivity>().inner().clone();
@@ -2455,7 +2511,7 @@ pub fn run() {
                 status,
                 live_broadcast,
                 &adapter_identity,
-                AcAdapter::new,
+                move || AcAdapter::with_steering_lock_degrees(steering_lock),
             );
             Ok(())
         })
@@ -2566,6 +2622,18 @@ mod tests {
         let shared = reconcile_track_lengths(Some(4_199.337_305_294_357), Some(4_215.056_640_625))
             .expect("compatible lengths");
         assert!((shared - 4_207.196_972_959_679).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn legacy_ac_normalized_steering_uses_the_configured_wheel_rotation() {
+        let mut steering = [Some(-0.4), Some(0.0), Some(0.25)];
+        repair_legacy_ac_steering_values(
+            Some("assetto-corsa.shared-memory/1"),
+            &mut steering,
+            Some(900.0),
+        );
+        let degrees = steering.map(|value| value.map(f32::to_degrees));
+        assert_eq!(degrees, [Some(-180.0), Some(0.0), Some(112.5)]);
     }
 
     #[test]

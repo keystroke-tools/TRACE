@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -475,6 +475,14 @@ fn ini_value(contents: &str, wanted_section: &str, wanted_key: &str) -> Option<S
     None
 }
 
+pub(crate) fn assetto_corsa_steering_lock_degrees(controls_config: Option<&Path>) -> Option<f32> {
+    let contents = std::fs::read_to_string(controls_config?).ok()?;
+    ini_value(&contents, "STEER", "LOCK")?
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite() && (90.0..=2_160.0).contains(value))
+}
+
 fn unique_session_id() -> String {
     let now = OffsetDateTime::now_utc().unix_timestamp_nanos();
     format!("session-{now}")
@@ -671,6 +679,17 @@ mod tests {
         assert_eq!(
             ini_value(contents, "DYNAMIC_TRACK", "SESSION_START").as_deref(),
             Some("95")
+        );
+    }
+
+    #[test]
+    fn parses_assetto_corsa_total_steering_rotation() {
+        let directory = tempfile::tempdir().expect("temporary controls directory");
+        let controls = directory.path().join("controls.ini");
+        std::fs::write(&controls, "[STEER]\nLOCK=900\n").expect("controls fixture");
+        assert_eq!(
+            assetto_corsa_steering_lock_degrees(Some(&controls)),
+            Some(900.0)
         );
     }
 }

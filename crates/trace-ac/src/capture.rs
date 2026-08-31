@@ -14,7 +14,7 @@ const NATIVE_PAYLOAD_VERSION: u16 = 1;
 const NATIVE_PAYLOAD_HEADER_LENGTH: usize = 20;
 
 /// Decoder identifier for TRACE's lossless vanilla AC shared-memory envelope.
-pub const AC_NATIVE_SCHEMA: &str = "assetto-corsa.shared-memory/1";
+pub const AC_NATIVE_SCHEMA: &str = "assetto-corsa.shared-memory/2";
 
 /// Whether Assetto Corsa shared memory can be opened on this host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
