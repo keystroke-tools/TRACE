@@ -106,6 +106,9 @@ impl<'a> GraphicsPage<'a> {
     pub(crate) fn last_sector_time_ms(&self) -> i32 {
         read_i32(self.0, 168)
     }
+    pub(crate) fn flag(&self) -> Option<i32> {
+        read_optional_i32(self.0, 268)
+    }
     pub(crate) fn normalized_car_position(&self) -> f32 {
         read_f32(self.0, 248)
     }
@@ -461,6 +464,13 @@ fn read_i32(bytes: &[u8], offset: usize) -> i32 {
             .try_into()
             .expect("validated page prefix"),
     )
+}
+
+fn read_optional_i32(bytes: &[u8], offset: usize) -> Option<i32> {
+    bytes
+        .get(offset..offset + 4)
+        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+        .map(i32::from_le_bytes)
 }
 
 fn read_optional_f32(bytes: &[u8], offset: usize) -> Option<f32> {

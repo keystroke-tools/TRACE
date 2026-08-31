@@ -163,6 +163,12 @@ impl AcSnapshot {
             .status()
     }
 
+    pub(crate) fn flag(&self) -> Option<i32> {
+        pages::GraphicsPage::parse(&self.graphics)
+            .expect("snapshot pages validated at acquisition")
+            .flag()
+    }
+
     pub(crate) fn packet_signature(&self) -> (i32, i32) {
         let physics = pages::PhysicsPage::parse(&self.physics)
             .expect("snapshot pages validated at acquisition")

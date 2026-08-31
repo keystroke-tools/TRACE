@@ -14,6 +14,7 @@ const STATUS_OFF: i32 = 0;
 const STATUS_REPLAY: i32 = 1;
 const STATUS_LIVE: i32 = 2;
 const STATUS_PAUSE: i32 = 3;
+const FLAG_CHECKERED: i32 = 5;
 const DEFAULT_STALE_PACKET_TIMEOUT: Duration = Duration::from_secs(5);
 const SUPPORTED_SHARED_MEMORY_VERSION: &str = "1.7";
 
@@ -121,6 +122,7 @@ impl AcSource for SystemAcSource {
 enum ConnectionState {
     Disconnected,
     Running { session: SessionSeed, paused: bool },
+    SessionEnded { session: SessionSeed },
 }
 
 /// Assetto Corsa implementation of the canonical simulator adapter lifecycle.
@@ -182,6 +184,7 @@ impl<S: AcSource> SimulatorAdapter for AcAdapter<S> {
         match &self.state {
             ConnectionState::Disconnected => self.poll_disconnected(),
             ConnectionState::Running { .. } => self.poll_running(),
+            ConnectionState::SessionEnded { .. } => self.poll_session_ended(),
         }
     }
 }
@@ -206,6 +209,10 @@ impl<S: AcSource> AcAdapter<S> {
                 let status = runtime_status(snapshot.status())?;
                 if status == AcRuntimeStatus::Off {
                     self.source.disconnect();
+                    return Ok(Vec::new());
+                }
+                if session_has_ended(status, snapshot.flag()) {
+                    self.state = ConnectionState::SessionEnded { session };
                     return Ok(Vec::new());
                 }
 
@@ -263,6 +270,15 @@ impl<S: AcSource> AcAdapter<S> {
                 DisconnectReason::SourceClosed,
             )]);
         }
+        if session_has_ended(status, snapshot.flag()) {
+            let (session, _) = snapshot.map_session().map_err(adapter_error)?;
+            self.state = ConnectionState::SessionEnded { session };
+            self.stream_started = None;
+            self.stale_packets.reset();
+            return Ok(vec![AdapterEvent::Disconnected(
+                DisconnectReason::SessionEnded,
+            )]);
+        }
 
         if self.stale_packets.observe(
             snapshot.packet_signature(),
@@ -312,6 +328,28 @@ impl<S: AcSource> AcAdapter<S> {
         self.next_sequence = self.next_sequence.saturating_add(1);
         events.push(AdapterEvent::Frame(frame));
         Ok(events)
+    }
+
+    fn poll_session_ended(&mut self) -> Result<Vec<AdapterEvent>, AdapterError> {
+        let Ok(snapshot) = self.source.snapshot() else {
+            self.disconnect();
+            return Ok(Vec::new());
+        };
+        let status = runtime_status(snapshot.status())?;
+        if status == AcRuntimeStatus::Off {
+            self.disconnect();
+            return Ok(Vec::new());
+        }
+        let (session, _) = snapshot.map_session().map_err(adapter_error)?;
+        let ConnectionState::SessionEnded { session: previous } = &self.state else {
+            unreachable!("post-session poll requires ended state")
+        };
+        if !session_has_ended(status, snapshot.flag())
+            || session_identity_changed(previous, &session)
+        {
+            self.disconnect();
+        }
+        Ok(Vec::new())
     }
 
     fn disconnect(&mut self) {
@@ -405,6 +443,10 @@ fn runtime_status(status: i32) -> Result<AcRuntimeStatus, AdapterError> {
             "Assetto Corsa reported unknown graphics status {value}"
         ))),
     }
+}
+
+fn session_has_ended(status: AcRuntimeStatus, flag: Option<i32>) -> bool {
+    status == AcRuntimeStatus::Paused && flag == Some(FLAG_CHECKERED)
 }
 
 fn capabilities() -> ChannelCapabilities {
@@ -510,10 +552,25 @@ mod tests {
         snapshot_with_version(status, car, track, SUPPORTED_SHARED_MEMORY_VERSION)
     }
 
+    fn snapshot_with_flag(status: i32, flag: i32, car: &str, track: &str) -> AcSnapshot {
+        snapshot_with_version_and_flag(status, flag, car, track, SUPPORTED_SHARED_MEMORY_VERSION)
+    }
+
     fn snapshot_with_version(status: i32, car: &str, track: &str, version: &str) -> AcSnapshot {
+        snapshot_with_version_and_flag(status, 0, car, track, version)
+    }
+
+    fn snapshot_with_version_and_flag(
+        status: i32,
+        flag: i32,
+        car: &str,
+        track: &str,
+        version: &str,
+    ) -> AcSnapshot {
         let physics = vec![0; pages::PHYSICS_PREFIX_LENGTH];
-        let mut graphics = vec![0; pages::GRAPHICS_PREFIX_LENGTH];
+        let mut graphics = vec![0; pages::GRAPHICS_PAGE_LENGTH];
         put_i32(&mut graphics, 4, status);
+        put_i32(&mut graphics, 268, flag);
         let mut static_page = vec![0; pages::STATIC_PREFIX_LENGTH];
         put_utf16(&mut static_page, 0, 15, version);
         put_utf16(&mut static_page, 30, 15, "fixture");
@@ -603,6 +660,47 @@ mod tests {
             adapter.poll().expect("disconnect"),
             vec![AdapterEvent::Disconnected(DisconnectReason::SourceClosed)]
         );
+    }
+
+    #[test]
+    fn checkered_post_session_pause_ends_the_recording_once() {
+        let mut adapter = AcAdapter::with_source(source([
+            snapshot(STATUS_LIVE, "car-a", "track-a"),
+            snapshot_with_flag(STATUS_PAUSE, FLAG_CHECKERED, "car-a", "track-a"),
+            snapshot_with_flag(STATUS_PAUSE, FLAG_CHECKERED, "car-a", "track-a"),
+        ]));
+        adapter.poll().expect("connect");
+
+        assert_eq!(
+            adapter.poll().expect("finish"),
+            vec![AdapterEvent::Disconnected(DisconnectReason::SessionEnded)]
+        );
+        assert!(adapter.poll().expect("remain finished").is_empty());
+    }
+
+    #[test]
+    fn ordinary_pause_remains_resumable_even_when_packets_stop() {
+        let paused = snapshot(STATUS_PAUSE, "car-a", "track-a");
+        let mut adapter = AcAdapter::with_source(source([
+            snapshot(STATUS_LIVE, "car-a", "track-a"),
+            paused.clone(),
+            paused,
+            snapshot(STATUS_LIVE, "car-a", "track-a"),
+        ]));
+        adapter.poll().expect("connect");
+
+        assert!(matches!(
+            adapter.poll().expect("pause").as_slice(),
+            [AdapterEvent::Paused, AdapterEvent::Frame(_)]
+        ));
+        assert!(matches!(
+            adapter.poll().expect("stay paused").as_slice(),
+            [AdapterEvent::Frame(_)]
+        ));
+        assert!(matches!(
+            adapter.poll().expect("resume").as_slice(),
+            [AdapterEvent::Resumed, AdapterEvent::Frame(_)]
+        ));
     }
 
     #[test]
