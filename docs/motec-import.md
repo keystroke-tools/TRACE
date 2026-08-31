@@ -1,9 +1,8 @@
 # MoTeC telemetry import
 
-TRACE has parser foundations for native MoTeC i2 `.ld` logs with optional `.ldx`
-sidecars and for CSV files exported from MoTeC i2. Neither path is connected to the
-desktop import and persistence flow yet, so the application must not advertise it as
-finished user-facing support.
+TRACE can import paired MoTeC i2 `.ld`/`.ldx` outings into the desktop session
+library. It also has a parser foundation for CSV files exported from MoTeC i2, but
+CSV is not connected to the desktop workflow yet.
 
 MoTeC is the telemetry tool, not necessarily the simulator which produced a log.
 Importing must preserve source identity and must not silently assume Assetto Corsa.
@@ -93,18 +92,23 @@ sample rates and validity in i2, so TRACE must verify how i2 flattens interpolat
 gaps, duplicate names, lap beacons, source details, and position channels before the
 CSV path is exposed in the application.
 
-## Planned desktop flow
+## Desktop import flow
 
-1. Detect `.trace`, paired `.ld`/`.ldx`, and MoTeC CSV as distinct formats.
-2. Inspect the source and show identity, channels, laps, warnings, and missing fields
-   before writing anything.
-3. Let the user confirm simulator, car, track/layout, driver, and session type when
-   they are absent or ambiguous.
-4. Stream canonical frames into the normal Arrow writer and create SQLite metadata
-   with imported provenance.
-5. Index laps only from validated markers or channels. Without an `.ldx`, retain the
-   outing without inventing lap boundaries.
-6. Report unsupported channels and fidelity limitations after import.
+Select the `.ld` file from **Sessions → Import telemetry**. TRACE automatically looks
+for a same-named `.ldx` beside it, decodes the canonical and native channels, writes
+the normal Arrow telemetry representation, and creates SQLite session and lap records
+with imported provenance. The original driver is attributed as another driver so the
+outing is not confused with the local profile.
+
+This initial UI path requires the sidecar. It indexes the partial leading and trailing
+segments as invalid laps and uses marker-to-marker spans as complete laps. ACTI's
+`Lap Invalidated` channel determines validity when present; the fastest complete valid
+lap is highlighted normally. An `AC_LIVE` event identifies Assetto Corsa without
+making that simulator the default for other MoTeC producers.
+
+A later inspection step will let users confirm missing or ambiguous simulator, car,
+track/layout, driver, and session identity before writing. CSV desktop import also
+remains future work.
 
 TRACE-to-MoTeC export is separate work. Creating `.ld` files or importing datasets
 into i2 may involve MoTeC software and feature licences, so any future export must

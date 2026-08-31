@@ -41,11 +41,15 @@ trace-adapter = { path = "../../../crates/trace-adapter" }
 trace-core = { version = "0.5.3", path = "../../../crates/trace-core" }
 trace-domain.workspace = true
 trace-live = { path = "../../../crates/trace-live" }
+trace-motec = { path = "../../../crates/trace-motec" }
 trace-protocol = { path = "../../../crates/trace-protocol" }
 trace-recorder = { path = "../../../crates/trace-recorder" }
 trace-storage = { path = "../../../crates/trace-storage" }
 trace-server = { path = "../../../crates/trace-server" }
 zip = { version = "8.4.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

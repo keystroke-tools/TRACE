@@ -113,12 +113,12 @@ export function SessionsPage({
 		}
 	}
 
-	async function importTraceSession() {
+	async function importTelemetry() {
 		const selected = await open({
 			multiple: false,
 			directory: false,
-			title: "Import a TRACE session",
-			filters: [{ name: "TRACE session", extensions: ["trace"] }],
+			title: "Import telemetry",
+			filters: [{ name: "TRACE or MoTeC telemetry", extensions: ["trace", "ld"] }],
 		});
 		if (typeof selected !== "string") return;
 		setImporting(true);
@@ -127,7 +127,7 @@ export function SessionsPage({
 			await onImported();
 			showToast({
 				kind: "success",
-				title: "Session imported",
+				title: "Telemetry imported",
 				message: `${result.lapCount} laps and ${result.sampleCount.toLocaleString()} telemetry samples are ready${result.setupName ? ` · ${result.setupName} was restored to the setup library` : ""}.`,
 				timeoutMs: 6_000,
 			});
@@ -153,10 +153,10 @@ export function SessionsPage({
 					<button
 						type="button"
 						disabled={importing}
-						onClick={() => void importTraceSession()}
+						onClick={() => void importTelemetry()}
 						className="h-10 border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.08em] text-trace-accent hover:border-trace-accent hover:text-white disabled:border-trace-divider disabled:text-trace-dim"
 					>
-						{importing ? "IMPORTING…" : "IMPORT .TRACE"}
+						{importing ? "IMPORTING…" : "IMPORT TELEMETRY"}
 					</button>
 				</div>
 			</div>
