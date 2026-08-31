@@ -221,11 +221,7 @@ fn review_details(review: &ReviewActivity) -> String {
 }
 
 fn review_state(review: &ReviewActivity) -> String {
-    let simulator = review
-        .simulator
-        .as_deref()
-        .map(simulator_name)
-        .unwrap_or("TRACE");
+    let simulator = review.simulator.as_deref().map_or("TRACE", simulator_name);
     bounded_activity_text(&review.car.as_ref().map_or_else(
         || simulator.to_owned(),
         |car| format!("{simulator} · {car}"),
