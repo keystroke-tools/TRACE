@@ -13,7 +13,7 @@ use trace_domain::{
 
 const LD_MAGIC: u8 = 0x40;
 const MINIMUM_LD_BYTES: usize = 0x6e2;
-const NATIVE_SCHEMA: &str = "motec.i2.ld/community-3";
+const NATIVE_SCHEMA: &str = "motec.i2.ld/community-4";
 const U64_EXCLUSIVE_UPPER_F64: f64 = 18_446_744_073_709_551_616.0;
 
 /// Resource limits applied before and after decoding a native log pair.
@@ -636,7 +636,9 @@ fn apply_ld_mapping(
     match mapping {
         LdMapping::Throttle => frame.inputs.throttle = percent(value),
         LdMapping::Brake => frame.inputs.brake = percent(value),
-        LdMapping::Clutch => frame.inputs.clutch = percent(value),
+        // ACTI reports clutch engagement: 100% is connected/unpressed and 0%
+        // is disconnected/pressed. TRACE's canonical input is pedal travel.
+        LdMapping::Clutch => frame.inputs.clutch = inverted_percent(value),
         LdMapping::Steering => {
             frame.inputs.steering_angle_rad = finite_f32(value.to_radians());
         }
@@ -708,6 +710,10 @@ fn wheel(frame: &mut TelemetryFrame, corner: WheelCorner) -> &mut WheelState {
 
 fn percent(value: f64) -> Option<f32> {
     finite_f32(value / 100.0).filter(|value| (0.0..=1.0).contains(value))
+}
+
+fn inverted_percent(value: f64) -> Option<f32> {
+    percent(value).map(|value| 1.0 - value)
 }
 
 fn nonnegative_f32(value: f64) -> Option<f32> {
@@ -826,6 +832,7 @@ mod tests {
         assert_eq!(frame.elapsed, ElapsedNanoseconds(0));
         assert_eq!(frame.inputs.throttle, Some(1.0));
         assert_eq!(frame.inputs.brake, Some(0.0));
+        assert_approx(frame.inputs.clutch, 0.081_083_335, 0.000_001);
         assert_approx(frame.inputs.steering_angle_rad, -0.271_398_7, 0.000_001);
         assert_approx(frame.vehicle.speed_mps, 3.594_444_5, 0.000_001);
         assert_approx(frame.vehicle.engine_rpm, 5_982.222, 0.001);
@@ -840,7 +847,7 @@ mod tests {
         assert!(frame.environment.is_some());
         assert_eq!(frame.wheels.len(), 4);
         let native = frame.native.expect("native telemetry");
-        assert_eq!(native.schema, "motec.i2.ld/community-3");
+        assert_eq!(native.schema, "motec.i2.ld/community-4");
         assert_eq!(
             native.float_fields.get("static.max_fuel_litres"),
             Some(&45.0)

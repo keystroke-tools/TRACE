@@ -1272,6 +1272,20 @@ fn extend_projection(
                 decoded.native_schema = Some(schemas.value(source_row).to_owned());
             }
             if !schemas.is_null(source_row)
+                && matches!(
+                    schemas.value(source_row),
+                    "motec.i2.ld/community-1"
+                        | "motec.i2.ld/community-2"
+                        | "motec.i2.ld/community-3"
+                )
+                && let Some(clutch) = decoded.clutch[projection_start + offset].as_mut()
+            {
+                // Older ACTI imports stored clutch engagement in the canonical
+                // pedal-travel field. Repair them while decoding so comparisons,
+                // overlays, exports, and recorded broadcasts agree.
+                *clutch = 1.0 - *clutch;
+            }
+            if !schemas.is_null(source_row)
                 && schemas.value(source_row) == "motec.i2.ld/community-1"
                 && let Some(position_x) = decoded.position_x_m[projection_start + offset].as_mut()
             {
@@ -1860,6 +1874,10 @@ mod tests {
                 TelemetryFrame {
                     sequence: FrameSequence(u64::from(index_u16)),
                     elapsed: ElapsedNanoseconds(u64::from(index_u16) * 25_000_000_000),
+                    inputs: DriverInputs {
+                        clutch: Some(0.91),
+                        ..DriverInputs::default()
+                    },
                     vehicle: VehicleState {
                         fuel_litres: Some(3.0 - f32::from(index_u16) * 0.35),
                         ..VehicleState::default()
@@ -1878,6 +1896,11 @@ mod tests {
             .collect::<Vec<_>>();
         let bytes = encode_frames(&frames).expect("legacy MoTeC telemetry");
         let columns = read_columns_range(Cursor::new(&bytes), 0, 5).expect("projection");
+        assert!(
+            columns.clutch.iter().all(|value| {
+                value.is_some_and(|value| (value - 0.09).abs() < f32::EPSILON * 4.0)
+            })
+        );
         assert_eq!(
             columns.sector_index,
             vec![Some(0), Some(1), Some(1), Some(2), Some(2)]

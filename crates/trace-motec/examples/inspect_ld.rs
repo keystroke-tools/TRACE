@@ -37,6 +37,7 @@ fn main() -> Result<(), String> {
     for name in [
         "Brake Pos",
         "Throttle Pos",
+        "Clutch Pos",
         "Steering Angle",
         "Ground Speed",
         "Engine RPM",
