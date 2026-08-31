@@ -13,6 +13,13 @@ use trace_domain::{
     NativeTelemetrySample, TelemetryFrame, Unit, Vector3,
 };
 
+mod ld;
+
+pub use ld::{
+    LapBoundary, LdChannel, LdImportError, LdImportLimits, LdImportMetadata, LdxMetadata,
+    MotecLdReader,
+};
+
 const FORMAT_FIELD: &str = "Format";
 const FORMAT_VALUE: &str = "MoTeC CSV File";
 const NATIVE_SCHEMA: &str = "motec.i2.csv/provisional-1";
