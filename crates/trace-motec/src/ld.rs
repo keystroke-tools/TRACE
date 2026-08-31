@@ -13,7 +13,7 @@ use trace_domain::{
 
 const LD_MAGIC: u8 = 0x40;
 const MINIMUM_LD_BYTES: usize = 0x6e2;
-const NATIVE_SCHEMA: &str = "motec.i2.ld/community-2";
+const NATIVE_SCHEMA: &str = "motec.i2.ld/community-3";
 const U64_EXCLUSIVE_UPPER_F64: f64 = 18_446_744_073_709_551_616.0;
 
 /// Resource limits applied before and after decoding a native log pair.
@@ -150,12 +150,14 @@ enum LdMapping {
     Speed,
     EngineRpm,
     Fuel,
+    FuelCapacity,
     Gear,
     PositionX,
     PositionY,
     PositionZ,
     LapPosition,
     TyresOut,
+    LastSectorTime,
     AmbientTemperature,
     TrackTemperature,
     TrackGrip,
@@ -170,6 +172,9 @@ pub struct MotecLdReader {
     metadata: LdImportMetadata,
     channels: Vec<DecodedChannel>,
     next_sequence: u64,
+    previous_completed_laps: Option<usize>,
+    previous_last_sector_time_ns: Option<u64>,
+    current_sector_index: u32,
 }
 
 impl MotecLdReader {
@@ -309,6 +314,9 @@ impl MotecLdReader {
             metadata,
             channels,
             next_sequence: 0,
+            previous_completed_laps: None,
+            previous_last_sector_time_ns: None,
+            current_sector_index: 0,
         })
     }
 
@@ -382,6 +390,18 @@ impl MotecLdReader {
                 .and_then(|index| ldx.boundaries.get(index))
                 .map_or(0, |boundary| boundary.elapsed_ns);
             frame.lap.current_lap_time_ns = Some(elapsed.saturating_sub(start));
+            if self.previous_completed_laps != Some(completed) {
+                self.current_sector_index = 0;
+            } else if let Some(last_sector_time_ns) = frame.lap.last_sector_time_ns
+                && self
+                    .previous_last_sector_time_ns
+                    .is_some_and(|previous| previous != last_sector_time_ns)
+            {
+                self.current_sector_index = self.current_sector_index.saturating_add(1);
+            }
+            self.previous_completed_laps = Some(completed);
+            self.previous_last_sector_time_ns = frame.lap.last_sector_time_ns;
+            frame.lap.current_sector_index = Some(self.current_sector_index);
         }
         Some(frame)
     }
@@ -566,12 +586,14 @@ fn ld_mapping(name: &str, unit: &str) -> LdMapping {
         "groundspeed" if unit == "km/h" => LdMapping::Speed,
         "enginerpm" if unit == "rpm" => LdMapping::EngineRpm,
         "fuellevel" if matches!(unit.as_str(), "l" | "litre" | "litres") => LdMapping::Fuel,
+        "maxfuel" if matches!(unit.as_str(), "l" | "litre" | "litres") => LdMapping::FuelCapacity,
         "gear" => LdMapping::Gear,
         "carcoordx" if unit == "m" => LdMapping::PositionX,
         "carcoordy" if unit == "m" => LdMapping::PositionY,
         "carcoordz" if unit == "m" => LdMapping::PositionZ,
         "carposnorm" => LdMapping::LapPosition,
         "numtiresofftrack" => LdMapping::TyresOut,
+        "lastsectortime" if unit == "s" => LdMapping::LastSectorTime,
         "airtemp" if unit == "c" => LdMapping::AmbientTemperature,
         "roadtemp" if unit == "c" => LdMapping::TrackTemperature,
         "surfacegrip" if unit == "%" => LdMapping::TrackGrip,
@@ -621,6 +643,16 @@ fn apply_ld_mapping(
         LdMapping::Speed => frame.vehicle.speed_mps = nonnegative_f32(value / 3.6),
         LdMapping::EngineRpm => frame.vehicle.engine_rpm = nonnegative_f32(value),
         LdMapping::Fuel => frame.vehicle.fuel_litres = nonnegative_f32(value),
+        LdMapping::FuelCapacity => {
+            if value.is_finite()
+                && value > 0.0
+                && let Some(native) = frame.native.as_deref_mut()
+            {
+                native
+                    .float_fields
+                    .insert("static.max_fuel_litres".into(), value);
+            }
+        }
         LdMapping::Gear => {
             frame.vehicle.gear = integral_i16(value).map(|gear| match gear {
                 -1 => Gear::Reverse,
@@ -639,6 +671,9 @@ fn apply_ld_mapping(
         }
         LdMapping::TyresOut => {
             frame.lap.tyres_out = integral_i16(value).and_then(|value| u8::try_from(value).ok());
+        }
+        LdMapping::LastSectorTime => {
+            frame.lap.last_sector_time_ns = seconds_to_ns(value);
         }
         LdMapping::AmbientTemperature => {
             environment(frame).ambient_temperature_c = finite_f32(value);
@@ -690,6 +725,15 @@ fn integral_i16(value: f64) -> Option<i16> {
         return None;
     }
     value.to_string().parse().ok()
+}
+
+fn seconds_to_ns(value: f64) -> Option<u64> {
+    let nanoseconds = value * 1_000_000_000.0;
+    if !nanoseconds.is_finite() || !(0.0..U64_EXCLUSIVE_UPPER_F64).contains(&nanoseconds) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(nanoseconds.round() as u64)
 }
 
 fn sample_index(sequence: u64, output_rate_hz: u16, channel_rate_hz: u16, samples: usize) -> usize {
@@ -796,8 +840,12 @@ mod tests {
         assert!(frame.environment.is_some());
         assert_eq!(frame.wheels.len(), 4);
         let native = frame.native.expect("native telemetry");
-        assert_eq!(native.schema, "motec.i2.ld/community-2");
-        assert_eq!(native.float_fields.len(), 169);
+        assert_eq!(native.schema, "motec.i2.ld/community-3");
+        assert_eq!(
+            native.float_fields.get("static.max_fuel_litres"),
+            Some(&45.0)
+        );
+        assert_eq!(native.float_fields.len(), 170);
         assert_eq!(native.float_fields.get("Lap Invalidated"), Some(&0.0));
         assert_eq!(
             native
@@ -827,6 +875,34 @@ mod tests {
         assert_eq!(second_crossing.elapsed.0, 230_000_000_000);
         assert_eq!(second_crossing.lap.completed_laps, Some(2));
         assert_eq!(second_crossing.lap.current_lap_time_ns, Some(4_000_000));
+    }
+
+    #[test]
+    fn acti_sector_transitions_are_mapped_to_the_complete_lap() {
+        let mut reader = MotecLdReader::new(
+            STINT_9_LD.to_vec(),
+            Some(STINT_9_LDX),
+            LdImportLimits::default(),
+        )
+        .expect("authorised ACTI fixture");
+        let mut observed = BTreeMap::new();
+        while let Some(frame) = reader.next_frame() {
+            if matches!(frame.sequence.0, 2_363 | 3_324 | 3_890) {
+                observed.insert(
+                    frame.sequence.0,
+                    (
+                        frame.lap.current_sector_index,
+                        frame.lap.last_sector_time_ns,
+                    ),
+                );
+            }
+            if frame.sequence.0 == 3_890 {
+                break;
+            }
+        }
+        assert_eq!(observed[&2_363], (Some(0), Some(36_022_000_000)));
+        assert_eq!(observed[&3_324], (Some(1), Some(48_038_000_000)));
+        assert_eq!(observed[&3_890], (Some(2), Some(28_319_000_000)));
     }
 
     #[test]

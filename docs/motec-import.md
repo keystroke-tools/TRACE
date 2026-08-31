@@ -49,7 +49,11 @@ Observed behaviour:
   those to source-world X/Z and height Y for its track-map convention, reflecting
   ACTI's X axis to match AC's fast-lane spline frame; and
 - ACTI does not export AC's spline length, so TRACE derives a bounded track-length
-  estimate from the recorded position path between complete `.ldx` lap markers.
+  estimate from the recorded position path between complete `.ldx` lap markers;
+- ACTI's `Last Sector Time` changes at each split. TRACE combines those transitions
+  with the `.ldx` lap duration to reconstruct every sector; and
+- `Fuel Level` is the current volume, while `Max Fuel` is mapped separately as tank
+  capacity so lap consumption and the remaining-fuel gauge retain their meanings.
 
 The sidecars report a 1:51.996 fastest lap in stint 7 and 1:51.885 in stint 9. Tests
 assert those markers, metadata, frame counts, representative values, the complete
@@ -68,6 +72,7 @@ guessed.
 | Ground speed                     | km/h                 | metres per second                          |
 | Engine speed                     | rpm                  | revolutions per minute                     |
 | Fuel level                       | litres               | litres                                     |
+| Max fuel                         | litres               | tank capacity                              |
 | Gear                             | integral value       | reverse, neutral, forward, or source value |
 | Car Coord X/Y/Z                  | metres               | source-world position                      |
 | Car Pos Norm                     | ratio                | normalized lap position                    |
@@ -78,6 +83,7 @@ guessed.
 | Tire Pressure                    | psi                  | per-wheel pascals                          |
 | Tire Temp Core                   | Celsius              | per-wheel core temperature                 |
 | Suspension Travel                | millimetres          | per-wheel metres                           |
+| Last Sector Time                 | seconds              | completed split and current sector         |
 
 `Lap Invalidated` and all other ACTI channels remain in native fields even when no
 canonical field exists yet. Brake pressure is not treated as brake pedal position.
@@ -108,6 +114,10 @@ segments as invalid laps and uses marker-to-marker spans as complete laps. ACTI'
 `Lap Invalidated` channel determines validity when present; the fastest complete valid
 lap is highlighted normally. An `AC_LIVE` event identifies Assetto Corsa without
 making that simulator the default for other MoTeC producers.
+
+Comparisons align laps by normalized track position. Small differences between an
+ACTI path-derived length and the simulator's nominal spline length are reconciled;
+large disagreements still fail rather than comparing different layouts.
 
 A later inspection step will let users confirm missing or ambiguous simulator, car,
 track/layout, driver, and session identity before writing. CSV desktop import also

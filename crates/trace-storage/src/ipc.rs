@@ -40,10 +40,12 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 9] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 11] = [
     "static.max_fuel_litres",
+    "Max Fuel",
     "static.track_spline_length_m",
     "trace.derived_track_length_m",
+    "Last Sector Time",
     "physics.steer_angle",
     "physics.clutch",
     "physics.tyre_wear.0",
@@ -909,7 +911,56 @@ pub fn read_columns_range<R: Read + Seek>(
     if decoded.track_length_m.is_none() {
         decoded.track_length_m = derived_recorded_path_length(&decoded);
     }
+    derive_missing_sector_indices(&mut decoded);
     Ok(decoded)
+}
+
+/// Reconstructs completed sector durations from a lap projection when the source
+/// reports the most recently completed sector but did not persist lap metadata.
+pub fn derive_sector_durations(columns: &TelemetryColumns, lap_duration_ns: u64) -> Vec<u64> {
+    let mut previous = columns.last_sector_time_ns.first().copied().flatten();
+    if previous.is_none() {
+        return Vec::new();
+    }
+    let mut durations = Vec::new();
+    for duration in columns
+        .last_sector_time_ns
+        .iter()
+        .skip(1)
+        .flatten()
+        .copied()
+    {
+        if previous.is_some_and(|previous| previous != duration) {
+            durations.push(duration);
+        }
+        previous = Some(duration);
+    }
+    let completed = durations.iter().copied().sum::<u64>();
+    if completed >= lap_duration_ns {
+        return Vec::new();
+    }
+    durations.push(lap_duration_ns - completed);
+    durations
+}
+
+fn derive_missing_sector_indices(columns: &mut TelemetryColumns) {
+    if columns.sector_index.iter().any(Option::is_some) {
+        return;
+    }
+    let Some(mut previous) = columns.last_sector_time_ns.first().copied().flatten() else {
+        return;
+    };
+    let mut sector = 0_u32;
+    for (index, duration) in columns.last_sector_time_ns.iter().copied().enumerate() {
+        let Some(duration) = duration else {
+            continue;
+        };
+        if duration != previous {
+            sector = sector.saturating_add(1);
+            previous = duration;
+        }
+        columns.sector_index[index] = Some(sector);
+    }
 }
 
 fn derived_recorded_path_length(columns: &TelemetryColumns) -> Option<f64> {
@@ -1044,6 +1095,7 @@ fn observe_lap_metrics(
         }
         if let Some(native) = native {
             if let Some(value) = native_float_value(native, row, "static.max_fuel_litres")
+                .or_else(|| native_float_value(native, row, "Max Fuel"))
                 .filter(|value| value.is_finite() && *value > 0.0)
                 .map(narrow_native_float)
             {
@@ -1111,6 +1163,15 @@ fn native_text_value(map: &MapArray, row: usize, key: &str) -> Option<String> {
 #[allow(clippy::cast_possible_truncation)]
 fn narrow_native_float(value: f64) -> f32 {
     value as f32
+}
+
+fn seconds_to_nanoseconds(seconds: f64) -> Option<u64> {
+    let nanoseconds = seconds * 1_000_000_000.0;
+    if !nanoseconds.is_finite() || !(0.0..18_446_744_073_709_551_616.0).contains(&nanoseconds) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(nanoseconds.round() as u64)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1278,6 +1339,11 @@ fn extend_projection(
                 source_row,
                 "physics.road_temperature_c",
             );
+            if decoded.last_sector_time_ns[projected_row].is_none() {
+                decoded.last_sector_time_ns[projected_row] =
+                    native_float_value(native, source_row, "Last Sector Time")
+                        .and_then(seconds_to_nanoseconds);
+            }
         }
     }
     if decoded.track_length_m.is_none()
@@ -1772,6 +1838,47 @@ mod tests {
             Some(98.0)
         );
         assert_eq!(native_float_value(floats, 0, "physics.unused"), None);
+    }
+
+    #[test]
+    fn legacy_motec_sector_and_fuel_metadata_are_recovered() {
+        let sector_times = [35.528, 48.038, 48.038, 28.319, 28.319];
+        let frames = sector_times
+            .into_iter()
+            .enumerate()
+            .map(|(index, last_sector_time)| {
+                let index_u16 = u16::try_from(index).expect("small fixture index");
+                TelemetryFrame {
+                    sequence: FrameSequence(u64::from(index_u16)),
+                    elapsed: ElapsedNanoseconds(u64::from(index_u16) * 25_000_000_000),
+                    vehicle: VehicleState {
+                        fuel_litres: Some(3.0 - f32::from(index_u16) * 0.35),
+                        ..VehicleState::default()
+                    },
+                    native: Some(Box::new(NativeTelemetrySample {
+                        schema: "motec.i2.ld/community-2".into(),
+                        float_fields: BTreeMap::from([
+                            ("Last Sector Time".into(), last_sector_time),
+                            ("Max Fuel".into(), 45.0),
+                        ]),
+                        ..NativeTelemetrySample::default()
+                    })),
+                    ..TelemetryFrame::default()
+                }
+            })
+            .collect::<Vec<_>>();
+        let bytes = encode_frames(&frames).expect("legacy MoTeC telemetry");
+        let columns = read_columns_range(Cursor::new(&bytes), 0, 5).expect("projection");
+        assert_eq!(
+            columns.sector_index,
+            vec![Some(0), Some(1), Some(1), Some(2), Some(2)]
+        );
+        assert_eq!(
+            derive_sector_durations(&columns, 111_885_000_000),
+            vec![48_038_000_000, 28_319_000_000, 35_528_000_000]
+        );
+        let metrics = read_lap_metrics(Cursor::new(bytes), 0, 5).expect("metrics");
+        assert_eq!(metrics.fuel_capacity_litres, Some(45.0));
     }
 
     #[test]

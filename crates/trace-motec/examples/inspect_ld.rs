@@ -41,6 +41,7 @@ fn main() -> Result<(), String> {
         "Ground Speed",
         "Engine RPM",
         "Fuel Level",
+        "Max Fuel",
         "Gear",
         "Car Coord X",
         "Car Coord Y",

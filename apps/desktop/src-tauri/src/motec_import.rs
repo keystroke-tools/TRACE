@@ -6,7 +6,7 @@ use trace_motec::{LdImportLimits, LdImportMetadata, MotecLdReader};
 use trace_storage::{
     BlobCommit, BlobFormat, FileBlobStore, RelativeBlobPath, TelemetryBlobStore,
     ipc::{TELEMETRY_SCHEMA_VERSION, encode_frames},
-    metadata::{MetadataStore, NewLap, NewSession, SessionConditions},
+    metadata::{MetadataStore, NewLap, NewSector, NewSession, SessionConditions},
 };
 
 const MAX_NATIVE_FRAMES: u64 = 5_000_000;
@@ -311,7 +311,11 @@ fn build_laps(
                     sample_start: u64::try_from(sample_start).unwrap_or(u64::MAX),
                     sample_count: u64::try_from(sample_end - sample_start).unwrap_or(u64::MAX),
                     is_personal_best: false,
-                    sectors: Vec::new(),
+                    sectors: if partial {
+                        Vec::new()
+                    } else {
+                        derive_sector_times(samples, end_ns.saturating_sub(start_ns))
+                    },
                 }
             })
         })
@@ -325,6 +329,40 @@ fn build_laps(
         lap.is_personal_best = lap.duration_ns == fastest && fastest.is_some();
     }
     Ok(laps)
+}
+
+fn derive_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<NewSector> {
+    let mut previous = samples
+        .first()
+        .and_then(|frame| frame.lap.last_sector_time_ns);
+    if previous.is_none() {
+        return Vec::new();
+    }
+    let mut durations = Vec::new();
+    for duration in samples
+        .iter()
+        .skip(1)
+        .filter_map(|frame| frame.lap.last_sector_time_ns)
+    {
+        if previous.is_some_and(|previous| previous != duration) {
+            durations.push(duration);
+        }
+        previous = Some(duration);
+    }
+    let completed_duration = durations.iter().copied().sum::<u64>();
+    if completed_duration >= lap_duration_ns {
+        return Vec::new();
+    }
+    durations.push(lap_duration_ns - completed_duration);
+    durations
+        .into_iter()
+        .enumerate()
+        .filter(|(_, duration_ns)| *duration_ns > 0)
+        .map(|(index, duration_ns)| NewSector {
+            index: u32::try_from(index + 1).unwrap_or(u32::MAX),
+            duration_ns,
+        })
+        .collect()
 }
 
 fn boundary_sample(elapsed_ns: u64, rate_hz: u16) -> u64 {
@@ -369,7 +407,7 @@ mod tests {
     use std::{fs::File, path::PathBuf};
 
     use super::*;
-    use trace_storage::ipc::read_columns_range;
+    use trace_storage::ipc::{read_columns_range, read_lap_metrics};
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -407,6 +445,10 @@ mod tests {
         assert_eq!(session.laps[0].validity, "invalid");
         assert_eq!(session.laps[1].duration_ns, Some(111_885_000_000));
         assert!(session.laps[1].is_personal_best);
+        assert_eq!(session.laps[1].sectors.len(), 3);
+        assert_eq!(session.laps[1].sectors[0].duration_ns, 48_038_000_000);
+        assert_eq!(session.laps[1].sectors[1].duration_ns, 28_319_000_000);
+        assert_eq!(session.laps[1].sectors[2].duration_ns, 35_528_000_000);
         assert_eq!(session.laps[2].validity, "invalid");
         let telemetry = store.session_telemetry("motec-fixture").expect("telemetry");
         assert_eq!(telemetry.sample_count, 5_019);
@@ -431,5 +473,30 @@ mod tests {
                 .is_some_and(|length| (4_000.0..=5_000.0).contains(&length))
         );
         assert_eq!(columns.position_x_m.len(), 2_237);
+        assert_eq!(columns.sector_index.first(), Some(&Some(0)));
+        assert!(columns.sector_index.contains(&Some(2)));
+        let metrics = read_lap_metrics(
+            File::open(
+                directory
+                    .path()
+                    .join("telemetry")
+                    .join(telemetry.blob_path.as_str()),
+            )
+            .expect("Arrow file"),
+            lap.sample_start,
+            lap.sample_count,
+        )
+        .expect("lap metrics");
+        assert_eq!(metrics.fuel_capacity_litres, Some(45.0));
+        assert!(
+            metrics
+                .fuel_start_litres
+                .is_some_and(|fuel| (2.9..3.0).contains(&fuel))
+        );
+        assert!(
+            metrics
+                .fuel_end_litres
+                .is_some_and(|fuel| (1.5..1.6).contains(&fuel))
+        );
     }
 }

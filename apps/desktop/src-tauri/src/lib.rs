@@ -21,10 +21,13 @@ use trace_core::{
 use trace_storage::{
     BlobCommit, BlobFormat, FileBlobStore, RelativeBlobPath, TelemetryBlobStore,
     ipc::{
-        TELEMETRY_SCHEMA_VERSION, TelemetryColumns, export_core_csv, read_columns_range,
-        read_lap_metrics, sample_count,
+        TELEMETRY_SCHEMA_VERSION, TelemetryColumns, derive_sector_durations, export_core_csv,
+        read_columns_range, read_lap_metrics, sample_count,
     },
-    metadata::{CompatibleSetup, MetadataStore, NewSetupImport, SavedComparison, SessionSummary},
+    metadata::{
+        CompatibleSetup, MetadataStore, NewSetupImport, SavedComparison, SectorSummary,
+        SessionSummary,
+    },
     package::{
         MAX_SETUP_PAYLOAD_BYTES, PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest,
         SessionPackageSetup, decode_setup_payload, encode_setup_payload, imported_records,
@@ -321,9 +324,10 @@ fn recent_sessions(
     std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let sessions = store
+    let mut sessions = store
         .recent_sessions(100)
         .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    enrich_legacy_motec_sectors(&directory, &store, &mut sessions);
     let profile_name = store
         .driver_profile_name()
         .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
@@ -399,6 +403,33 @@ fn recent_sessions(
             }
         })
         .collect())
+}
+
+fn enrich_legacy_motec_sectors(
+    directory: &Path,
+    store: &MetadataStore,
+    sessions: &mut [SessionSummary],
+) {
+    for session in sessions.iter_mut().filter(|session| {
+        session.source_kind == "imported" && session.tags.iter().any(|tag| tag == "MoTeC")
+    }) {
+        for lap in session.laps.iter_mut().filter(|lap| lap.sectors.is_empty()) {
+            let Some(duration_ns) = lap.duration_ns else {
+                continue;
+            };
+            let Ok(columns) = read_recorded_lap(directory, store, &lap.id) else {
+                continue;
+            };
+            lap.sectors = derive_sector_durations(&columns, duration_ns)
+                .into_iter()
+                .enumerate()
+                .map(|(index, duration_ns)| SectorSummary {
+                    index: u32::try_from(index + 1).unwrap_or(u32::MAX),
+                    duration_ns,
+                })
+                .collect();
+        }
+    }
 }
 
 #[tauri::command]
@@ -1233,8 +1264,17 @@ fn shared_track_length(
     let comparison_length = comparison
         .track_length_m
         .filter(|value| value.is_finite() && (100.0..=100_000.0).contains(value));
+    reconcile_track_lengths(reference_length, comparison_length)
+}
+
+fn reconcile_track_lengths(
+    reference_length: Option<f64>,
+    comparison_length: Option<f64>,
+) -> Result<f64, String> {
     match (reference_length, comparison_length) {
-        (Some(reference), Some(comparison)) if (reference - comparison).abs() <= 5.0 => {
+        (Some(reference), Some(comparison))
+            if (reference - comparison).abs() <= reference.max(comparison) * 0.02 =>
+        {
             Ok(reference.midpoint(comparison))
         }
         (Some(value), None) | (None, Some(value)) => Ok(value),
@@ -2519,6 +2559,13 @@ mod tests {
         for (actual, expected) in normalized.into_iter().flatten().zip(expected) {
             assert!((actual - expected).abs() < 0.000_01);
         }
+    }
+
+    #[test]
+    fn comparison_accepts_small_track_length_differences_between_sources() {
+        let shared = reconcile_track_lengths(Some(4_199.337_305_294_357), Some(4_215.056_640_625))
+            .expect("compatible lengths");
+        assert!((shared - 4_207.196_972_959_679).abs() < 0.000_001);
     }
 
     #[test]
