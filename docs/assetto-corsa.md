@@ -87,26 +87,26 @@ length.
 
 ## Canonical mapping
 
-| Source                        | TRACE value                     | Treatment                                                                                 |
-| ----------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `gas`, `brake`                | throttle, brake                 | accepted only as finite 0–1 ratios                                                        |
-| `steerAngle`                  | source steering input           | raw signed value retained; displayed as a bounded signed percentage, not as wheel degrees |
-| `fuel`                        | fuel litres                     | finite and non-negative                                                                   |
-| `gear`                        | canonical gear                  | AC 0 reverse, 1 neutral, 2+ forward conversion                                            |
-| `rpms`                        | engine RPM                      | non-negative and bounded by canonical conversion                                          |
-| `speedKmh`                    | speed m/s                       | finite/non-negative, divided by 3.6                                                       |
-| `velocity[3]`                 | velocity                        | finite, AC source-world coordinate frame                                                  |
-| `accG[3]`                     | acceleration m/s²               | finite, multiplied by standard gravity                                                    |
-| `tyreCoreTemperature[4]`      | tyre core °C                    | canonical wheel ordering                                                                  |
-| `suspensionTravel[4]`         | suspension travel m             | canonical wheel ordering                                                                  |
-| `completedLaps`               | completed laps                  | non-negative only                                                                         |
-| `iCurrentTime`                | current lap time ns             | milliseconds converted with checked arithmetic                                            |
-| `currentSectorIndex`          | current zero-based sector index | non-negative only                                                                         |
-| `lastSectorTime`              | last completed sector time ns   | positive milliseconds converted with checked arithmetic                                   |
-| `normalizedCarPosition`       | normalized position             | accepted only as finite 0–1 ratio                                                         |
-| `carCoordinates[3]`           | position m                      | AC source-world coordinate frame                                                          |
-| `carModel`, `track`           | session source IDs              | decoded from fixed UTF-16, NUL terminated                                                 |
-| physics `airTemp`, `roadTemp` | ambient/track °C                | finite, plausible, non-zero values only; zero is treated as AC's unavailable sentinel     |
+| Source                        | TRACE value                     | Treatment                                                                             |
+| ----------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- |
+| `gas`, `brake`                | throttle, brake                 | accepted only as finite 0–1 ratios                                                    |
+| `steerAngle`                  | source steering input           | canonical radians; visualizers display the corresponding signed angle in degrees      |
+| `fuel`                        | fuel litres                     | finite and non-negative                                                               |
+| `gear`                        | canonical gear                  | AC 0 reverse, 1 neutral, 2+ forward conversion                                        |
+| `rpms`                        | engine RPM                      | non-negative and bounded by canonical conversion                                      |
+| `speedKmh`                    | speed m/s                       | finite/non-negative, divided by 3.6                                                   |
+| `velocity[3]`                 | velocity                        | finite, AC source-world coordinate frame                                              |
+| `accG[3]`                     | acceleration m/s²               | finite, multiplied by standard gravity                                                |
+| `tyreCoreTemperature[4]`      | tyre core °C                    | canonical wheel ordering                                                              |
+| `suspensionTravel[4]`         | suspension travel m             | canonical wheel ordering                                                              |
+| `completedLaps`               | completed laps                  | non-negative only                                                                     |
+| `iCurrentTime`                | current lap time ns             | milliseconds converted with checked arithmetic                                        |
+| `currentSectorIndex`          | current zero-based sector index | non-negative only                                                                     |
+| `lastSectorTime`              | last completed sector time ns   | positive milliseconds converted with checked arithmetic                               |
+| `normalizedCarPosition`       | normalized position             | accepted only as finite 0–1 ratio                                                     |
+| `carCoordinates[3]`           | position m                      | AC source-world coordinate frame                                                      |
+| `carModel`, `track`           | session source IDs              | decoded from fixed UTF-16, NUL terminated                                             |
+| physics `airTemp`, `roadTemp` | ambient/track °C                | finite, plausible, non-zero values only; zero is treated as AC's unavailable sentinel |
 
 Invalid numeric values degrade to missing canonical values rather than panicking.
 Short pages return a typed `TooShort` error containing expected and actual lengths.

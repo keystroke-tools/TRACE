@@ -396,9 +396,9 @@ fn steering_reversals(samples: &[CornerComparisonSample], reference: bool) -> Op
         .iter()
         .filter_map(|sample| {
             if reference {
-                sample.reference_steering_percent
+                sample.reference_steering_degrees
             } else {
-                sample.comparison_steering_percent
+                sample.comparison_steering_degrees
             }
         })
         .filter(|value| value.is_finite())

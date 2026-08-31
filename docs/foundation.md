@@ -417,8 +417,9 @@ the all-zero sentinel observed in real recordings. At session start TRACE snapsh
 ambient and road temperature, weather name, and starting dynamic-track grip from AC's
 `Documents/Assetto Corsa/cfg/race.ini`. Session details preserve those values and the
 telemetry HUD uses them only as a session-level fallback. AC's `steerAngle` is retained
-and displayed as signed steering input percentage; it is not mislabeled as wheel
-degrees because actual angle depends on controller range and car steering lock.
+as a signed source angle and displayed in degrees rather than as a pedal-style
+percentage. Absolute wheel rotation still depends on controller range and car steering
+lock.
 
 The Settings page stores an optional local driver profile as a nickname or full name.
 TRACE attaches it to future self-owned captures and uses it as attribution when an older
@@ -466,15 +467,15 @@ uniform distance grid, and compared as a deterministic cumulative delta trace.
 
 The Phase 1 foundation scope in `SPEC.md` is implemented:
 
-| Requirement | Acceptance evidence |
-| --- | --- |
-| Workspace and repository | Cargo and pnpm workspaces, Mise-pinned tools, MIT license, and full-workspace CI |
-| Canonical telemetry types | `trace-domain` owns simulator-independent frames, units, identity, availability, and provenance |
-| Simulator adapter interface | `SimulatorAdapter` defines bounded polling and lifecycle events; `ReplayAdapter` is deterministic |
-| Test/replay adapter | Recorded two-lap fixture exercises replay through distance-aligned delta analysis |
-| Local storage abstractions | Immutable content-addressed blobs, SQLite metadata migrations, and Arrow IPC telemetry batches |
-| Minimal desktop shell | Tauri/React shell reports foundation state through a typed command boundary |
-| TRACE design system | Shared dark telemetry workspace tokens, typography, spacing, panels, status, and channel components |
+| Requirement                 | Acceptance evidence                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| Workspace and repository    | Cargo and pnpm workspaces, Mise-pinned tools, MIT license, and full-workspace CI                    |
+| Canonical telemetry types   | `trace-domain` owns simulator-independent frames, units, identity, availability, and provenance     |
+| Simulator adapter interface | `SimulatorAdapter` defines bounded polling and lifecycle events; `ReplayAdapter` is deterministic   |
+| Test/replay adapter         | Recorded two-lap fixture exercises replay through distance-aligned delta analysis                   |
+| Local storage abstractions  | Immutable content-addressed blobs, SQLite metadata migrations, and Arrow IPC telemetry batches      |
+| Minimal desktop shell       | Tauri/React shell reports foundation state through a typed command boundary                         |
+| TRACE design system         | Shared dark telemetry workspace tokens, typography, spacing, panels, status, and channel components |
 
 Phase 1 deliberately does not claim a usable telemetry recorder. Phase 2 now includes
 live Assetto Corsa acquisition, conservative canonical lap segmentation, transactional

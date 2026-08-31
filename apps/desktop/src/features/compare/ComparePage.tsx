@@ -22,7 +22,7 @@ import {
 	lapIsInvalid,
 	sessionSourceGroup,
 } from "../sessions/session-components";
-import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringInputRange } from "../telemetry/ComparisonChart";
+import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import {
 	filterSamplesByDistance,
@@ -575,17 +575,17 @@ export function ComparePage({ sessions }: { sessions: RecordedSessionSummary[] }
 												)}
 											/>
 											<ComparisonChart
-												label="STEERING INPUT"
-												unit="%"
+												label="STEERING ANGLE"
+												unit="°"
 												samples={samples}
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
-												fixedRange={steeringInputRange(samples)}
+												fixedRange={steeringAngleRange(samples)}
 												zeroLine
 												series={comparisonSeries(
-													"referenceSteeringPercent",
-													"comparisonSteeringPercent",
+													"referenceSteeringDegrees",
+													"comparisonSteeringDegrees",
 													channelColours.steering,
 													comparisonIsFaster,
 												)}
@@ -1484,7 +1484,7 @@ export function TelemetryHud({
 				colour={channelColours.speed}
 			/>
 			<HudValue label="RPM" value={sample?.referenceRpm == null ? "—" : String(Math.round(sample.referenceRpm))} colour={channelColours.rpm} />
-			<HudSteering value={sample?.referenceSteeringPercent} colour={channelColours.steering} />
+			<HudSteering value={sample?.referenceSteeringDegrees} colour={channelColours.steering} />
 			<HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
 			<HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
 			{showConditions && <HudConditions air={airTemperature} track={trackTemperature} />}
@@ -1627,7 +1627,7 @@ function ComparisonHud({
 					value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`}
 					colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster}
 				/>
-				<HudSteering value={sample?.referenceSteeringPercent} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster} />
+				<HudSteering value={sample?.referenceSteeringDegrees} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster} />
 				<HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
 				{showConditions &&
 					(referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
@@ -1644,7 +1644,7 @@ function ComparisonHud({
 						<div aria-hidden="true" />
 					))}
 				<HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
-				<HudSteering value={sample?.comparisonSteeringPercent} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
+				<HudSteering value={sample?.comparisonSteeringDegrees} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
 				<HudValue
 					label="ANALYSED SPEED / GEAR"
 					value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`}
@@ -2053,15 +2053,14 @@ function HudValue({ label, value, unit, colour }: { label: string; value: string
 }
 
 function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
-	const percent = value == null || !Number.isFinite(value) ? 0 : Math.min(100, Math.max(-100, value));
-	const rotation = percent * 4.5;
+	const rotation = value == null || !Number.isFinite(value) ? 0 : Math.min(450, Math.max(-450, value));
 	return (
 		<div className="flex h-10 min-w-0 items-center gap-2 font-mono">
 			<svg
 				className="size-9 shrink-0"
 				viewBox="0 0 36 36"
 				role="img"
-				aria-label={value == null ? "Steering unavailable" : `Steering input ${Math.round(value)} percent`}
+				aria-label={value == null ? "Steering unavailable" : `Steering angle ${Math.round(value)} degrees`}
 			>
 				<circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" />
 				<g transform={`rotate(${rotation} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round">
@@ -2073,7 +2072,7 @@ function HudSteering({ value, colour }: { value?: number | null; colour: string 
 			<span className="min-w-0">
 				<span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span>
 				<strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>
-					{value == null ? "—" : `${Math.round(value)}%`}
+					{value == null ? "—" : `${Math.round(value)}°`}
 				</strong>
 			</span>
 		</div>

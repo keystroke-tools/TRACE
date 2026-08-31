@@ -200,8 +200,8 @@ struct LapComparisonSample {
     comparison_throttle_percent: Option<f64>,
     reference_brake_percent: Option<f64>,
     comparison_brake_percent: Option<f64>,
-    reference_steering_percent: Option<f64>,
-    comparison_steering_percent: Option<f64>,
+    reference_steering_degrees: Option<f64>,
+    comparison_steering_degrees: Option<f64>,
     reference_rpm: Option<f64>,
     comparison_rpm: Option<f64>,
     sector_index: Option<u32>,
@@ -240,7 +240,6 @@ struct LapTraceSample {
     throttle_percent: Option<f64>,
     brake_percent: Option<f64>,
     clutch_percent: Option<f64>,
-    steering_percent: Option<f64>,
     steering_degrees: Option<f64>,
     rpm: Option<f64>,
     gear: Option<i16>,
@@ -880,10 +879,17 @@ fn compare_session_laps(
         interpolate_channel(comparison_channels.throttle.as_ref(), &grid, 100.0)?;
     let reference_brake = interpolate_channel(reference_channels.brake.as_ref(), &grid, 100.0)?;
     let comparison_brake = interpolate_channel(comparison_channels.brake.as_ref(), &grid, 100.0)?;
-    let reference_steering =
-        interpolate_channel(reference_channels.steering.as_ref(), &grid, 100.0)?;
-    let comparison_steering =
-        interpolate_channel(comparison_channels.steering.as_ref(), &grid, 100.0)?;
+    let degrees_per_radian = 180.0 / std::f64::consts::PI;
+    let reference_steering = interpolate_channel(
+        reference_channels.steering.as_ref(),
+        &grid,
+        degrees_per_radian,
+    )?;
+    let comparison_steering = interpolate_channel(
+        comparison_channels.steering.as_ref(),
+        &grid,
+        degrees_per_radian,
+    )?;
     let reference_rpm = interpolate_channel(reference_channels.rpm.as_ref(), &grid, 1.0)?;
     let comparison_rpm = interpolate_channel(comparison_channels.rpm.as_ref(), &grid, 1.0)?;
     let sectors = interpolate_discrete(reference_channels.sector.as_ref(), &grid)?;
@@ -918,8 +924,8 @@ fn compare_session_laps(
             comparison_throttle_percent: comparison_throttle[index],
             reference_brake_percent: reference_brake[index],
             comparison_brake_percent: comparison_brake[index],
-            reference_steering_percent: reference_steering[index],
-            comparison_steering_percent: comparison_steering[index],
+            reference_steering_degrees: reference_steering[index],
+            comparison_steering_degrees: comparison_steering[index],
             reference_position_x_m: reference_position_x[index],
             reference_position_z_m: reference_position_z[index],
             comparison_position_x_m: comparison_position_x[index],
@@ -961,8 +967,8 @@ fn compare_session_laps(
             comparison_throttle_percent: comparison_throttle[index],
             reference_brake_percent: reference_brake[index],
             comparison_brake_percent: comparison_brake[index],
-            reference_steering_percent: reference_steering[index],
-            comparison_steering_percent: comparison_steering[index],
+            reference_steering_degrees: reference_steering[index],
+            comparison_steering_degrees: comparison_steering[index],
             reference_rpm: reference_rpm[index],
             comparison_rpm: comparison_rpm[index],
             sector_index: sectors[index].and_then(rounded_u32),
@@ -1069,7 +1075,6 @@ fn visualize_session_lap(
     let brake = interpolate_channel(channels.brake.as_ref(), &grid, 100.0)?;
     let clutch = interpolate_channel(channels.clutch.as_ref(), &grid, 100.0)?;
     let elapsed = interpolate_channel(Some(&elapsed_series), &grid, 1.0)?;
-    let steering = interpolate_channel(channels.steering.as_ref(), &grid, 100.0)?;
     let steering_degrees = interpolate_channel(
         channels.steering.as_ref(),
         &grid,
@@ -1093,7 +1098,6 @@ fn visualize_session_lap(
             throttle_percent: throttle[index],
             brake_percent: brake[index],
             clutch_percent: clutch[index],
-            steering_percent: steering[index],
             steering_degrees: steering_degrees[index],
             rpm: rpm[index],
             gear: gear[index].and_then(rounded_i16),

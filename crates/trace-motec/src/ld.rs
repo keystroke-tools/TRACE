@@ -13,7 +13,7 @@ use trace_domain::{
 
 const LD_MAGIC: u8 = 0x40;
 const MINIMUM_LD_BYTES: usize = 0x6e2;
-const NATIVE_SCHEMA: &str = "motec.i2.ld/community-1";
+const NATIVE_SCHEMA: &str = "motec.i2.ld/community-2";
 const U64_EXCLUSIVE_UPPER_F64: f64 = 18_446_744_073_709_551_616.0;
 
 /// Resource limits applied before and after decoding a native log pair.
@@ -629,7 +629,8 @@ fn apply_ld_mapping(
                 _ => Gear::Unknown(gear),
             });
         }
-        LdMapping::PositionX => source_position[0] = Some(value),
+        // ACTI reflects AC's world X axis relative to the fast-lane spline frame.
+        LdMapping::PositionX => source_position[0] = Some(-value),
         LdMapping::PositionY => source_position[1] = Some(value),
         LdMapping::PositionZ => source_position[2] = Some(value),
         LdMapping::LapPosition => {
@@ -789,12 +790,13 @@ mod tests {
         assert_eq!(frame.lap.current_lap_time_ns, Some(0));
         assert_approx(frame.lap.normalized_position, 0.028_633_334, 0.000_001);
         let position = frame.motion.position_m.expect("ACTI position");
-        assert!((position.x - 213.116_666_666_7).abs() < 0.000_001);
+        assert!((position.x - -213.116_666_666_7).abs() < 0.000_001);
         assert!((position.y - 19.356_166_666_7).abs() < 0.000_001);
         assert!((position.z - -438.942_857_142_9).abs() < 0.000_001);
         assert!(frame.environment.is_some());
         assert_eq!(frame.wheels.len(), 4);
         let native = frame.native.expect("native telemetry");
+        assert_eq!(native.schema, "motec.i2.ld/community-2");
         assert_eq!(native.float_fields.len(), 169);
         assert_eq!(native.float_fields.get("Lap Invalidated"), Some(&0.0));
         assert_eq!(

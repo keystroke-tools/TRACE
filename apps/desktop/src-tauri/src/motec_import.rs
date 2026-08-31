@@ -147,7 +147,63 @@ fn read_source(
     while let Some(frame) = reader.next_frame() {
         frames.push(frame);
     }
+    if let Some(track_length_m) = derive_track_length(&source_metadata, &frames) {
+        for frame in &mut frames {
+            if let Some(native) = frame.native.as_deref_mut() {
+                native
+                    .float_fields
+                    .insert("trace.derived_track_length_m".into(), track_length_m);
+            }
+        }
+    }
     Ok((source_metadata, frames))
+}
+
+fn derive_track_length(metadata: &LdImportMetadata, frames: &[TelemetryFrame]) -> Option<f64> {
+    let boundaries = &metadata.ldx.as_ref()?.boundaries;
+    let mut lengths = boundaries
+        .windows(2)
+        .filter_map(|window| {
+            let start = usize::try_from(boundary_sample(
+                window[0].elapsed_ns,
+                metadata.output_rate_hz,
+            ))
+            .ok()?
+            .min(frames.len());
+            let end = usize::try_from(boundary_sample(
+                window[1].elapsed_ns,
+                metadata.output_rate_hz,
+            ))
+            .ok()?
+            .min(frames.len());
+            let samples = frames.get(start..end)?;
+            let mut observed_steps = 0_usize;
+            let distance = samples.windows(2).fold(0.0, |total, pair| {
+                let Some(left) = pair[0].motion.position_m else {
+                    return total;
+                };
+                let Some(right) = pair[1].motion.position_m else {
+                    return total;
+                };
+                let dx = right.x - left.x;
+                let dz = right.z - left.z;
+                let step = dx.hypot(dz);
+                if step.is_finite() && step <= 100.0 {
+                    observed_steps += 1;
+                    total + step
+                } else {
+                    total
+                }
+            });
+            let expected_steps = samples.len().saturating_sub(1);
+            (expected_steps > 0
+                && observed_steps.saturating_mul(10) >= expected_steps.saturating_mul(9)
+                && (500.0..=30_000.0).contains(&distance))
+            .then_some(distance)
+        })
+        .collect::<Vec<_>>();
+    lengths.sort_by(f64::total_cmp);
+    lengths.get(lengths.len() / 2).copied()
 }
 
 fn new_session(
@@ -310,9 +366,10 @@ fn float_to_u8(value: f32) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{fs::File, path::PathBuf};
 
     use super::*;
+    use trace_storage::ipc::read_columns_range;
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -351,12 +408,28 @@ mod tests {
         assert_eq!(session.laps[1].duration_ns, Some(111_885_000_000));
         assert!(session.laps[1].is_personal_best);
         assert_eq!(session.laps[2].validity, "invalid");
-        assert_eq!(
-            store
-                .session_telemetry("motec-fixture")
-                .expect("telemetry")
-                .sample_count,
-            5_019
+        let telemetry = store.session_telemetry("motec-fixture").expect("telemetry");
+        assert_eq!(telemetry.sample_count, 5_019);
+        let lap = store
+            .lap_telemetry(&session.laps[1].id)
+            .expect("complete lap telemetry");
+        let columns = read_columns_range(
+            File::open(
+                directory
+                    .path()
+                    .join("telemetry")
+                    .join(telemetry.blob_path.as_str()),
+            )
+            .expect("Arrow file"),
+            lap.sample_start,
+            lap.sample_count,
+        )
+        .expect("visualizer columns");
+        assert!(
+            columns
+                .track_length_m
+                .is_some_and(|length| (4_000.0..=5_000.0).contains(&length))
         );
+        assert_eq!(columns.position_x_m.len(), 2_237);
     }
 }

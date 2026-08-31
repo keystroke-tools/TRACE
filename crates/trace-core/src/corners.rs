@@ -11,7 +11,7 @@ use crate::analysis::{
 const ALGORITHM_VERSION: u32 = 3;
 const MINIMUM_SAMPLES: usize = 12;
 const BRAKE_ACTIVE_PERCENT: f64 = 5.0;
-const STEERING_ACTIVE_PERCENT: f64 = 5.0;
+const STEERING_ACTIVE_DEGREES: f64 = 5.0;
 const PATH_TURN_ACTIVE_RADIANS: f64 = 0.045;
 const MAXIMUM_INACTIVE_GAP_M: f64 = 30.0;
 const MINIMUM_CORNER_SPAN_M: f64 = 20.0;
@@ -41,8 +41,8 @@ pub struct CornerComparisonSample {
     pub comparison_throttle_percent: Option<f64>,
     pub reference_brake_percent: Option<f64>,
     pub comparison_brake_percent: Option<f64>,
-    pub reference_steering_percent: Option<f64>,
-    pub comparison_steering_percent: Option<f64>,
+    pub reference_steering_degrees: Option<f64>,
+    pub comparison_steering_degrees: Option<f64>,
     pub reference_position_x_m: Option<f64>,
     pub reference_position_z_m: Option<f64>,
     pub comparison_position_x_m: Option<f64>,
@@ -156,7 +156,7 @@ pub fn analyze_corner_comparison(
         .any(|sample| sample.reference_brake_percent.is_some());
     let has_steering = samples
         .iter()
-        .any(|sample| sample.reference_steering_percent.is_some());
+        .any(|sample| sample.reference_steering_degrees.is_some());
     let has_path = samples
         .iter()
         .any(|sample| reference_position(*sample).is_some());
@@ -181,8 +181,8 @@ pub fn analyze_corner_comparison(
                 .reference_brake_percent
                 .is_some_and(|value| value >= BRAKE_ACTIVE_PERCENT)
                 || samples[index]
-                    .reference_steering_percent
-                    .is_some_and(|value| value.abs() >= STEERING_ACTIVE_PERCENT)
+                    .reference_steering_degrees
+                    .is_some_and(|value| value.abs() >= STEERING_ACTIVE_DEGREES)
                 || path_turn_angle(samples, index)
                     .is_some_and(|value| value.abs() >= PATH_TURN_ACTIVE_RADIANS)
         })
@@ -712,8 +712,8 @@ mod tests {
                     } else {
                         0.0
                     }),
-                    reference_steering_percent: Some(if in_corner { 25.0 } else { 0.0 }),
-                    comparison_steering_percent: Some(if in_corner { 27.0 } else { 0.0 }),
+                    reference_steering_degrees: Some(if in_corner { 25.0 } else { 0.0 }),
+                    comparison_steering_degrees: Some(if in_corner { 27.0 } else { 0.0 }),
                     reference_position_x_m: Some(angle.cos() * 100.0),
                     reference_position_z_m: Some(angle.sin() * 100.0),
                     comparison_position_x_m: Some(angle.cos() * 101.0),
@@ -828,12 +828,12 @@ mod tests {
                             0.0
                         },
                     ),
-                    reference_steering_percent: Some(if (10..=70).contains(&index) {
+                    reference_steering_degrees: Some(if (10..=70).contains(&index) {
                         25.0
                     } else {
                         0.0
                     }),
-                    comparison_steering_percent: Some(if (10..=70).contains(&index) {
+                    comparison_steering_degrees: Some(if (10..=70).contains(&index) {
                         25.0
                     } else {
                         0.0
@@ -909,12 +909,12 @@ mod tests {
                     } else {
                         0.0
                     }),
-                    reference_steering_percent: Some(if first_corner || second_corner {
+                    reference_steering_degrees: Some(if first_corner || second_corner {
                         25.0
                     } else {
                         0.0
                     }),
-                    comparison_steering_percent: Some(if first_corner || second_corner {
+                    comparison_steering_degrees: Some(if first_corner || second_corner {
                         25.0
                     } else {
                         0.0
@@ -938,7 +938,7 @@ mod tests {
         let mut samples = synthetic_corner();
         for sample in &mut samples {
             sample.reference_brake_percent = None;
-            sample.reference_steering_percent = None;
+            sample.reference_steering_degrees = None;
             sample.reference_position_x_m = None;
             sample.reference_position_z_m = None;
         }

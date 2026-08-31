@@ -46,7 +46,10 @@ Observed behaviour:
 - ACTI's session lap count is absolute within the original game session, so TRACE
   uses `.ldx` crossings rather than importing that count directly; and
 - ACTI calls its horizontal axes `Car Coord X/Y` and height `Car Coord Z`. TRACE maps
-  those to source-world X/Z and height Y for its track-map convention.
+  those to source-world X/Z and height Y for its track-map convention, reflecting
+  ACTI's X axis to match AC's fast-lane spline frame; and
+- ACTI does not export AC's spline length, so TRACE derives a bounded track-length
+  estimate from the recorded position path between complete `.ldx` lap markers.
 
 The sidecars report a 1:51.996 fastest lap in stint 7 and 1:51.885 in stint 9. Tests
 assert those markers, metadata, frame counts, representative values, the complete
@@ -58,23 +61,23 @@ Mappings are deliberately narrower than fuzzy name matching. A recognised name w
 an unknown or incompatible unit remains available as native data rather than being
 guessed.
 
-| Source data | Accepted native unit | TRACE value |
-| --- | --- | --- |
-| Throttle, brake, clutch position | percent | normalized input ratio |
-| Steering angle | degrees | radians |
-| Ground speed | km/h | metres per second |
-| Engine speed | rpm | revolutions per minute |
-| Fuel level | litres | litres |
-| Gear | integral value | reverse, neutral, forward, or source value |
-| Car Coord X/Y/Z | metres | source-world position |
-| Car Pos Norm | ratio | normalized lap position |
-| Num Tires Off Track | count | tyres outside the track |
-| Air/Road Temp | Celsius | environment temperature |
-| Surface Grip | percent | normalized track grip |
-| Wheel Angular Speed | radians/second | per-wheel angular speed |
-| Tire Pressure | psi | per-wheel pascals |
-| Tire Temp Core | Celsius | per-wheel core temperature |
-| Suspension Travel | millimetres | per-wheel metres |
+| Source data                      | Accepted native unit | TRACE value                                |
+| -------------------------------- | -------------------- | ------------------------------------------ |
+| Throttle, brake, clutch position | percent              | normalized input ratio                     |
+| Steering angle                   | degrees              | radians                                    |
+| Ground speed                     | km/h                 | metres per second                          |
+| Engine speed                     | rpm                  | revolutions per minute                     |
+| Fuel level                       | litres               | litres                                     |
+| Gear                             | integral value       | reverse, neutral, forward, or source value |
+| Car Coord X/Y/Z                  | metres               | source-world position                      |
+| Car Pos Norm                     | ratio                | normalized lap position                    |
+| Num Tires Off Track              | count                | tyres outside the track                    |
+| Air/Road Temp                    | Celsius              | environment temperature                    |
+| Surface Grip                     | percent              | normalized track grip                      |
+| Wheel Angular Speed              | radians/second       | per-wheel angular speed                    |
+| Tire Pressure                    | psi                  | per-wheel pascals                          |
+| Tire Temp Core                   | Celsius              | per-wheel core temperature                 |
+| Suspension Travel                | millimetres          | per-wheel metres                           |
 
 `Lap Invalidated` and all other ACTI channels remain in native fields even when no
 canonical field exists yet. Brake pressure is not treated as brake pedal position.

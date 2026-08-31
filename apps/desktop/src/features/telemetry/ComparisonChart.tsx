@@ -9,8 +9,8 @@ type ComparisonValueKey = keyof Pick<
 	| "comparisonThrottlePercent"
 	| "referenceBrakePercent"
 	| "comparisonBrakePercent"
-	| "referenceSteeringPercent"
-	| "comparisonSteeringPercent"
+	| "referenceSteeringDegrees"
+	| "comparisonSteeringDegrees"
 	| "referenceRpm"
 	| "comparisonRpm"
 	| "referenceGear"
@@ -59,16 +59,16 @@ export function deltaRange(samples: LapComparisonSample[]): [number, number] {
 	return [-maximum, maximum];
 }
 
-export function steeringInputRange(samples: LapComparisonSample[]): [number, number] {
+export function steeringAngleRange(samples: LapComparisonSample[]): [number, number] {
 	const maximum = Math.max(
 		10,
 		...samples.flatMap((sample) =>
-			[sample.referenceSteeringPercent, sample.comparisonSteeringPercent].flatMap((value) =>
+			[sample.referenceSteeringDegrees, sample.comparisonSteeringDegrees].flatMap((value) =>
 				value == null || !Number.isFinite(value) ? [] : [Math.abs(value)],
 			),
 		),
 	);
-	const bound = Math.min(100, Math.ceil(maximum / 10) * 10);
+	const bound = Math.min(720, Math.ceil(maximum / 10) * 10);
 	return [-bound, bound];
 }
 

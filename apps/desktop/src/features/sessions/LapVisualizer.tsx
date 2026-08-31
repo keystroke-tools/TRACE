@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { telemetryDataSource, type LapComparisonSample, type LapTrace, type RecordedSessionSummary } from "../../data-source";
 import { PageIntro } from "../../components/layout";
-import { channelColours, ComparisonChart, formatGear, singleSeries, steeringInputRange } from "../telemetry/ComparisonChart";
+import { channelColours, ComparisonChart, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import { filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "../telemetry/telemetry-window";
 import { SectorPicker, TelemetryHud } from "../compare/ComparePage";
@@ -42,7 +42,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 				referenceSpeedKmh: sample.speedKmh,
 				referenceThrottlePercent: sample.throttlePercent,
 				referenceBrakePercent: sample.brakePercent,
-				referenceSteeringPercent: sample.steeringPercent,
+				referenceSteeringDegrees: sample.steeringDegrees,
 				referenceRpm: sample.rpm,
 				referenceGear: sample.gear,
 				referencePositionXM: sample.positionXM,
@@ -176,15 +176,15 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								series={singleSeries("referenceBrakePercent", channelColours.brake)}
 							/>
 							<ComparisonChart
-								label="STEERING INPUT"
-								unit="%"
+								label="STEERING ANGLE"
+								unit="°"
 								samples={samples}
 								cursorIndex={cursorIndex}
 								onCursor={setCursorIndex}
 								onZoom={zoomTelemetry}
-								fixedRange={steeringInputRange(samples)}
+								fixedRange={steeringAngleRange(samples)}
 								zeroLine
-								series={singleSeries("referenceSteeringPercent", channelColours.steering)}
+								series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
 							/>
 						</div>
 					</div>

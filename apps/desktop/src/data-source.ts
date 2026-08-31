@@ -100,8 +100,8 @@ export interface LapComparisonSample {
 	comparisonThrottlePercent?: number | null;
 	referenceBrakePercent?: number | null;
 	comparisonBrakePercent?: number | null;
-	referenceSteeringPercent?: number | null;
-	comparisonSteeringPercent?: number | null;
+	referenceSteeringDegrees?: number | null;
+	comparisonSteeringDegrees?: number | null;
 	referenceRpm?: number | null;
 	comparisonRpm?: number | null;
 	sectorIndex?: number | null;
@@ -194,7 +194,6 @@ export interface LapTraceSample {
 	throttlePercent?: number | null;
 	brakePercent?: number | null;
 	clutchPercent?: number | null;
-	steeringPercent?: number | null;
 	steeringDegrees?: number | null;
 	rpm?: number | null;
 	gear?: number | null;
@@ -817,8 +816,8 @@ export const fixtureDataSource: TelemetryDataSource = {
 				comparisonThrottlePercent: Math.sin(phase + 0.1) > -0.3 ? 100 : 12,
 				referenceBrakePercent: Math.sin(phase) < -0.55 ? 72 : 0,
 				comparisonBrakePercent: Math.sin(phase + 0.1) < -0.5 ? 78 : 0,
-				referenceSteeringPercent: Math.sin(phase) * 42,
-				comparisonSteeringPercent: Math.sin(phase + 0.07) * 45,
+				referenceSteeringDegrees: Math.sin(phase) * 42,
+				comparisonSteeringDegrees: Math.sin(phase + 0.07) * 45,
 				referenceRpm: 6_200 + Math.sin(phase * 1.4) * 1_400,
 				comparisonRpm: 6_050 + Math.sin(phase * 1.4 + 0.1) * 1_450,
 				sectorIndex: Math.min(3, Math.floor(index / 67) + 1),
@@ -952,7 +951,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 				speedKmh: sample.referenceSpeedKmh,
 				throttlePercent: sample.referenceThrottlePercent,
 				brakePercent: sample.referenceBrakePercent,
-				steeringPercent: sample.referenceSteeringPercent,
+				steeringDegrees: sample.referenceSteeringDegrees,
 				rpm: sample.referenceRpm,
 				gear: sample.referenceGear,
 				positionXM: sample.referencePositionXM,

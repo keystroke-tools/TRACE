@@ -40,9 +40,10 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 8] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 9] = [
     "static.max_fuel_litres",
     "static.track_spline_length_m",
+    "trace.derived_track_length_m",
     "physics.steer_angle",
     "physics.clutch",
     "physics.tyre_wear.0",
@@ -176,14 +177,7 @@ impl TelemetryColumns {
                 .iter()
                 .map(|frame| native_boolean(frame, "graphics.is_in_pit_lane"))
                 .collect(),
-            track_length_m: frames.iter().find_map(|frame| {
-                frame
-                    .native
-                    .as_deref()
-                    .and_then(|native| native.float_fields.get("static.track_spline_length_m"))
-                    .copied()
-                    .filter(|value| value.is_finite() && *value > 0.0)
-            }),
+            track_length_m: frames.iter().find_map(native_track_length),
             track_configuration: frames.iter().find_map(|frame| {
                 frame
                     .native
@@ -241,6 +235,17 @@ fn native_boolean(frame: &TelemetryFrame, key: &str) -> Option<bool> {
         .as_deref()
         .and_then(|native| native.integer_fields.get(key))
         .map(|value| *value != 0)
+}
+
+fn native_track_length(frame: &TelemetryFrame) -> Option<f64> {
+    let native = frame.native.as_deref()?;
+    [
+        "static.track_spline_length_m",
+        "trace.derived_track_length_m",
+    ]
+    .into_iter()
+    .find_map(|key| native.float_fields.get(key).copied())
+    .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 /// Encodes a canonical frame batch as an Arrow IPC random-access file.
@@ -901,7 +906,51 @@ pub fn read_columns_range<R: Read + Seek>(
     if u64::try_from(decoded.len()).map_err(|_| IpcError::SampleOverflow)? != sample_count {
         return Err(IpcError::InvalidSampleRange);
     }
+    if decoded.track_length_m.is_none() {
+        decoded.track_length_m = derived_recorded_path_length(&decoded);
+    }
     Ok(decoded)
+}
+
+fn derived_recorded_path_length(columns: &TelemetryColumns) -> Option<f64> {
+    let lap_positions = columns
+        .lap_position
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect::<Vec<_>>();
+    let minimum = lap_positions.iter().copied().reduce(f32::min)?;
+    let maximum = lap_positions.iter().copied().reduce(f32::max)?;
+    if maximum - minimum < 0.8 {
+        return None;
+    }
+    let mut observed_steps = 0_usize;
+    let mut distance = 0.0;
+    for index in 1..columns.len() {
+        let Some(left_x) = columns.position_x_m[index - 1] else {
+            continue;
+        };
+        let Some(left_z) = columns.position_z_m[index - 1] else {
+            continue;
+        };
+        let Some(right_x) = columns.position_x_m[index] else {
+            continue;
+        };
+        let Some(right_z) = columns.position_z_m[index] else {
+            continue;
+        };
+        let step = (right_x - left_x).hypot(right_z - left_z);
+        if step.is_finite() && step <= 100.0 {
+            observed_steps += 1;
+            distance += step;
+        }
+    }
+    let expected_steps = columns.len().saturating_sub(1);
+    (expected_steps > 0
+        && observed_steps.saturating_mul(10) >= expected_steps.saturating_mul(9)
+        && (500.0..=30_000.0).contains(&distance))
+    .then_some(distance)
 }
 
 /// Derives lightweight lap-level metrics without loading a whole recording into memory.
@@ -1147,6 +1196,19 @@ fn extend_projection(
             .skip(start)
             .take(length),
     );
+    if let Ok(index) = batch.schema().index_of("native_schema")
+        && let Some(schemas) = batch.column(index).as_any().downcast_ref::<StringArray>()
+    {
+        for offset in 0..length {
+            let source_row = start + offset;
+            if !schemas.is_null(source_row)
+                && schemas.value(source_row) == "motec.i2.ld/community-1"
+                && let Some(position_x) = decoded.position_x_m[projection_start + offset].as_mut()
+            {
+                *position_x = -*position_x;
+            }
+        }
+    }
     decoded.gear_kind.extend(
         optional_i8(batch, "gear_kind")?
             .into_iter()
@@ -1223,8 +1285,13 @@ fn extend_projection(
         && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
     {
         decoded.track_length_m = (start..start + length).find_map(|row| {
-            native_float_value(native, row, "static.track_spline_length_m")
-                .filter(|value| value.is_finite() && *value > 0.0)
+            [
+                "static.track_spline_length_m",
+                "trace.derived_track_length_m",
+            ]
+            .into_iter()
+            .find_map(|key| native_float_value(native, row, key))
+            .filter(|value| value.is_finite() && *value > 0.0)
         });
     }
     if decoded.track_configuration.is_none()
@@ -1930,6 +1997,31 @@ mod tests {
     }
 
     #[test]
+    fn projection_corrects_the_legacy_motec_reflected_x_axis() {
+        let frame = TelemetryFrame {
+            motion: MotionState {
+                position_m: Some(Vector3 {
+                    x: 213.0,
+                    y: 19.0,
+                    z: -439.0,
+                    frame: CoordinateFrame::SourceWorld,
+                }),
+                ..MotionState::default()
+            },
+            native: Some(Box::new(NativeTelemetrySample {
+                schema: "motec.i2.ld/community-1".into(),
+                ..NativeTelemetrySample::default()
+            })),
+            ..TelemetryFrame::default()
+        };
+        let bytes = encode_frames(&[frame]).expect("encoded");
+        let decoded = read_columns_range(Cursor::new(bytes), 0, 1).expect("decoded");
+
+        assert_eq!(decoded.position_x_m, vec![Some(-213.0)]);
+        assert_eq!(decoded.position_z_m, vec![Some(-439.0)]);
+    }
+
+    #[test]
     fn schema_v1_projection_remains_readable() {
         let schema = Arc::new(schema_v1());
         let batch = RecordBatch::try_new(
@@ -1994,6 +2086,45 @@ mod tests {
         assert_eq!(
             read_columns_range(Cursor::new(bytes), 5, 2),
             Err(IpcError::InvalidSampleRange)
+        );
+    }
+
+    #[test]
+    fn range_reader_derives_missing_track_length_from_a_complete_position_path() {
+        let frames = (0..=100_u64)
+            .map(|sequence| {
+                let progress =
+                    f64::from(u32::try_from(sequence).expect("bounded sequence")) / 100.0;
+                let angle = progress * std::f64::consts::TAU;
+                TelemetryFrame {
+                    sequence: FrameSequence(sequence),
+                    elapsed: ElapsedNanoseconds(sequence * 50_000_000),
+                    lap: LapObservation {
+                        normalized_position: Some(
+                            f32::from(u16::try_from(sequence).expect("bounded sequence")) / 100.0,
+                        ),
+                        ..LapObservation::default()
+                    },
+                    motion: MotionState {
+                        position_m: Some(Vector3 {
+                            x: angle.cos() * 700.0,
+                            y: 0.0,
+                            z: angle.sin() * 700.0,
+                            frame: CoordinateFrame::SourceWorld,
+                        }),
+                        ..MotionState::default()
+                    },
+                    ..TelemetryFrame::default()
+                }
+            })
+            .collect::<Vec<_>>();
+        let bytes = encode_frames(&frames).expect("encoded");
+        let decoded = read_columns_range(Cursor::new(bytes), 0, 101).expect("complete lap");
+
+        assert!(
+            decoded
+                .track_length_m
+                .is_some_and(|length| (4_390.0..=4_400.0).contains(&length))
         );
     }
 
