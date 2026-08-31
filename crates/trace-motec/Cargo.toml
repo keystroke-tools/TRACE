@@ -1,0 +1,14 @@
+[package]
+name = "trace-motec"
+description = "Bounded MoTeC telemetry import support for TRACE"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+csv.workspace = true
+trace-domain.workspace = true
+
+[lints]
+workspace = true
