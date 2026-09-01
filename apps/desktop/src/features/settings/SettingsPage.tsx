@@ -2,6 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { telemetryDataSource, type GameInstallDirectory, type LiveBroadcastOptions, type LiveSettings, type StartupSettings } from "../../data-source";
 import { PageIntro } from "../../components/layout";
+import { SettingSwitch } from "../../components/Switch";
 import { useToast } from "../../Toast";
 import { useUpdater } from "../update/UpdateContext";
 import { autoIndexSetupsEnabled, indexDetectedSetupLibraries, setAutoIndexSetupsEnabled } from "../setups/setup-preferences";
@@ -428,41 +429,20 @@ export function SettingsPage() {
 						<h2 className="text-[14px] font-black tracking-[.04em]">APPLICATION</h2>
 						<p className="mt-1 max-w-4xl text-[12px] leading-5 text-trace-dim">Choose how TRACE behaves when you sign in to your computer.</p>
 					</div>
-					<label className={`flex items-start gap-3 p-5 ${startupSettings.supported && !startupLoading ? "cursor-pointer" : "cursor-not-allowed"}`}>
-						<input
-							type="checkbox"
-							checked={startupSettings.enabled}
-							disabled={startupLoading || savingStartup || !startupSettings.supported}
-							onChange={(event) => void changeLaunchOnStartup(event.target.checked)}
-							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
-						/>
-						<span>
-							<strong className="block text-[12px] text-trace-text">Launch TRACE when Windows starts</strong>
-							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
-								{startupLoading
-									? "Checking the Windows startup setting…"
-									: startupSettings.supported
-										? "Opens the current TRACE installation automatically after you sign in. You can disable it here at any time."
-										: "This setting is available in the Windows desktop build."}
-							</span>
-						</span>
-					</label>
-					<label className="flex cursor-pointer items-start gap-3 border-t border-trace-divider p-5">
-						<input
-							type="checkbox"
-							checked={closeToTrayEnabled}
-							disabled={savingCloseToTray}
-							onChange={(event) => void changeCloseToTray(event.target.checked)}
-							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
-						/>
-						<span>
-							<strong className="block text-[12px] text-trace-text">Keep TRACE running in the system tray</strong>
-							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
-								Closing the main window hides TRACE instead of quitting, so recording and live services can continue in the background. Use the
-								tray icon to reopen or fully quit the app.
-							</span>
-						</span>
-					</label>
+					<SettingSwitch
+						title="Launch TRACE when Windows starts"
+						description={
+							startupLoading
+								? "Checking the Windows startup setting…"
+								: startupSettings.supported
+									? "Opens the current TRACE installation automatically after you sign in. You can disable it here at any time."
+									: "This setting is available in the Windows desktop build."
+						}
+						checked={startupSettings.enabled}
+						disabled={startupLoading || savingStartup || !startupSettings.supported}
+						onCheckedChange={(enabled) => void changeLaunchOnStartup(enabled)}
+						className="p-5"
+					/>
 				</section>
 				<section className="mt-5 border border-trace-divider bg-trace-surface">
 					<div className="border-b border-trace-divider px-5 py-4">
@@ -471,22 +451,14 @@ export function SettingsPage() {
 							Control whether TRACE discovers setup files already installed by supported simulators.
 						</p>
 					</div>
-					<label className="flex cursor-pointer items-start gap-3 p-5">
-						<input
-							type="checkbox"
-							checked={autoIndexSetups}
-							disabled={indexingSetups}
-							onChange={(event) => void changeAutoIndexSetups(event.target.checked)}
-							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
-						/>
-						<span>
-							<strong className="block text-[12px] text-trace-text">Index existing setups automatically</strong>
-							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
-								Off by default. Enabling this scans detected setup folders now and at startup. Large libraries can cause additional disk
-								activity.
-							</span>
-						</span>
-					</label>
+					<SettingSwitch
+						title="Index existing setups automatically"
+						description="Off by default. Enabling this scans detected setup folders now and at startup. Large libraries can cause additional disk activity."
+						checked={autoIndexSetups}
+						disabled={indexingSetups}
+						onCheckedChange={(enabled) => void changeAutoIndexSetups(enabled)}
+						className="p-5"
+					/>
 				</section>
 			</div>
 			<div id="settings-panel-connectivity" role="tabpanel" aria-labelledby="settings-tab-connectivity" hidden={activeTab !== "connectivity"}>
@@ -532,30 +504,15 @@ export function SettingsPage() {
 							{DEFAULT_LIVE_SERVICE_ENDPOINT}
 						</span>
 					</label>
-					<section className="border-t border-trace-divider p-5" aria-labelledby="automatic-live-heading">
-						<div className="flex items-start justify-between gap-6">
-							<div>
-								<h3 id="automatic-live-heading" className="text-[13px] font-black tracking-[.05em] text-trace-text">
-									AUTOMATIC STREAMING
-								</h3>
-								<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
-									Start Go Live when TRACE detects an eligible simulator session. Recording remains local and continues normally if publishing
-									fails.
-								</p>
-							</div>
-							<button
-								type="button"
-								role="switch"
-								aria-checked={autoStreamEnabled}
-								onClick={() => setAutoStreamEnabled((value) => !value)}
-								className={`relative mt-1 h-7 w-12 shrink-0 overflow-hidden border transition-colors ${autoStreamEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
-							>
-								<span
-									className={`absolute left-1 top-1 size-[18px] bg-trace-black transition-transform ${autoStreamEnabled ? "translate-x-5" : "translate-x-0"}`}
-								/>
-								<span className="sr-only">Automatically stream eligible sessions</span>
-							</button>
-						</div>
+					<section className="border-t border-trace-divider p-5" aria-label="Automatic streaming">
+						<SettingSwitch
+							title="AUTOMATIC STREAMING"
+							description="Start Go Live when TRACE detects an eligible simulator session. Recording remains local and continues normally if publishing fails."
+							checked={autoStreamEnabled}
+							onCheckedChange={setAutoStreamEnabled}
+							titleClassName="text-[13px] font-black tracking-[.05em]"
+							descriptionClassName="text-[12px]"
+						/>
 
 						<div className="mt-5 grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
 							<div>
@@ -614,30 +571,15 @@ export function SettingsPage() {
 							/>
 						</label>
 					</section>
-					<section className="border-t border-trace-divider p-5" aria-labelledby="discord-activity-heading">
-						<div className="flex items-start justify-between gap-6">
-							<div>
-								<h3 id="discord-activity-heading" className="text-[13px] font-black tracking-[.05em] text-trace-text">
-									DISCORD ACTIVITY
-								</h3>
-								<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
-									Show your simulator, session type, car, and track in Discord while TRACE records or you review telemetry. Online broadcasts
-									include a public Watch Live button; driver names, custom titles, tags, and local spectator addresses are never shared.
-								</p>
-							</div>
-							<button
-								type="button"
-								role="switch"
-								aria-checked={discordActivityEnabled}
-								onClick={() => setDiscordActivityEnabled((value) => !value)}
-								className={`relative mt-1 h-7 w-12 shrink-0 overflow-hidden border transition-colors ${discordActivityEnabled ? "border-trace-accent bg-trace-accent" : "border-trace-divider bg-trace-deep"}`}
-							>
-								<span
-									className={`absolute left-1 top-1 size-[18px] bg-trace-black transition-transform ${discordActivityEnabled ? "translate-x-5" : "translate-x-0"}`}
-								/>
-								<span className="sr-only">Share active simulator sessions through Discord Rich Presence</span>
-							</button>
-						</div>
+					<section className="border-t border-trace-divider p-5" aria-label="Discord activity">
+						<SettingSwitch
+							title="DISCORD ACTIVITY"
+							description="Show your simulator, session type, car, and track in Discord while TRACE records or you review telemetry. Online broadcasts include a public Watch Live button; driver names, custom titles, tags, and local spectator addresses are never shared."
+							checked={discordActivityEnabled}
+							onCheckedChange={setDiscordActivityEnabled}
+							titleClassName="text-[13px] font-black tracking-[.05em]"
+							descriptionClassName="text-[12px]"
+						/>
 					</section>
 					<div className="flex min-h-14 items-center justify-between gap-5 border-t border-trace-divider px-5 py-2">
 						<span className="text-[11px] leading-5 text-trace-dim">
@@ -665,24 +607,24 @@ export function SettingsPage() {
 							Try newer interfaces or retain a simpler compatibility fallback. Flags are stored on this device and take effect immediately.
 						</p>
 					</div>
-					<label className="flex cursor-pointer items-start gap-3 p-5">
-						<input
-							type="checkbox"
-							checked={richComparisonPicker}
-							onChange={(event) => {
-								setRichComparisonPicker(event.target.checked);
-								setRichComparisonPickerEnabled(event.target.checked);
-							}}
-							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
-						/>
-						<span>
-							<strong className="block text-[12px] text-trace-text">Rich comparison session picker</strong>
-							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
-								Show driver, best valid lap, full session date and time, car, track, and session type in a structured picker. Turn this off to
-								use the basic system dropdown.
-							</span>
-						</span>
-					</label>
+					<SettingSwitch
+						title="Rich comparison session picker"
+						description="Show driver, best valid lap, full session date and time, car, track, and session type in a structured picker. Turn this off to use the basic system dropdown."
+						checked={richComparisonPicker}
+						onCheckedChange={(enabled) => {
+							setRichComparisonPicker(enabled);
+							setRichComparisonPickerEnabled(enabled);
+						}}
+						className="p-5"
+					/>
+					<SettingSwitch
+						title="Keep TRACE running in the system tray"
+						description="Closing the main window hides TRACE instead of quitting, so recording and live services can continue in the background. Use the tray icon to reopen or fully quit the app."
+						checked={closeToTrayEnabled}
+						disabled={savingCloseToTray}
+						onCheckedChange={(enabled) => void changeCloseToTray(enabled)}
+						className="border-t border-trace-divider p-5"
+					/>
 				</section>
 			</div>
 			<div id="settings-panel-updates" role="tabpanel" aria-labelledby="settings-tab-updates" hidden={activeTab !== "updates"}>
