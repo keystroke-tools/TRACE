@@ -461,6 +461,33 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns whether closing the main window should leave TRACE running in the tray.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the preference.
+    pub fn close_to_tray_enabled(&self) -> Result<bool, MetadataError> {
+        Ok(self
+            .service_endpoint("close_to_tray_enabled")?
+            .is_some_and(|value| value == "true"))
+    }
+
+    /// Persists the close-to-tray preference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot persist the preference.
+    pub fn set_close_to_tray_enabled(&mut self, enabled: bool) -> Result<(), MetadataError> {
+        self.connection
+            .execute(
+                "INSERT INTO app_settings (key, value) VALUES ('close_to_tray_enabled', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [if enabled { "true" } else { "false" }],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
     fn service_endpoint(&self, key: &str) -> Result<Option<String>, MetadataError> {
         self.connection
             .query_row(
@@ -2136,6 +2163,20 @@ mod tests {
             .set_discord_activity_enabled(false)
             .expect("disable Discord activity");
         assert!(!store.discord_activity_enabled().expect("disabled"));
+    }
+
+    #[test]
+    fn close_to_tray_preference_is_persisted() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        assert!(!store.close_to_tray_enabled().expect("default"));
+        store
+            .set_close_to_tray_enabled(true)
+            .expect("enable close to tray");
+        assert!(store.close_to_tray_enabled().expect("enabled"));
+        store
+            .set_close_to_tray_enabled(false)
+            .expect("disable close to tray");
+        assert!(!store.close_to_tray_enabled().expect("disabled"));
     }
 
     #[test]

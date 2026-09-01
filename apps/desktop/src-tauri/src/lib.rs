@@ -45,6 +45,7 @@ mod setup_analysis;
 mod setup_editor;
 mod setup_import;
 mod startup;
+mod tray;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
 use capture::{CaptureStatus, SharedCaptureStatus};
@@ -62,6 +63,7 @@ use setup_import::{
     index_existing_setups, setup_importers, setup_library,
 };
 use startup::{set_launch_on_startup, startup_settings};
+use tray::CloseToTrayState;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +79,12 @@ struct ChannelCapability {
 #[serde(rename_all = "camelCase")]
 struct DriverProfile {
     name: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppBehaviorSettings {
+    close_to_tray_enabled: bool,
 }
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
@@ -611,6 +619,44 @@ fn set_driver_profile(
         .map_err(|error| format!("failed to save driver profile: {error:?}"))?;
     Ok(DriverProfile {
         name: normalized.map(str::to_owned),
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn app_behavior_settings(app: tauri::AppHandle) -> Result<AppBehaviorSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    Ok(AppBehaviorSettings {
+        close_to_tray_enabled: store
+            .close_to_tray_enabled()
+            .map_err(|error| format!("failed to read app behavior settings: {error:?}"))?,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_app_behavior_settings(
+    app: tauri::AppHandle,
+    close_to_tray_enabled: bool,
+) -> Result<AppBehaviorSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .set_close_to_tray_enabled(close_to_tray_enabled)
+        .map_err(|error| format!("failed to save app behavior settings: {error:?}"))?;
+    app.state::<CloseToTrayState>()
+        .set_enabled(close_to_tray_enabled);
+    Ok(AppBehaviorSettings {
+        close_to_tray_enabled,
     })
 }
 
@@ -2514,6 +2560,49 @@ fn simulator_channel_capabilities(simulator_id: &str) -> Vec<ChannelCapability> 
     }
 }
 
+fn setup_app(
+    app: &mut tauri::App,
+    adapter_identity: &trace_adapter::AdapterIdentity,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let directory = app.path().app_data_dir()?;
+    let documents = app.path().document_dir().ok();
+    let ac_race_config = documents
+        .as_deref()
+        .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
+    let ac_controls_config = documents.as_deref().map(|documents| {
+        documents
+            .join("Assetto Corsa")
+            .join("cfg")
+            .join("controls.ini")
+    });
+    let steering_lock = capture::assetto_corsa_steering_lock_degrees(ac_controls_config.as_deref());
+    let status = app.state::<SharedCaptureStatus>().inner().clone();
+    let live_broadcast = app.state::<SharedLiveBroadcast>().inner().clone();
+    let discord_activity = app.state::<SharedDiscordActivity>().inner().clone();
+    let (discord_enabled, close_to_tray_enabled) =
+        MetadataStore::open(&directory.join("trace.sqlite")).map_or((false, false), |store| {
+            (
+                store.discord_activity_enabled().unwrap_or(false),
+                store.close_to_tray_enabled().unwrap_or(false),
+            )
+        });
+    discord_activity.set_enabled(discord_enabled);
+    app.state::<CloseToTrayState>()
+        .set_enabled(close_to_tray_enabled);
+    tray::setup(app)?;
+    discord_activity::spawn(discord_activity, status.clone(), live_broadcast.clone());
+    obs_overlay::spawn(status.clone());
+    capture::spawn(
+        directory,
+        ac_race_config,
+        status,
+        live_broadcast,
+        adapter_identity,
+        move || AcAdapter::with_steering_lock_degrees(steering_lock),
+    );
+    Ok(())
+}
+
 /// Starts the TRACE desktop application.
 ///
 /// # Panics
@@ -2526,45 +2615,16 @@ pub fn run() {
     ));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(capture_status)
         .manage(SharedLiveBroadcast::default())
         .manage(SharedDiscordActivity::default())
-        .setup(move |app| {
-            let directory = app.path().app_data_dir()?;
-            let documents = app.path().document_dir().ok();
-            let ac_race_config = documents
-                .as_deref()
-                .map(|documents| documents.join("Assetto Corsa").join("cfg").join("race.ini"));
-            let ac_controls_config = documents.as_deref().map(|documents| {
-                documents
-                    .join("Assetto Corsa")
-                    .join("cfg")
-                    .join("controls.ini")
-            });
-            let steering_lock =
-                capture::assetto_corsa_steering_lock_degrees(ac_controls_config.as_deref());
-            let status = app.state::<SharedCaptureStatus>().inner().clone();
-            let live_broadcast = app.state::<SharedLiveBroadcast>().inner().clone();
-            let discord_activity = app.state::<SharedDiscordActivity>().inner().clone();
-            let discord_enabled = MetadataStore::open(&directory.join("trace.sqlite"))
-                .and_then(|store| store.discord_activity_enabled())
-                .unwrap_or(false);
-            discord_activity.set_enabled(discord_enabled);
-            discord_activity::spawn(discord_activity, status.clone(), live_broadcast.clone());
-            obs_overlay::spawn(status.clone());
-            capture::spawn(
-                directory,
-                ac_race_config,
-                status,
-                live_broadcast,
-                &adapter_identity,
-                move || AcAdapter::with_steering_lock_degrees(steering_lock),
-            );
-            Ok(())
-        })
+        .manage(CloseToTrayState::default())
+        .on_window_event(tray::handle_window_event)
+        .setup(move |app| setup_app(app, &adapter_identity))
         .invoke_handler(tauri::generate_handler![
             foundation_status,
             live_pedal_telemetry,
@@ -2590,6 +2650,8 @@ pub fn run() {
             setup_importers,
             startup_settings,
             set_launch_on_startup,
+            app_behavior_settings,
+            set_app_behavior_settings,
             driver_profile,
             set_driver_profile,
             live_settings,

@@ -436,6 +436,14 @@ laps. Review presence includes only simulator, car, track, session type, and lap
 it does not publish driver names, custom titles, tags, or local spectator addresses.
 Leaving the Sessions or Compare workspace clears the review activity.
 
+The opt-in close-to-tray flag is persisted in `app_settings` and mirrored into the
+desktop runtime's atomic close policy. When enabled, a close request hides only the
+main window, leaving capture, Discord activity, overlays, and Go Live workers running.
+The tray icon restores and focuses the main window on click and exposes explicit Open
+TRACE and Quit TRACE actions. TRACE sends one native notification per process lifetime
+the first time a close request moves it into the tray. With the flag disabled, close
+requests retain the normal process-exit behavior.
+
 AC's physics temperature slots are treated as unavailable when the simulator emits
 the all-zero sentinel observed in real recordings. At session start TRACE snapshots
 ambient and road temperature, weather name, and starting dynamic-track grip from AC's

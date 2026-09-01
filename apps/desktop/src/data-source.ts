@@ -420,6 +420,10 @@ export interface StartupSettings {
 	enabled: boolean;
 }
 
+export interface AppBehaviorSettings {
+	closeToTrayEnabled: boolean;
+}
+
 export interface LiveSettings {
 	endpoint: string;
 	autoStream: LiveAutomationSettings;
@@ -504,6 +508,8 @@ export interface TelemetryDataSource {
 	setDriverProfile(name: string | null): Promise<DriverProfile>;
 	getStartupSettings(): Promise<StartupSettings>;
 	setLaunchOnStartup(enabled: boolean): Promise<StartupSettings>;
+	getAppBehaviorSettings(): Promise<AppBehaviorSettings>;
+	setAppBehaviorSettings(settings: AppBehaviorSettings): Promise<AppBehaviorSettings>;
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
 	setDiscordReviewActivity(activity: DiscordReviewActivity | null): Promise<void>;
@@ -540,6 +546,7 @@ const fixtureSessionDetails = new Map<
 >();
 let fixtureDriverProfile: DriverProfile = { name: null };
 let fixtureStartupSettings: StartupSettings = { supported: true, enabled: false };
+let fixtureAppBehaviorSettings: AppBehaviorSettings = { closeToTrayEnabled: false };
 let fixtureLiveSettings: LiveSettings = {
 	endpoint: "https://live.simtrace.run",
 	discordActivityEnabled: false,
@@ -1176,6 +1183,13 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureStartupSettings = { supported: true, enabled };
 		return fixtureStartupSettings;
 	},
+	async getAppBehaviorSettings() {
+		return fixtureAppBehaviorSettings;
+	},
+	async setAppBehaviorSettings(settings) {
+		fixtureAppBehaviorSettings = settings;
+		return fixtureAppBehaviorSettings;
+	},
 	async getLiveSettings() {
 		return fixtureLiveSettings;
 	},
@@ -1338,6 +1352,14 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	setLaunchOnStartup(enabled) {
 		return invoke<StartupSettings>("set_launch_on_startup", { enabled });
+	},
+	getAppBehaviorSettings() {
+		return invoke<AppBehaviorSettings>("app_behavior_settings");
+	},
+	setAppBehaviorSettings(settings) {
+		return invoke<AppBehaviorSettings>("set_app_behavior_settings", {
+			closeToTrayEnabled: settings.closeToTrayEnabled,
+		});
 	},
 	getLiveSettings() {
 		return invoke<LiveSettings>("live_settings");

@@ -63,6 +63,8 @@ export function SettingsPage() {
 	const [startupLoading, setStartupLoading] = useState(true);
 	const [savingStartup, setSavingStartup] = useState(false);
 	const [richComparisonPicker, setRichComparisonPicker] = useState(richComparisonPickerEnabled);
+	const [closeToTrayEnabled, setCloseToTrayEnabled] = useState(false);
+	const [savingCloseToTray, setSavingCloseToTray] = useState(false);
 
 	async function changeAutoIndexSetups(enabled: boolean) {
 		setAutoIndexSetups(enabled);
@@ -82,10 +84,35 @@ export function SettingsPage() {
 		}
 	}
 
+	async function changeCloseToTray(enabled: boolean) {
+		const previous = closeToTrayEnabled;
+		setCloseToTrayEnabled(enabled);
+		setSavingCloseToTray(true);
+		try {
+			const settings = await telemetryDataSource.setAppBehaviorSettings({ closeToTrayEnabled: enabled });
+			setCloseToTrayEnabled(settings.closeToTrayEnabled);
+		} catch (error) {
+			setCloseToTrayEnabled(previous);
+			showToast({
+				kind: "error",
+				title: "Could not update close behavior",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setSavingCloseToTray(false);
+		}
+	}
+
 	useEffect(() => {
 		let active = true;
-		void Promise.all([telemetryDataSource.getGameInstallDirectories(), telemetryDataSource.getDriverProfile(), telemetryDataSource.getLiveSettings()])
-			.then(([values, profile, liveSettings]) => {
+		void Promise.all([
+			telemetryDataSource.getGameInstallDirectories(),
+			telemetryDataSource.getDriverProfile(),
+			telemetryDataSource.getLiveSettings(),
+			telemetryDataSource.getAppBehaviorSettings(),
+		])
+			.then(([values, profile, liveSettings, behaviorSettings]) => {
 				if (!active) return;
 				setDirectories(values);
 				setDrafts(Object.fromEntries(values.map((value) => [value.simulatorId, value.path ?? ""])));
@@ -98,6 +125,7 @@ export function SettingsPage() {
 				setDiscordActivityEnabled(liveSettings.discordActivityEnabled);
 				setLiveMode(liveSettings.autoStream.mode);
 				setAcSessionTypes(liveSettings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
+				setCloseToTrayEnabled(behaviorSettings.closeToTrayEnabled);
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -416,6 +444,22 @@ export function SettingsPage() {
 									: startupSettings.supported
 										? "Opens the current TRACE installation automatically after you sign in. You can disable it here at any time."
 										: "This setting is available in the Windows desktop build."}
+							</span>
+						</span>
+					</label>
+					<label className="flex cursor-pointer items-start gap-3 border-t border-trace-divider p-5">
+						<input
+							type="checkbox"
+							checked={closeToTrayEnabled}
+							disabled={savingCloseToTray}
+							onChange={(event) => void changeCloseToTray(event.target.checked)}
+							className="mt-0.5 size-4 accent-[var(--color-trace-accent)]"
+						/>
+						<span>
+							<strong className="block text-[12px] text-trace-text">Keep TRACE running in the system tray</strong>
+							<span className="mt-1 block max-w-3xl text-[11px] leading-5 text-trace-dim">
+								Closing the main window hides TRACE instead of quitting, so recording and live services can continue in the background. Use the
+								tray icon to reopen or fully quit the app.
 							</span>
 						</span>
 					</label>
