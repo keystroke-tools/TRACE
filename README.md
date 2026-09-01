@@ -50,7 +50,7 @@ tested code.
 | [Corner analysis](docs/corner-analysis.md)                        | Deterministic corner detection and time-loss analysis            |
 | [Session package](docs/session-package.md)                        | Portable `.trace` format and import safety limits                |
 | [Setup imports](docs/setup-import.md)                             | Simulator-aware setup archive handling                           |
-| [MoTeC telemetry import](docs/motec-import.md)                    | CSV import foundations, mappings, and validation requirements    |
+| [MoTeC telemetry import](docs/motec-import.md)                    | Paired `.ld`/`.ldx` import, fixtures, mappings, and CSV foundation |
 | [Live protocol](docs/protocol-v1.md)                              | Versioned live telemetry messages and validation                 |
 | [Storage benchmark](docs/storage-benchmark.md)                    | Arrow IPC compression measurements and decisions                 |
 | [Contributing](CONTRIBUTING.md)                                   | Change quality, testing, safety, and LLM-assistance expectations |

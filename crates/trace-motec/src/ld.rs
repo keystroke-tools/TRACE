@@ -795,6 +795,57 @@ mod tests {
     const STINT_9_LDX: &[u8] = include_bytes!("../tests/fixtures/acti-zandvoort/stint-9.ldx");
 
     #[test]
+    fn authorised_native_fixture_compatibility_matrix_is_stable() {
+        struct ExpectedFixture {
+            ld: &'static [u8],
+            ldx: &'static [u8],
+            frames: u64,
+            laps: u32,
+            boundaries: usize,
+            fastest_time_ns: u64,
+        }
+
+        for expected in [
+            ExpectedFixture {
+                ld: STINT_7_LD,
+                ldx: STINT_7_LDX,
+                frames: 11_394,
+                laps: 5,
+                boundaries: 4,
+                fastest_time_ns: 111_996_000_000,
+            },
+            ExpectedFixture {
+                ld: STINT_9_LD,
+                ldx: STINT_9_LDX,
+                frames: 5_019,
+                laps: 3,
+                boundaries: 2,
+                fastest_time_ns: 111_885_000_000,
+            },
+        ] {
+            let reader = MotecLdReader::new(
+                expected.ld.to_vec(),
+                Some(expected.ldx),
+                LdImportLimits::default(),
+            )
+            .expect("authorised ACTI fixture remains compatible");
+            let metadata = reader.metadata();
+            assert_eq!(metadata.driver, "E. Cavalli");
+            assert_eq!(metadata.vehicle_id, "ks_mazda_mx5_cup");
+            assert_eq!(metadata.venue, "zandvoort2023");
+            assert_eq!(metadata.session_type.as_deref(), Some("HOTLAP"));
+            assert_eq!(metadata.channels.len(), 169);
+            assert_eq!(metadata.output_rate_hz, 20);
+            assert_eq!(metadata.frame_count, expected.frames);
+            let ldx = metadata.ldx.as_ref().expect("paired sidecar metadata");
+            assert_eq!(ldx.version.as_deref(), Some("1.5"));
+            assert_eq!(ldx.total_laps, Some(expected.laps));
+            assert_eq!(ldx.boundaries.len(), expected.boundaries);
+            assert_eq!(ldx.fastest_time_ns, Some(expected.fastest_time_ns));
+        }
+    }
+
+    #[test]
     fn acti_fixture_metadata_and_lap_markers_are_stable() {
         let reader = MotecLdReader::new(
             STINT_7_LD.to_vec(),

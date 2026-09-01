@@ -29,12 +29,17 @@ The binary layout is not an official open interchange specification. Native supp
 therefore remains compatibility work backed by authorised real-world fixtures, not a
 claim that every producer or i2 version is supported.
 
-### Validated ACTI fixture
+### Validated ACTI fixtures
 
-The initial fixture is an Assetto Corsa hotlap recorded by ACTI v1.1.2 and supplied
-by Eduardo Cavalli. Two paired logs for the Mazda MX-5 Cup at Zandvoort 2023 are kept
+The initial fixtures are Assetto Corsa hotlaps recorded by ACTI v1.1.2 and supplied
+by Eduardo Cavalli. Two paired outings for the Mazda MX-5 Cup at Zandvoort 2023 are kept
 under `crates/trace-motec/tests/fixtures/acti-zandvoort` with their provenance and
 SHA-256 hashes.
+
+| Fixture | Frames | Sidecar lap segments | Complete laps | Fastest lap |
+| --- | ---: | ---: | ---: | ---: |
+| `stint-7.ld` + `.ldx` | 11,394 | 5 | 3 | 1:51.996 |
+| `stint-9.ld` + `.ldx` | 5,019 | 3 | 1 | 1:51.885 |
 
 Observed behaviour:
 
@@ -55,9 +60,11 @@ Observed behaviour:
 - `Fuel Level` is the current volume, while `Max Fuel` is mapped separately as tank
   capacity so lap consumption and the remaining-fuel gauge retain their meanings.
 
-The sidecars report a 1:51.996 fastest lap in stint 7 and 1:51.885 in stint 9. Tests
-assert those markers, metadata, frame counts, representative values, the complete
-native channel count, coordinate orientation, and rejection of malformed inputs.
+Compatibility tests assert both outings' identity, sidecar version, marker counts,
+frame counts, sample rate, fastest times, and complete native channel count. Focused
+tests additionally cover representative canonical values, coordinate orientation,
+sector reconstruction, malformed inputs, and end-to-end Arrow/SQLite persistence for
+both the short and long outings.
 
 ## Canonical mappings
 
@@ -95,6 +102,12 @@ as `MoTeC CSV File`. It inspects the preamble, channels, and units without buffe
 the telemetry body; establishes elapsed time from the first row; rejects decreasing
 timestamps; retains unrecognised numeric and text fields; and enforces byte, row,
 column, preamble, and field-size limits.
+
+Project-authored parser fixtures live under
+`crates/trace-motec/tests/fixtures/csv`. They cover conservative unit conversion,
+native unknown-channel retention, three-dimensional position, neutral gear, and a
+decreasing time base. They contain no third-party telemetry and do not count as
+real-world i2 compatibility evidence.
 
 CSV exports still need an authorised real-world fixture. Channels may have independent
 sample rates and validity in i2, so TRACE must verify how i2 flattens interpolation,

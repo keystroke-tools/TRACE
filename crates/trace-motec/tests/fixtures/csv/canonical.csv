@@ -1,0 +1,8 @@
+Format,MoTeC CSV File
+Venue,Synthetic Circuit
+Vehicle,Fixture Car
+Driver,TRACE Test Driver
+Time,Throttle Pos,Brake Pos,Clutch Pos,Ground Speed,Engine RPM,Steering Angle,Fuel Level,Gear,Position X,Position Y,Position Z,Damper FL
+s,%,%,%,km/h,rpm,deg,L,,m,m,m,mm
+12.5,50,0,10,180,7000,-90,20.5,3,10,2,20,42.5
+12.55,100,25,0,183.6,7100,45,20.4,N,11,2.1,21,not available

@@ -499,4 +499,50 @@ mod tests {
                 .is_some_and(|fuel| (1.5..1.6).contains(&fuel))
         );
     }
+
+    #[test]
+    fn imports_longer_authorised_outing_with_all_sidecar_laps() {
+        let directory = tempfile::tempdir().expect("temporary data directory");
+        let summary = import_motec_session(
+            directory.path(),
+            &fixture("stint-7.ld"),
+            "motec-long-fixture",
+            64 * 1024 * 1024,
+        )
+        .expect("import longer ACTI fixture");
+        assert_eq!(summary.sample_count, 11_394);
+        assert_eq!(summary.lap_count, 5);
+
+        let store =
+            MetadataStore::open(&directory.path().join("trace.sqlite")).expect("imported metadata");
+        let session = store
+            .recent_sessions(10)
+            .expect("sessions")
+            .into_iter()
+            .find(|session| session.id == "motec-long-fixture")
+            .expect("imported session");
+        assert_eq!(session.simulator_key, "assetto-corsa");
+        assert_eq!(session.source_track_id.as_deref(), Some("zandvoort2023"));
+        assert_eq!(session.source_car_id.as_deref(), Some("ks_mazda_mx5_cup"));
+        assert_eq!(session.user_driver.as_deref(), Some("E. Cavalli"));
+        assert_eq!(session.laps.len(), 5);
+        assert_eq!(
+            session.laps.first().map(|lap| lap.validity.as_str()),
+            Some("invalid")
+        );
+        assert_eq!(
+            session.laps.last().map(|lap| lap.validity.as_str()),
+            Some("invalid")
+        );
+        assert_eq!(
+            session
+                .laps
+                .iter()
+                .filter_map(|lap| lap.duration_ns)
+                .collect::<Vec<_>>(),
+            vec![111_996_000_000, 115_396_000_000, 117_388_000_000]
+        );
+        assert!(session.laps[1..4].iter().all(|lap| lap.sectors.len() == 3));
+        assert!(session.laps[1].is_personal_best);
+    }
 }

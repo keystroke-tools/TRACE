@@ -27,6 +27,6 @@ behaviour, while `SPEC.md` defines intended product direction.
 | [Arrow IPC storage benchmark](storage-benchmark.md)          | Reproducible 60–333 Hz codec benchmark and compression decision                                                    |
 | [TRACE session package](session-package.md)                  | Versioned `.trace` sharing format, contents, import behavior, and safety limits                                    |
 | [Setup imports](setup-import.md)                             | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds                         |
-| [MoTeC telemetry import](motec-import.md)                    | CSV-first import boundary, conservative channel mappings, fixture requirements, and `.ld` constraints              |
+| [MoTeC telemetry import](motec-import.md)                    | Paired `.ld`/`.ldx` import, conservative mappings, fixture matrix, and CSV foundation                               |
 | [Live pedal overlay](pedal-overlay.md)                       | Standalone overlay controls, customisation, OBS capture, and data flow                                             |
 | [Asset provenance](assets.md)                                | Origin and processing history for generated project assets                                                         |

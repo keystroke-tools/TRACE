@@ -660,16 +660,8 @@ mod tests {
 
     use super::*;
 
-    const SAMPLE: &str = concat!(
-        "\u{feff}Format,MoTeC CSV File\n",
-        "Venue,Brands Hatch\n",
-        "Vehicle,MX-5 Cup\n",
-        "Driver,Alex\n",
-        "Time,Throttle Pos,Brake Pos,Ground Speed,Engine RPM,Steering Angle,Fuel Level,Gear,Position X,Position Z,Damper FL\n",
-        "s,%,%,km/h,rpm,deg,L,,m,m,mm\n",
-        "12.5,50,0,180,7000,-90,20.5,3,10,20,42.5\n",
-        "12.55,100,25,183.6,7100,45,20.4,N,11,21,not available\n",
-    );
+    const SAMPLE: &str = include_str!("../tests/fixtures/csv/canonical.csv");
+    const DECREASING_TIME: &str = include_str!("../tests/fixtures/csv/decreasing-time.csv");
 
     fn reader(source: &str) -> MotecCsvReader<Cursor<&[u8]>> {
         MotecCsvReader::new(
@@ -685,16 +677,16 @@ mod tests {
         let reader = reader(SAMPLE);
         assert_eq!(reader.metadata().format, FORMAT_VALUE);
         assert_eq!(reader.metadata().details[0].name, "Venue");
-        assert_eq!(reader.metadata().details[0].value, "Brands Hatch");
+        assert_eq!(reader.metadata().details[0].value, "Synthetic Circuit");
         let channels = &reader.metadata().channels;
-        assert_eq!(channels.len(), 11);
+        assert_eq!(channels.len(), 13);
         assert_eq!(
             channels[1].canonical_id.as_ref().map(ChannelId::as_str),
             Some("inputs.throttle")
         );
         assert_eq!(channels[1].canonical_unit, Some(Unit::Ratio));
-        assert_eq!(channels[10].canonical_id, None);
-        assert_eq!(channels[10].unit, "mm");
+        assert_eq!(channels[12].canonical_id, None);
+        assert_eq!(channels[12].unit, "mm");
     }
 
     #[test]
@@ -704,6 +696,7 @@ mod tests {
         assert_eq!(first.elapsed, ElapsedNanoseconds(0));
         assert_eq!(first.inputs.throttle, Some(0.5));
         assert_eq!(first.inputs.brake, Some(0.0));
+        assert_eq!(first.inputs.clutch, Some(0.1));
         assert_eq!(first.vehicle.speed_mps, Some(50.0));
         assert_eq!(first.vehicle.engine_rpm, Some(7_000.0));
         assert_eq!(
@@ -718,6 +711,10 @@ mod tests {
                 .position_m
                 .map(|position| (position.x, position.z)),
             Some((10.0, 20.0))
+        );
+        assert_eq!(
+            first.motion.position_m.map(|position| position.y),
+            Some(2.0)
         );
         let native = first.native.expect("native values");
         assert_eq!(native.schema, NATIVE_SCHEMA);
@@ -802,8 +799,7 @@ mod tests {
 
     #[test]
     fn rejects_decreasing_time_and_row_limit_overflow() {
-        let decreasing = "Format,MoTeC CSV File\nTime,Speed\ns,km/h\n1,1\n0,1\n";
-        let mut reader = reader(decreasing);
+        let mut reader = reader(DECREASING_TIME);
         reader.next_frame().expect("first row").expect("frame");
         assert_eq!(reader.next_frame(), Err(ImportError::TimeMovedBackwards));
 
