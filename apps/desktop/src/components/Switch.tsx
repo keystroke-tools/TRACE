@@ -55,15 +55,15 @@ export function SettingSwitch({
 	const titleId = `${id}-title`;
 	const descriptionId = `${id}-description`;
 	return (
-		<div className={`flex items-start justify-between gap-6 ${className}`}>
-			<div className="min-w-0">
+		<label className={`flex items-start justify-between gap-6 ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${className}`}>
+			<span className="min-w-0">
 				<strong id={titleId} className={`block text-trace-text ${titleClassName}`}>
 					{title}
 				</strong>
 				<span id={descriptionId} className={`mt-1 block max-w-3xl leading-5 text-trace-dim ${descriptionClassName}`}>
 					{description}
 				</span>
-			</div>
+			</span>
 			<Switch
 				checked={checked}
 				onCheckedChange={onCheckedChange}
@@ -73,6 +73,6 @@ export function SettingSwitch({
 				describedBy={descriptionId}
 				className="mt-0.5"
 			/>
-		</div>
+		</label>
 	);
 }

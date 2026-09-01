@@ -52,4 +52,38 @@ describe("SettingSwitch", () => {
 		const control = screen.getByRole("switch", { name: "Keep TRACE running in the system tray" });
 		expect(control).toHaveAccessibleDescription("Closing the window keeps recording in the background.");
 	});
+
+	it("uses the whole labelled row as its click target", async () => {
+		const onCheckedChange = vi.fn();
+		const user = userEvent.setup();
+		render(
+			<SettingSwitch
+				title="Rich comparison session picker"
+				description="Show the structured session picker."
+				checked={false}
+				onCheckedChange={onCheckedChange}
+			/>,
+		);
+
+		await user.click(screen.getByText("Rich comparison session picker"));
+		expect(onCheckedChange).toHaveBeenCalledOnce();
+		expect(onCheckedChange).toHaveBeenCalledWith(true);
+	});
+
+	it("does not activate from its labelled row while disabled", async () => {
+		const onCheckedChange = vi.fn();
+		const user = userEvent.setup();
+		render(
+			<SettingSwitch
+				title="Launch TRACE when Windows starts"
+				description="Open TRACE after signing in."
+				checked={false}
+				disabled
+				onCheckedChange={onCheckedChange}
+			/>,
+		);
+
+		await user.click(screen.getByText("Open TRACE after signing in."));
+		expect(onCheckedChange).not.toHaveBeenCalled();
+	});
 });
