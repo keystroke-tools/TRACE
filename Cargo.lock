@@ -5105,7 +5105,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "trace-ac"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "trace-adapter",
  "trace-domain",
@@ -5114,7 +5114,7 @@ dependencies = [
 
 [[package]]
 name = "trace-adapter"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "serde_json",
  "trace-core",
@@ -5123,7 +5123,7 @@ dependencies = [
 
 [[package]]
 name = "trace-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "serde",
  "trace-domain",
@@ -5131,7 +5131,7 @@ dependencies = [
 
 [[package]]
 name = "trace-desktop"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "discord-rich-presence",
  "futures-util",
@@ -5165,21 +5165,21 @@ dependencies = [
 
 [[package]]
 name = "trace-domain"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "trace-live"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "trace-protocol",
 ]
 
 [[package]]
 name = "trace-motec"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "csv",
  "i3rs-core",
@@ -5189,14 +5189,14 @@ dependencies = [
 
 [[package]]
 name = "trace-protocol"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "trace-recorder"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "trace-adapter",
  "trace-domain",
@@ -5205,7 +5205,7 @@ dependencies = [
 
 [[package]]
 name = "trace-server"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "axum",
  "futures-util",
@@ -5224,7 +5224,7 @@ dependencies = [
 
 [[package]]
 name = "trace-storage"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "arrow-array",
  "arrow-ipc",
@@ -5239,7 +5239,7 @@ dependencies = [
 
 [[package]]
 name = "trace-windows-shmem"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "windows-sys 0.61.2",
 ]
