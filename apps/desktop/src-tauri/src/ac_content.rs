@@ -263,14 +263,20 @@ fn discover_install_root() -> Option<PathBuf> {
     for variable in ["ProgramFiles(x86)", "ProgramFiles"] {
         if let Some(path) = env::var_os(variable) {
             let steam = PathBuf::from(path).join("Steam");
-            candidates.push(steam.join("steamapps/common/assettocorsa"));
+            candidates.push(assetto_corsa_library_path(&steam));
             candidates.extend(
-                steam_library_roots(&steam)
-                    .map(|library| library.join("steamapps/common/assettocorsa")),
+                steam_library_roots(&steam).map(|library| assetto_corsa_library_path(&library)),
             );
         }
     }
     candidates.into_iter().find(|path| path.is_dir())
+}
+
+fn assetto_corsa_library_path(library: &Path) -> PathBuf {
+    library
+        .join("steamapps")
+        .join("common")
+        .join("assettocorsa")
 }
 
 fn steam_library_roots(steam: &Path) -> impl Iterator<Item = PathBuf> {
@@ -335,6 +341,16 @@ fn safe_content_id(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn detected_library_path_uses_native_windows_separators() {
+        let path = assetto_corsa_library_path(Path::new(r"C:\Steam"));
+        assert_eq!(
+            path.to_string_lossy(),
+            r"C:\Steam\steamapps\common\assettocorsa"
+        );
+    }
 
     fn put_i32(bytes: &mut [u8], offset: usize, value: i32) {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
