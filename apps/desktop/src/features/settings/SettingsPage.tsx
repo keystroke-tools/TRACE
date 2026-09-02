@@ -104,6 +104,7 @@ export function SettingsPage() {
 			const settings = await telemetryDataSource.setAppBehaviorSettings({ closeToTrayEnabled: enabled, confirmExitEnabled });
 			setCloseToTrayEnabled(settings.closeToTrayEnabled);
 			setConfirmExitEnabled(settings.confirmExitEnabled);
+			window.dispatchEvent(new CustomEvent("trace-app-behavior-changed", { detail: settings }));
 		} catch (error) {
 			setCloseToTrayEnabled(previous);
 			showToast({
@@ -125,6 +126,7 @@ export function SettingsPage() {
 			const settings = await telemetryDataSource.setAppBehaviorSettings({ closeToTrayEnabled, confirmExitEnabled: enabled });
 			setCloseToTrayEnabled(settings.closeToTrayEnabled);
 			setConfirmExitEnabled(settings.confirmExitEnabled);
+			window.dispatchEvent(new CustomEvent("trace-app-behavior-changed", { detail: settings }));
 		} catch (error) {
 			setConfirmExitEnabled(previous);
 			showToast({
@@ -692,22 +694,47 @@ export function SettingsPage() {
 						}}
 						className="p-5"
 					/>
-					<SettingSwitch
-						title="Keep TRACE running in the system tray"
-						description="Left-clicking the close button hides TRACE instead of quitting, so recording and live services can continue in the background. Minimize always uses the Windows taskbar."
-						checked={closeToTrayEnabled}
-						disabled={savingCloseToTray}
-						onCheckedChange={(enabled) => void changeCloseToTray(enabled)}
-						className="border-t border-trace-divider p-5"
-					/>
-					<SettingSwitch
-						title="Confirm full exit"
-						description="Ask before right-clicking the close button quits TRACE completely. Turn this off to make right-click exit immediately."
-						checked={confirmExitEnabled}
-						disabled={savingConfirmExit}
-						onCheckedChange={(enabled) => void changeConfirmExit(enabled)}
-						className="border-t border-trace-divider p-5"
-					/>
+					<section className="border-t border-trace-divider p-5" aria-labelledby="close-behavior-heading">
+						<h3 id="close-behavior-heading" className="text-[13px] font-bold text-trace-text">
+							WHEN THE CLOSE BUTTON IS PRESSED
+						</h3>
+						<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
+							Choose whether TRACE exits immediately or continues recording and serving live sessions in the system tray. Minimize always uses the
+							Windows taskbar.
+						</p>
+						<div className="mt-4 grid max-w-xl grid-cols-2 gap-2" role="group" aria-label="Close button behavior">
+							<button
+								type="button"
+								aria-pressed={!closeToTrayEnabled}
+								disabled={savingCloseToTray}
+								onClick={() => void changeCloseToTray(false)}
+								className={`border px-3 py-3 text-left text-[12px] font-bold transition-colors ${!closeToTrayEnabled ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-soft hover:bg-trace-raised"} disabled:opacity-50`}
+							>
+								<span className="block">Close TRACE</span>
+								<span className="mt-1 block text-[11px] font-normal text-trace-dim">Stop recording and exit.</span>
+							</button>
+							<button
+								type="button"
+								aria-pressed={closeToTrayEnabled}
+								disabled={savingCloseToTray}
+								onClick={() => void changeCloseToTray(true)}
+								className={`border px-3 py-3 text-left text-[12px] font-bold transition-colors ${closeToTrayEnabled ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-soft hover:bg-trace-raised"} disabled:opacity-50`}
+							>
+								<span className="block">Minimize to tray</span>
+								<span className="mt-1 block text-[11px] font-normal text-trace-dim">Keep TRACE running in the background.</span>
+							</button>
+						</div>
+					</section>
+					{closeToTrayEnabled && (
+						<SettingSwitch
+							title="Confirm complete exit"
+							description="Ask before right-clicking the close button quits TRACE completely. Turn this off to make that tray-mode shortcut exit immediately."
+							checked={confirmExitEnabled}
+							disabled={savingConfirmExit}
+							onCheckedChange={(enabled) => void changeConfirmExit(enabled)}
+							className="border-t border-trace-divider p-5"
+						/>
+					)}
 				</section>
 			</div>
 			<div id="settings-panel-updates" role="tabpanel" aria-labelledby="settings-tab-updates" hidden={activeTab !== "updates"}>

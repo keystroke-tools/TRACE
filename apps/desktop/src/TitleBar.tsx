@@ -1,6 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { telemetryDataSource, type LiveBroadcastOptions, type LiveBroadcastStatus, type TelemetryStatus } from "./data-source";
 import { Tooltip } from "./Tooltip";
 
@@ -31,6 +31,7 @@ export function TitleBar({
 }) {
 	const [confirmingExit, setConfirmingExit] = useState(false);
 	const [exiting, setExiting] = useState(false);
+	const [closeToTrayEnabled, setCloseToTrayEnabled] = useState(false);
 	const state = status?.connection ?? "waiting";
 	const recording = state === "recording";
 	const failed = state === "error";
@@ -46,7 +47,30 @@ export function TitleBar({
 						? "STOP LIVE"
 						: "GO LIVE";
 
+	useEffect(() => {
+		let active = true;
+		async function loadBehavior() {
+			try {
+				const settings = await telemetryDataSource.getAppBehaviorSettings();
+				if (active) setCloseToTrayEnabled(settings.closeToTrayEnabled);
+			} catch (error) {
+				console.error("TRACE could not read the close preference", error);
+			}
+		}
+		void loadBehavior();
+		function updateBehavior(event: Event) {
+			const settings = (event as CustomEvent<{ closeToTrayEnabled: boolean }>).detail;
+			if (settings) setCloseToTrayEnabled(settings.closeToTrayEnabled);
+		}
+		window.addEventListener("trace-app-behavior-changed", updateBehavior);
+		return () => {
+			active = false;
+			window.removeEventListener("trace-app-behavior-changed", updateBehavior);
+		};
+	}, []);
+
 	async function requestFullExit() {
+		if (!closeToTrayEnabled) return;
 		let shouldConfirm = true;
 		try {
 			shouldConfirm = (await telemetryDataSource.getAppBehaviorSettings()).confirmExitEnabled;
@@ -215,10 +239,15 @@ export function TitleBar({
 				<WindowButton
 					label="Close"
 					close
-					onContextMenu={(event) => {
-						event.preventDefault();
-						void requestFullExit();
-					}}
+					closeToTray={closeToTrayEnabled}
+					onContextMenu={
+						closeToTrayEnabled
+							? (event) => {
+									event.preventDefault();
+									void requestFullExit();
+								}
+							: undefined
+					}
 					onClick={() => {
 						if (desktopWindow) runWindowCommand(() => desktopWindow.close());
 					}}
@@ -235,18 +264,20 @@ export function TitleBar({
 function WindowButton({
 	children,
 	close = false,
+	closeToTray = false,
 	label,
 	onClick,
 	onContextMenu,
 }: {
 	children: ReactNode;
 	close?: boolean;
+	closeToTray?: boolean;
 	label: string;
 	onClick: () => void;
 	onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
 	return (
-		<Tooltip className="h-full" content={close ? "Close · right-click to quit completely" : label}>
+		<Tooltip className="h-full" content={close && closeToTray ? "Minimize to tray · right-click to quit completely" : label}>
 			<button
 				type="button"
 				aria-label={label}
