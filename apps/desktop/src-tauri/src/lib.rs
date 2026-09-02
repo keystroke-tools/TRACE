@@ -246,6 +246,8 @@ struct LapComparisonSample {
 #[serde(rename_all = "camelCase")]
 struct LapTrace {
     session_id: String,
+    session_title: Option<String>,
+    driver_name: Option<String>,
     simulator_id: String,
     source_track_id: Option<String>,
     layout_id: Option<String>,
@@ -1265,6 +1267,8 @@ fn visualize_session_lap(
     let (track, car) = session_content_names(&store, &session)?;
     Ok(LapTrace {
         session_id,
+        session_title: session.user_title.clone(),
+        driver_name: session.user_driver.clone(),
         simulator_id: session.simulator_key.clone(),
         source_track_id: session.source_track_id.clone(),
         layout_id: session.layout_id.clone(),

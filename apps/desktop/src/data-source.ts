@@ -217,6 +217,8 @@ export interface TrackMapPoint {
 
 export interface LapTrace {
 	sessionId: string;
+	sessionTitle?: string | null;
+	driverName?: string | null;
 	simulatorId: string;
 	sourceTrackId?: string | null;
 	layoutId?: string | null;

@@ -15,9 +15,10 @@ the same manually configured or auto-detected installation shown on the Settings
 Open Assetto Corsa with CSP enabled. Tracer provides three independently positioned
 windows in the in-game app shelf:
 
-- **Tracer - Brake** shows the upcoming braking cue and reference brake pressure;
+- **Tracer - Brake** is a borderless HUD showing a reference-time countdown, the
+  brake-now cue, and reference brake pressure;
 - **Tracer - Gear** shows the current and reference gears; and
-- **Tracer - References** handles session and lap selection.
+- **Tracer - References** remains a conventional window for session and lap selection.
 
 There is deliberately no live pedal-input display: Tracer is a coaching aid rather
 than another pedal telemetry overlay. Users can open only the coaching windows they
@@ -40,10 +41,13 @@ differ. The HUD visibly marks an active manual track override.
 
 Tracer shows a preparing state during generation and begins coaching when the reference
 is ready. The generated reference remains usable if TRACE is subsequently closed.
+The bridge response and generated profile must both contain the selected session ID and
+lap index; the CSP app rejects the result if either differs. The References window also
+shows the active driver, optional session title, lap number, and lap time.
 
 The coaching windows show:
 
-- distance to the next reference braking zone;
+- whole reference seconds to the next braking zone, counting down to `BRAKE!`;
 - a prominent brake-now state while inside that zone;
 - reference brake pressure at the current distance; and
 - current and reference gear.
@@ -65,7 +69,9 @@ braking zones. Sample keys are intentionally short because CSP parses the whole 
 
 The HUD aligns the live car with the reference using `splinePosition × trackLengthM`.
 It deliberately does not align by elapsed time: a slower driver still receives the
-cue for the same place on the circuit.
+cue for the same place on the circuit. The brake countdown is the time the selected
+reference lap took to travel from that position to its braking point; it is not an
+estimate based on the live car's current speed.
 
 ## Braking-zone extraction
 

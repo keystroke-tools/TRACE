@@ -109,8 +109,16 @@ local function activateSession(session, lap)
       requestMessage = profileError
       return
     end
+    local source = profile.source or {}
+    if value.sessionId ~= session.id or value.lapIndex ~= lap.index or source.sessionId ~= session.id or source.lapIndex ~= lap.index then
+      profile = nil
+      profileError = 'TRACE returned a different lap than the one selected.'
+      requestState = 'error'
+      requestMessage = profileError
+      return
+    end
     requestState = 'ready'
-    requestMessage = nil
+    requestMessage = string.format('Loaded lap %d · %s', lap.index, lap.time)
     profileTrackOverride = not session.exactMatch
     pendingSelection = nil
   end)
@@ -131,6 +139,16 @@ local function sampleAt(distanceM)
   local spacing = math.max(profile.sampleSpacingM or 5, 1)
   local index = math.clamp(math.floor(distanceM / spacing + 0.5) + 1, 1, #samples)
   return samples[index]
+end
+
+local function referenceLapDuration()
+  local samples = profile and profile.samples or nil
+  if not samples then return nil end
+  for index = #samples, 1, -1 do
+    local elapsed = samples[index].e
+    if elapsed then return elapsed end
+  end
+  return nil
 end
 
 local function activeOrNextZone(distanceM)
@@ -160,9 +178,16 @@ local function lapLabel(session, lap)
 end
 
 local function drawSessionPicker()
+  local source = profile and profile.source or nil
+  if source then
+    local identity = source.driver or 'Recorded session'
+    if source.title and source.title ~= source.driver then identity = identity .. '  ·  ' .. source.title end
+    ui.dwriteText(string.format('ACTIVE  ·  %s  ·  LAP %d  ·  %s', identity, source.lapIndex, source.lapTime), 11, colors.purple)
+    ui.separator()
+  end
   ui.dwriteText('CHOOSE A REFERENCE', 14, colors.text)
   ui.dwriteText(string.format('%s  ·  %s', ac.getCarName(0) or ac.getCarID(0) or 'Unknown car', ac.getTrackName() or ac.getTrackID()), 11, colors.muted)
-  ui.sameLine()
+  ui.dummy(3)
   if requestState ~= 'loading' and requestState ~= 'preparing' and ui.button('REFRESH', vec2(76, 24)) then
     refreshSessions()
   end
@@ -260,9 +285,16 @@ local function coachState()
   local distanceM = math.saturate(car.splinePosition or 0) * profile.trackLengthM
   local target = sampleAt(distanceM)
   local zone = activeOrNextZone(distanceM)
-  local distanceToBrake = zone and (zone.startM - distanceM) or nil
-  if distanceToBrake and distanceToBrake < 0 and zone == profile.brakeZones[1] then
-    distanceToBrake = profile.trackLengthM - distanceM + zone.startM
+  local secondsToBrake = nil
+  if zone and target and target.e then
+    local zoneStart = sampleAt(zone.startM)
+    if zoneStart and zoneStart.e then
+      secondsToBrake = zoneStart.e - target.e
+      if secondsToBrake < 0 then
+        local duration = referenceLapDuration()
+        if duration then secondsToBrake = secondsToBrake + duration end
+      end
+    end
   end
 
   return {
@@ -270,7 +302,7 @@ local function coachState()
     target = target,
     zone = zone,
     distanceM = distanceM,
-    distanceToBrake = distanceToBrake,
+    secondsToBrake = secondsToBrake,
     wrongTrack = wrongTrack
   }, nil
 end
@@ -280,8 +312,9 @@ local function drawUnavailable(message)
   if ui.button('REFERENCES', vec2(108, 25)) then openReferences() end
 end
 
-local function drawSurface()
-  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface)
+local function drawHudSurface(accent)
+  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface, 6)
+  ui.drawRectFilled(vec2(0, 12), vec2(3, ui.windowHeight() - 12), accent, 2)
 end
 
 local function gearLabel(gear)
@@ -293,24 +326,32 @@ end
 
 function script.windowBrake()
   ensureProfileLoaded()
-  drawSurface()
-  ui.dwriteText('BRAKE //', 11, colors.muted)
+  drawHudSurface(colors.red)
+  local source = profile and profile.source or nil
+  local sourceLabel = source and string.format('L%d · %s', source.lapIndex, source.lapTime) or 'NO REFERENCE'
+  ui.dwriteText('BRAKE //  ·  ' .. sourceLabel, 10, colors.muted)
   local state, stateError = coachState()
   if not state then
     drawUnavailable(stateError)
     return
   end
 
-  local cue = 'CLEAR'
-  local cueColor = colors.green
+  local cue = '—'
+  local cueSuffix = 'SECONDS'
+  local cueColor = colors.text
   if state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM then
-    cue = 'BRAKE NOW'
+    cue = 'BRAKE!'
+    cueSuffix = ''
     cueColor = colors.red
-  elseif state.distanceToBrake and state.distanceToBrake <= 250 then
-    cue = string.format('BRAKE IN %.0f m', math.max(0, state.distanceToBrake))
-    cueColor = colors.purple
+  elseif state.secondsToBrake then
+    cue = tostring(math.max(1, math.ceil(state.secondsToBrake)))
+    cueColor = state.secondsToBrake <= 5 and colors.purple or colors.text
   end
-  ui.dwriteText(cue, 24, cueColor)
+  ui.dwriteText(cue, 30, cueColor)
+  if cueSuffix ~= '' then
+    ui.sameLine(58)
+    ui.dwriteText(cueSuffix, 10, colors.muted)
+  end
   local referenceBrake = state.target and (state.target.b or 0) or 0
   ui.dwriteText(string.format('REFERENCE BRAKE  %.0f%%', referenceBrake), 10, colors.muted)
   drawReferenceBrake(referenceBrake)
@@ -321,7 +362,7 @@ end
 
 function script.windowGear()
   ensureProfileLoaded()
-  drawSurface()
+  drawHudSurface(colors.purple)
   ui.dwriteText('GEAR //', 11, colors.muted)
   local state, stateError = coachState()
   if not state then
@@ -339,7 +380,6 @@ end
 function script.windowReferences()
   ensureProfileLoaded()
   ensureSessionsRequested()
-  drawSurface()
   ui.dwriteText('TRACER // REFERENCES', 16, colors.green)
   ui.dummy(5)
   drawSessionPicker()

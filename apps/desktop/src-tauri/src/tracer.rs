@@ -110,6 +110,10 @@ struct ReferenceSource<'a> {
     session_id: &'a str,
     lap_index: u32,
     lap_time: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    driver: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<&'a str>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -196,6 +200,8 @@ pub(super) fn prepare_reference(
             session_id: &trace.session_id,
             lap_index: trace.lap_index,
             lap_time: &trace.lap_time,
+            driver: trace.driver_name.as_deref(),
+            title: trace.session_title.as_deref(),
         },
         samples,
         brake_zones,
@@ -562,6 +568,8 @@ mod tests {
                 session_id: "session-1",
                 lap_index: 2,
                 lap_time: "1:52.000",
+                driver: Some("Driver One"),
+                title: Some("Evening practice"),
             },
             samples: vec![sample(10.0, 75.0)],
             brake_zones: vec![BrakeZone {
@@ -572,6 +580,9 @@ mod tests {
         };
         let value = serde_json::to_value(profile).expect("profile serializes");
         assert_eq!(value["schemaVersion"], 1);
+        assert_eq!(value["source"]["sessionId"], "session-1");
+        assert_eq!(value["source"]["lapIndex"], 2);
+        assert_eq!(value["source"]["driver"], "Driver One");
         assert_eq!(value["samples"][0]["d"], 10.0);
         assert_eq!(value["samples"][0]["b"], 75.0);
         assert!(value["samples"][0].get("distanceM").is_none());
