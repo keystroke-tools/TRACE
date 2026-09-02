@@ -17,8 +17,8 @@ window controls and two tabs: **Reference** selects a session/lap and **HUD Wind
 opens the optional coaching surfaces. The in-game app shelf also provides three
 independently positioned HUD windows:
 
-- **Tracer - Brake** is a borderless HUD showing a reference-time countdown, the
-  brake-now cue, and reference brake pressure;
+- **Tracer - Brake** is a borderless HUD that stays quiet until ten reference seconds
+  before a braking point, then shows the countdown and brake-now cue;
 - **Tracer - Progress** is a compact delta-style bar with a centre baseline and a marker
   moving toward the brake event; and
 - **Tracer - Gear** shows the current and reference gears.
@@ -52,7 +52,6 @@ The coaching windows show:
 
 - whole reference seconds to the next braking zone, counting down to `BRAKE!`;
 - a prominent brake-now state while inside that zone;
-- reference brake pressure at the current distance; and
 - a compact delta-style progress marker for the same countdown; and
 - current and reference gear.
 

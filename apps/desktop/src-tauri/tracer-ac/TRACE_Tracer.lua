@@ -124,15 +124,6 @@ local function activateSession(session, lap)
   end)
 end
 
-local function drawReferenceBrake(target)
-  local p = ui.getCursor()
-  local width = math.max(80, ui.availableSpaceX())
-  local percent = math.saturate((target or 0) / 100)
-  ui.drawRectFilled(p, p + vec2(width, 8), colors.track, 2)
-  ui.drawRectFilled(p, p + vec2(width * percent, 8), colors.red, 2)
-  ui.dummy(vec2(width, 8))
-end
-
 local function sampleAt(distanceM)
   local samples = profile.samples
   if not samples or #samples == 0 then return nil end
@@ -357,17 +348,12 @@ function script.windowBrake()
     drawUnavailable(stateError)
     return
   end
+  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
+  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 10) then return end
 
-  local accent, surface, urgent, isBraking = brakeHudStyle(state)
+  local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
-  centeredText(isBraking and 'BRAKE NOW' or 'REFERENCE BRAKE', 10, 8, urgent and colors.text or colors.muted, 14)
-  centeredText(countdownLabel(state), isBraking and 62 or 68, 22, colors.text, 72)
-  if not isBraking then centeredText('SECONDS TO BRAKE', 11, 88, urgent and colors.text or colors.muted, 14) end
-  local referenceBrake = state.target and (state.target.b or 0) or 0
-  ui.setCursor(vec2(12, 108))
-  ui.dwriteText(string.format('REFERENCE BRAKE  %.0f%%', referenceBrake), 10, urgent and colors.text or colors.muted)
-  drawReferenceBrake(referenceBrake)
-  if state.wrongTrack and profileTrackOverride then centeredText('MANUAL TRACK OVERRIDE', 9, 8, colors.text, 12) end
+  centeredText(countdownLabel(state), isBraking and 70 or 76, 24, colors.text, 82)
 end
 
 function script.windowGear()
@@ -398,13 +384,13 @@ function script.windowProgress()
     drawUnavailable(stateError)
     return
   end
-  local accent, surface, urgent, isBraking = brakeHudStyle(state)
+  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
+  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 10) then return end
+  local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
   local display = isBraking and 'BRAKE!' or countdownLabel(state) .. 's'
-  ui.setCursor(vec2(12, 8))
-  ui.dwriteText('NEXT BRAKE', 10, urgent and colors.text or colors.muted)
   ui.setCursor(vec2(0, 3))
-  ui.dwriteTextAligned(display, 23, ui.Alignment.Right, ui.Alignment.Center, vec2(ui.windowWidth() - 12, 28), false, colors.text)
+  ui.dwriteTextAligned(display, 24, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth(), 28), false, colors.text)
   local barStart = vec2(12, 40)
   local barWidth = ui.windowWidth() - 24
   local progress = isBraking and 1 or (state.secondsToBrake and math.saturate((5 - state.secondsToBrake) / 5) or 0)
