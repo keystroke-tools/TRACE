@@ -9,17 +9,24 @@ desktop application. It does not control the car.
 In TRACE, open **Settings → Games** and choose **Install Tracer** below the Assetto
 Corsa directory. The bundled app is copied to
 `<Assetto Corsa>/apps/lua/TRACE_Tracer`. Once installed, each newer TRACE build updates
-those files at startup so the desktop application and HUD stay compatible.
+those files at startup so the desktop application and HUD stay compatible. Tracer uses
+the same manually configured or auto-detected installation shown on the Settings page.
 
 Open Assetto Corsa with CSP enabled and activate **Tracer** from the in-game app shelf.
 Keep TRACE running while choosing a reference. Tracer asks TRACE's loopback-only bridge
-for recorded sessions matching the current source car, track, and layout. Selecting a
-session makes TRACE:
+for recorded sessions matching the current source car, track, and layout. Expand a
+session and select any timed lap; the fastest valid lap is marked as a convenient
+default rather than being forced. Selecting a lap makes TRACE:
 
-1. choose its fastest valid lap;
+1. load the selected lap;
 2. resample it on TRACE's existing five-metre distance grid;
 3. derive stable braking zones from the brake channel; and
 4. write `reference.json` to CSP's writable per-app configuration directory.
+
+Exact car, track, and layout matches are shown first. **Other tracks** broadens the
+list to sessions recorded with the same car. Loading one requires an explicit warning
+confirmation because percentage-of-lap alignment can drift when layouts or lengths
+differ. The HUD visibly marks an active manual track override.
 
 Tracer shows a preparing state during generation and begins coaching when the reference
 is ready. The generated reference remains usable if TRACE is subsequently closed.
@@ -64,7 +71,8 @@ without changing the profile contract.
 - Tracer currently installs only for Assetto Corsa and requires CSP's Lua app support.
 - Session discovery uses `127.0.0.1:18081`; it does not contact a hosted TRACE service.
 - Bridge requests carry a Tracer-specific header and every selection is revalidated
-  against the current source identities before telemetry is processed.
+  against the current car. A track mismatch is rejected unless the in-game warning was
+  explicitly accepted.
 - A prepared reference works without TRACE running, preserving local/offline use, but
   choosing another session requires the desktop app.
 - It uses recorded pedal position, not hydraulic brake pressure or a generated racing

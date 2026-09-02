@@ -11,6 +11,10 @@ local requestState = 'idle'
 local requestMessage = nil
 local reloadTimer = 0
 local initialRequestSent = false
+local includeOtherTracks = false
+local expandedSessionId = nil
+local pendingSelection = nil
+local profileTrackOverride = false
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
 
 local colors = {
@@ -72,6 +76,7 @@ local function refreshSessions()
   end
   requestState = 'loading'
   requestMessage = nil
+  identity.includeOtherTracks = includeOtherTracks
   web.post(bridgeUrl .. '/api/tracer/sessions', bridgeHeaders, JSON.stringify(identity), function(err, response)
     local value, parseError = parseResponse(err, response)
     if not value then
@@ -82,15 +87,17 @@ local function refreshSessions()
     end
     sessions = value
     requestState = 'ready'
-    requestMessage = #sessions == 0 and 'No valid recorded laps match this car, track, and layout.' or nil
+    requestMessage = #sessions == 0 and (includeOtherTracks and 'No recorded laps match this car.' or 'No recorded laps match this car, track, and layout.') or nil
   end)
 end
 
-local function activateSession(session)
+local function activateSession(session, lap)
   local request = currentIdentity()
   request.sessionId = session.id
+  request.lapIndex = lap.index
+  request.allowTrackMismatch = not session.exactMatch
   requestState = 'preparing'
-  requestMessage = string.format('Preparing %s…', session.bestLapTime)
+  requestMessage = string.format('Preparing %s…', lap.time)
   web.post(bridgeUrl .. '/api/tracer/reference', bridgeHeaders, JSON.stringify(request), function(err, response)
     local value, parseError = parseResponse(err, response)
     if not value then
@@ -105,6 +112,8 @@ local function activateSession(session)
     end
     requestState = 'ready'
     requestMessage = nil
+    profileTrackOverride = not session.exactMatch
+    pendingSelection = nil
     view = 'coach'
   end)
 end
@@ -144,7 +153,15 @@ local function sessionLabel(session)
   end
   local date = (session.startedAt or ''):gsub('T', ' '):sub(1, 16)
   local sessionType = string.upper(session.sessionType or 'session')
-  return string.format('%s  ·  %s  ·  %s  ·  %s###%s', identity, session.bestLapTime, sessionType, date, session.id)
+  local best = session.bestLapTime or 'no valid lap'
+  local track = session.track or 'Unknown track'
+  if session.layoutId and session.layoutId ~= '' then track = track .. ' / ' .. session.layoutId end
+  return string.format('%s  ·  %s  ·  %s  ·  %s  ·  %s###%s', identity, best, sessionType, track, date, session.id)
+end
+
+local function lapLabel(session, lap)
+  local status = lap.isFastest and 'FASTEST' or string.upper(lap.validity or 'recorded')
+  return string.format('LAP %d    %s    %s###lap-%s-%d', lap.index, lap.time, status, session.id, lap.index)
 end
 
 local function drawSessionPicker()
@@ -152,6 +169,14 @@ local function drawSessionPicker()
   ui.dwriteText(string.format('%s  ·  %s', ac.getCarName(0) or ac.getCarID(0) or 'Unknown car', ac.getTrackName() or ac.getTrackID()), 11, colors.muted)
   ui.sameLine()
   if requestState ~= 'loading' and requestState ~= 'preparing' and ui.button('REFRESH', vec2(76, 24)) then
+    refreshSessions()
+  end
+  ui.sameLine()
+  local modeLabel = includeOtherTracks and 'EXACT MATCHES' or 'OTHER TRACKS'
+  if requestState ~= 'loading' and requestState ~= 'preparing' and ui.button(modeLabel, vec2(112, 24)) then
+    includeOtherTracks = not includeOtherTracks
+    expandedSessionId = nil
+    pendingSelection = nil
     refreshSessions()
   end
   ui.dummy(6)
@@ -174,7 +199,34 @@ local function drawSessionPicker()
     for i = 1, #sessions do
       local session = sessions[i]
       if ui.selectable(sessionLabel(session), false, ui.SelectableFlags.None, vec2(0, 34)) then
-        activateSession(session)
+        expandedSessionId = expandedSessionId == session.id and nil or session.id
+        pendingSelection = nil
+      end
+      if expandedSessionId == session.id then
+        if not session.exactMatch then
+          ui.dwriteText('Different track: distance-aligned cues may not match this layout.', 11, colors.red)
+        end
+        for lapIndex = 1, #(session.laps or {}) do
+          local lap = session.laps[lapIndex]
+          if ui.selectable(lapLabel(session, lap), false, ui.SelectableFlags.None, vec2(0, 28)) then
+            if session.exactMatch then
+              activateSession(session, lap)
+            else
+              pendingSelection = { session = session, lap = lap }
+            end
+          end
+        end
+        if pendingSelection and pendingSelection.session.id == session.id then
+          ui.dwriteText('LOAD A DIFFERENT TRACK?', 13, colors.red)
+          ui.dwriteText('Only use compatible layouts. Tracer cannot guarantee cue alignment.', 11, colors.muted)
+          if ui.button('CANCEL##trackOverride', vec2(90, 26)) then
+            pendingSelection = nil
+          end
+          ui.sameLine()
+          if ui.button('LOAD ANYWAY##trackOverride', vec2(120, 26)) then
+            activateSession(pendingSelection.session, pendingSelection.lap)
+          end
+        end
       end
     end
   end)
@@ -195,7 +247,8 @@ local function drawCoach()
     ui.dwriteText('Waiting for the player car.', 13, colors.muted)
     return
   end
-  if ac.getTrackID() ~= profile.trackId or ac.getTrackLayout() ~= (profile.layoutId or '') or ac.getCarID(0) ~= profile.carId then
+  local wrongTrack = ac.getTrackID() ~= profile.trackId or ac.getTrackLayout() ~= (profile.layoutId or '')
+  if (wrongTrack and not profileTrackOverride) or ac.getCarID(0) ~= profile.carId then
     ui.dwriteText('Reference does not match this car and track.', 13, colors.red)
     if ui.button('FIND MATCHING SESSIONS', vec2(190, 28)) then
       view = 'sessions'
@@ -228,6 +281,9 @@ local function drawCoach()
     refreshSessions()
   end
   ui.dwriteText(string.format('Reference %s  |  Lap %d', profile.source.lapTime, profile.source.lapIndex), 11, colors.muted)
+  if wrongTrack and profileTrackOverride then
+    ui.dwriteText('MANUAL TRACK OVERRIDE', 10, colors.red)
+  end
   ui.dummy(4)
 
   drawBar('BRAKE', (car.brake or 0) * 100, target and (target.b or 0) or 0, colors.red)

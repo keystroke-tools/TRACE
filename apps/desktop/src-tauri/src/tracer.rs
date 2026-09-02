@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use trace_storage::metadata::MetadataStore;
 
-use super::LapTrace;
+use super::{LapTrace, ac_content::AcContentNames};
 
 const APP_DIRECTORY: &str = "TRACE_Tracer";
 const PROFILE_VERSION: u8 = 1;
@@ -47,6 +47,8 @@ pub(super) struct TracerSessionQuery {
     #[serde(default)]
     layout_id: Option<String>,
     car_id: String,
+    #[serde(default)]
+    include_other_tracks: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,10 +56,13 @@ pub(super) struct TracerSessionQuery {
 #[allow(clippy::struct_field_names)]
 pub(super) struct TracerReferenceRequest {
     session_id: String,
+    lap_index: u32,
     track_id: String,
     #[serde(default)]
     layout_id: Option<String>,
     car_id: String,
+    #[serde(default)]
+    allow_track_mismatch: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -68,8 +73,20 @@ pub(super) struct TracerSession {
     driver: Option<String>,
     started_at: String,
     session_type: Option<String>,
-    best_lap_index: u32,
-    best_lap_time: String,
+    track: String,
+    layout_id: Option<String>,
+    exact_match: bool,
+    best_lap_time: Option<String>,
+    laps: Vec<TracerLap>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TracerLap {
+    index: u32,
+    time: String,
+    validity: String,
+    is_fastest: bool,
 }
 
 #[derive(Serialize)]
@@ -253,11 +270,11 @@ fn matching_session_summaries(
     sessions: Vec<trace_storage::metadata::SessionSummary>,
     query: &TracerSessionQuery,
 ) -> Vec<TracerSession> {
-    sessions
+    let mut sessions = sessions
         .into_iter()
-        .filter(|session| session_matches(session, query))
+        .filter(|session| session_is_candidate(session, query))
         .filter_map(|session| {
-            let best_lap = session
+            let fastest_valid_ns = session
                 .laps
                 .iter()
                 .filter(|lap| {
@@ -265,20 +282,44 @@ fn matching_session_summaries(
                         && lap.validity != "invalid"
                         && lap.max_tyres_out.is_none_or(|value| value < 3)
                 })
-                .min_by_key(|lap| lap.duration_ns.unwrap_or(u64::MAX))?;
-            let best_lap_index = best_lap.index;
-            let best_lap_time = super::format_lap_time(best_lap.duration_ns?);
+                .filter_map(|lap| lap.duration_ns)
+                .min();
+            let laps = session
+                .laps
+                .iter()
+                .filter_map(|lap| {
+                    let duration_ns = lap.duration_ns?;
+                    Some(TracerLap {
+                        index: lap.index,
+                        time: super::format_lap_time(duration_ns),
+                        validity: lap.validity.clone(),
+                        is_fastest: Some(duration_ns) == fastest_valid_ns,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if laps.is_empty() {
+                return None;
+            }
+            let exact_match = session_track_matches(&session, query);
             Some(TracerSession {
                 id: session.id,
                 title: session.user_title,
                 driver: session.user_driver,
                 started_at: session.started_at,
                 session_type: session.session_type,
-                best_lap_index,
-                best_lap_time,
+                track: session
+                    .track
+                    .or(session.source_track_id)
+                    .unwrap_or_else(|| "Unknown track".into()),
+                layout_id: session.layout_id,
+                exact_match,
+                best_lap_time: fastest_valid_ns.map(super::format_lap_time),
+                laps,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    sessions.sort_by_key(|session| !session.exact_match);
+    sessions
 }
 
 pub(super) fn activate_reference(
@@ -289,25 +330,41 @@ pub(super) fn activate_reference(
         track_id: request.track_id.clone(),
         layout_id: request.layout_id.clone(),
         car_id: request.car_id.clone(),
+        include_other_tracks: true,
     };
     let selected = matching_sessions(app, &query)?
         .into_iter()
         .find(|session| session.id == request.session_id)
-        .ok_or_else(|| {
-            "the selected session does not match the current car and track".to_owned()
-        })?;
-    let trace = super::visualize_session_lap(app.clone(), selected.id, selected.best_lap_index)?;
+        .ok_or_else(|| "the selected session does not match the current car".to_owned())?;
+    if !selected.exact_match && !request.allow_track_mismatch {
+        return Err("selecting a different track requires explicit confirmation".into());
+    }
+    if !selected
+        .laps
+        .iter()
+        .any(|lap| lap.index == request.lap_index)
+    {
+        return Err("the selected timed lap was not found".into());
+    }
+    let trace = super::visualize_session_lap(app.clone(), selected.id, request.lap_index)?;
     prepare_reference(app, &trace)
 }
 
-fn session_matches(
+fn session_is_candidate(
     session: &trace_storage::metadata::SessionSummary,
     query: &TracerSessionQuery,
 ) -> bool {
     session.simulator_key == "assetto-corsa"
-        && session.source_track_id.as_deref() == Some(query.track_id.as_str())
-        && session.layout_id.as_deref().unwrap_or("") == query.layout_id.as_deref().unwrap_or("")
         && session.source_car_id.as_deref() == Some(query.car_id.as_str())
+        && (query.include_other_tracks || session_track_matches(session, query))
+}
+
+fn session_track_matches(
+    session: &trace_storage::metadata::SessionSummary,
+    query: &TracerSessionQuery,
+) -> bool {
+    session.source_track_id.as_deref() == Some(query.track_id.as_str())
+        && session.layout_id.as_deref().unwrap_or("") == query.layout_id.as_deref().unwrap_or("")
 }
 
 fn validate_identity(track_id: &str, layout_id: Option<&str>, car_id: &str) -> Result<(), String> {
@@ -331,10 +388,12 @@ fn assetto_corsa_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())?;
     let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    store
+    let configured = store
         .simulator_install_path("assetto-corsa")
-        .map_err(|error| format!("failed to read Assetto Corsa settings: {error:?}"))?
-        .map(PathBuf::from)
+        .map_err(|error| format!("failed to read Assetto Corsa settings: {error:?}"))?;
+    AcContentNames::discover(configured.as_deref().map(Path::new))
+        .root()
+        .map(Path::to_path_buf)
         .ok_or_else(|| "set the Assetto Corsa installation directory in Settings first".to_owned())
 }
 
@@ -515,11 +574,12 @@ mod tests {
     }
 
     #[test]
-    fn matching_sessions_require_exact_content_and_choose_fastest_valid_lap() {
+    fn matching_sessions_default_to_exact_content_and_expose_timed_laps() {
         let query = TracerSessionQuery {
             track_id: "zandvoort2023".into(),
             layout_id: None,
             car_id: "ks_mazda_mx5_cup".into(),
+            include_other_tracks: false,
         };
         let mut matching = session("matching", "zandvoort2023", None);
         matching.laps = vec![
@@ -528,11 +588,36 @@ mod tests {
             lap(3, 111_000_000_000, "valid"),
         ];
         let wrong_layout = session("wrong-layout", "zandvoort2023", Some("club"));
-        let result = matching_session_summaries(vec![matching, wrong_layout], &query);
+        let result =
+            matching_session_summaries(vec![matching.clone(), wrong_layout.clone()], &query);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, "matching");
-        assert_eq!(result[0].best_lap_index, 3);
-        assert_eq!(result[0].best_lap_time, "1:51.000");
+        assert_eq!(result[0].best_lap_time.as_deref(), Some("1:51.000"));
+        assert_eq!(result[0].laps.len(), 3);
+        assert!(
+            result[0]
+                .laps
+                .iter()
+                .any(|lap| lap.index == 1 && lap.validity == "invalid")
+        );
+        assert!(
+            result[0]
+                .laps
+                .iter()
+                .any(|lap| lap.index == 3 && lap.is_fastest)
+        );
+
+        let other_tracks = matching_session_summaries(
+            vec![wrong_layout, matching],
+            &TracerSessionQuery {
+                include_other_tracks: true,
+                ..query
+            },
+        );
+        assert_eq!(other_tracks.len(), 2);
+        assert_eq!(other_tracks[0].id, "matching");
+        assert!(other_tracks[0].exact_match);
+        assert!(!other_tracks[1].exact_match);
     }
 
     fn session(id: &str, track_id: &str, layout_id: Option<&str>) -> SessionSummary {
