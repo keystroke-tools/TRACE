@@ -19,7 +19,8 @@ local preferences = ac.storage({
   countdownLeadSeconds = 10,
   showBrake = true,
   showProgress = true,
-  showGear = true
+  showGear = true,
+  showCoach = false
 })
 
 local colors = {
@@ -156,6 +157,16 @@ local function activeOrNextZone(distanceM)
   return zones[1]
 end
 
+local function activeThrottleCue(distanceM)
+  local cues = profile and profile.throttleCues or {}
+  for index = 1, #cues do
+    local offset = distanceM - cues[index].startM
+    if offset < 0 then offset = offset + profile.trackLengthM end
+    if offset >= 0 and offset <= 30 then return cues[index] end
+  end
+  return nil
+end
+
 local function sessionLabel(session)
   local identity = session.driver or 'Unknown driver'
   if session.title and session.title ~= session.driver then
@@ -288,6 +299,7 @@ local function coachState()
   local distanceM = math.saturate(car.splinePosition or 0) * profile.trackLengthM
   local target = sampleAt(distanceM)
   local zone = activeOrNextZone(distanceM)
+  local throttleCue = activeThrottleCue(distanceM)
   local secondsToBrake = nil
   if zone and target and target.e then
     local zoneStart = sampleAt(zone.startM)
@@ -304,6 +316,7 @@ local function coachState()
     car = car,
     target = target,
     zone = zone,
+    throttleCue = throttleCue,
     distanceM = distanceM,
     secondsToBrake = secondsToBrake,
     wrongTrack = wrongTrack
@@ -409,6 +422,38 @@ function script.windowProgress()
   ui.drawRectFilled(vec2(marker - 2, barStart.y - 3), vec2(marker + 2, barStart.y + 15), colors.text, 2)
 end
 
+function script.windowCoach()
+  ensureProfileLoaded()
+  if not preferences.showCoach then return end
+  local state, stateError = coachState()
+  if not state then
+    drawHudSurface(colors.red)
+    drawUnavailable(stateError)
+    return
+  end
+  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
+  local brakeText = isBraking and 'BRAKE NOW' or (state.secondsToBrake and state.secondsToBrake <= preferences.countdownLeadSeconds and countdownLabel(state) .. 's' or '—')
+  local throttleText = state.throttleCue and 'THROTTLE NOW' or '—'
+  local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
+  local surface = isBraking and rgbm(0.58, 0.08, 0.08, 0.98) or (state.throttleCue and rgbm(0.06, 0.26, 0.15, 0.98) or colors.surface)
+  drawHudSurface(accent, surface)
+  local third = ui.windowWidth() / 3
+  ui.drawLine(vec2(third, 14), vec2(third, ui.windowHeight() - 14), colors.track, 1)
+  ui.drawLine(vec2(third * 2, 14), vec2(third * 2, ui.windowHeight() - 14), colors.track, 1)
+  ui.setCursor(vec2(0, 10))
+  ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
+  ui.setCursor(vec2(third, 10))
+  ui.dwriteTextAligned('THROTTLE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
+  ui.setCursor(vec2(third * 2, 10))
+  ui.dwriteTextAligned('GEAR', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
+  ui.setCursor(vec2(0, 30))
+  ui.dwriteTextAligned(brakeText, isBraking and 28 or 38, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.text)
+  ui.setCursor(vec2(third, 30))
+  ui.dwriteTextAligned(throttleText, state.throttleCue and 22 or 38, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, state.throttleCue and colors.text or colors.muted)
+  ui.setCursor(vec2(third * 2, 30))
+  ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 31, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.purple)
+end
+
 local function drawHudToggle(label, detail, key, windowId)
   if ui.checkbox(label, preferences[key]) then
     preferences[key] = not preferences[key]
@@ -434,12 +479,15 @@ local function drawHudSettings()
   drawHudToggle('Brake countdown', 'Large alert at the selected lead time.', 'showBrake', 'brake')
   drawHudToggle('Progress bar', 'Compact delta-style marker for the same event.', 'showProgress', 'progress')
   drawHudToggle('Gear target', 'Current and reference gear side by side.', 'showGear', 'gear')
+  drawHudToggle('Combined coach', 'Brake, throttle and gear in one rectangular HUD.', 'showCoach', 'coach')
   ui.dummy(10)
   if ui.button('OPEN BRAKE HUD', vec2(132, 28)) then ac.setWindowOpen('brake', true) end
   ui.sameLine()
   if ui.button('OPEN PROGRESS', vec2(132, 28)) then ac.setWindowOpen('progress', true) end
   ui.sameLine()
   if ui.button('OPEN GEAR', vec2(112, 28)) then ac.setWindowOpen('gear', true) end
+  ui.dummy(5)
+  if ui.button('OPEN COMBINED', vec2(126, 28)) then ac.setWindowOpen('coach', true) end
   ui.dummy(12)
   ui.dwriteText('BRAKE', 11, colors.red)
   ui.dwriteText('High-visibility five-second countdown and brake-now alert.', 11, colors.muted)
@@ -449,6 +497,9 @@ local function drawHudSettings()
   ui.dummy(5)
   ui.dwriteText('GEAR', 11, colors.purple)
   ui.dwriteText('Current and reference gear, side by side.', 11, colors.muted)
+  ui.dummy(5)
+  ui.dwriteText('COMBINED COACH', 11, colors.purple)
+  ui.dwriteText('Brake, throttle and gear in one compact rectangular HUD.', 11, colors.muted)
 end
 
 function script.windowSettings()

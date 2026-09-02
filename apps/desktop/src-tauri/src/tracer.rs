@@ -15,6 +15,7 @@ const BRAKE_THRESHOLD_PERCENT: f64 = 5.0;
 const MINIMUM_BRAKE_PEAK_PERCENT: f64 = 20.0;
 const MINIMUM_BRAKE_ZONE_METRES: f64 = 10.0;
 const MERGE_BRAKE_GAP_METRES: f64 = 15.0;
+const THROTTLE_CUE_PERCENT: f64 = 30.0;
 
 const MANIFEST: &str = include_str!("../tracer-ac/manifest.ini");
 const LUA_APP: &str = include_str!("../tracer-ac/TRACE_Tracer.lua");
@@ -102,6 +103,7 @@ struct ReferenceProfile<'a> {
     source: ReferenceSource<'a>,
     samples: Vec<ReferenceSample>,
     brake_zones: Vec<BrakeZone>,
+    throttle_cues: Vec<ThrottleCue>,
 }
 
 #[derive(Serialize)]
@@ -138,6 +140,12 @@ struct BrakeZone {
     start_m: f64,
     end_m: f64,
     peak_percent: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThrottleCue {
+    start_m: f64,
 }
 
 pub(super) fn prepare_reference(
@@ -183,6 +191,7 @@ pub(super) fn prepare_reference(
         })
         .collect::<Vec<_>>();
     let brake_zones = detect_brake_zones(&samples);
+    let throttle_cues = detect_throttle_cues(&samples, &brake_zones);
     let sample_spacing_m = samples
         .windows(2)
         .map(|pair| pair[1].distance_m - pair[0].distance_m)
@@ -205,6 +214,7 @@ pub(super) fn prepare_reference(
         },
         samples,
         brake_zones,
+        throttle_cues,
     };
     let encoded = serde_json::to_vec(&profile)
         .map_err(|error| format!("failed to encode the Tracer reference: {error}"))?;
@@ -480,11 +490,35 @@ fn detect_brake_zones(samples: &[ReferenceSample]) -> Vec<BrakeZone> {
     merged
 }
 
+fn detect_throttle_cues(
+    samples: &[ReferenceSample],
+    brake_zones: &[BrakeZone],
+) -> Vec<ThrottleCue> {
+    brake_zones
+        .iter()
+        .enumerate()
+        .filter_map(|(index, zone)| {
+            let next_brake_start = brake_zones.get(index + 1).map(|next| next.start_m);
+            samples
+                .iter()
+                .find(|sample| {
+                    sample.distance_m >= zone.end_m
+                        && next_brake_start.is_none_or(|start_m| sample.distance_m < start_m)
+                        && sample.throttle_percent.unwrap_or_default() >= THROTTLE_CUE_PERCENT
+                })
+                .map(|sample| ThrottleCue {
+                    start_m: sample.distance_m,
+                })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         BrakeZone, PROFILE_VERSION, ReferenceProfile, ReferenceSample, ReferenceSource,
-        TracerSessionQuery, detect_brake_zones, install_app, matching_session_summaries,
+        ThrottleCue, TracerSessionQuery, detect_brake_zones, detect_throttle_cues, install_app,
+        matching_session_summaries,
     };
     use trace_storage::metadata::{LapSummary, SessionConditions, SessionSummary};
 
@@ -532,6 +566,28 @@ mod tests {
     }
 
     #[test]
+    fn finds_meaningful_throttle_application_after_braking() {
+        let mut samples = vec![
+            sample(0.0, 0.0),
+            sample(10.0, 50.0),
+            sample(30.0, 0.0),
+            sample(40.0, 0.0),
+            sample(50.0, 0.0),
+        ];
+        samples[3].throttle_percent = Some(20.0);
+        samples[4].throttle_percent = Some(45.0);
+        let zones = vec![BrakeZone {
+            start_m: 10.0,
+            end_m: 30.0,
+            peak_percent: 50.0,
+        }];
+        assert_eq!(
+            detect_throttle_cues(&samples, &zones),
+            vec![ThrottleCue { start_m: 50.0 }]
+        );
+    }
+
+    #[test]
     fn installs_the_csp_app_assets() {
         let directory = tempfile::tempdir().expect("temp directory");
         std::fs::create_dir_all(directory.path().join("apps").join("lua"))
@@ -546,6 +602,7 @@ mod tests {
         assert!(manifest.contains("FUNCTION_MAIN = windowBrake"));
         assert!(manifest.contains("FUNCTION_MAIN = windowProgress"));
         assert!(manifest.contains("FUNCTION_MAIN = windowGear"));
+        assert!(manifest.contains("FUNCTION_MAIN = windowCoach"));
     }
 
     #[test]
@@ -578,6 +635,7 @@ mod tests {
                 end_m: 35.0,
                 peak_percent: 75.0,
             }],
+            throttle_cues: vec![ThrottleCue { start_m: 40.0 }],
         };
         let value = serde_json::to_value(profile).expect("profile serializes");
         assert_eq!(value["schemaVersion"], 1);
@@ -588,6 +646,7 @@ mod tests {
         assert_eq!(value["samples"][0]["b"], 75.0);
         assert!(value["samples"][0].get("distanceM").is_none());
         assert_eq!(value["brakeZones"][0]["startM"], 10.0);
+        assert_eq!(value["throttleCues"][0]["startM"], 40.0);
     }
 
     #[test]

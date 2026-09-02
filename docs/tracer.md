@@ -21,15 +21,17 @@ independently positioned HUD windows:
   before a braking point, then shows the countdown and brake-now cue;
 - **Tracer - Progress** is a compact delta-style bar with a centre baseline and a marker
   moving toward the brake event; and
-- **Tracer - Gear** shows the current and reference gears.
+- **Tracer - Gear** shows the current and reference gears; and
+- **Tracer - Coach** combines brake, throttle-application, and gear cues in one
+  rectangular borderless HUD.
 
 There is deliberately no live pedal-input display: Tracer is a coaching aid rather
 than another pedal telemetry overlay. Users can open only the coaching windows they
 want and keep the larger settings window closed while driving.
 
 The **HUD Windows** tab stores its preferences in CSP: enable or disable the Brake,
-Progress, and Gear windows independently, and choose a 5, 8, or 10-second reference
-countdown lead time for Brake and Progress.
+Progress, Gear, and Coach windows independently, and choose a 5, 8, or 10-second
+reference countdown lead time for Brake and Progress.
 
 Keep TRACE running while choosing a reference. The Reference tab asks TRACE's
 loopback-only bridge for recorded sessions matching the current source car, track, and
@@ -57,7 +59,9 @@ The coaching windows show:
 - whole reference seconds to the next braking zone, counting down to `BRAKE NOW`;
 - a prominent brake-now state while inside that zone;
 - a compact delta-style progress marker for the same countdown; and
-- current and reference gear.
+- current and reference gear; and
+- a green `THROTTLE NOW` cue when the reference first reaches meaningful throttle after
+  each detected braking zone.
 
 ## Reference profile
 
