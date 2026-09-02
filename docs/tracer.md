@@ -4,18 +4,25 @@ Tracer is TRACE's optional in-game coaching HUD for Assetto Corsa. It is a Custo
 Shaders Patch (CSP) Lua app that reads a compact reference lap prepared by the TRACE
 desktop application. It does not control the car.
 
-## Current slice
+## Install and use
 
-From a recorded Assetto Corsa session, choose **Tracer** on a lap row. TRACE then:
+In TRACE, open **Settings → Games** and choose **Install Tracer** below the Assetto
+Corsa directory. The bundled app is copied to
+`<Assetto Corsa>/apps/lua/TRACE_Tracer`. Once installed, each newer TRACE build updates
+those files at startup so the desktop application and HUD stay compatible.
 
-1. installs or updates the Lua app in `<Assetto Corsa>/apps/lua/TRACE_Tracer`;
-2. resamples the selected lap on TRACE's existing five-metre distance grid;
-3. derives stable braking zones from the brake channel; and
-4. writes `reference.json` to CSP's writable per-app configuration directory.
+Open Assetto Corsa with CSP enabled and activate **Tracer** from the in-game app shelf.
+Keep TRACE running while choosing a reference. Tracer asks TRACE's loopback-only bridge
+for recorded sessions matching the current source car, track, and layout. Selecting a
+session makes TRACE:
 
-Open Assetto Corsa with CSP enabled and activate **Tracer** from the in-game app
-shelf. The HUD validates the current simulator content against the source car, track,
-and layout before showing cues.
+1. choose its fastest valid lap;
+2. resample it on TRACE's existing five-metre distance grid;
+3. derive stable braking zones from the brake channel; and
+4. write `reference.json` to CSP's writable per-app configuration directory.
+
+Tracer shows a preparing state during generation and begins coaching when the reference
+is ready. The generated reference remains usable if TRACE is subsequently closed.
 
 The initial HUD shows:
 
@@ -55,7 +62,11 @@ without changing the profile contract.
 ## Boundaries and limitations
 
 - Tracer currently installs only for Assetto Corsa and requires CSP's Lua app support.
-- A prepared reference works without TRACE running, preserving local/offline use.
+- Session discovery uses `127.0.0.1:18081`; it does not contact a hosted TRACE service.
+- Bridge requests carry a Tracer-specific header and every selection is revalidated
+  against the current source identities before telemetry is processed.
+- A prepared reference works without TRACE running, preserving local/offline use, but
+  choosing another session requires the desktop app.
 - It uses recorded pedal position, not hydraulic brake pressure or a generated racing
   line, so cues are references rather than driving instructions guaranteed to be ideal.
 - Racing-line placement, turn-by-turn assessment, and richer input history remain

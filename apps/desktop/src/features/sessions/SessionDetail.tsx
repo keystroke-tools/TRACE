@@ -66,7 +66,6 @@ export function SessionDetail({
 	const [attachingSetup, setAttachingSetup] = useState(false);
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
-	const [preparingTracerLap, setPreparingTracerLap] = useState<number | null>(null);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
 	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
 	const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
@@ -175,28 +174,6 @@ export function SessionDetail({
 			showToast({ kind: "error", title: "Could not attach setup", message: error instanceof Error ? error.message : String(error), timeoutMs: 8_000 });
 		} finally {
 			setAttachingSetup(false);
-		}
-	}
-
-	async function prepareTracerReference(lapIndex: number) {
-		setPreparingTracerLap(lapIndex);
-		try {
-			const result = await telemetryDataSource.prepareTracerReference(session.id, lapIndex);
-			showToast({
-				kind: "success",
-				title: "Tracer reference ready",
-				message: `Lap ${lapIndex} is loaded with ${result.brakeZoneCount} braking zones. Enable Tracer from the CSP app shelf in Assetto Corsa.`,
-				timeoutMs: 7_000,
-			});
-		} catch (error) {
-			showToast({
-				kind: "error",
-				title: "Could not prepare Tracer",
-				message: error instanceof Error ? error.message : String(error),
-				timeoutMs: 8_000,
-			});
-		} finally {
-			setPreparingTracerLap(null);
 		}
 	}
 
@@ -386,13 +363,13 @@ export function SessionDetail({
 					<h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
 					<span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
 				</div>
-				<div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_82px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
+				<div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
 					<span>LAP</span>
 					<span>TIME</span>
 					<span>SECTORS</span>
 					<span className="border-l border-trace-divider pl-6">FUEL</span>
 					<span className="border-l border-trace-divider pl-6">TOP SPEED</span>
-					<span>ACTIONS</span>
+					<span aria-hidden="true" />
 				</div>
 				{session.laps.length === 0 ? (
 					<div className="p-8 text-center text-[12px] text-trace-dim">No complete laps are available.</div>
@@ -403,7 +380,7 @@ export function SessionDetail({
 						const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
 						return (
 							<div
-								className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_82px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
+								className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
 								key={lap.index}
 								role="button"
 								tabIndex={0}
@@ -436,17 +413,9 @@ export function SessionDetail({
 										value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null}
 									/>
 								</div>
-								<button
-									type="button"
-									className="border border-trace-divider px-2 py-1.5 text-[10px] font-bold tracking-[.08em] text-trace-soft transition-colors hover:border-trace-accent hover:text-trace-accent disabled:cursor-wait disabled:opacity-50"
-									disabled={preparingTracerLap != null}
-									onClick={(event) => {
-										event.stopPropagation();
-										void prepareTracerReference(lap.index);
-									}}
-								>
-									{preparingTracerLap === lap.index ? "LOADING" : "TRACER"}
-								</button>
+								<svg className="size-4 shrink-0 fill-none stroke-current text-trace-dim" viewBox="0 0 16 16" aria-hidden="true">
+									<path d="m6 3 5 5-5 5" />
+								</svg>
 							</div>
 						);
 					})

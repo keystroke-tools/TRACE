@@ -1281,13 +1281,14 @@ fn visualize_session_lap(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn prepare_tracer_reference(
-    app: tauri::AppHandle,
-    session_id: String,
-    lap_index: u32,
-) -> Result<tracer::TracerReferenceStatus, String> {
-    let trace = visualize_session_lap(app.clone(), session_id, lap_index)?;
-    tracer::prepare_reference(&app, &trace)
+fn tracer_install_status(app: tauri::AppHandle) -> Result<tracer::TracerInstallStatus, String> {
+    tracer::install_status(&app)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn install_tracer(app: tauri::AppHandle) -> Result<tracer::TracerInstallStatus, String> {
+    tracer::install(&app)
 }
 
 fn track_map_for_session(
@@ -2625,8 +2626,9 @@ fn setup_app(
     app.state::<CloseToTrayState>()
         .set_enabled(close_to_tray_enabled);
     tray::setup(app)?;
+    tracer::refresh_if_installed(app.handle());
     discord_activity::spawn(discord_activity, status.clone(), live_broadcast.clone());
-    obs_overlay::spawn(status.clone());
+    obs_overlay::spawn(app.handle().clone(), status.clone());
     capture::spawn(
         directory,
         ac_race_config,
@@ -2671,7 +2673,8 @@ pub fn run() {
             compare_setups,
             session_lap_metrics,
             visualize_session_lap,
-            prepare_tracer_reference,
+            tracer_install_status,
+            install_tracer,
             compare_session_laps,
             game_install_directories,
             set_game_install_directory,

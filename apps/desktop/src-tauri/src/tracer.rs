@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use trace_storage::metadata::MetadataStore;
 
@@ -30,6 +30,46 @@ pub(super) struct TracerReferenceStatus {
     lap_index: u32,
     lap_time: String,
     brake_zone_count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct TracerInstallStatus {
+    installed: bool,
+    install_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)]
+pub(super) struct TracerSessionQuery {
+    track_id: String,
+    #[serde(default)]
+    layout_id: Option<String>,
+    car_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)]
+pub(super) struct TracerReferenceRequest {
+    session_id: String,
+    track_id: String,
+    #[serde(default)]
+    layout_id: Option<String>,
+    car_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct TracerSession {
+    id: String,
+    title: Option<String>,
+    driver: Option<String>,
+    started_at: String,
+    session_type: Option<String>,
+    best_lap_index: u32,
+    best_lap_time: String,
 }
 
 #[derive(Serialize)]
@@ -94,21 +134,6 @@ pub(super) fn prepare_reference(
         .as_deref()
         .ok_or_else(|| "the session does not contain an Assetto Corsa car identifier".to_owned())?;
 
-    let data_directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
-    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
-        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let ac_root = store
-        .simulator_install_path("assetto-corsa")
-        .map_err(|error| format!("failed to read Assetto Corsa settings: {error:?}"))?
-        .map(PathBuf::from)
-        .ok_or_else(|| {
-            "set the Assetto Corsa installation directory in Settings first".to_owned()
-        })?;
-    let install_path = install_app(&ac_root)?;
-
     let documents = app
         .path()
         .document_dir()
@@ -166,13 +191,158 @@ pub(super) fn prepare_reference(
 
     Ok(TracerReferenceStatus {
         installed: true,
-        install_path: install_path.to_string_lossy().into_owned(),
+        install_path: tracer_install_path(app)?.to_string_lossy().into_owned(),
         reference_path: reference_path.to_string_lossy().into_owned(),
         session_id: trace.session_id.clone(),
         lap_index: trace.lap_index,
         lap_time: trace.lap_time.clone(),
         brake_zone_count: profile.brake_zones.len(),
     })
+}
+
+pub(super) fn install(app: &tauri::AppHandle) -> Result<TracerInstallStatus, String> {
+    let install_path = install_app(&assetto_corsa_root(app)?)?;
+    Ok(TracerInstallStatus {
+        installed: true,
+        install_path: install_path.to_string_lossy().into_owned(),
+    })
+}
+
+pub(super) fn install_status(app: &tauri::AppHandle) -> Result<TracerInstallStatus, String> {
+    let install_path = tracer_install_path(app)?;
+    let installed = install_path.join("TRACE_Tracer.lua").is_file()
+        && install_path.join("manifest.ini").is_file();
+    Ok(TracerInstallStatus {
+        installed,
+        install_path: install_path.to_string_lossy().into_owned(),
+    })
+}
+
+pub(super) fn refresh_if_installed(app: &tauri::AppHandle) {
+    let Ok(ac_root) = assetto_corsa_root(app) else {
+        return;
+    };
+    if ac_root
+        .join("apps")
+        .join("lua")
+        .join(APP_DIRECTORY)
+        .is_dir()
+    {
+        let _ = install_app(&ac_root);
+    }
+}
+
+pub(super) fn matching_sessions(
+    app: &tauri::AppHandle,
+    query: &TracerSessionQuery,
+) -> Result<Vec<TracerSession>, String> {
+    validate_identity(&query.track_id, query.layout_id.as_deref(), &query.car_id)?;
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let sessions = store
+        .recent_sessions(1_000)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    Ok(matching_session_summaries(sessions, query))
+}
+
+fn matching_session_summaries(
+    sessions: Vec<trace_storage::metadata::SessionSummary>,
+    query: &TracerSessionQuery,
+) -> Vec<TracerSession> {
+    sessions
+        .into_iter()
+        .filter(|session| session_matches(session, query))
+        .filter_map(|session| {
+            let best_lap = session
+                .laps
+                .iter()
+                .filter(|lap| {
+                    lap.duration_ns.is_some()
+                        && lap.validity != "invalid"
+                        && lap.max_tyres_out.is_none_or(|value| value < 3)
+                })
+                .min_by_key(|lap| lap.duration_ns.unwrap_or(u64::MAX))?;
+            let best_lap_index = best_lap.index;
+            let best_lap_time = super::format_lap_time(best_lap.duration_ns?);
+            Some(TracerSession {
+                id: session.id,
+                title: session.user_title,
+                driver: session.user_driver,
+                started_at: session.started_at,
+                session_type: session.session_type,
+                best_lap_index,
+                best_lap_time,
+            })
+        })
+        .collect()
+}
+
+pub(super) fn activate_reference(
+    app: &tauri::AppHandle,
+    request: &TracerReferenceRequest,
+) -> Result<TracerReferenceStatus, String> {
+    let query = TracerSessionQuery {
+        track_id: request.track_id.clone(),
+        layout_id: request.layout_id.clone(),
+        car_id: request.car_id.clone(),
+    };
+    let selected = matching_sessions(app, &query)?
+        .into_iter()
+        .find(|session| session.id == request.session_id)
+        .ok_or_else(|| {
+            "the selected session does not match the current car and track".to_owned()
+        })?;
+    let trace = super::visualize_session_lap(app.clone(), selected.id, selected.best_lap_index)?;
+    prepare_reference(app, &trace)
+}
+
+fn session_matches(
+    session: &trace_storage::metadata::SessionSummary,
+    query: &TracerSessionQuery,
+) -> bool {
+    session.simulator_key == "assetto-corsa"
+        && session.source_track_id.as_deref() == Some(query.track_id.as_str())
+        && session.layout_id.as_deref().unwrap_or("") == query.layout_id.as_deref().unwrap_or("")
+        && session.source_car_id.as_deref() == Some(query.car_id.as_str())
+}
+
+fn validate_identity(track_id: &str, layout_id: Option<&str>, car_id: &str) -> Result<(), String> {
+    let valid = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 128
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    };
+    if !valid(track_id) || !valid(car_id) || layout_id.is_some_and(|value| !valid(value)) {
+        return Err("invalid Assetto Corsa content identity".into());
+    }
+    Ok(())
+}
+
+fn assetto_corsa_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .simulator_install_path("assetto-corsa")
+        .map_err(|error| format!("failed to read Assetto Corsa settings: {error:?}"))?
+        .map(PathBuf::from)
+        .ok_or_else(|| "set the Assetto Corsa installation directory in Settings first".to_owned())
+}
+
+fn tracer_install_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(assetto_corsa_root(app)?
+        .join("apps")
+        .join("lua")
+        .join(APP_DIRECTORY))
 }
 
 fn finite(value: Option<f64>) -> Option<f64> {
@@ -249,8 +419,9 @@ fn detect_brake_zones(samples: &[ReferenceSample]) -> Vec<BrakeZone> {
 mod tests {
     use super::{
         BrakeZone, PROFILE_VERSION, ReferenceProfile, ReferenceSample, ReferenceSource,
-        detect_brake_zones, install_app,
+        TracerSessionQuery, detect_brake_zones, install_app, matching_session_summaries,
     };
+    use trace_storage::metadata::{LapSummary, SessionConditions, SessionSummary};
 
     fn sample(distance_m: f64, brake_percent: f64) -> ReferenceSample {
         ReferenceSample {
@@ -341,5 +512,61 @@ mod tests {
         assert_eq!(value["samples"][0]["b"], 75.0);
         assert!(value["samples"][0].get("distanceM").is_none());
         assert_eq!(value["brakeZones"][0]["startM"], 10.0);
+    }
+
+    #[test]
+    fn matching_sessions_require_exact_content_and_choose_fastest_valid_lap() {
+        let query = TracerSessionQuery {
+            track_id: "zandvoort2023".into(),
+            layout_id: None,
+            car_id: "ks_mazda_mx5_cup".into(),
+        };
+        let mut matching = session("matching", "zandvoort2023", None);
+        matching.laps = vec![
+            lap(1, 110_000_000_000, "invalid"),
+            lap(2, 112_000_000_000, "valid"),
+            lap(3, 111_000_000_000, "valid"),
+        ];
+        let wrong_layout = session("wrong-layout", "zandvoort2023", Some("club"));
+        let result = matching_session_summaries(vec![matching, wrong_layout], &query);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "matching");
+        assert_eq!(result[0].best_lap_index, 3);
+        assert_eq!(result[0].best_lap_time, "1:51.000");
+    }
+
+    fn session(id: &str, track_id: &str, layout_id: Option<&str>) -> SessionSummary {
+        SessionSummary {
+            id: id.into(),
+            simulator_key: "assetto-corsa".into(),
+            source_track_id: Some(track_id.into()),
+            layout_id: layout_id.map(str::to_owned),
+            source_car_id: Some("ks_mazda_mx5_cup".into()),
+            user_title: None,
+            user_driver: Some("Driver".into()),
+            ownership: "self".into(),
+            tags: Vec::new(),
+            track: Some("Zandvoort".into()),
+            car: Some("Mazda MX-5 Cup".into()),
+            session_type: Some("hotlap".into()),
+            started_at: "2026-09-02T12:00:00Z".into(),
+            source_kind: "simulator_live".into(),
+            conditions: SessionConditions::default(),
+            exportable: true,
+            laps: vec![lap(1, 112_000_000_000, "valid")],
+        }
+    }
+
+    fn lap(index: u32, duration_ns: u64, validity: &str) -> LapSummary {
+        LapSummary {
+            id: format!("lap-{index}"),
+            index,
+            duration_ns: Some(duration_ns),
+            validity: validity.into(),
+            validity_reason: None,
+            max_tyres_out: None,
+            is_personal_best: false,
+            sectors: Vec::new(),
+        }
     }
 }

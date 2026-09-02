@@ -1,6 +1,13 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { telemetryDataSource, type GameInstallDirectory, type LiveBroadcastOptions, type LiveSettings, type StartupSettings } from "../../data-source";
+import {
+	telemetryDataSource,
+	type GameInstallDirectory,
+	type LiveBroadcastOptions,
+	type LiveSettings,
+	type StartupSettings,
+	type TracerInstallStatus,
+} from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { SettingSwitch } from "../../components/Switch";
 import { useToast } from "../../Toast";
@@ -68,6 +75,8 @@ export function SettingsPage() {
 	const [savingCloseToTray, setSavingCloseToTray] = useState(false);
 	const [confirmExitEnabled, setConfirmExitEnabled] = useState(true);
 	const [savingConfirmExit, setSavingConfirmExit] = useState(false);
+	const [tracerStatus, setTracerStatus] = useState<TracerInstallStatus | null>(null);
+	const [installingTracer, setInstallingTracer] = useState(false);
 
 	async function changeAutoIndexSetups(enabled: boolean) {
 		setAutoIndexSetups(enabled);
@@ -167,6 +176,21 @@ export function SettingsPage() {
 	useEffect(() => {
 		let active = true;
 		void telemetryDataSource
+			.getTracerInstallStatus()
+			.then((status) => {
+				if (active) setTracerStatus(status);
+			})
+			.catch(() => {
+				if (active) setTracerStatus(null);
+			});
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	useEffect(() => {
+		let active = true;
+		void telemetryDataSource
 			.getStartupSettings()
 			.then((settings) => {
 				if (!active) return;
@@ -243,6 +267,9 @@ export function SettingsPage() {
 			const updated = await telemetryDataSource.setGameInstallDirectory(simulatorId, customPath);
 			setDirectories((current) => current.map((value) => (value.simulatorId === simulatorId ? updated : value)));
 			setDrafts((current) => ({ ...current, [simulatorId]: updated.path ?? "" }));
+			if (simulatorId === "assetto-corsa" && updated.path) {
+				setTracerStatus(await telemetryDataSource.getTracerInstallStatus().catch(() => null));
+			}
 			showToast({
 				kind: "success",
 				title: customPath ? "Game folder saved" : "Automatic detection restored",
@@ -258,6 +285,29 @@ export function SettingsPage() {
 			});
 		} finally {
 			setSaving(null);
+		}
+	}
+
+	async function installTracer() {
+		setInstallingTracer(true);
+		try {
+			const status = await telemetryDataSource.installTracer();
+			setTracerStatus(status);
+			showToast({
+				kind: "success",
+				title: "Tracer installed",
+				message: "Open the Tracer app from Assetto Corsa's CSP app shelf. TRACE will manage future updates automatically.",
+				timeoutMs: 7_000,
+			});
+		} catch (error) {
+			showToast({
+				kind: "error",
+				title: "Could not install Tracer",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setInstallingTracer(false);
 		}
 	}
 
@@ -788,6 +838,28 @@ export function SettingsPage() {
 											? `Currently using ${directory.source === "manual" ? "your custom path" : "the detected Steam installation"}.`
 											: "TRACE could not locate this game automatically. Paste its installation folder above."}
 									</p>
+									{directory.simulatorId === "assetto-corsa" && directory.path && (
+										<div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-trace-divider pt-5">
+											<div className="min-w-[260px] flex-1">
+												<div className="flex items-center gap-2">
+													<strong className="text-[13px] text-trace-text">Tracer in-game coach</strong>
+													<span className={`size-2 rounded-full ${tracerStatus?.installed ? "bg-trace-accent" : "bg-trace-dim"}`} />
+												</div>
+												<p className="mt-1 text-[12px] leading-5 text-trace-dim">
+													Installs the bundled CSP app. Choose matching reference sessions from inside Assetto Corsa while TRACE is
+													running.
+												</p>
+											</div>
+											<button
+												type="button"
+												disabled={installingTracer || saving === directory.simulatorId}
+												onClick={() => void installTracer()}
+												className="h-10 min-w-32 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:text-trace-dim"
+											>
+												{installingTracer ? "INSTALLING…" : tracerStatus?.installed ? "UPDATE TRACER" : "INSTALL TRACER"}
+											</button>
+										</div>
+									)}
 								</form>
 							);
 						})

@@ -230,14 +230,9 @@ export interface LapTrace {
 	samples: LapTraceSample[];
 }
 
-export interface TracerReferenceStatus {
+export interface TracerInstallStatus {
 	installed: boolean;
 	installPath: string;
-	referencePath: string;
-	sessionId: string;
-	lapIndex: number;
-	lapTime: string;
-	brakeZoneCount: number;
 }
 
 export interface LapComparison {
@@ -503,7 +498,8 @@ export interface TelemetryDataSource {
 	getSessions(): Promise<RecordedSessionSummary[]>;
 	getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
 	visualizeSessionLap(sessionId: string, lapIndex: number): Promise<LapTrace>;
-	prepareTracerReference(sessionId: string, lapIndex: number): Promise<TracerReferenceStatus>;
+	getTracerInstallStatus(): Promise<TracerInstallStatus>;
+	installTracer(): Promise<TracerInstallStatus>;
 	compareSessionLaps(referenceSessionId: string, referenceLapIndex: number, comparisonSessionId: string, comparisonLapIndex: number): Promise<LapComparison>;
 	getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
 	setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
@@ -1000,16 +996,11 @@ export const fixtureDataSource: TelemetryDataSource = {
 			})),
 		};
 	},
-	async prepareTracerReference(sessionId, lapIndex) {
-		return {
-			installed: true,
-			installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer",
-			referencePath: "C:\\Documents\\Assetto Corsa\\cfg\\extension\\state\\lua\\app\\TRACE_Tracer\\reference.json",
-			sessionId,
-			lapIndex,
-			lapTime: "1:48.214",
-			brakeZoneCount: 8,
-		};
+	async getTracerInstallStatus() {
+		return { installed: false, installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer" };
+	},
+	async installTracer() {
+		return { installed: true, installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer" };
 	},
 	async getGameInstallDirectories() {
 		return [
@@ -1326,8 +1317,11 @@ export const tauriDataSource: TelemetryDataSource = {
 	visualizeSessionLap(sessionId, lapIndex) {
 		return invoke<LapTrace>("visualize_session_lap", { sessionId, lapIndex });
 	},
-	prepareTracerReference(sessionId, lapIndex) {
-		return invoke<TracerReferenceStatus>("prepare_tracer_reference", { sessionId, lapIndex });
+	getTracerInstallStatus() {
+		return invoke<TracerInstallStatus>("tracer_install_status");
+	},
+	installTracer() {
+		return invoke<TracerInstallStatus>("install_tracer");
 	},
 	compareSessionLaps(referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex) {
 		return invoke<LapComparison>("compare_session_laps", { referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex });

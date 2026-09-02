@@ -1,6 +1,16 @@
+local bridgeUrl = 'http://127.0.0.1:18081'
+local bridgeHeaders = {
+  ['Content-Type'] = 'application/json',
+  ['X-Trace-Tracer'] = '1'
+}
 local profile = nil
 local profileError = nil
+local sessions = nil
+local view = 'sessions'
+local requestState = 'idle'
+local requestMessage = nil
 local reloadTimer = 0
+local initialRequestSent = false
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
 
 local colors = {
@@ -10,29 +20,98 @@ local colors = {
   red = rgbm(0.92, 0.25, 0.25, 1),
   purple = rgbm(0.70, 0.42, 1.00, 1),
   surface = rgbm(0.08, 0.08, 0.08, 0.96),
+  raised = rgbm(0.12, 0.12, 0.12, 1),
   track = rgbm(0.18, 0.18, 0.18, 1)
 }
+
+local function currentIdentity()
+  return {
+    trackId = ac.getTrackID(),
+    layoutId = ac.getTrackLayout() ~= '' and ac.getTrackLayout() or nil,
+    carId = ac.getCarID(0)
+  }
+end
+
+local function parseResponse(err, response)
+  if err and err ~= '' then return nil, err end
+  if not response then return nil, 'TRACE did not return a response.' end
+  local ok, value = pcall(JSON.parse, response.body or '')
+  if not ok or type(value) ~= 'table' then
+    return nil, 'TRACE returned an invalid response.'
+  end
+  if response.status < 200 or response.status >= 300 then
+    return nil, value.error or string.format('TRACE returned HTTP %d.', response.status)
+  end
+  return value, nil
+end
 
 local function loadProfile()
   local encoded = io.load(configPath, '')
   if encoded == '' then
     profile = nil
-    profileError = 'Choose a reference lap in TRACE.'
-    return
+    profileError = 'Choose a matching session first.'
+    return false
   end
   local ok, value = pcall(JSON.parse, encoded)
   if not ok or type(value) ~= 'table' or value.schemaVersion ~= 1 then
     profile = nil
-    profileError = 'The reference file is invalid or unsupported.'
-    return
+    profileError = 'The generated reference is invalid or unsupported.'
+    return false
   end
   profile = value
   profileError = nil
+  return true
+end
+
+local function refreshSessions()
+  local identity = currentIdentity()
+  if not identity.carId or identity.trackId == '' then
+    requestState = 'error'
+    requestMessage = 'Waiting for the current car and track.'
+    return
+  end
+  requestState = 'loading'
+  requestMessage = nil
+  web.post(bridgeUrl .. '/api/tracer/sessions', bridgeHeaders, JSON.stringify(identity), function(err, response)
+    local value, parseError = parseResponse(err, response)
+    if not value then
+      sessions = nil
+      requestState = 'error'
+      requestMessage = 'TRACE is unavailable. Keep the desktop app running.\n' .. (parseError or '')
+      return
+    end
+    sessions = value
+    requestState = 'ready'
+    requestMessage = #sessions == 0 and 'No valid recorded laps match this car, track, and layout.' or nil
+  end)
+end
+
+local function activateSession(session)
+  local request = currentIdentity()
+  request.sessionId = session.id
+  requestState = 'preparing'
+  requestMessage = string.format('Preparing %s…', session.bestLapTime)
+  web.post(bridgeUrl .. '/api/tracer/reference', bridgeHeaders, JSON.stringify(request), function(err, response)
+    local value, parseError = parseResponse(err, response)
+    if not value then
+      requestState = 'error'
+      requestMessage = parseError or 'TRACE could not prepare this reference.'
+      return
+    end
+    if not loadProfile() then
+      requestState = 'error'
+      requestMessage = profileError
+      return
+    end
+    requestState = 'ready'
+    requestMessage = nil
+    view = 'coach'
+  end)
 end
 
 local function drawBar(label, live, target, color)
   ui.textColored(label, colors.muted)
-  ui.sameLine(64)
+  ui.sameLine(72)
   local p = ui.getCursor()
   local width = math.max(100, ui.availableSpaceX())
   ui.drawRectFilled(p, p + vec2(width, 12), colors.track, 2)
@@ -58,32 +137,70 @@ local function activeOrNextZone(distanceM)
   return zones[1]
 end
 
-function script.windowMain(dt)
-  reloadTimer = reloadTimer - dt
-  if reloadTimer <= 0 then
-    reloadTimer = 1
-    loadProfile()
+local function sessionLabel(session)
+  local identity = session.driver or 'Unknown driver'
+  if session.title and session.title ~= session.driver then
+    identity = identity .. '  ·  ' .. session.title
   end
+  local date = (session.startedAt or ''):gsub('T', ' '):sub(1, 16)
+  local sessionType = string.upper(session.sessionType or 'session')
+  return string.format('%s  ·  %s  ·  %s  ·  %s###%s', identity, session.bestLapTime, sessionType, date, session.id)
+end
 
-  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface)
-  ui.dwriteText('TRACER //', 16, colors.green)
+local function drawSessionPicker()
+  ui.dwriteText('CHOOSE A REFERENCE', 14, colors.text)
+  ui.dwriteText(string.format('%s  ·  %s', ac.getCarName(0) or ac.getCarID(0) or 'Unknown car', ac.getTrackName() or ac.getTrackID()), 11, colors.muted)
   ui.sameLine()
+  if requestState ~= 'loading' and requestState ~= 'preparing' and ui.button('REFRESH', vec2(76, 24)) then
+    refreshSessions()
+  end
+  ui.dummy(6)
 
+  if requestState == 'loading' then
+    ui.dwriteText('Finding matching sessions in TRACE…', 13, colors.purple)
+    return
+  end
+  if requestState == 'preparing' then
+    ui.dwriteText(requestMessage or 'Preparing reference…', 16, colors.purple)
+    ui.dwriteText('TRACE is processing the recorded telemetry. Please wait.', 11, colors.muted)
+    return
+  end
+  if requestMessage then
+    ui.dwriteText(requestMessage, 12, requestState == 'error' and colors.red or colors.muted)
+  end
+  if not sessions or #sessions == 0 then return end
+
+  ui.childWindow('matchingSessions', vec2(0, ui.availableSpaceY()), false, function()
+    for i = 1, #sessions do
+      local session = sessions[i]
+      if ui.selectable(sessionLabel(session), false, ui.SelectableFlags.None, vec2(0, 34)) then
+        activateSession(session)
+      end
+    end
+  end)
+end
+
+local function drawCoach()
   if not profile then
-    ui.newLine()
     ui.dwriteText(profileError or 'No reference loaded.', 13, colors.muted)
+    if ui.button('CHOOSE REFERENCE', vec2(150, 28)) then
+      view = 'sessions'
+      refreshSessions()
+    end
     return
   end
 
   local car = ac.getCar(0)
   if not car then
-    ui.newLine()
     ui.dwriteText('Waiting for the player car.', 13, colors.muted)
     return
   end
   if ac.getTrackID() ~= profile.trackId or ac.getTrackLayout() ~= (profile.layoutId or '') or ac.getCarID(0) ~= profile.carId then
-    ui.newLine()
     ui.dwriteText('Reference does not match this car and track.', 13, colors.red)
+    if ui.button('FIND MATCHING SESSIONS', vec2(190, 28)) then
+      view = 'sessions'
+      refreshSessions()
+    end
     return
   end
 
@@ -91,7 +208,7 @@ function script.windowMain(dt)
   local target = sampleAt(distanceM)
   local zone = activeOrNextZone(distanceM)
   local distanceToBrake = zone and (zone.startM - distanceM) or nil
-  if distanceToBrake and distanceToBrake < -1 and zone == profile.brakeZones[1] then
+  if distanceToBrake and distanceToBrake < 0 and zone == profile.brakeZones[1] then
     distanceToBrake = profile.trackLengthM - distanceM + zone.startM
   end
 
@@ -105,6 +222,11 @@ function script.windowMain(dt)
     cueColor = colors.purple
   end
   ui.dwriteText(cue, 22, cueColor)
+  ui.sameLine()
+  if ui.button('CHANGE', vec2(72, 24)) then
+    view = 'sessions'
+    refreshSessions()
+  end
   ui.dwriteText(string.format('Reference %s  |  Lap %d', profile.source.lapTime, profile.source.lapIndex), 11, colors.muted)
   ui.dummy(4)
 
@@ -113,4 +235,26 @@ function script.windowMain(dt)
   ui.dummy(4)
   local targetGear = target and target.g or nil
   ui.dwriteText(string.format('GEAR  %s   TARGET  %s', tostring(car.gear or '-'), targetGear and tostring(targetGear) or '-'), 14, colors.text)
+end
+
+function script.windowMain(dt)
+  reloadTimer = reloadTimer - dt
+  if reloadTimer <= 0 then
+    reloadTimer = 1
+    if view == 'coach' then loadProfile() end
+  end
+  if not initialRequestSent then
+    initialRequestSent = true
+    loadProfile()
+    refreshSessions()
+  end
+
+  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface)
+  ui.dwriteText('TRACER //', 16, colors.green)
+  ui.dummy(5)
+  if view == 'sessions' then
+    drawSessionPicker()
+  else
+    drawCoach()
+  end
 end
