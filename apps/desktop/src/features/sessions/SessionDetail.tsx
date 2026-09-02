@@ -66,6 +66,7 @@ export function SessionDetail({
 	const [attachingSetup, setAttachingSetup] = useState(false);
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
+	const [exportingTrace, setExportingTrace] = useState(false);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
 	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
 	const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
@@ -177,6 +178,23 @@ export function SessionDetail({
 		}
 	}
 
+	async function exportTrace() {
+		setExportingTrace(true);
+		try {
+			const result = await telemetryDataSource.exportSession(session.id, "trace");
+			showToast({
+				kind: "success",
+				title: ".trace package exported",
+				message: `${result.sampleCount.toLocaleString()} samples saved to ${result.path}`,
+				timeoutMs: 7_000,
+			});
+		} catch (error) {
+			showToast({ kind: "error", title: "Export failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		} finally {
+			setExportingTrace(false);
+		}
+	}
+
 	useEffect(() => {
 		let active = true;
 		setSetupsState("loading");
@@ -213,6 +231,19 @@ export function SessionDetail({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
+					<Tooltip content="Share as a .trace package">
+						<button
+							type="button"
+							aria-label={`Share ${session.track} session as a TRACE package`}
+							disabled={exportingTrace || !session.exportable}
+							onClick={() => void exportTrace()}
+							className="grid size-9 place-items-center border border-trace-accent/50 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+						>
+							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+								<path d="M8 10.5V2.5m0 0L5.2 5.3M8 2.5l2.8 2.8M3 9.5v3h10v-3" />
+							</svg>
+						</button>
+					</Tooltip>
 					<button
 						type="button"
 						onClick={onShowSummary}

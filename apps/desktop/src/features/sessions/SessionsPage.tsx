@@ -478,6 +478,19 @@ function SessionRow({
 					</svg>
 				</button>
 				<div className="flex shrink-0 items-stretch border-l border-trace-divider">
+					<Tooltip className="h-full" content="Share as a .trace package">
+						<button
+							type="button"
+							aria-label={`Share ${session.track} session as a TRACE package`}
+							disabled={exporting || !session.exportable}
+							onClick={() => void exportTelemetry("trace")}
+							className="grid h-full w-12 place-items-center border-0 border-r border-trace-divider bg-transparent text-trace-accent hover:bg-trace-accent-wash hover:text-trace-text disabled:text-trace-dim disabled:hover:bg-transparent"
+						>
+							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+								<path d="M8 10.5V2.5m0 0L5.2 5.3M8 2.5l2.8 2.8M3 9.5v3h10v-3" />
+							</svg>
+						</button>
+					</Tooltip>
 					<div className="relative flex" ref={actionsMenu}>
 						<Tooltip className="h-full" content="Session actions">
 							<button
@@ -546,7 +559,7 @@ function SessionRow({
 											onClick={() => setExportMenuOpen((value) => !value)}
 											className="flex w-full items-center justify-between border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
 										>
-											<span>{exporting ? "Exporting…" : "Export…"}</span>
+											<span>{exporting ? "Exporting…" : "Data exports…"}</span>
 											<svg
 												className={`size-3 fill-none stroke-current transition-transform ${exportMenuOpen ? "rotate-90" : ""}`}
 												viewBox="0 0 12 12"
@@ -557,14 +570,7 @@ function SessionRow({
 										</button>
 										{exportMenuOpen && session.exportable && (
 											<div className="ml-2 border-l border-trace-divider bg-trace-deep pb-1 pl-1 pt-2">
-												<span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">SHARE</span>
-												<ExportOption
-													label="Shareable session"
-													detail=".trace · compact telemetry, laps & details"
-													disabled={exporting}
-													onClick={() => void exportTelemetry("trace")}
-												/>
-												<span className="mt-1 block border-t border-trace-divider px-2 pb-1 pt-2 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">
+												<span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">
 													DATA EXPORTS
 												</span>
 												<ExportOption
