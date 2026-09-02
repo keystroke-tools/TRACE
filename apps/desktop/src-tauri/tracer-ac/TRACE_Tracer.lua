@@ -6,11 +6,10 @@ local bridgeHeaders = {
 local profile = nil
 local profileError = nil
 local sessions = nil
-local view = 'sessions'
 local requestState = 'idle'
 local requestMessage = nil
-local reloadTimer = 0
-local initialRequestSent = false
+local profileLoaded = false
+local sessionsRequested = false
 local includeOtherTracks = false
 local expandedSessionId = nil
 local pendingSelection = nil
@@ -114,20 +113,16 @@ local function activateSession(session, lap)
     requestMessage = nil
     profileTrackOverride = not session.exactMatch
     pendingSelection = nil
-    view = 'coach'
   end)
 end
 
-local function drawBar(label, live, target, color)
-  ui.textColored(label, colors.muted)
-  ui.sameLine(72)
+local function drawReferenceBrake(target)
   local p = ui.getCursor()
-  local width = math.max(100, ui.availableSpaceX())
-  ui.drawRectFilled(p, p + vec2(width, 12), colors.track, 2)
-  ui.drawRectFilled(p, p + vec2(width * math.saturate(live / 100), 12), color, 2)
-  local markerX = p.x + width * math.saturate(target / 100)
-  ui.drawLine(vec2(markerX, p.y - 2), vec2(markerX, p.y + 14), colors.text, 2)
-  ui.dummy(vec2(width, 14))
+  local width = math.max(80, ui.availableSpaceX())
+  local percent = math.saturate((target or 0) / 100)
+  ui.drawRectFilled(p, p + vec2(width, 8), colors.track, 2)
+  ui.drawRectFilled(p, p + vec2(width * percent, 8), colors.red, 2)
+  ui.dummy(vec2(width, 8))
 end
 
 local function sampleAt(distanceM)
@@ -232,29 +227,34 @@ local function drawSessionPicker()
   end)
 end
 
-local function drawCoach()
+local function ensureProfileLoaded()
+  if profileLoaded then return end
+  profileLoaded = true
+  loadProfile()
+end
+
+local function ensureSessionsRequested()
+  if sessionsRequested then return end
+  sessionsRequested = true
+  refreshSessions()
+end
+
+local function openReferences()
+  ac.setWindowOpen('references', true)
+end
+
+local function coachState()
   if not profile then
-    ui.dwriteText(profileError or 'No reference loaded.', 13, colors.muted)
-    if ui.button('CHOOSE REFERENCE', vec2(150, 28)) then
-      view = 'sessions'
-      refreshSessions()
-    end
-    return
+    return nil, profileError or 'No reference loaded.'
   end
 
   local car = ac.getCar(0)
   if not car then
-    ui.dwriteText('Waiting for the player car.', 13, colors.muted)
-    return
+    return nil, 'Waiting for the player car.'
   end
   local wrongTrack = ac.getTrackID() ~= profile.trackId or ac.getTrackLayout() ~= (profile.layoutId or '')
   if (wrongTrack and not profileTrackOverride) or ac.getCarID(0) ~= profile.carId then
-    ui.dwriteText('Reference does not match this car and track.', 13, colors.red)
-    if ui.button('FIND MATCHING SESSIONS', vec2(190, 28)) then
-      view = 'sessions'
-      refreshSessions()
-    end
-    return
+    return nil, 'Reference does not match this car and track.'
   end
 
   local distanceM = math.saturate(car.splinePosition or 0) * profile.trackLengthM
@@ -265,52 +265,82 @@ local function drawCoach()
     distanceToBrake = profile.trackLengthM - distanceM + zone.startM
   end
 
-  local cue = 'CLEAR'
-  local cueColor = colors.green
-  if zone and distanceM >= zone.startM and distanceM <= zone.endM then
-    cue = 'BRAKE NOW'
-    cueColor = colors.red
-  elseif distanceToBrake and distanceToBrake <= 250 then
-    cue = string.format('BRAKE IN %.0f m', math.max(0, distanceToBrake))
-    cueColor = colors.purple
-  end
-  ui.dwriteText(cue, 22, cueColor)
-  ui.sameLine()
-  if ui.button('CHANGE', vec2(72, 24)) then
-    view = 'sessions'
-    refreshSessions()
-  end
-  ui.dwriteText(string.format('Reference %s  |  Lap %d', profile.source.lapTime, profile.source.lapIndex), 11, colors.muted)
-  if wrongTrack and profileTrackOverride then
-    ui.dwriteText('MANUAL TRACK OVERRIDE', 10, colors.red)
-  end
-  ui.dummy(4)
-
-  drawBar('BRAKE', (car.brake or 0) * 100, target and (target.b or 0) or 0, colors.red)
-  drawBar('THROTTLE', (car.gas or 0) * 100, target and (target.t or 0) or 0, colors.green)
-  ui.dummy(4)
-  local targetGear = target and target.g or nil
-  ui.dwriteText(string.format('GEAR  %s   TARGET  %s', tostring(car.gear or '-'), targetGear and tostring(targetGear) or '-'), 14, colors.text)
+  return {
+    car = car,
+    target = target,
+    zone = zone,
+    distanceM = distanceM,
+    distanceToBrake = distanceToBrake,
+    wrongTrack = wrongTrack
+  }, nil
 end
 
-function script.windowMain(dt)
-  reloadTimer = reloadTimer - dt
-  if reloadTimer <= 0 then
-    reloadTimer = 1
-    if view == 'coach' then loadProfile() end
-  end
-  if not initialRequestSent then
-    initialRequestSent = true
-    loadProfile()
-    refreshSessions()
+local function drawUnavailable(message)
+  ui.dwriteText(message, 12, colors.muted)
+  if ui.button('REFERENCES', vec2(108, 25)) then openReferences() end
+end
+
+local function drawSurface()
+  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface)
+end
+
+local function gearLabel(gear)
+  if gear == nil then return '—' end
+  if gear < 0 then return 'R' end
+  if gear == 0 then return 'N' end
+  return tostring(gear)
+end
+
+function script.windowBrake()
+  ensureProfileLoaded()
+  drawSurface()
+  ui.dwriteText('BRAKE //', 11, colors.muted)
+  local state, stateError = coachState()
+  if not state then
+    drawUnavailable(stateError)
+    return
   end
 
-  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface)
-  ui.dwriteText('TRACER //', 16, colors.green)
-  ui.dummy(5)
-  if view == 'sessions' then
-    drawSessionPicker()
-  else
-    drawCoach()
+  local cue = 'CLEAR'
+  local cueColor = colors.green
+  if state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM then
+    cue = 'BRAKE NOW'
+    cueColor = colors.red
+  elseif state.distanceToBrake and state.distanceToBrake <= 250 then
+    cue = string.format('BRAKE IN %.0f m', math.max(0, state.distanceToBrake))
+    cueColor = colors.purple
   end
+  ui.dwriteText(cue, 24, cueColor)
+  local referenceBrake = state.target and (state.target.b or 0) or 0
+  ui.dwriteText(string.format('REFERENCE BRAKE  %.0f%%', referenceBrake), 10, colors.muted)
+  drawReferenceBrake(referenceBrake)
+  if state.wrongTrack and profileTrackOverride then
+    ui.dwriteText('MANUAL TRACK OVERRIDE', 10, colors.red)
+  end
+end
+
+function script.windowGear()
+  ensureProfileLoaded()
+  drawSurface()
+  ui.dwriteText('GEAR //', 11, colors.muted)
+  local state, stateError = coachState()
+  if not state then
+    drawUnavailable(stateError)
+    return
+  end
+  ui.dwriteText('CURRENT', 10, colors.muted)
+  ui.sameLine(74)
+  ui.dwriteText('REFERENCE', 10, colors.muted)
+  ui.dwriteText(gearLabel(state.car.gear), 38, colors.text)
+  ui.sameLine(74)
+  ui.dwriteText(gearLabel(state.target and state.target.g or nil), 38, colors.purple)
+end
+
+function script.windowReferences()
+  ensureProfileLoaded()
+  ensureSessionsRequested()
+  drawSurface()
+  ui.dwriteText('TRACER // REFERENCES', 16, colors.green)
+  ui.dummy(5)
+  drawSessionPicker()
 end
