@@ -13,8 +13,8 @@ those files at startup so the desktop application and HUD stay compatible. Trace
 the same manually configured or auto-detected installation shown on the Settings page.
 
 Open Assetto Corsa with CSP enabled. **Tracer** is the normal primary app with standard
-window controls and two tabs: **Reference** selects a session/lap and **HUD Windows**
-opens the optional coaching surfaces. The in-game app shelf also provides three
+window controls and two pages: **Reference** selects a session/lap and **HUDs** opens
+the optional coaching surfaces. The in-game app shelf also provides four
 independently positioned HUD windows:
 
 - **Tracer - Brake** is a borderless HUD that stays quiet until ten reference seconds
@@ -63,6 +63,11 @@ The coaching windows show:
 - current and reference gear; and
 - a green `THROTTLE NOW` cue when the reference first reaches meaningful throttle after
   each detected braking zone.
+
+New reference profiles store those throttle cues directly. When an older profile does
+not contain them, the CSP app derives the same cues from its compact throttle samples
+at load time. The cue remains visible for 60 metres after the reference application
+point so it can be read while driving.
 
 ## Reference profile
 

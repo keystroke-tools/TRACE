@@ -32,6 +32,8 @@ local colors = {
 }
 local hudInset = 6
 local hudPadding = 12
+local throttleCuePercent = 30
+local throttleCueVisibleMetres = 60
 
 local function currentIdentity()
   return {
@@ -54,6 +56,26 @@ local function parseResponse(err, response)
   return value, nil
 end
 
+local function ensureThrottleCues(reference)
+  if type(reference.throttleCues) == 'table' and #reference.throttleCues > 0 then return end
+  reference.throttleCues = {}
+  local samples = reference.samples or {}
+  local brakeZones = reference.brakeZones or {}
+  for zoneIndex = 1, #brakeZones do
+    local zone = brakeZones[zoneIndex]
+    local nextZone = brakeZones[zoneIndex + 1]
+    for sampleIndex = 1, #samples do
+      local sample = samples[sampleIndex]
+      if sample.d >= zone.endM
+          and (not nextZone or sample.d < nextZone.startM)
+          and (sample.t or 0) >= throttleCuePercent then
+        table.insert(reference.throttleCues, { startM = sample.d })
+        break
+      end
+    end
+  end
+end
+
 local function loadProfile()
   local encoded = io.load(configPath, '')
   if encoded == '' then
@@ -67,6 +89,7 @@ local function loadProfile()
     profileError = 'The generated reference is invalid or unsupported.'
     return false
   end
+  ensureThrottleCues(value)
   profile = value
   profileError = nil
   return true
@@ -161,7 +184,7 @@ local function activeThrottleCue(distanceM)
   for index = 1, #cues do
     local offset = distanceM - cues[index].startM
     if offset < 0 then offset = offset + profile.trackLengthM end
-    if offset >= 0 and offset <= 30 then return cues[index] end
+    if offset >= 0 and offset <= throttleCueVisibleMetres then return cues[index] end
   end
   return nil
 end
