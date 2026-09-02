@@ -14,6 +14,7 @@ local includeOtherTracks = false
 local expandedSessionId = nil
 local pendingSelection = nil
 local profileTrackOverride = false
+local settingsPage = 'reference'
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
 local preferences = ac.storage({
   countdownLeadSeconds = 10
@@ -163,17 +164,20 @@ local function activeThrottleCue(distanceM)
   return nil
 end
 
-local function sessionLabel(session)
+local function sessionTitle(session)
   local identity = session.driver or 'Unknown driver'
   if session.title and session.title ~= session.driver then
     identity = identity .. '  ·  ' .. session.title
   end
+  return string.format('%s  ·  %s', identity, session.bestLapTime or 'no valid lap')
+end
+
+local function sessionDetail(session)
   local date = (session.startedAt or ''):gsub('T', ' '):sub(1, 16)
   local sessionType = string.upper(session.sessionType or 'session')
-  local best = session.bestLapTime or 'no valid lap'
   local track = session.track or 'Unknown track'
   if session.layoutId and session.layoutId ~= '' then track = track .. ' / ' .. session.layoutId end
-  return string.format('%s  ·  %s  ·  %s  ·  %s  ·  %s###%s', identity, best, sessionType, track, date, session.id)
+  return string.format('%s  ·  %s  ·  %s', sessionType, track, date)
 end
 
 local function lapLabel(session, lap)
@@ -195,7 +199,7 @@ local function drawSessionPicker()
     ui.dwriteText(string.format('%s  ·  LAP %d  ·  %s', identity, source.lapIndex, source.lapTime), 11, colors.text)
     ui.dummy(vec2(width, 44))
   end
-  ui.dwriteText('CHOOSE A REFERENCE', 13, colors.text)
+  ui.dwriteText('REFERENCE LAP', 13, colors.text)
   ui.dwriteText(string.format('%s  ·  %s', ac.getCarName(0) or ac.getCarID(0) or 'Unknown car', ac.getTrackName() or ac.getTrackID()), 11, colors.muted)
   ui.dummy(3)
   if requestState ~= 'loading' and requestState ~= 'preparing' and ui.button('REFRESH', vec2(76, 24)) then
@@ -231,12 +235,18 @@ local function drawSessionPicker()
   end
 
   local availableHeight = ui.availableSpaceY()
-  local sessionListHeight = selectedSession and math.max(80, math.min(availableHeight * 0.42, 190)) or availableHeight
+  local sessionListHeight = selectedSession and math.max(92, math.min(availableHeight * 0.46, 220)) or availableHeight
   ui.dwriteText('SESSIONS', 10, colors.muted)
   ui.childWindow('matchingSessions', vec2(0, sessionListHeight), false, function()
     for i = 1, #sessions do
       local session = sessions[i]
-      if ui.selectable(sessionLabel(session), expandedSessionId == session.id, ui.SelectableFlags.None, vec2(0, 34)) then
+      local selected = expandedSessionId == session.id
+      local rowStart = ui.getCursor()
+      if selected then
+        ui.drawRectFilled(rowStart, rowStart + vec2(3, 46), colors.purple, 2)
+      end
+      local label = string.format('%s\n%s###%s', sessionTitle(session), sessionDetail(session), session.id)
+      if ui.selectable(label, selected, ui.SelectableFlags.None, vec2(0, 46)) then
         expandedSessionId = session.id
         pendingSelection = nil
       end
@@ -333,13 +343,16 @@ local function coachState()
 end
 
 local function drawUnavailable(message)
+  ui.setCursor(vec2(12, 12))
   ui.dwriteText(message, 12, colors.muted)
+  ui.dummy(5)
   if ui.button('OPEN SETTINGS', vec2(108, 25)) then openSettings() end
 end
 
 local function drawHudSurface(accent, surface)
-  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), surface or colors.surface, 6)
-  ui.drawRectFilled(vec2(0, 12), vec2(3, ui.windowHeight() - 12), accent, 2)
+  local inset = 3
+  ui.drawRectFilled(vec2(inset, inset), ui.windowSize() - vec2(inset, inset), surface or colors.surface, 6)
+  ui.drawRectFilled(vec2(inset, 14), vec2(inset + 3, ui.windowHeight() - 14), accent, 2)
 end
 
 local function brakeHudStyle(state)
@@ -392,15 +405,17 @@ function script.windowGear()
     drawUnavailable(stateError)
     return
   end
-  local half = ui.windowWidth() / 2
-  ui.drawLine(vec2(half, 18), vec2(half, ui.windowHeight() - 12), colors.track, 1)
-  ui.setCursor(vec2(0, 10))
+  local pad = 8
+  local contentWidth = ui.windowWidth() - pad * 2
+  local half = contentWidth / 2
+  ui.drawLine(vec2(pad + half, 18), vec2(pad + half, ui.windowHeight() - 12), colors.track, 1)
+  ui.setCursor(vec2(pad, 10))
   ui.dwriteTextAligned('CURRENT', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 14), false, colors.muted)
-  ui.setCursor(vec2(half, 10))
+  ui.setCursor(vec2(pad + half, 10))
   ui.dwriteTextAligned('REFERENCE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 14), false, colors.purple)
-  ui.setCursor(vec2(0, 28))
+  ui.setCursor(vec2(pad, 28))
   ui.dwriteTextAligned(gearLabel(state.car.gear), 46, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 52), false, colors.text)
-  ui.setCursor(vec2(half, 28))
+  ui.setCursor(vec2(pad + half, 28))
   ui.dwriteTextAligned(gearLabel(state.target and state.target.g or nil), 46, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 52), false, colors.purple)
 end
 
@@ -419,8 +434,8 @@ function script.windowProgress()
   local display = isBraking and '0s' or countdownLabel(state) .. 's'
   ui.setCursor(vec2(0, 3))
   ui.dwriteTextAligned(display, 24, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth(), 28), false, colors.text)
-  local barStart = vec2(12, 40)
-  local barWidth = ui.windowWidth() - 24
+  local barStart = vec2(16, 40)
+  local barWidth = ui.windowWidth() - 32
   local progress = isBraking and 1 or (state.secondsToBrake and math.saturate((5 - state.secondsToBrake) / 5) or 0)
   local centre = barStart.x + barWidth / 2
   local marker = centre + barWidth / 2 * progress
@@ -444,39 +459,40 @@ function script.windowCoach()
   local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
   local surface = isBraking and rgbm(0.58, 0.08, 0.08, 0.98) or (state.throttleCue and rgbm(0.06, 0.26, 0.15, 0.98) or colors.surface)
   drawHudSurface(accent, surface)
-  local third = ui.windowWidth() / 3
-  ui.drawLine(vec2(third, 14), vec2(third, ui.windowHeight() - 14), colors.track, 1)
-  ui.drawLine(vec2(third * 2, 14), vec2(third * 2, ui.windowHeight() - 14), colors.track, 1)
-  ui.setCursor(vec2(0, 10))
+  local pad = 8
+  local third = (ui.windowWidth() - pad * 2) / 3
+  ui.drawLine(vec2(pad + third, 14), vec2(pad + third, ui.windowHeight() - 14), colors.track, 1)
+  ui.drawLine(vec2(pad + third * 2, 14), vec2(pad + third * 2, ui.windowHeight() - 14), colors.track, 1)
+  ui.setCursor(vec2(pad, 10))
   ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(third, 10))
+  ui.setCursor(vec2(pad + third, 10))
   ui.dwriteTextAligned('THROTTLE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(third * 2, 10))
+  ui.setCursor(vec2(pad + third * 2, 10))
   ui.dwriteTextAligned('GEAR', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(0, 30))
+  ui.setCursor(vec2(pad, 30))
   ui.dwriteTextAligned(brakeText, isBraking and 28 or 38, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.text)
-  ui.setCursor(vec2(third, 30))
+  ui.setCursor(vec2(pad + third, 30))
   ui.dwriteTextAligned(throttleText, state.throttleCue and 22 or 38, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, state.throttleCue and colors.text or colors.muted)
-  ui.setCursor(vec2(third * 2, 30))
+  ui.setCursor(vec2(pad + third * 2, 30))
   ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 31, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.purple)
 end
 
 local function drawHudSettings()
-  ui.dwriteText('COUNTDOWN', 13, colors.text)
-  ui.dwriteText('Choose how early the Brake and Progress HUDs appear.', 11, colors.muted)
-  ui.dummy(6)
+  ui.dwriteText('BRAKING CUE', 13, colors.text)
+  ui.dwriteText('Show the countdown this many seconds before the reference braking point.', 11, colors.muted)
+  ui.dummy(8)
   for index, seconds in ipairs({ 5, 8, 10 }) do
     if index > 1 then ui.sameLine() end
     local selected = preferences.countdownLeadSeconds == seconds
     local label = selected and string.format('%ds *##lead-%d', seconds, seconds) or string.format('%ds##lead-%d', seconds, seconds)
     if ui.button(label, vec2(52, 26)) then preferences.countdownLeadSeconds = seconds end
   end
-  ui.dummy(16)
+  ui.dummy(14)
   ui.separator()
   ui.dummy(12)
-  ui.dwriteText('OPEN A HUD', 13, colors.text)
-  ui.dwriteText('Each HUD is its own app window. Close the ones you do not want.', 11, colors.muted)
-  ui.dummy(7)
+  ui.dwriteText('COACHING WINDOWS', 13, colors.text)
+  ui.dwriteText('Open a window, then position it with CSP. Closing it turns that view off.', 11, colors.muted)
+  ui.dummy(9)
   local buttonWidth = math.max(120, (ui.availableSpaceX() - 8) / 2)
   if ui.button('BRAKE', vec2(buttonWidth, 30)) then ac.setWindowOpen('brake', true) end
   ui.sameLine()
@@ -486,14 +502,27 @@ local function drawHudSettings()
   if ui.button('COMBINED', vec2(buttonWidth, 30)) then ac.setWindowOpen('coach', true) end
 end
 
+local function drawSettingsNavigation()
+  local gap = 8
+  local width = (ui.availableSpaceX() - gap) / 2
+  local referenceLabel = settingsPage == 'reference' and 'REFERENCE  ●' or 'REFERENCE'
+  local hudLabel = settingsPage == 'huds' and 'HUDS  ●' or 'HUDS'
+  if ui.button(referenceLabel .. '##settingsReference', vec2(width, 32)) then settingsPage = 'reference' end
+  ui.sameLine()
+  if ui.button(hudLabel .. '##settingsHuds', vec2(width, 32)) then settingsPage = 'huds' end
+end
+
 function script.windowSettings()
   ensureProfileLoaded()
   ensureSessionsRequested()
-  ui.dwriteText('TRACER', 17, colors.green)
-  ui.dwriteText('Choose the reference, then arrange the coaching HUDs around your driving view.', 11, colors.muted)
-  ui.dummy(7)
-  ui.tabBar('tracerSettingsTabs', function()
-    ui.tabItem('REFERENCE', drawSessionPicker)
-    ui.tabItem('HUD WINDOWS', drawHudSettings)
-  end)
+  ui.dwriteText('TRACER', 18, colors.green)
+  ui.dwriteText('Choose a lap to follow and open only the coaching views you need.', 11, colors.muted)
+  ui.dummy(10)
+  drawSettingsNavigation()
+  ui.dummy(12)
+  if settingsPage == 'reference' then
+    drawSessionPicker()
+  else
+    drawHudSettings()
+  end
 end
