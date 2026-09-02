@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { ReactNode } from "react";
-import type { LiveBroadcastOptions, LiveBroadcastStatus, TelemetryStatus } from "./data-source";
+import { useState, type MouseEvent, type ReactNode } from "react";
+import { telemetryDataSource, type LiveBroadcastOptions, type LiveBroadcastStatus, type TelemetryStatus } from "./data-source";
 import { Tooltip } from "./Tooltip";
 
 const desktopWindow = isTauri() ? getCurrentWindow() : null;
@@ -29,6 +29,8 @@ export function TitleBar({
 	onBack?: () => void;
 	backLabel?: string;
 }) {
+	const [confirmingExit, setConfirmingExit] = useState(false);
+	const [exiting, setExiting] = useState(false);
 	const state = status?.connection ?? "waiting";
 	const recording = state === "recording";
 	const failed = state === "error";
@@ -44,8 +46,74 @@ export function TitleBar({
 						? "STOP LIVE"
 						: "GO LIVE";
 
+	async function requestFullExit() {
+		let shouldConfirm = true;
+		try {
+			shouldConfirm = (await telemetryDataSource.getAppBehaviorSettings()).confirmExitEnabled;
+		} catch (error) {
+			console.error("TRACE could not read the exit preference", error);
+		}
+		if (shouldConfirm) {
+			setConfirmingExit(true);
+			return;
+		}
+		await quitCompletely();
+	}
+
+	async function quitCompletely() {
+		setExiting(true);
+		try {
+			await telemetryDataSource.quitApp();
+		} catch (error) {
+			setExiting(false);
+			console.error("TRACE could not quit", error);
+		}
+	}
+
 	return (
 		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
+			{confirmingExit && (
+				<div
+					className="fixed inset-0 z-[200] grid place-items-center bg-black/75 p-6"
+					role="presentation"
+					onMouseDown={(event) => {
+						if (event.target === event.currentTarget && !exiting) setConfirmingExit(false);
+					}}
+				>
+					<section
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="quit-trace-title"
+						className="w-full max-w-md border border-trace-divider bg-trace-deep p-6 shadow-2xl"
+					>
+						<span className="font-mono text-[10px] font-bold tracking-[.14em] text-trace-warning">FULL EXIT</span>
+						<h2 id="quit-trace-title" className="mt-2 text-lg font-black text-trace-text">
+							Quit TRACE completely?
+						</h2>
+						<p className="mt-3 text-[13px] leading-5 text-trace-muted">
+							Recording, overlays, and active live sessions will stop. Right-click exit confirmation can be disabled in Settings.
+						</p>
+						<div className="mt-6 grid grid-cols-2 gap-3">
+							<button
+								type="button"
+								disabled={exiting}
+								onClick={() => setConfirmingExit(false)}
+								className="h-10 border border-trace-divider text-[12px] font-bold text-trace-soft hover:bg-trace-raised disabled:opacity-50"
+							>
+								CANCEL
+							</button>
+							<button
+								type="button"
+								disabled={exiting}
+								onClick={() => void quitCompletely()}
+								className="h-10 border border-trace-warning text-[12px] font-bold text-trace-warning hover:bg-trace-warning hover:text-trace-black disabled:opacity-50"
+							>
+								{exiting ? "QUITTING…" : "QUIT TRACE"}
+							</button>
+						</div>
+					</section>
+				</div>
+			)}
 			<div
 				className="flex items-center border-r border-trace-divider px-5 text-[18px] font-black tracking-[.12em]"
 				data-tauri-drag-region
@@ -125,7 +193,7 @@ export function TitleBar({
 			</Tooltip>
 			<div className="flex" aria-label="Window controls">
 				<WindowButton
-					label="Minimize"
+					label="Minimize to taskbar"
 					onClick={() => {
 						if (desktopWindow) runWindowCommand(() => desktopWindow.minimize());
 					}}
@@ -147,6 +215,10 @@ export function TitleBar({
 				<WindowButton
 					label="Close"
 					close
+					onContextMenu={(event) => {
+						event.preventDefault();
+						void requestFullExit();
+					}}
 					onClick={() => {
 						if (desktopWindow) runWindowCommand(() => desktopWindow.close());
 					}}
@@ -160,13 +232,26 @@ export function TitleBar({
 	);
 }
 
-function WindowButton({ children, close = false, label, onClick }: { children: ReactNode; close?: boolean; label: string; onClick: () => void }) {
+function WindowButton({
+	children,
+	close = false,
+	label,
+	onClick,
+	onContextMenu,
+}: {
+	children: ReactNode;
+	close?: boolean;
+	label: string;
+	onClick: () => void;
+	onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
 	return (
-		<Tooltip className="h-full" content={label}>
+		<Tooltip className="h-full" content={close ? "Close · right-click to quit completely" : label}>
 			<button
 				type="button"
 				aria-label={label}
 				onClick={onClick}
+				onContextMenu={onContextMenu}
 				className={`group grid h-12 w-12 place-items-center border-0 border-l border-trace-divider bg-transparent transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-trace-accent ${
 					close ? "hover:bg-trace-danger" : "hover:bg-trace-raised"
 				}`}

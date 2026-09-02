@@ -436,6 +436,7 @@ export interface StartupSettings {
 
 export interface AppBehaviorSettings {
 	closeToTrayEnabled: boolean;
+	confirmExitEnabled: boolean;
 }
 
 export interface LiveSettings {
@@ -525,6 +526,7 @@ export interface TelemetryDataSource {
 	setLaunchOnStartup(enabled: boolean): Promise<StartupSettings>;
 	getAppBehaviorSettings(): Promise<AppBehaviorSettings>;
 	setAppBehaviorSettings(settings: AppBehaviorSettings): Promise<AppBehaviorSettings>;
+	quitApp(): Promise<void>;
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
 	setDiscordReviewActivity(activity: DiscordReviewActivity | null): Promise<void>;
@@ -561,7 +563,7 @@ const fixtureSessionDetails = new Map<
 >();
 let fixtureDriverProfile: DriverProfile = { name: null };
 let fixtureStartupSettings: StartupSettings = { supported: true, enabled: false };
-let fixtureAppBehaviorSettings: AppBehaviorSettings = { closeToTrayEnabled: false };
+let fixtureAppBehaviorSettings: AppBehaviorSettings = { closeToTrayEnabled: false, confirmExitEnabled: true };
 let fixtureLiveSettings: LiveSettings = {
 	endpoint: "https://live.simtrace.run",
 	discordActivityEnabled: false,
@@ -1220,6 +1222,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureAppBehaviorSettings = settings;
 		return fixtureAppBehaviorSettings;
 	},
+	async quitApp() {},
 	async getLiveSettings() {
 		return fixtureLiveSettings;
 	},
@@ -1392,7 +1395,11 @@ export const tauriDataSource: TelemetryDataSource = {
 	setAppBehaviorSettings(settings) {
 		return invoke<AppBehaviorSettings>("set_app_behavior_settings", {
 			closeToTrayEnabled: settings.closeToTrayEnabled,
+			confirmExitEnabled: settings.confirmExitEnabled,
 		});
+	},
+	quitApp() {
+		return invoke<void>("quit_app");
 	},
 	getLiveSettings() {
 		return invoke<LiveSettings>("live_settings");

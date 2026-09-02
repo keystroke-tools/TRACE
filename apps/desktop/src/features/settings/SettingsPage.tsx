@@ -66,6 +66,8 @@ export function SettingsPage() {
 	const [richComparisonPicker, setRichComparisonPicker] = useState(richComparisonPickerEnabled);
 	const [closeToTrayEnabled, setCloseToTrayEnabled] = useState(false);
 	const [savingCloseToTray, setSavingCloseToTray] = useState(false);
+	const [confirmExitEnabled, setConfirmExitEnabled] = useState(true);
+	const [savingConfirmExit, setSavingConfirmExit] = useState(false);
 
 	async function changeAutoIndexSetups(enabled: boolean) {
 		setAutoIndexSetups(enabled);
@@ -90,8 +92,9 @@ export function SettingsPage() {
 		setCloseToTrayEnabled(enabled);
 		setSavingCloseToTray(true);
 		try {
-			const settings = await telemetryDataSource.setAppBehaviorSettings({ closeToTrayEnabled: enabled });
+			const settings = await telemetryDataSource.setAppBehaviorSettings({ closeToTrayEnabled: enabled, confirmExitEnabled });
 			setCloseToTrayEnabled(settings.closeToTrayEnabled);
+			setConfirmExitEnabled(settings.confirmExitEnabled);
 		} catch (error) {
 			setCloseToTrayEnabled(previous);
 			showToast({
@@ -102,6 +105,27 @@ export function SettingsPage() {
 			});
 		} finally {
 			setSavingCloseToTray(false);
+		}
+	}
+
+	async function changeConfirmExit(enabled: boolean) {
+		const previous = confirmExitEnabled;
+		setConfirmExitEnabled(enabled);
+		setSavingConfirmExit(true);
+		try {
+			const settings = await telemetryDataSource.setAppBehaviorSettings({ closeToTrayEnabled, confirmExitEnabled: enabled });
+			setCloseToTrayEnabled(settings.closeToTrayEnabled);
+			setConfirmExitEnabled(settings.confirmExitEnabled);
+		} catch (error) {
+			setConfirmExitEnabled(previous);
+			showToast({
+				kind: "error",
+				title: "Could not update exit confirmation",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setSavingConfirmExit(false);
 		}
 	}
 
@@ -127,6 +151,7 @@ export function SettingsPage() {
 				setLiveMode(liveSettings.autoStream.mode);
 				setAcSessionTypes(liveSettings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
 				setCloseToTrayEnabled(behaviorSettings.closeToTrayEnabled);
+				setConfirmExitEnabled(behaviorSettings.confirmExitEnabled);
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -619,10 +644,18 @@ export function SettingsPage() {
 					/>
 					<SettingSwitch
 						title="Keep TRACE running in the system tray"
-						description="Closing the main window hides TRACE instead of quitting, so recording and live services can continue in the background. Use the tray icon to reopen or fully quit the app."
+						description="Left-clicking the close button hides TRACE instead of quitting, so recording and live services can continue in the background. Minimize always uses the Windows taskbar."
 						checked={closeToTrayEnabled}
 						disabled={savingCloseToTray}
 						onCheckedChange={(enabled) => void changeCloseToTray(enabled)}
+						className="border-t border-trace-divider p-5"
+					/>
+					<SettingSwitch
+						title="Confirm full exit"
+						description="Ask before right-clicking the close button quits TRACE completely. Turn this off to make right-click exit immediately."
+						checked={confirmExitEnabled}
+						disabled={savingConfirmExit}
+						onCheckedChange={(enabled) => void changeConfirmExit(enabled)}
 						className="border-t border-trace-divider p-5"
 					/>
 				</section>

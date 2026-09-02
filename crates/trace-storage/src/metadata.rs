@@ -488,6 +488,33 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns whether a full exit requested from the title bar should be confirmed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the preference.
+    pub fn confirm_exit_enabled(&self) -> Result<bool, MetadataError> {
+        Ok(self
+            .service_endpoint("confirm_exit_enabled")?
+            .is_none_or(|value| value == "true"))
+    }
+
+    /// Persists the full-exit confirmation preference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot persist the preference.
+    pub fn set_confirm_exit_enabled(&mut self, enabled: bool) -> Result<(), MetadataError> {
+        self.connection
+            .execute(
+                "INSERT INTO app_settings (key, value) VALUES ('confirm_exit_enabled', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [if enabled { "true" } else { "false" }],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
     fn service_endpoint(&self, key: &str) -> Result<Option<String>, MetadataError> {
         self.connection
             .query_row(
@@ -2177,6 +2204,20 @@ mod tests {
             .set_close_to_tray_enabled(false)
             .expect("disable close to tray");
         assert!(!store.close_to_tray_enabled().expect("disabled"));
+    }
+
+    #[test]
+    fn exit_confirmation_defaults_on_and_is_persisted() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        assert!(store.confirm_exit_enabled().expect("default"));
+        store
+            .set_confirm_exit_enabled(false)
+            .expect("disable confirmation");
+        assert!(!store.confirm_exit_enabled().expect("disabled"));
+        store
+            .set_confirm_exit_enabled(true)
+            .expect("enable confirmation");
+        assert!(store.confirm_exit_enabled().expect("enabled"));
     }
 
     #[test]

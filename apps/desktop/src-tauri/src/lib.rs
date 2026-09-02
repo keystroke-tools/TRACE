@@ -86,6 +86,7 @@ struct DriverProfile {
 #[serde(rename_all = "camelCase")]
 struct AppBehaviorSettings {
     close_to_tray_enabled: bool,
+    confirm_exit_enabled: bool,
 }
 
 const DEFAULT_LIVE_SERVICE_ENDPOINT: &str = "https://live.simtrace.run";
@@ -640,6 +641,9 @@ fn app_behavior_settings(app: tauri::AppHandle) -> Result<AppBehaviorSettings, S
         close_to_tray_enabled: store
             .close_to_tray_enabled()
             .map_err(|error| format!("failed to read app behavior settings: {error:?}"))?,
+        confirm_exit_enabled: store
+            .confirm_exit_enabled()
+            .map_err(|error| format!("failed to read app behavior settings: {error:?}"))?,
     })
 }
 
@@ -648,6 +652,7 @@ fn app_behavior_settings(app: tauri::AppHandle) -> Result<AppBehaviorSettings, S
 fn set_app_behavior_settings(
     app: tauri::AppHandle,
     close_to_tray_enabled: bool,
+    confirm_exit_enabled: bool,
 ) -> Result<AppBehaviorSettings, String> {
     let directory = app
         .path()
@@ -658,11 +663,21 @@ fn set_app_behavior_settings(
     store
         .set_close_to_tray_enabled(close_to_tray_enabled)
         .map_err(|error| format!("failed to save app behavior settings: {error:?}"))?;
+    store
+        .set_confirm_exit_enabled(confirm_exit_enabled)
+        .map_err(|error| format!("failed to save app behavior settings: {error:?}"))?;
     app.state::<CloseToTrayState>()
         .set_enabled(close_to_tray_enabled);
     Ok(AppBehaviorSettings {
         close_to_tray_enabled,
+        confirm_exit_enabled,
     })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -2673,6 +2688,7 @@ pub fn run() {
             set_launch_on_startup,
             app_behavior_settings,
             set_app_behavior_settings,
+            quit_app,
             driver_profile,
             set_driver_profile,
             live_settings,
