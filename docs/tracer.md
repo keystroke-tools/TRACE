@@ -12,19 +12,22 @@ Corsa directory. The bundled app is copied to
 those files at startup so the desktop application and HUD stay compatible. Tracer uses
 the same manually configured or auto-detected installation shown on the Settings page.
 
-Open Assetto Corsa with CSP enabled. Tracer provides three independently positioned
-windows in the in-game app shelf:
+Open Assetto Corsa with CSP enabled. **Tracer** is the normal primary app with standard
+window controls and two tabs: **Reference** selects a session/lap and **HUD Windows**
+opens the optional coaching surfaces. The in-game app shelf also provides three
+independently positioned HUD windows:
 
 - **Tracer - Brake** is a borderless HUD showing a reference-time countdown, the
   brake-now cue, and reference brake pressure;
-- **Tracer - Gear** shows the current and reference gears; and
-- **Tracer - References** remains a conventional window for session and lap selection.
+- **Tracer - Progress** is a compact delta-style bar with a centre baseline and a marker
+  moving toward the brake event; and
+- **Tracer - Gear** shows the current and reference gears.
 
 There is deliberately no live pedal-input display: Tracer is a coaching aid rather
 than another pedal telemetry overlay. Users can open only the coaching windows they
-want and keep the larger reference browser closed while driving.
+want and keep the larger settings window closed while driving.
 
-Keep TRACE running while choosing a reference. The References window asks TRACE's
+Keep TRACE running while choosing a reference. The Reference tab asks TRACE's
 loopback-only bridge for recorded sessions matching the current source car, track, and
 layout. Expand a session and select any timed lap; the fastest valid lap is marked as a
 convenient default rather than being forced. Selecting a lap makes TRACE:
@@ -42,7 +45,7 @@ differ. The HUD visibly marks an active manual track override.
 Tracer shows a preparing state during generation and begins coaching when the reference
 is ready. The generated reference remains usable if TRACE is subsequently closed.
 The bridge response and generated profile must both contain the selected session ID and
-lap index; the CSP app rejects the result if either differs. The References window also
+lap index; the CSP app rejects the result if either differs. The Reference tab also
 shows the active driver, optional session title, lap number, and lap time.
 
 The coaching windows show:
@@ -50,6 +53,7 @@ The coaching windows show:
 - whole reference seconds to the next braking zone, counting down to `BRAKE!`;
 - a prominent brake-now state while inside that zone;
 - reference brake pressure at the current distance; and
+- a compact delta-style progress marker for the same countdown; and
 - current and reference gear.
 
 ## Reference profile

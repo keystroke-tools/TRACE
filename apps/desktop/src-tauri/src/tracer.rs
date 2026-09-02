@@ -542,9 +542,10 @@ mod tests {
         assert!(installed.join("icon.png").is_file());
         let manifest = std::fs::read_to_string(installed.join("manifest.ini"))
             .expect("installed manifest is readable");
+        assert!(manifest.contains("FUNCTION_MAIN = windowSettings"));
         assert!(manifest.contains("FUNCTION_MAIN = windowBrake"));
+        assert!(manifest.contains("FUNCTION_MAIN = windowProgress"));
         assert!(manifest.contains("FUNCTION_MAIN = windowGear"));
-        assert!(manifest.contains("FUNCTION_MAIN = windowReferences"));
     }
 
     #[test]
