@@ -27,6 +27,10 @@ There is deliberately no live pedal-input display: Tracer is a coaching aid rath
 than another pedal telemetry overlay. Users can open only the coaching windows they
 want and keep the larger settings window closed while driving.
 
+The **HUD Windows** tab stores its preferences in CSP: enable or disable the Brake,
+Progress, and Gear windows independently, and choose a 5, 8, or 10-second reference
+countdown lead time for Brake and Progress.
+
 Keep TRACE running while choosing a reference. The Reference tab asks TRACE's
 loopback-only bridge for recorded sessions matching the current source car, track, and
 layout. Expand a session and select any timed lap; the fastest valid lap is marked as a

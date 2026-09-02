@@ -15,6 +15,12 @@ local expandedSessionId = nil
 local pendingSelection = nil
 local profileTrackOverride = false
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
+local preferences = ac.storage({
+  countdownLeadSeconds = 10,
+  showBrake = true,
+  showProgress = true,
+  showGear = true
+})
 
 local colors = {
   text = rgbm(0.94, 0.94, 0.94, 1),
@@ -349,7 +355,7 @@ function script.windowBrake()
     return
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 10) then return end
+  if not preferences.showBrake or (not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds)) then return end
 
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
@@ -358,6 +364,7 @@ end
 
 function script.windowGear()
   ensureProfileLoaded()
+  if not preferences.showGear then return end
   drawHudSurface(colors.purple)
   local state, stateError = coachState()
   if not state then
@@ -385,7 +392,7 @@ function script.windowProgress()
     return
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 10) then return end
+  if not preferences.showProgress or (not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds)) then return end
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
   local display = isBraking and 'BRAKE NOW' or countdownLabel(state) .. 's'
@@ -402,10 +409,32 @@ function script.windowProgress()
   ui.drawRectFilled(vec2(marker - 2, barStart.y - 3), vec2(marker + 2, barStart.y + 15), colors.text, 2)
 end
 
+local function drawHudToggle(label, detail, key, windowId)
+  if ui.checkbox(label, preferences[key]) then
+    preferences[key] = not preferences[key]
+    if not preferences[key] then ac.setWindowOpen(windowId, false) end
+  end
+  ui.sameLine()
+  ui.dwriteText(detail, 11, colors.muted)
+end
+
 local function drawHudSettings()
   ui.dwriteText('HUD WINDOWS', 13, colors.text)
   ui.dwriteText('Keep only the coaching views you want on screen. They stay borderless and independently positionable.', 11, colors.muted)
   ui.dummy(8)
+
+  ui.dwriteText('COUNTDOWN LEAD TIME', 10, colors.muted)
+  for index, seconds in ipairs({ 5, 8, 10 }) do
+    if index > 1 then ui.sameLine() end
+    local selected = preferences.countdownLeadSeconds == seconds
+    local label = selected and string.format('%ds *##lead-%d', seconds, seconds) or string.format('%ds##lead-%d', seconds, seconds)
+    if ui.button(label, vec2(52, 26)) then preferences.countdownLeadSeconds = seconds end
+  end
+  ui.dummy(8)
+  drawHudToggle('Brake countdown', 'Large alert at the selected lead time.', 'showBrake', 'brake')
+  drawHudToggle('Progress bar', 'Compact delta-style marker for the same event.', 'showProgress', 'progress')
+  drawHudToggle('Gear target', 'Current and reference gear side by side.', 'showGear', 'gear')
+  ui.dummy(10)
   if ui.button('OPEN BRAKE HUD', vec2(132, 28)) then ac.setWindowOpen('brake', true) end
   ui.sameLine()
   if ui.button('OPEN PROGRESS', vec2(132, 28)) then ac.setWindowOpen('progress', true) end
