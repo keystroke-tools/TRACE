@@ -297,8 +297,8 @@ export function SettingsPage() {
 			setTracerStatus(status);
 			showToast({
 				kind: "success",
-				title: "Tracer installed",
-				message: "Open the Tracer app from Assetto Corsa's CSP app shelf. TRACE will manage future updates automatically.",
+				title: `Tracer ${status.bundledVersion} installed`,
+				message: "Restart Assetto Corsa if it is already running so CSP reloads the updated app.",
 				timeoutMs: 7_000,
 			});
 		} catch (error) {
@@ -873,8 +873,9 @@ export function SettingsPage() {
 													<span className={`size-2 rounded-full ${tracerStatus?.installed ? "bg-trace-accent" : "bg-trace-dim"}`} />
 												</div>
 												<p className="mt-1 text-[12px] leading-5 text-trace-dim">
-													Installs the bundled CSP app. Choose matching reference sessions from inside Assetto Corsa while TRACE is
-													running.
+													{tracerStatus?.installed
+														? `Installed ${tracerStatus.installedVersion ?? "unknown"} · bundled ${tracerStatus.bundledVersion}. Restart Assetto Corsa after updating.`
+														: "Install the bundled CSP app, then choose reference laps from inside Assetto Corsa."}
 												</p>
 											</div>
 											<button
@@ -883,7 +884,13 @@ export function SettingsPage() {
 												onClick={() => void installTracer()}
 												className="h-10 min-w-32 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:text-trace-dim"
 											>
-												{installingTracer ? "INSTALLING…" : tracerStatus?.installed ? "UPDATE TRACER" : "INSTALL TRACER"}
+												{installingTracer
+													? "INSTALLING…"
+													: tracerStatus?.updateAvailable
+														? `UPDATE TO ${tracerStatus.bundledVersion}`
+														: tracerStatus?.installed
+															? "REINSTALL TRACER"
+															: "INSTALL TRACER"}
 											</button>
 										</div>
 									)}

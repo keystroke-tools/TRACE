@@ -235,6 +235,9 @@ export interface LapTrace {
 export interface TracerInstallStatus {
 	installed: boolean;
 	installPath: string;
+	installedVersion?: string | null;
+	bundledVersion: string;
+	updateAvailable: boolean;
 }
 
 export interface LapComparison {
@@ -999,10 +1002,22 @@ export const fixtureDataSource: TelemetryDataSource = {
 		};
 	},
 	async getTracerInstallStatus() {
-		return { installed: false, installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer" };
+		return {
+			installed: false,
+			installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer",
+			installedVersion: null,
+			bundledVersion: "0.8.3",
+			updateAvailable: false,
+		};
 	},
 	async installTracer() {
-		return { installed: true, installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer" };
+		return {
+			installed: true,
+			installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer",
+			installedVersion: "0.8.3",
+			bundledVersion: "0.8.3",
+			updateAvailable: false,
+		};
 	},
 	async getGameInstallDirectories() {
 		return [

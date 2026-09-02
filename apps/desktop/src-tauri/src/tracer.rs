@@ -38,6 +38,9 @@ pub(super) struct TracerReferenceStatus {
 pub(super) struct TracerInstallStatus {
     installed: bool,
     install_path: String,
+    installed_version: Option<String>,
+    bundled_version: String,
+    update_available: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,20 +238,12 @@ pub(super) fn prepare_reference(
 
 pub(super) fn install(app: &tauri::AppHandle) -> Result<TracerInstallStatus, String> {
     let install_path = install_app(&assetto_corsa_root(app)?)?;
-    Ok(TracerInstallStatus {
-        installed: true,
-        install_path: install_path.to_string_lossy().into_owned(),
-    })
+    Ok(install_status_at(install_path))
 }
 
 pub(super) fn install_status(app: &tauri::AppHandle) -> Result<TracerInstallStatus, String> {
     let install_path = tracer_install_path(app)?;
-    let installed = install_path.join("TRACE_Tracer.lua").is_file()
-        && install_path.join("manifest.ini").is_file();
-    Ok(TracerInstallStatus {
-        installed,
-        install_path: install_path.to_string_lossy().into_owned(),
-    })
+    Ok(install_status_at(install_path))
 }
 
 pub(super) fn refresh_if_installed(app: &tauri::AppHandle) {
@@ -261,8 +256,39 @@ pub(super) fn refresh_if_installed(app: &tauri::AppHandle) {
         .join(APP_DIRECTORY)
         .is_dir()
     {
-        let _ = install_app(&ac_root);
+        if let Err(error) = install_app(&ac_root) {
+            eprintln!("TRACE could not refresh the installed Tracer app: {error}");
+        }
     }
+}
+
+fn install_status_at(install_path: PathBuf) -> TracerInstallStatus {
+    let manifest_path = install_path.join("manifest.ini");
+    let installed = install_path.join("TRACE_Tracer.lua").is_file() && manifest_path.is_file();
+    let installed_version = fs::read_to_string(manifest_path)
+        .ok()
+        .and_then(|manifest| manifest_version(&manifest));
+    let bundled_version = manifest_version(MANIFEST).unwrap_or_else(|| "unknown".into());
+    let update_available = installed
+        && installed_version
+            .as_deref()
+            .is_none_or(|version| version != bundled_version);
+    TracerInstallStatus {
+        installed,
+        install_path: install_path.to_string_lossy().into_owned(),
+        installed_version,
+        bundled_version,
+        update_available,
+    }
+}
+
+fn manifest_version(manifest: &str) -> Option<String> {
+    manifest.lines().find_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        key.trim()
+            .eq_ignore_ascii_case("VERSION")
+            .then(|| value.trim().to_owned())
+    })
 }
 
 pub(super) fn matching_sessions(
@@ -585,6 +611,15 @@ mod tests {
             detect_throttle_cues(&samples, &zones),
             vec![ThrottleCue { start_m: 50.0 }]
         );
+    }
+
+    #[test]
+    fn reads_the_csp_app_version_from_its_manifest() {
+        assert_eq!(
+            super::manifest_version(super::MANIFEST).as_deref(),
+            Some("0.8.3")
+        );
+        assert_eq!(super::manifest_version("[ABOUT]\nNAME = Tracer\n"), None);
     }
 
     #[test]
