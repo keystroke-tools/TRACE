@@ -45,6 +45,7 @@ mod setup_analysis;
 mod setup_editor;
 mod setup_import;
 mod startup;
+mod tracer;
 mod tray;
 
 use ac_content::{AcContentNames, AcTrackGeometry};
@@ -244,6 +245,10 @@ struct LapComparisonSample {
 #[serde(rename_all = "camelCase")]
 struct LapTrace {
     session_id: String,
+    simulator_id: String,
+    source_track_id: Option<String>,
+    layout_id: Option<String>,
+    source_car_id: Option<String>,
     lap_index: u32,
     lap_time: String,
     track: String,
@@ -1245,6 +1250,10 @@ fn visualize_session_lap(
     let (track, car) = session_content_names(&store, &session)?;
     Ok(LapTrace {
         session_id,
+        simulator_id: session.simulator_key.clone(),
+        source_track_id: session.source_track_id.clone(),
+        layout_id: session.layout_id.clone(),
+        source_car_id: session.source_car_id.clone(),
         lap_index,
         lap_time,
         track,
@@ -1253,6 +1262,17 @@ fn visualize_session_lap(
         track_map,
         samples,
     })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn prepare_tracer_reference(
+    app: tauri::AppHandle,
+    session_id: String,
+    lap_index: u32,
+) -> Result<tracer::TracerReferenceStatus, String> {
+    let trace = visualize_session_lap(app.clone(), session_id, lap_index)?;
+    tracer::prepare_reference(&app, &trace)
 }
 
 fn track_map_for_session(
@@ -2636,6 +2656,7 @@ pub fn run() {
             compare_setups,
             session_lap_metrics,
             visualize_session_lap,
+            prepare_tracer_reference,
             compare_session_laps,
             game_install_directories,
             set_game_install_directory,

@@ -48,6 +48,7 @@ tested code.
 | [Assetto Corsa integration](docs/assetto-corsa.md)                | Capture boundary, mappings, and known omissions                  |
 | [Assetto Corsa API reference](docs/ac-shared-memory-reference.md) | Shared-memory pages, fields, offsets, units, and storage keys    |
 | [Corner analysis](docs/corner-analysis.md)                        | Deterministic corner detection and time-loss analysis            |
+| [Tracer driving cues](docs/tracer.md)                             | CSP Lua HUD, reference profile, and braking-zone extraction      |
 | [Session package](docs/session-package.md)                        | Portable `.trace` format and import safety limits                |
 | [Setup imports](docs/setup-import.md)                             | Simulator-aware setup archive handling                           |
 | [MoTeC telemetry import](docs/motec-import.md)                    | Paired `.ld`/`.ldx` import, fixtures, mappings, and CSV foundation |

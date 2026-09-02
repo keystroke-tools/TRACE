@@ -217,6 +217,10 @@ export interface TrackMapPoint {
 
 export interface LapTrace {
 	sessionId: string;
+	simulatorId: string;
+	sourceTrackId?: string | null;
+	layoutId?: string | null;
+	sourceCarId?: string | null;
 	lapIndex: number;
 	lapTime: string;
 	track: string;
@@ -224,6 +228,16 @@ export interface LapTrace {
 	lapLengthM: number;
 	trackMap?: TrackMapAsset | null;
 	samples: LapTraceSample[];
+}
+
+export interface TracerReferenceStatus {
+	installed: boolean;
+	installPath: string;
+	referencePath: string;
+	sessionId: string;
+	lapIndex: number;
+	lapTime: string;
+	brakeZoneCount: number;
 }
 
 export interface LapComparison {
@@ -488,6 +502,7 @@ export interface TelemetryDataSource {
 	getSessions(): Promise<RecordedSessionSummary[]>;
 	getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
 	visualizeSessionLap(sessionId: string, lapIndex: number): Promise<LapTrace>;
+	prepareTracerReference(sessionId: string, lapIndex: number): Promise<TracerReferenceStatus>;
 	compareSessionLaps(referenceSessionId: string, referenceLapIndex: number, comparisonSessionId: string, comparisonLapIndex: number): Promise<LapComparison>;
 	getGameInstallDirectories(): Promise<GameInstallDirectory[]>;
 	setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
@@ -958,6 +973,10 @@ export const fixtureDataSource: TelemetryDataSource = {
 		const comparison = await this.compareSessionLaps(sessionId, lapIndex, sessionId, lapIndex + 1);
 		return {
 			sessionId,
+			simulatorId: "assetto-corsa",
+			sourceTrackId: "mugello",
+			layoutId: null,
+			sourceCarId: "tatuusfa1",
 			lapIndex,
 			lapTime: comparison.referenceLapTime,
 			track: comparison.referenceTrack,
@@ -977,6 +996,17 @@ export const fixtureDataSource: TelemetryDataSource = {
 				airTemperatureC: sample.referenceAirTemperatureC,
 				trackTemperatureC: sample.referenceTrackTemperatureC,
 			})),
+		};
+	},
+	async prepareTracerReference(sessionId, lapIndex) {
+		return {
+			installed: true,
+			installPath: "C:\\Assetto Corsa\\apps\\lua\\TRACE_Tracer",
+			referencePath: "C:\\Documents\\Assetto Corsa\\cfg\\extension\\state\\lua\\app\\TRACE_Tracer\\reference.json",
+			sessionId,
+			lapIndex,
+			lapTime: "1:48.214",
+			brakeZoneCount: 8,
 		};
 	},
 	async getGameInstallDirectories() {
@@ -1292,6 +1322,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	visualizeSessionLap(sessionId, lapIndex) {
 		return invoke<LapTrace>("visualize_session_lap", { sessionId, lapIndex });
+	},
+	prepareTracerReference(sessionId, lapIndex) {
+		return invoke<TracerReferenceStatus>("prepare_tracer_reference", { sessionId, lapIndex });
 	},
 	compareSessionLaps(referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex) {
 		return invoke<LapComparison>("compare_session_laps", { referenceSessionId, referenceLapIndex, comparisonSessionId, comparisonLapIndex });

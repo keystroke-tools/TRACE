@@ -29,4 +29,5 @@ behaviour, while `SPEC.md` defines intended product direction.
 | [Setup imports](setup-import.md)                             | Simulator adapter boundary, supported archive layouts, install behavior, and safety bounds                         |
 | [MoTeC telemetry import](motec-import.md)                    | Paired `.ld`/`.ldx` import, conservative mappings, fixture matrix, and CSV foundation                               |
 | [Live pedal overlay](pedal-overlay.md)                       | Standalone overlay controls, customisation, OBS capture, and data flow                                             |
+| [Tracer driving cues](tracer.md)                             | CSP Lua HUD installation, compact reference profile, alignment, and current limitations                           |
 | [Asset provenance](assets.md)                                | Origin and processing history for generated project assets                                                         |
