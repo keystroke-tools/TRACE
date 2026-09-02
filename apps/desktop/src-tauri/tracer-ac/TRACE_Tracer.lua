@@ -16,11 +16,7 @@ local pendingSelection = nil
 local profileTrackOverride = false
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
 local preferences = ac.storage({
-  countdownLeadSeconds = 10,
-  showBrake = true,
-  showProgress = true,
-  showGear = true,
-  showCoach = false
+  countdownLeadSeconds = 10
 })
 
 local colors = {
@@ -229,38 +225,51 @@ local function drawSessionPicker()
   end
   if not sessions or #sessions == 0 then return end
 
-  ui.childWindow('matchingSessions', vec2(0, ui.availableSpaceY()), false, function()
+  local selectedSession = nil
+  for i = 1, #sessions do
+    if sessions[i].id == expandedSessionId then selectedSession = sessions[i] end
+  end
+
+  local availableHeight = ui.availableSpaceY()
+  local sessionListHeight = selectedSession and math.max(80, math.min(availableHeight * 0.42, 190)) or availableHeight
+  ui.dwriteText('SESSIONS', 10, colors.muted)
+  ui.childWindow('matchingSessions', vec2(0, sessionListHeight), false, function()
     for i = 1, #sessions do
       local session = sessions[i]
-      if ui.selectable(sessionLabel(session), false, ui.SelectableFlags.None, vec2(0, 34)) then
-        expandedSessionId = expandedSessionId == session.id and nil or session.id
+      if ui.selectable(sessionLabel(session), expandedSessionId == session.id, ui.SelectableFlags.None, vec2(0, 34)) then
+        expandedSessionId = session.id
         pendingSelection = nil
       end
-      if expandedSessionId == session.id then
-        if not session.exactMatch then
-          ui.dwriteText('Different track: distance-aligned cues may not match this layout.', 11, colors.red)
+    end
+  end)
+
+  if not selectedSession then return end
+  ui.dummy(8)
+  ui.dwriteText('LAPS', 10, colors.muted)
+  if not selectedSession.exactMatch then
+    ui.sameLine()
+    ui.dwriteText('DIFFERENT TRACK', 10, colors.red)
+  end
+  ui.childWindow('matchingLaps', vec2(0, ui.availableSpaceY()), false, function()
+    for lapIndex = 1, #(selectedSession.laps or {}) do
+      local lap = selectedSession.laps[lapIndex]
+      if ui.selectable(lapLabel(selectedSession, lap), false, ui.SelectableFlags.None, vec2(0, 28)) then
+        if selectedSession.exactMatch then
+          activateSession(selectedSession, lap)
+        else
+          pendingSelection = { session = selectedSession, lap = lap }
         end
-        for lapIndex = 1, #(session.laps or {}) do
-          local lap = session.laps[lapIndex]
-          if ui.selectable(lapLabel(session, lap), false, ui.SelectableFlags.None, vec2(0, 28)) then
-            if session.exactMatch then
-              activateSession(session, lap)
-            else
-              pendingSelection = { session = session, lap = lap }
-            end
-          end
-        end
-        if pendingSelection and pendingSelection.session.id == session.id then
-          ui.dwriteText('LOAD A DIFFERENT TRACK?', 13, colors.red)
-          ui.dwriteText('Only use compatible layouts. Tracer cannot guarantee cue alignment.', 11, colors.muted)
-          if ui.button('CANCEL##trackOverride', vec2(90, 26)) then
-            pendingSelection = nil
-          end
-          ui.sameLine()
-          if ui.button('LOAD ANYWAY##trackOverride', vec2(120, 26)) then
-            activateSession(pendingSelection.session, pendingSelection.lap)
-          end
-        end
+      end
+    end
+    if pendingSelection and pendingSelection.session.id == selectedSession.id then
+      ui.dummy(6)
+      ui.dwriteText('This layout might not align with the reference cues.', 11, colors.red)
+      if ui.button('CANCEL##trackOverride', vec2(90, 26)) then
+        pendingSelection = nil
+      end
+      ui.sameLine()
+      if ui.button('LOAD ANYWAY##trackOverride', vec2(120, 26)) then
+        activateSession(pendingSelection.session, pendingSelection.lap)
       end
     end
   end)
@@ -368,16 +377,15 @@ function script.windowBrake()
     return
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if not preferences.showBrake or (not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds)) then return end
+  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds) then return end
 
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
-  centeredText(countdownLabel(state), isBraking and 70 or 76, 24, colors.text, 82)
+  centeredText(countdownLabel(state), isBraking and 46 or 72, 14, colors.text, 84)
 end
 
 function script.windowGear()
   ensureProfileLoaded()
-  if not preferences.showGear then return end
   drawHudSurface(colors.purple)
   local state, stateError = coachState()
   if not state then
@@ -405,10 +413,10 @@ function script.windowProgress()
     return
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if not preferences.showProgress or (not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds)) then return end
+  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds) then return end
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
-  local display = isBraking and 'BRAKE NOW' or countdownLabel(state) .. 's'
+  local display = isBraking and '0s' or countdownLabel(state) .. 's'
   ui.setCursor(vec2(0, 3))
   ui.dwriteTextAligned(display, 24, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth(), 28), false, colors.text)
   local barStart = vec2(12, 40)
@@ -424,7 +432,6 @@ end
 
 function script.windowCoach()
   ensureProfileLoaded()
-  if not preferences.showCoach then return end
   local state, stateError = coachState()
   if not state then
     drawHudSurface(colors.red)
@@ -454,52 +461,29 @@ function script.windowCoach()
   ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 31, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.purple)
 end
 
-local function drawHudToggle(label, detail, key, windowId)
-  if ui.checkbox(label, preferences[key]) then
-    preferences[key] = not preferences[key]
-    if not preferences[key] then ac.setWindowOpen(windowId, false) end
-  end
-  ui.sameLine()
-  ui.dwriteText(detail, 11, colors.muted)
-end
-
 local function drawHudSettings()
-  ui.dwriteText('HUD WINDOWS', 13, colors.text)
-  ui.dwriteText('Keep only the coaching views you want on screen. They stay borderless and independently positionable.', 11, colors.muted)
-  ui.dummy(8)
-
-  ui.dwriteText('COUNTDOWN LEAD TIME', 10, colors.muted)
+  ui.dwriteText('COUNTDOWN', 13, colors.text)
+  ui.dwriteText('Choose how early the Brake and Progress HUDs appear.', 11, colors.muted)
+  ui.dummy(6)
   for index, seconds in ipairs({ 5, 8, 10 }) do
     if index > 1 then ui.sameLine() end
     local selected = preferences.countdownLeadSeconds == seconds
     local label = selected and string.format('%ds *##lead-%d', seconds, seconds) or string.format('%ds##lead-%d', seconds, seconds)
     if ui.button(label, vec2(52, 26)) then preferences.countdownLeadSeconds = seconds end
   end
-  ui.dummy(8)
-  drawHudToggle('Brake countdown', 'Large alert at the selected lead time.', 'showBrake', 'brake')
-  drawHudToggle('Progress bar', 'Compact delta-style marker for the same event.', 'showProgress', 'progress')
-  drawHudToggle('Gear target', 'Current and reference gear side by side.', 'showGear', 'gear')
-  drawHudToggle('Combined coach', 'Brake, throttle and gear in one rectangular HUD.', 'showCoach', 'coach')
-  ui.dummy(10)
-  if ui.button('OPEN BRAKE HUD', vec2(132, 28)) then ac.setWindowOpen('brake', true) end
-  ui.sameLine()
-  if ui.button('OPEN PROGRESS', vec2(132, 28)) then ac.setWindowOpen('progress', true) end
-  ui.sameLine()
-  if ui.button('OPEN GEAR', vec2(112, 28)) then ac.setWindowOpen('gear', true) end
-  ui.dummy(5)
-  if ui.button('OPEN COMBINED', vec2(126, 28)) then ac.setWindowOpen('coach', true) end
+  ui.dummy(16)
+  ui.separator()
   ui.dummy(12)
-  ui.dwriteText('BRAKE', 11, colors.red)
-  ui.dwriteText('High-visibility five-second countdown and brake-now alert.', 11, colors.muted)
-  ui.dummy(5)
-  ui.dwriteText('PROGRESS', 11, colors.purple)
-  ui.dwriteText('A compact delta-style timing bar with a moving braking marker.', 11, colors.muted)
-  ui.dummy(5)
-  ui.dwriteText('GEAR', 11, colors.purple)
-  ui.dwriteText('Current and reference gear, side by side.', 11, colors.muted)
-  ui.dummy(5)
-  ui.dwriteText('COMBINED COACH', 11, colors.purple)
-  ui.dwriteText('Brake, throttle and gear in one compact rectangular HUD.', 11, colors.muted)
+  ui.dwriteText('OPEN A HUD', 13, colors.text)
+  ui.dwriteText('Each HUD is its own app window. Close the ones you do not want.', 11, colors.muted)
+  ui.dummy(7)
+  local buttonWidth = math.max(120, (ui.availableSpaceX() - 8) / 2)
+  if ui.button('BRAKE', vec2(buttonWidth, 30)) then ac.setWindowOpen('brake', true) end
+  ui.sameLine()
+  if ui.button('PROGRESS', vec2(buttonWidth, 30)) then ac.setWindowOpen('progress', true) end
+  if ui.button('GEAR', vec2(buttonWidth, 30)) then ac.setWindowOpen('gear', true) end
+  ui.sameLine()
+  if ui.button('COMBINED', vec2(buttonWidth, 30)) then ac.setWindowOpen('coach', true) end
 end
 
 function script.windowSettings()
