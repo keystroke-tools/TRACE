@@ -119,13 +119,13 @@ local function refreshSessions()
   end)
 end
 
-local function activateSession(session, lap)
+local function generateReference(sessionId, lapIndex, lapTime, allowTrackMismatch)
   local request = currentIdentity()
-  request.sessionId = session.id
-  request.lapIndex = lap.index
-  request.allowTrackMismatch = not session.exactMatch
+  request.sessionId = sessionId
+  request.lapIndex = lapIndex
+  request.allowTrackMismatch = allowTrackMismatch
   requestState = 'preparing'
-  requestMessage = string.format('Preparing %s…', lap.time)
+  requestMessage = string.format('Rebuilding %s…', lapTime)
   web.post(bridgeUrl .. '/api/tracer/reference', bridgeHeaders, JSON.stringify(request), function(err, response)
     local value, parseError = parseResponse(err, response)
     if not value then
@@ -139,7 +139,7 @@ local function activateSession(session, lap)
       return
     end
     local source = profile.source or {}
-    if value.sessionId ~= session.id or value.lapIndex ~= lap.index or source.sessionId ~= session.id or source.lapIndex ~= lap.index then
+    if value.sessionId ~= sessionId or value.lapIndex ~= lapIndex or source.sessionId ~= sessionId or source.lapIndex ~= lapIndex then
       profile = nil
       profileError = 'TRACE returned a different lap than the one selected.'
       requestState = 'error'
@@ -147,10 +147,14 @@ local function activateSession(session, lap)
       return
     end
     requestState = 'ready'
-    requestMessage = string.format('Loaded lap %d · %s', lap.index, lap.time)
-    profileTrackOverride = not session.exactMatch
+    requestMessage = string.format('Loaded lap %d · %s', lapIndex, lapTime)
+    profileTrackOverride = allowTrackMismatch
     pendingSelection = nil
   end)
+end
+
+local function activateSession(session, lap)
+  generateReference(session.id, lap.index, lap.time, not session.exactMatch)
 end
 
 local function sampleAt(distanceM)
@@ -217,12 +221,20 @@ local function drawSessionPicker()
     if source.title and source.title ~= source.driver then identity = identity .. '  ·  ' .. source.title end
     local start = ui.getCursor()
     local width = ui.availableSpaceX()
-    ui.drawRectFilled(start, start + vec2(width, 38), rgbm(0.18, 0.11, 0.25, 1), 4)
-    ui.setCursor(start + vec2(10, 6))
+    ui.drawRectFilled(start, start + vec2(width, 58), rgbm(0.18, 0.11, 0.25, 1), 4)
+    ui.setCursor(start + vec2(10, 9))
     ui.dwriteText('ACTIVE REFERENCE', 10, colors.purple)
-    ui.setCursor(start + vec2(10, 19))
+    ui.setCursor(start + vec2(10, 32))
     ui.dwriteText(string.format('%s  ·  LAP %d  ·  %s', identity, source.lapIndex, source.lapTime), 11, colors.text)
-    ui.dummy(vec2(width, 44))
+    ui.setCursor(start + vec2(width - 104, 8))
+    if requestState ~= 'preparing' and ui.button('REBUILD', vec2(94, 28)) then
+      local identity = currentIdentity()
+      local allowMismatch = profileTrackOverride
+          or identity.trackId ~= profile.trackId
+          or (identity.layoutId or '') ~= (profile.layoutId or '')
+      generateReference(source.sessionId, source.lapIndex, source.lapTime, allowMismatch)
+    end
+    ui.setCursor(start + vec2(0, 64))
   end
   ui.dwriteText('REFERENCE LAP', 13, colors.text)
   ui.dwriteText(string.format('%s  ·  %s', ac.getCarName(0) or ac.getCarID(0) or 'Unknown car', ac.getTrackName() or ac.getTrackID()), 11, colors.muted)

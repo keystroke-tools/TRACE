@@ -44,6 +44,10 @@ convenient default rather than being forced. Selecting a lap makes TRACE:
 3. derive stable braking zones from the brake channel; and
 4. write `reference.json` to CSP's writable per-app configuration directory.
 
+Selecting a lap always regenerates and replaces that file. The active-reference card
+also provides **Rebuild** so the same lap can be forced through generation again after
+an app update or when recovering an older profile.
+
 Exact car, track, and layout matches are shown first. **Other tracks** broadens the
 list to sessions recorded with the same car. Loading one requires an explicit warning
 confirmation because percentage-of-lap alignment can drift when layouts or lengths
