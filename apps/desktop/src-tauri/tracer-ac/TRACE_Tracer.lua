@@ -312,9 +312,17 @@ local function drawUnavailable(message)
   if ui.button('REFERENCES', vec2(108, 25)) then openReferences() end
 end
 
-local function drawHudSurface(accent)
-  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), colors.surface, 6)
+local function drawHudSurface(accent, surface)
+  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), surface or colors.surface, 6)
   ui.drawRectFilled(vec2(0, 12), vec2(3, ui.windowHeight() - 12), accent, 2)
+end
+
+local function brakeHudColor(state)
+  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
+  if isBraking then return colors.red, rgbm(0.78, 0.10, 0.10, 0.98), true end
+  if not state.secondsToBrake then return colors.muted, colors.surface, false end
+  local urgency = math.saturate((5 - state.secondsToBrake) / 5)
+  return rgbm(0.92, 0.25, 0.25, 1), rgbm(0.08 + 0.62 * urgency, 0.08 - 0.03 * urgency, 0.08 - 0.03 * urgency, 0.98), urgency > 0
 end
 
 local function gearLabel(gear)
@@ -326,15 +334,18 @@ end
 
 function script.windowBrake()
   ensureProfileLoaded()
-  drawHudSurface(colors.red)
-  local source = profile and profile.source or nil
-  local sourceLabel = source and string.format('L%d · %s', source.lapIndex, source.lapTime) or 'NO REFERENCE'
-  ui.dwriteText('BRAKE //  ·  ' .. sourceLabel, 10, colors.muted)
   local state, stateError = coachState()
   if not state then
+    drawHudSurface(colors.red)
     drawUnavailable(stateError)
     return
   end
+
+  local accent, surface, urgent = brakeHudColor(state)
+  drawHudSurface(accent, surface)
+  local source = profile and profile.source or nil
+  local sourceLabel = source and string.format('L%d · %s', source.lapIndex, source.lapTime) or 'NO REFERENCE'
+  ui.dwriteText('BRAKE //  ·  ' .. sourceLabel, 10, urgent and colors.text or colors.muted)
 
   local cue = '—'
   local cueSuffix = 'SECONDS'
@@ -345,15 +356,15 @@ function script.windowBrake()
     cueColor = colors.red
   elseif state.secondsToBrake then
     cue = tostring(math.max(1, math.ceil(state.secondsToBrake)))
-    cueColor = state.secondsToBrake <= 5 and colors.purple or colors.text
+    cueColor = colors.text
   end
-  ui.dwriteText(cue, 30, cueColor)
+  ui.dwriteText(cue, 54, cueColor)
   if cueSuffix ~= '' then
-    ui.sameLine(58)
-    ui.dwriteText(cueSuffix, 10, colors.muted)
+    ui.sameLine(74)
+    ui.dwriteText(cueSuffix, 11, urgent and colors.text or colors.muted)
   end
   local referenceBrake = state.target and (state.target.b or 0) or 0
-  ui.dwriteText(string.format('REFERENCE BRAKE  %.0f%%', referenceBrake), 10, colors.muted)
+  ui.dwriteText(string.format('REFERENCE BRAKE  %.0f%%', referenceBrake), 10, urgent and colors.text or colors.muted)
   drawReferenceBrake(referenceBrake)
   if state.wrongTrack and profileTrackOverride then
     ui.dwriteText('MANUAL TRACK OVERRIDE', 10, colors.red)
