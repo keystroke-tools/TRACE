@@ -50,7 +50,7 @@ shows the active driver, optional session title, lap number, and lap time.
 
 The coaching windows show:
 
-- whole reference seconds to the next braking zone, counting down to `BRAKE!`;
+- whole reference seconds to the next braking zone, counting down to `BRAKE NOW`;
 - a prominent brake-now state while inside that zone;
 - a compact delta-style progress marker for the same countdown; and
 - current and reference gear.

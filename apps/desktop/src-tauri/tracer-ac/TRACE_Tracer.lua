@@ -328,7 +328,7 @@ local function centeredText(text, size, y, color, height)
 end
 
 local function countdownLabel(state)
-  if state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM then return 'BRAKE!' end
+  if state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM then return 'BRAKE NOW' end
   if state.secondsToBrake then return tostring(math.max(1, math.ceil(state.secondsToBrake))) end
   return '—'
 end
@@ -388,7 +388,7 @@ function script.windowProgress()
   if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 10) then return end
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
-  local display = isBraking and 'BRAKE!' or countdownLabel(state) .. 's'
+  local display = isBraking and 'BRAKE NOW' or countdownLabel(state) .. 's'
   ui.setCursor(vec2(0, 3))
   ui.dwriteTextAligned(display, 24, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth(), 28), false, colors.text)
   local barStart = vec2(12, 40)
