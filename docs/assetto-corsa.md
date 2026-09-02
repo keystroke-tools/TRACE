@@ -214,6 +214,11 @@ packet remains a temporary acquisition error and does not split the session. Los
 the underlying mappings is a distinct adapter error that closes the current canonical
 recording, allowing a later simulator detection to begin a fresh session cleanly.
 
+Automatic captures are only retained when they contain at least two complete timed
+laps without three- or four-tyres-out evidence. This prevents abandoned launches,
+short replay probes, and other incomplete captures from cluttering the session list.
+Imported MoTeC and `.trace` sessions are not filtered by this capture rule.
+
 ## Recording an Assetto Corsa replay
 
 TRACE can record telemetry while Assetto Corsa plays a replay because AC exposes the

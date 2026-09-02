@@ -301,7 +301,12 @@ fn handle_output(
             let writer = writer
                 .take()
                 .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
-            if recording.laps.is_empty() {
+            let valid_lap_count = recording
+                .laps
+                .iter()
+                .filter(|lap| lap_is_valid_for_session(lap))
+                .count();
+            if valid_lap_count <= 1 {
                 let (writer, _) = (*writer)
                     .finish()
                     .map_err(|error| format!("Arrow stream discard failed: {error:?}"))?;
@@ -310,7 +315,10 @@ fn handle_output(
                     .map_err(|error| format!("empty telemetry cleanup failed: {error:?}"))?;
                 metadata
                     .delete_session(&descriptor.session_id)
-                    .map_err(|error| format!("empty session cleanup failed: {error:?}"))?;
+                    .map_err(|error| format!("discarded session cleanup failed: {error:?}"))?;
+                eprintln!(
+                    "TRACE discarded capture with {valid_lap_count} valid lap(s); at least 2 are required"
+                );
                 set_active_session(context.status, None);
                 update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
                 return Ok(());
@@ -326,6 +334,12 @@ fn handle_output(
         }
     }
     Ok(())
+}
+
+fn lap_is_valid_for_session(lap: &trace_recorder::RecordedLap) -> bool {
+    !lap.partial
+        && lap.duration_ns.is_some()
+        && lap.max_tyres_out.is_none_or(|tyres_out| tyres_out < 3)
 }
 
 fn begin_recording(
@@ -643,8 +657,51 @@ fn clear_live_inputs(status: &SharedCaptureStatus) {
 #[cfg(test)]
 mod tests {
     use trace_domain::SimulatorId;
+    use trace_recorder::RecordedLap;
 
     use super::*;
+
+    fn recorded_lap(
+        partial: bool,
+        duration_ns: Option<u64>,
+        max_tyres_out: Option<u8>,
+    ) -> RecordedLap {
+        RecordedLap {
+            lap_index: 1,
+            started_offset_ns: 0,
+            duration_ns,
+            sample_start: 0,
+            sample_count: 60,
+            partial,
+            max_tyres_out,
+            sectors: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn only_complete_timed_laps_without_track_limit_evidence_are_valid_for_sessions() {
+        assert!(lap_is_valid_for_session(&recorded_lap(
+            false,
+            Some(90),
+            None
+        )));
+        assert!(lap_is_valid_for_session(&recorded_lap(
+            false,
+            Some(90),
+            Some(2)
+        )));
+        assert!(!lap_is_valid_for_session(&recorded_lap(
+            true,
+            Some(90),
+            None
+        )));
+        assert!(!lap_is_valid_for_session(&recorded_lap(false, None, None)));
+        assert!(!lap_is_valid_for_session(&recorded_lap(
+            false,
+            Some(90),
+            Some(3)
+        )));
+    }
 
     #[test]
     fn replay_provenance_and_simulator_version_reach_session_metadata() {
