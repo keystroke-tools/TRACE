@@ -30,6 +30,8 @@ local colors = {
   raised = rgbm(0.12, 0.12, 0.12, 1),
   track = rgbm(0.18, 0.18, 0.18, 1)
 }
+local hudInset = 6
+local hudPadding = 12
 
 local function currentIdentity()
   return {
@@ -343,16 +345,15 @@ local function coachState()
 end
 
 local function drawUnavailable(message)
-  ui.setCursor(vec2(12, 12))
+  ui.setCursor(vec2(hudPadding, hudPadding))
   ui.dwriteText(message, 12, colors.muted)
   ui.dummy(5)
   if ui.button('OPEN SETTINGS', vec2(108, 25)) then openSettings() end
 end
 
 local function drawHudSurface(accent, surface)
-  local inset = 3
-  ui.drawRectFilled(vec2(inset, inset), ui.windowSize() - vec2(inset, inset), surface or colors.surface, 6)
-  ui.drawRectFilled(vec2(inset, 14), vec2(inset + 3, ui.windowHeight() - 14), accent, 2)
+  ui.drawRectFilled(vec2(hudInset, hudInset), ui.windowSize() - vec2(hudInset, hudInset), surface or colors.surface, 6)
+  ui.drawRectFilled(vec2(hudInset, 16), vec2(hudInset + 3, ui.windowHeight() - 16), accent, 2)
 end
 
 local function brakeHudStyle(state)
@@ -364,8 +365,8 @@ local function brakeHudStyle(state)
 end
 
 local function centeredText(text, size, y, color, height)
-  ui.setCursor(vec2(0, y))
-  ui.dwriteTextAligned(text, size, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth(), height or size + 8), false, color)
+  ui.setCursor(vec2(hudPadding, y))
+  ui.dwriteTextAligned(text, size, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth() - hudPadding * 2, height or size + 8), false, color)
 end
 
 local function countdownLabel(state)
@@ -394,7 +395,7 @@ function script.windowBrake()
 
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
-  centeredText(countdownLabel(state), isBraking and 46 or 72, 14, colors.text, 84)
+  centeredText(countdownLabel(state), isBraking and 44 or 68, 14, colors.text, 84)
 end
 
 function script.windowGear()
@@ -405,18 +406,19 @@ function script.windowGear()
     drawUnavailable(stateError)
     return
   end
-  local pad = 8
-  local contentWidth = ui.windowWidth() - pad * 2
-  local half = contentWidth / 2
-  ui.drawLine(vec2(pad + half, 18), vec2(pad + half, ui.windowHeight() - 12), colors.track, 1)
-  ui.setCursor(vec2(pad, 10))
+  local gap = 12
+  local contentWidth = ui.windowWidth() - hudPadding * 2
+  local half = (contentWidth - gap) / 2
+  local secondX = hudPadding + half + gap
+  ui.drawLine(vec2(hudPadding + half + gap / 2, 18), vec2(hudPadding + half + gap / 2, ui.windowHeight() - 14), colors.track, 1)
+  ui.setCursor(vec2(hudPadding, 11))
   ui.dwriteTextAligned('CURRENT', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 14), false, colors.muted)
-  ui.setCursor(vec2(pad + half, 10))
+  ui.setCursor(vec2(secondX, 11))
   ui.dwriteTextAligned('REFERENCE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 14), false, colors.purple)
-  ui.setCursor(vec2(pad, 28))
-  ui.dwriteTextAligned(gearLabel(state.car.gear), 46, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 52), false, colors.text)
-  ui.setCursor(vec2(pad + half, 28))
-  ui.dwriteTextAligned(gearLabel(state.target and state.target.g or nil), 46, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 52), false, colors.purple)
+  ui.setCursor(vec2(hudPadding, 30))
+  ui.dwriteTextAligned(gearLabel(state.car.gear), 44, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 48), false, colors.text)
+  ui.setCursor(vec2(secondX, 30))
+  ui.dwriteTextAligned(gearLabel(state.target and state.target.g or nil), 44, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 48), false, colors.purple)
 end
 
 function script.windowProgress()
@@ -432,10 +434,10 @@ function script.windowProgress()
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
   local display = isBraking and '0s' or countdownLabel(state) .. 's'
-  ui.setCursor(vec2(0, 3))
-  ui.dwriteTextAligned(display, 24, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth(), 28), false, colors.text)
-  local barStart = vec2(16, 40)
-  local barWidth = ui.windowWidth() - 32
+  ui.setCursor(vec2(hudPadding, 7))
+  ui.dwriteTextAligned(display, 22, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth() - hudPadding * 2, 24), false, colors.text)
+  local barStart = vec2(hudPadding + 4, 39)
+  local barWidth = ui.windowWidth() - (hudPadding + 4) * 2
   local progress = isBraking and 1 or (state.secondsToBrake and math.saturate((5 - state.secondsToBrake) / 5) or 0)
   local centre = barStart.x + barWidth / 2
   local marker = centre + barWidth / 2 * progress
@@ -459,22 +461,25 @@ function script.windowCoach()
   local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
   local surface = isBraking and rgbm(0.58, 0.08, 0.08, 0.98) or (state.throttleCue and rgbm(0.06, 0.26, 0.15, 0.98) or colors.surface)
   drawHudSurface(accent, surface)
-  local pad = 8
-  local third = (ui.windowWidth() - pad * 2) / 3
-  ui.drawLine(vec2(pad + third, 14), vec2(pad + third, ui.windowHeight() - 14), colors.track, 1)
-  ui.drawLine(vec2(pad + third * 2, 14), vec2(pad + third * 2, ui.windowHeight() - 14), colors.track, 1)
-  ui.setCursor(vec2(pad, 10))
+  local gap = 14
+  local contentWidth = ui.windowWidth() - hudPadding * 2
+  local third = (contentWidth - gap * 2) / 3
+  local secondX = hudPadding + third + gap
+  local thirdX = secondX + third + gap
+  ui.drawLine(vec2(hudPadding + third + gap / 2, 18), vec2(hudPadding + third + gap / 2, ui.windowHeight() - 18), colors.track, 1)
+  ui.drawLine(vec2(secondX + third + gap / 2, 18), vec2(secondX + third + gap / 2, ui.windowHeight() - 18), colors.track, 1)
+  ui.setCursor(vec2(hudPadding, 13))
   ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(pad + third, 10))
+  ui.setCursor(vec2(secondX, 13))
   ui.dwriteTextAligned('THROTTLE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(pad + third * 2, 10))
+  ui.setCursor(vec2(thirdX, 13))
   ui.dwriteTextAligned('GEAR', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(pad, 30))
-  ui.dwriteTextAligned(brakeText, isBraking and 28 or 38, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.text)
-  ui.setCursor(vec2(pad + third, 30))
-  ui.dwriteTextAligned(throttleText, state.throttleCue and 22 or 38, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, state.throttleCue and colors.text or colors.muted)
-  ui.setCursor(vec2(pad + third * 2, 30))
-  ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 31, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 46), false, colors.purple)
+  ui.setCursor(vec2(hudPadding, 34))
+  ui.dwriteTextAligned(brakeText, isBraking and 25 or 35, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 42), false, colors.text)
+  ui.setCursor(vec2(secondX, 34))
+  ui.dwriteTextAligned(throttleText, state.throttleCue and 20 or 35, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 42), false, state.throttleCue and colors.text or colors.muted)
+  ui.setCursor(vec2(thirdX, 34))
+  ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 29, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 42), false, colors.purple)
 end
 
 local function drawHudSettings()
@@ -515,9 +520,6 @@ end
 function script.windowSettings()
   ensureProfileLoaded()
   ensureSessionsRequested()
-  ui.dwriteText('TRACER', 18, colors.green)
-  ui.dwriteText('Choose a lap to follow and open only the coaching views you need.', 11, colors.muted)
-  ui.dummy(10)
   drawSettingsNavigation()
   ui.dummy(12)
   if settingsPage == 'reference' then
