@@ -65,9 +65,9 @@ The coaching windows show:
 - a prominent brake-now state while inside that zone;
 - a compact delta-style progress marker for the same countdown; and
 - current and reference gear; and
-- the reference throttle target at the current point on the track, with a green
-  `APPLY NOW` state when the reference first reaches meaningful throttle after each
-  detected braking zone; and
+- the reference throttle target at the current point on the track, highlighted green
+  when the reference first reaches meaningful throttle after each detected braking
+  zone; and
 - a live speed comparison expressed in plain language: **faster**, **slower**, or
   **on reference pace** at that point on the circuit.
 
