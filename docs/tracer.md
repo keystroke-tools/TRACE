@@ -68,8 +68,8 @@ The coaching windows show:
 - the reference throttle target at the current point on the track, with a green
   `APPLY NOW` state when the reference first reaches meaningful throttle after each
   detected braking zone; and
-- a signed live speed difference against the reference (`+` means the driver is faster,
-  `-` means slower at that point on the circuit).
+- a live speed comparison expressed in plain language: **faster**, **slower**, or
+  **on reference pace** at that point on the circuit.
 
 New reference profiles store those throttle cues directly. When an older profile does
 not contain them, the CSP app derives the same cues from its compact throttle samples

@@ -431,9 +431,9 @@ local function speedDeltaLabel(state)
   if not referenceSpeed or not liveSpeed then return '—', colors.muted end
   local rawDelta = liveSpeed - referenceSpeed
   local rounded = rawDelta >= 0 and math.floor(rawDelta + 0.5) or math.ceil(rawDelta - 0.5)
-  if rounded > 2 then return string.format('%+d KM/H', rounded), colors.red end
-  if rounded < -2 then return string.format('%+d KM/H', rounded), colors.purple end
-  return string.format('%+d KM/H', rounded), colors.green
+  if rounded > 2 then return string.format('%d KM/H FASTER', rounded), colors.red end
+  if rounded < -2 then return string.format('%d KM/H SLOWER', math.abs(rounded)), colors.purple end
+  return 'ON REFERENCE PACE', colors.green
 end
 
 local function throttleTarget(state)
@@ -521,8 +521,7 @@ function script.windowCoach()
   local throttleText, throttleAmount = throttleTarget(state)
   local speedText, speedColor = speedDeltaLabel(state)
   local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
-  local surface = isBraking and rgbm(0.58, 0.08, 0.08, 0.98) or (state.throttleCue and rgbm(0.06, 0.26, 0.15, 0.98) or colors.surface)
-  drawHudSurface(accent, surface)
+  drawHudSurface(accent, colors.surface)
   local gap = 14
   local contentWidth = ui.windowWidth() - hudPadding * 2
   local third = (contentWidth - gap * 2) / 3
@@ -531,7 +530,7 @@ function script.windowCoach()
   ui.drawLine(vec2(hudPadding + third + gap / 2, 18), vec2(hudPadding + third + gap / 2, ui.windowHeight() - 18), colors.track, 1)
   ui.drawLine(vec2(secondX + third + gap / 2, 18), vec2(secondX + third + gap / 2, ui.windowHeight() - 18), colors.track, 1)
   ui.setCursor(vec2(hudPadding, 13))
-  ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
+  ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, isBraking and colors.red or colors.muted)
   ui.setCursor(vec2(secondX, 13))
   ui.dwriteTextAligned('THROTTLE TARGET', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
   ui.setCursor(vec2(thirdX, 13))
@@ -543,6 +542,8 @@ function script.windowCoach()
   ui.setCursor(vec2(thirdX, 33))
   ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 29, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 36), false, colors.purple)
   ui.setCursor(vec2(hudPadding, 72))
+  ui.dwriteTextAligned('SPEED VS REF', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 12), false, colors.muted)
+  ui.setCursor(vec2(hudPadding, 85))
   ui.dwriteTextAligned(speedText, 14, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 18), false, speedColor)
   ui.setCursor(vec2(secondX, 72))
   ui.dwriteTextAligned(state.throttleCue and 'APPLY NOW' or 'REFERENCE TARGET', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 16), false, state.throttleCue and colors.green or colors.muted)
