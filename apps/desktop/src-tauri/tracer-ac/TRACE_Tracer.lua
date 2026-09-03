@@ -425,6 +425,24 @@ local function gearLabel(gear)
   return tostring(gear)
 end
 
+local function speedDeltaLabel(state)
+  local referenceSpeed = state.target and state.target.s
+  local liveSpeed = state.car and state.car.speedKmh
+  if not referenceSpeed or not liveSpeed then return '—', colors.muted end
+  local rawDelta = liveSpeed - referenceSpeed
+  local rounded = rawDelta >= 0 and math.floor(rawDelta + 0.5) or math.ceil(rawDelta - 0.5)
+  if rounded > 2 then return string.format('%+d KM/H', rounded), colors.red end
+  if rounded < -2 then return string.format('%+d KM/H', rounded), colors.purple end
+  return string.format('%+d KM/H', rounded), colors.green
+end
+
+local function throttleTarget(state)
+  local target = state.target and state.target.t
+  if not target then return '—', 0 end
+  local percentage = math.clamp(math.floor(target + 0.5), 0, 100)
+  return string.format('%d%%', percentage), percentage / 100
+end
+
 function script.windowBrake()
   ensureProfileLoaded()
   local state, stateError = coachState()
@@ -500,7 +518,8 @@ function script.windowCoach()
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
   local brakeText = isBraking and 'BRAKE NOW' or (state.secondsToBrake and state.secondsToBrake <= preferences.countdownLeadSeconds and countdownLabel(state) .. 's' or '—')
-  local throttleText = state.throttleCue and 'THROTTLE NOW' or '—'
+  local throttleText, throttleAmount = throttleTarget(state)
+  local speedText, speedColor = speedDeltaLabel(state)
   local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
   local surface = isBraking and rgbm(0.58, 0.08, 0.08, 0.98) or (state.throttleCue and rgbm(0.06, 0.26, 0.15, 0.98) or colors.surface)
   drawHudSurface(accent, surface)
@@ -514,15 +533,22 @@ function script.windowCoach()
   ui.setCursor(vec2(hudPadding, 13))
   ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
   ui.setCursor(vec2(secondX, 13))
-  ui.dwriteTextAligned('THROTTLE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
+  ui.dwriteTextAligned('THROTTLE TARGET', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
   ui.setCursor(vec2(thirdX, 13))
   ui.dwriteTextAligned('GEAR', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(hudPadding, 34))
-  ui.dwriteTextAligned(brakeText, isBraking and 25 or 35, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 42), false, colors.text)
-  ui.setCursor(vec2(secondX, 34))
-  ui.dwriteTextAligned(throttleText, state.throttleCue and 20 or 35, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 42), false, state.throttleCue and colors.text or colors.muted)
-  ui.setCursor(vec2(thirdX, 34))
-  ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 29, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 42), false, colors.purple)
+  ui.setCursor(vec2(hudPadding, 33))
+  ui.dwriteTextAligned(brakeText, isBraking and 25 or 34, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 36), false, colors.text)
+  ui.setCursor(vec2(secondX, 33))
+  ui.dwriteTextAligned(throttleText, 34, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 36), false, state.throttleCue and colors.green or colors.text)
+  ui.setCursor(vec2(thirdX, 33))
+  ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 29, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 36), false, colors.purple)
+  ui.setCursor(vec2(hudPadding, 72))
+  ui.dwriteTextAligned(speedText, 14, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 18), false, speedColor)
+  ui.setCursor(vec2(secondX, 72))
+  ui.dwriteTextAligned(state.throttleCue and 'APPLY NOW' or 'REFERENCE TARGET', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 16), false, state.throttleCue and colors.green or colors.muted)
+  local barStart = vec2(secondX, 93)
+  ui.drawRectFilled(barStart, barStart + vec2(third, 8), colors.track, 3)
+  ui.drawRectFilled(barStart, barStart + vec2(third * throttleAmount, 8), colors.green, 3)
 end
 
 local function drawHudSettings()

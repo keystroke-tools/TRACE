@@ -616,9 +616,10 @@ mod tests {
     #[test]
     fn reads_the_csp_app_version_from_its_manifest() {
         assert_eq!(
-            super::manifest_version(super::MANIFEST).as_deref(),
-            Some("0.8.3")
+            super::manifest_version("[ABOUT]\nVERSION = 1.2.3\n").as_deref(),
+            Some("1.2.3")
         );
+        assert!(super::manifest_version(super::MANIFEST).is_some());
         assert_eq!(super::manifest_version("[ABOUT]\nNAME = Tracer\n"), None);
     }
 
@@ -649,6 +650,9 @@ mod tests {
 
     #[test]
     fn reference_contract_is_versioned_and_uses_compact_sample_keys() {
+        let mut reference_sample = sample(10.0, 75.0);
+        reference_sample.speed_kmh = Some(153.0);
+        reference_sample.throttle_percent = Some(70.0);
         let profile = ReferenceProfile {
             schema_version: PROFILE_VERSION,
             simulator_id: "assetto-corsa",
@@ -664,7 +668,7 @@ mod tests {
                 driver: Some("Driver One"),
                 title: Some("Evening practice"),
             },
-            samples: vec![sample(10.0, 75.0)],
+            samples: vec![reference_sample],
             brake_zones: vec![BrakeZone {
                 start_m: 10.0,
                 end_m: 35.0,
@@ -679,6 +683,8 @@ mod tests {
         assert_eq!(value["source"]["driver"], "Driver One");
         assert_eq!(value["samples"][0]["d"], 10.0);
         assert_eq!(value["samples"][0]["b"], 75.0);
+        assert_eq!(value["samples"][0]["s"], 153.0);
+        assert_eq!(value["samples"][0]["t"], 70.0);
         assert!(value["samples"][0].get("distanceM").is_none());
         assert_eq!(value["brakeZones"][0]["startM"], 10.0);
         assert_eq!(value["throttleCues"][0]["startM"], 40.0);

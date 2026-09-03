@@ -65,8 +65,11 @@ The coaching windows show:
 - a prominent brake-now state while inside that zone;
 - a compact delta-style progress marker for the same countdown; and
 - current and reference gear; and
-- a green `THROTTLE NOW` cue when the reference first reaches meaningful throttle after
-  each detected braking zone.
+- the reference throttle target at the current point on the track, with a green
+  `APPLY NOW` state when the reference first reaches meaningful throttle after each
+  detected braking zone; and
+- a signed live speed difference against the reference (`+` means the driver is faster,
+  `-` means slower at that point on the circuit).
 
 New reference profiles store those throttle cues directly. When an older profile does
 not contain them, the CSP app derives the same cues from its compact throttle samples
