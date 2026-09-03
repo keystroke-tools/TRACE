@@ -272,7 +272,7 @@ local function drawSessionPicker()
   end
 
   local availableHeight = ui.availableSpaceY()
-  local sessionListHeight = selectedSession and math.max(92, math.min(availableHeight * 0.46, 220)) or availableHeight
+  local sessionListHeight = selectedSession and math.max(82, math.min(availableHeight * 0.42, 190)) or availableHeight
   ui.dwriteText('SESSIONS', 10, colors.muted)
   ui.childWindow('matchingSessions', vec2(0, sessionListHeight), false, function()
     for i = 1, #sessions do
@@ -280,10 +280,10 @@ local function drawSessionPicker()
       local selected = expandedSessionId == session.id
       local rowStart = ui.getCursor()
       if selected then
-        ui.drawRectFilled(rowStart, rowStart + vec2(3, 46), colors.purple, 2)
+        ui.drawRectFilled(rowStart, rowStart + vec2(3, 32), colors.purple, 2)
       end
-      local label = string.format('%s\n%s###%s', sessionTitle(session), sessionDetail(session), session.id)
-      if ui.selectable(label, selected, ui.SelectableFlags.None, vec2(0, 46)) then
+      local label = string.format('%s###%s', sessionTitle(session), session.id)
+      if ui.selectable(label, selected, ui.SelectableFlags.None, vec2(0, 32)) then
         expandedSessionId = session.id
         pendingSelection = nil
       end
@@ -291,7 +291,15 @@ local function drawSessionPicker()
   end)
 
   if not selectedSession then return end
-  ui.dummy(8)
+  ui.dummy(10)
+  local summaryStart = ui.getCursor()
+  local summaryWidth = ui.availableSpaceX()
+  ui.drawRectFilled(summaryStart, summaryStart + vec2(summaryWidth, 48), colors.raised, 4)
+  ui.setCursor(summaryStart + vec2(10, 7))
+  ui.dwriteText(sessionTitle(selectedSession), 12, colors.text)
+  ui.setCursor(summaryStart + vec2(10, 26))
+  ui.dwriteText(sessionDetail(selectedSession), 10, colors.muted)
+  ui.setCursor(summaryStart + vec2(0, 56))
   ui.dwriteText('LAPS', 10, colors.muted)
   if not selectedSession.exactMatch then
     ui.sameLine()
