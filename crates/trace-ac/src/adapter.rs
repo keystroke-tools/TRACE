@@ -271,13 +271,26 @@ impl<S: AcSource> AcAdapter<S> {
             )]);
         }
         if session_has_ended(status, snapshot.flag()) {
-            let (session, _) = snapshot.map_session().map_err(adapter_error)?;
+            let (session, environment) = snapshot.map_session().map_err(adapter_error)?;
+            let elapsed = self.stream_started.map_or(0, |started| {
+                u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+            });
+            let mut frame = snapshot
+                .map_frame(
+                    FrameSequence(self.next_sequence),
+                    ElapsedNanoseconds(elapsed),
+                )
+                .map_err(adapter_error)?;
+            apply_steering_lock(&mut frame, self.steering_lock_degrees);
+            frame.environment = environment;
+            self.next_sequence = self.next_sequence.saturating_add(1);
             self.state = ConnectionState::SessionEnded { session };
             self.stream_started = None;
             self.stale_packets.reset();
-            return Ok(vec![AdapterEvent::Disconnected(
-                DisconnectReason::SessionEnded,
-            )]);
+            return Ok(vec![
+                AdapterEvent::Frame(frame),
+                AdapterEvent::Disconnected(DisconnectReason::SessionEnded),
+            ]);
         }
 
         if self.stale_packets.observe(
@@ -579,6 +592,30 @@ mod tests {
         AcSnapshot::from_pages(physics, graphics, static_page).expect("valid snapshot")
     }
 
+    fn snapshot_with_lap(
+        status: i32,
+        flag: i32,
+        car: &str,
+        track: &str,
+        completed_laps: i32,
+        sector_index: i32,
+        last_sector_time_ms: i32,
+    ) -> AcSnapshot {
+        let physics = vec![0; pages::PHYSICS_PREFIX_LENGTH];
+        let mut graphics = vec![0; pages::GRAPHICS_PAGE_LENGTH];
+        put_i32(&mut graphics, 4, status);
+        put_i32(&mut graphics, 132, completed_laps);
+        put_i32(&mut graphics, 164, sector_index);
+        put_i32(&mut graphics, 168, last_sector_time_ms);
+        put_i32(&mut graphics, 268, flag);
+        let mut static_page = vec![0; pages::STATIC_PREFIX_LENGTH];
+        put_utf16(&mut static_page, 0, 15, SUPPORTED_SHARED_MEMORY_VERSION);
+        put_utf16(&mut static_page, 30, 15, "fixture");
+        put_utf16(&mut static_page, 68, 33, car);
+        put_utf16(&mut static_page, 134, 33, track);
+        AcSnapshot::from_pages(physics, graphics, static_page).expect("valid snapshot")
+    }
+
     fn source(snapshots: impl IntoIterator<Item = AcSnapshot>) -> ScriptedSource {
         ScriptedSource {
             availability: VecDeque::from([AcAvailability::Available]),
@@ -665,15 +702,31 @@ mod tests {
     #[test]
     fn checkered_post_session_pause_ends_the_recording_once() {
         let mut adapter = AcAdapter::with_source(source([
-            snapshot(STATUS_LIVE, "car-a", "track-a"),
-            snapshot_with_flag(STATUS_PAUSE, FLAG_CHECKERED, "car-a", "track-a"),
+            snapshot_with_lap(STATUS_LIVE, 0, "car-a", "track-a", 3, 2, 40_000),
+            snapshot_with_lap(
+                STATUS_PAUSE,
+                FLAG_CHECKERED,
+                "car-a",
+                "track-a",
+                4,
+                0,
+                50_000,
+            ),
             snapshot_with_flag(STATUS_PAUSE, FLAG_CHECKERED, "car-a", "track-a"),
         ]));
         adapter.poll().expect("connect");
 
+        let events = adapter.poll().expect("finish");
+        assert!(matches!(
+            &events[0],
+            AdapterEvent::Frame(frame)
+                if frame.lap.completed_laps == Some(4)
+                    && frame.lap.current_sector_index == Some(0)
+                    && frame.lap.last_sector_time_ns == Some(50_000_000_000)
+        ));
         assert_eq!(
-            adapter.poll().expect("finish"),
-            vec![AdapterEvent::Disconnected(DisconnectReason::SessionEnded)]
+            events[1],
+            AdapterEvent::Disconnected(DisconnectReason::SessionEnded)
         );
         assert!(adapter.poll().expect("remain finished").is_empty());
     }

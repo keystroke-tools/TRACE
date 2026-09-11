@@ -189,6 +189,10 @@ to zero. TRACE therefore waits for that sector wrap before attaching the final s
 the `lastSectorTime` visible at the earlier counter boundary still belongs to the
 preceding sector.
 
+At a chequered session end, AC can publish that final lap/sector information only in
+the same snapshot that marks the session paused. TRACE records this final snapshot
+before closing the capture, so a valid last lap is not persisted without its sectors.
+
 Counter regression or a jump larger than one is rejected as ambiguous rather than
 silently producing incorrect sample ranges. TRACE aggregates AC's documented
 `numberOfTyresOut` samples into a per-lap maximum and shows an orange tyres-out marker
