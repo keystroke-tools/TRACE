@@ -1,4 +1,4 @@
-export type ConnectionState = "waiting" | "recording" | "error" | "searching" | "connected" | "replay" | "offline";
+export type ConnectionState = "waiting" | "recording" | "error" | "searching" | "connected" | "replay" | "replay_ready" | "offline";
 
 export interface ChannelCapability {
 	id: string;
@@ -25,6 +25,7 @@ export interface TelemetryStatus {
 	sampleRateHz: number | null;
 	session: string | null;
 	completedSessionId?: string | null;
+	replayCaptureArmed: boolean;
 	channels: ChannelCapability[];
 }
 
@@ -500,6 +501,7 @@ export interface TelemetryDataSource {
 	getStatus(): Promise<TelemetryStatus>;
 	getLivePedalTelemetry(): Promise<LivePedalTelemetry>;
 	selectSimulator(simulatorId: string): Promise<void>;
+	setReplayCaptureArmed(armed: boolean): Promise<void>;
 	getSessions(): Promise<RecordedSessionSummary[]>;
 	getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
 	visualizeSessionLap(sessionId: string, lapIndex: number): Promise<LapTrace>;
@@ -596,6 +598,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			source: "TRACE REPLAY",
 			sampleRateHz: 100,
 			session: "MUGELLO / TATUUS FA01",
+			replayCaptureArmed: false,
 			channels: [
 				{ id: "inputs.throttle", label: "Throttle", category: "DRIVER INPUTS", detail: "Pedal position", available: true },
 				{ id: "inputs.brake", label: "Brake", category: "DRIVER INPUTS", detail: "Pedal position", available: true },
@@ -750,6 +753,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async selectSimulator(simulatorId) {
 		if (simulatorId !== "assetto-corsa") throw new Error("That simulator adapter is not installed.");
 	},
+	async setReplayCaptureArmed() {},
 	async getSessions() {
 		const sessions: RecordedSessionSummary[] = [
 			{
@@ -1324,6 +1328,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	selectSimulator(simulatorId) {
 		return invoke<void>("select_simulator", { simulatorId });
+	},
+	setReplayCaptureArmed(armed) {
+		return invoke<void>("set_replay_capture_armed", { armed });
 	},
 	getSessions() {
 		return invoke<RecordedSessionSummary[]>("recent_sessions");

@@ -549,9 +549,10 @@ Filesystem cleanup failures are returned as visible warnings rather than being h
 
 The source descriptor follows each recording into session metadata. Live AC sessions
 are stored as `native_capture`; telemetry observed while AC reports replay mode is
-stored as `simulator_replay`; future file adapters use `imported`. Replay capture is
-therefore analyzable through the same canonical pipeline without losing how the data
-entered TRACE.
+stored as `simulator_replay` only after the user arms the next replay; future file
+adapters use `imported`. Unarmed replay playback is ignored, preventing routine replay
+review from creating empty sessions. An armed replay remains analyzable through the
+same canonical pipeline without losing how the data entered TRACE.
 
 A completed-lap counter regression or jump indicates a seek, restart, or missed source
 transition. The recorder closes the current partial stream and starts a conservatively

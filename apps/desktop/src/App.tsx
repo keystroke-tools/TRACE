@@ -78,6 +78,17 @@ export function App() {
 		setStatus(await telemetryDataSource.getStatus());
 	}
 
+	async function setReplayCaptureArmed(armed: boolean) {
+		await telemetryDataSource.setReplayCaptureArmed(armed);
+		setStatus(await telemetryDataSource.getStatus());
+		showToast({
+			kind: armed ? "success" : "info",
+			title: armed ? "Next replay armed" : "Replay capture cancelled",
+			message: armed ? "Load or restart the replay you want TRACE to save." : "TRACE will continue ignoring replay playback.",
+			timeoutMs: 4_500,
+		});
+	}
+
 	async function startRecordedBroadcast(sessionId: string, options: LiveBroadcastOptions) {
 		try {
 			const next = await telemetryDataSource.startRecordedLiveBroadcast(sessionId, options);
@@ -257,6 +268,7 @@ export function App() {
 						onOpenLiveLink={() => void openLiveLink()}
 						onOpenSessions={() => setSection("SESSIONS")}
 						onSelectSimulator={selectSimulator}
+						onSetReplayCaptureArmed={(armed) => void setReplayCaptureArmed(armed)}
 					/>
 				)}
 				{section === "SESSIONS" &&

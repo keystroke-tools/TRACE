@@ -13,6 +13,7 @@ export function LivePage({
 	onOpenLiveLink,
 	onOpenSessions,
 	onSelectSimulator,
+	onSetReplayCaptureArmed,
 }: {
 	status: TelemetryStatus | null;
 	liveBroadcast: LiveBroadcastStatus | null;
@@ -22,8 +23,11 @@ export function LivePage({
 	onOpenLiveLink: () => void;
 	onOpenSessions: () => void;
 	onSelectSimulator: (simulatorId: string) => Promise<void>;
+	onSetReplayCaptureArmed: (armed: boolean) => void;
 }) {
 	const recording = status?.connection === "recording" || status?.connection === "replay";
+	const replayDetected = status?.connection === "replay_ready";
+	const replayCaptureArmed = status?.replayCaptureArmed ?? false;
 	const simulatorName = status?.simulatorName ?? "YOUR SIMULATOR";
 	const simulatorShortName = status?.simulatorShortName ?? "SIM";
 	const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
@@ -39,11 +43,30 @@ export function LivePage({
 				title={recording ? `RECORDING ${simulatorName.toUpperCase()}` : `READY WHEN ${simulatorName.toUpperCase()} IS`}
 				description={
 					recording
-						? "TRACE is recording the current drive or replay automatically. Keep it running until the session ends."
-						: `Start a drive or play a replay in ${simulatorName}. TRACE detects it and records locally—there is no record button to press.`
+						? "TRACE is recording the current drive. Keep it running until the session ends."
+						: `Start driving in ${simulatorName} and TRACE records locally—there is no record button to press.`
 				}
 			/>
 			<SimulatorPicker status={status} onSelect={onSelectSimulator} />
+			<div className="mt-3 flex flex-wrap items-center gap-3 border border-trace-divider bg-trace-surface p-3">
+				<div className="min-w-52 flex-1">
+					<strong className="text-[12px] font-black tracking-[.08em] text-trace-text">REPLAY CAPTURE</strong>
+					<p className="mt-1 text-[12px] leading-5 text-trace-faint">
+						{replayDetected
+							? "This replay is being ignored. Arm the next replay, then reload it to record."
+							: replayCaptureArmed
+								? "The next replay you load will be recorded once. This resets when capture starts."
+								: "Replay playback is ignored by default, so reviewing an incident never creates a session."}
+					</p>
+				</div>
+				<button
+					type="button"
+					onClick={() => onSetReplayCaptureArmed(!replayCaptureArmed)}
+					className={`h-10 border px-4 text-[12px] font-black tracking-[.08em] ${replayCaptureArmed ? "border-trace-accent bg-trace-accent text-trace-black" : "border-trace-accent-muted bg-trace-accent-wash text-trace-accent hover:border-trace-accent"}`}
+				>
+					{replayCaptureArmed ? "NEXT REPLAY ARMED" : "ARM NEXT REPLAY"}
+				</button>
+			</div>
 			<div className="mt-3 flex flex-wrap items-center gap-2 border border-trace-divider bg-trace-surface p-3">
 				<button
 					type="button"
@@ -78,7 +101,7 @@ export function LivePage({
 					</>
 				)}
 				<span className="ml-auto text-[11px] text-trace-dim">
-					{recording ? "Publish this capture without interrupting local recording." : "Start driving or play a replay to enable streaming."}
+					{recording ? "Publish this capture without interrupting local recording." : "Start driving to enable streaming."}
 				</span>
 			</div>
 			<div className="my-[14px] mb-6 grid grid-cols-4 border border-trace-divider max-[900px]:grid-cols-2">
@@ -124,10 +147,10 @@ export function LivePage({
 					<PanelTitle>HOW CAPTURE WORKS</PanelTitle>
 					<ol className="space-y-5 p-5">
 						<WorkflowStep number="1" title={`Open ${simulatorName}`}>
-							Start driving or play a replay at normal speed.
+							Start driving at normal speed.
 						</WorkflowStep>
 						<WorkflowStep number="2" title="TRACE records automatically">
-							The status light pulses while samples are being saved.
+							The status light pulses while samples are being saved. To capture a replay, arm it above before loading it.
 						</WorkflowStep>
 						<WorkflowStep number="3" title="Review the session">
 							End normally, then open Sessions to inspect laps or export data.

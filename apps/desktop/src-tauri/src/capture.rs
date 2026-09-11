@@ -37,6 +37,7 @@ pub struct CaptureStatus {
     pub completed_session_id: Option<String>,
     pub presence_session: Option<PresenceSession>,
     pub live_inputs: LiveInputs,
+    pub replay_capture_armed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +80,7 @@ impl CaptureStatus {
             completed_session_id: None,
             presence_session: None,
             live_inputs: LiveInputs::default(),
+            replay_capture_armed: false,
         }
     }
 }
@@ -184,6 +186,7 @@ fn run_capture(
 
     let mut recorder = SessionRecorder::streaming();
     let mut active = None;
+    let mut ignoring_replay = false;
     let context = CaptureOutputContext {
         data_directory,
         ac_race_config,
@@ -194,6 +197,10 @@ fn run_capture(
         match adapter.poll() {
             Ok(events) => {
                 for event in events {
+                    let Some(event) = filter_replay_capture(event, status, &mut ignoring_replay)
+                    else {
+                        continue;
+                    };
                     for output in recorder
                         .consume(event)
                         .map_err(|error| format!("recording state failed: {error:?}"))?
@@ -239,6 +246,11 @@ fn handle_output(
 ) -> Result<(), String> {
     match output {
         RecorderOutput::SessionStarted { source, seed } => {
+            let connection = if source.kind == SourceKind::SimulatorReplay {
+                "replay"
+            } else {
+                "recording"
+            };
             set_completed_session(context.status, None);
             context.live_broadcast.capture_started(&source, &seed);
             context.live_broadcast.start_automatically_if_configured(
@@ -252,7 +264,7 @@ fn handle_output(
                 source,
                 seed: seed.clone(),
             });
-            update_status(context.status, "recording", 60, &label);
+            update_status(context.status, connection, 60, &label);
             clear_live_inputs(context.status);
         }
         RecorderOutput::FrameAccepted(frame) => {
@@ -334,6 +346,55 @@ fn handle_output(
         }
     }
     Ok(())
+}
+
+fn filter_replay_capture(
+    event: AdapterEvent,
+    status: &SharedCaptureStatus,
+    ignoring_replay: &mut bool,
+) -> Option<AdapterEvent> {
+    match &event {
+        AdapterEvent::Detected(source) if source.kind == SourceKind::SimulatorReplay => {
+            if take_replay_capture_arm(status) {
+                *ignoring_replay = false;
+                Some(event)
+            } else {
+                *ignoring_replay = true;
+                update_status(status, "replay_ready", 0, "REPLAY DETECTED · RECORDING OFF");
+                None
+            }
+        }
+        AdapterEvent::Disconnected(_) if *ignoring_replay => {
+            *ignoring_replay = false;
+            update_status(status, "waiting", 0, "NO ACTIVE SESSION");
+            None
+        }
+        AdapterEvent::Detected(_) => {
+            *ignoring_replay = false;
+            Some(event)
+        }
+        _ if *ignoring_replay => None,
+        _ => Some(event),
+    }
+}
+
+pub fn set_replay_capture_armed(status: &SharedCaptureStatus, armed: bool) {
+    if let Ok(mut value) = status.lock() {
+        value.replay_capture_armed = armed;
+        if armed && value.connection == "waiting" {
+            value.session = "NEXT REPLAY WILL BE RECORDED".into();
+        } else if !armed && value.connection == "waiting" {
+            value.session = "NO ACTIVE SESSION".into();
+        }
+    }
+}
+
+fn take_replay_capture_arm(status: &SharedCaptureStatus) -> bool {
+    status.lock().is_ok_and(|mut value| {
+        let armed = value.replay_capture_armed;
+        value.replay_capture_armed = false;
+        armed
+    })
 }
 
 fn lap_is_valid_for_session(lap: &trace_recorder::RecordedLap) -> bool {
@@ -718,6 +779,60 @@ mod tests {
         assert_eq!(session.simulator_id, "sim-assetto-corsa");
         assert_eq!(session.simulator_key, "assetto-corsa");
         assert_eq!(session.source_kind, "simulator_replay");
+    }
+
+    fn replay_source() -> SourceDescriptor {
+        SourceDescriptor {
+            simulator: SimulatorId::parse("assetto-corsa").expect("simulator"),
+            adapter_version: "1".into(),
+            simulator_version: None,
+            kind: SourceKind::SimulatorReplay,
+        }
+    }
+
+    #[test]
+    fn ignores_replays_until_the_next_replay_is_explicitly_armed() {
+        let status = SharedCaptureStatus::new(Mutex::new(CaptureStatus::default()));
+        let mut ignoring = false;
+
+        assert!(
+            filter_replay_capture(
+                AdapterEvent::Detected(replay_source()),
+                &status,
+                &mut ignoring
+            )
+            .is_none()
+        );
+        assert!(ignoring);
+        assert_eq!(status.lock().expect("status").connection, "replay_ready");
+        assert!(
+            filter_replay_capture(
+                AdapterEvent::Connected(SessionSeed::default()),
+                &status,
+                &mut ignoring
+            )
+            .is_none()
+        );
+        assert!(
+            filter_replay_capture(
+                AdapterEvent::Disconnected(DisconnectReason::SourceClosed),
+                &status,
+                &mut ignoring
+            )
+            .is_none()
+        );
+        assert!(!ignoring);
+
+        set_replay_capture_armed(&status, true);
+        assert!(
+            filter_replay_capture(
+                AdapterEvent::Detected(replay_source()),
+                &status,
+                &mut ignoring
+            )
+            .is_some()
+        );
+        assert!(!status.lock().expect("status").replay_capture_armed);
     }
 
     #[test]

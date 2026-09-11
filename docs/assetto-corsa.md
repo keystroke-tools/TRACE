@@ -226,10 +226,14 @@ Imported MoTeC and `.trace` sessions are not filtered by this capture rule.
 ## Recording an Assetto Corsa replay
 
 TRACE can record telemetry while Assetto Corsa plays a replay because AC exposes the
-playback through the same documented shared-memory pages as a live session. This is
-not direct parsing of an `.acreplay` file: AC must be running and playing the replay.
-The stored session is labelled `simulator_replay`, while an on-track session is
-labelled `native_capture`, so downstream comparisons retain their provenance.
+playback through the same documented shared-memory pages as a live session. Replay
+playback is deliberately ignored by default, so loading a replay to inspect an incident
+cannot create a junk session. In **Live Capture**, choose **Arm next replay** before
+loading the replay you want to retain. The permission applies once and resets as soon as
+TRACE attaches to that replay. This is not direct parsing of an `.acreplay` file: AC
+must be running and playing the replay. The stored session is labelled
+`simulator_replay`, while an on-track session is labelled `native_capture`, so
+downstream comparisons retain their provenance.
 
 Replay playback does not guarantee that every documented timing field is populated.
 In a captured AC 1.16.4 replay, `currentSectorIndex` remained zero and
@@ -241,7 +245,7 @@ inventing equal-distance thirds. A companion AC app using the Python Apps timing
 
 For a reliable recording:
 
-1. Start TRACE before starting replay playback.
+1. Start TRACE, choose **Arm next replay** in Live Capture, then load the replay.
 2. Play the replay forward at normal speed without seeking, rewinding, or changing
    playback speed.
 3. Allow at least two complete start/finish crossings to pass. The first observed lap

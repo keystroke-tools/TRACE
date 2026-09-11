@@ -123,6 +123,7 @@ struct FoundationStatus {
     sample_rate_hz: u16,
     session: String,
     completed_session_id: Option<String>,
+    replay_capture_armed: bool,
     channels: Vec<ChannelCapability>,
 }
 
@@ -2282,8 +2283,15 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
         sample_rate_hz: snapshot.sample_rate_hz,
         session: snapshot.session,
         completed_session_id: snapshot.completed_session_id,
+        replay_capture_armed: snapshot.replay_capture_armed,
         channels,
     }
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri injects State as a command argument.
+fn set_replay_capture_armed(status: tauri::State<'_, SharedCaptureStatus>, armed: bool) {
+    capture::set_replay_capture_armed(status.inner(), armed);
 }
 
 #[tauri::command]
@@ -2668,6 +2676,7 @@ pub fn run() {
         .setup(move |app| setup_app(app, &adapter_identity))
         .invoke_handler(tauri::generate_handler![
             foundation_status,
+            set_replay_capture_armed,
             live_pedal_telemetry,
             select_simulator,
             recent_sessions,
