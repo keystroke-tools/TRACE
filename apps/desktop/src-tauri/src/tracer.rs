@@ -238,12 +238,12 @@ pub(super) fn prepare_reference(
 
 pub(super) fn install(app: &tauri::AppHandle) -> Result<TracerInstallStatus, String> {
     let install_path = install_app(&assetto_corsa_root(app)?)?;
-    Ok(install_status_at(install_path))
+    Ok(install_status_at(&install_path))
 }
 
 pub(super) fn install_status(app: &tauri::AppHandle) -> Result<TracerInstallStatus, String> {
     let install_path = tracer_install_path(app)?;
-    Ok(install_status_at(install_path))
+    Ok(install_status_at(&install_path))
 }
 
 pub(super) fn refresh_if_installed(app: &tauri::AppHandle) {
@@ -255,14 +255,13 @@ pub(super) fn refresh_if_installed(app: &tauri::AppHandle) {
         .join("lua")
         .join(APP_DIRECTORY)
         .is_dir()
+        && let Err(error) = install_app(&ac_root)
     {
-        if let Err(error) = install_app(&ac_root) {
-            eprintln!("TRACE could not refresh the installed Tracer app: {error}");
-        }
+        eprintln!("TRACE could not refresh the installed Tracer app: {error}");
     }
 }
 
-fn install_status_at(install_path: PathBuf) -> TracerInstallStatus {
+fn install_status_at(install_path: &Path) -> TracerInstallStatus {
     let manifest_path = install_path.join("manifest.ini");
     let installed = install_path.join("TRACE_Tracer.lua").is_file() && manifest_path.is_file();
     let installed_version = fs::read_to_string(manifest_path)
