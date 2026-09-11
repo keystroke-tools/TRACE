@@ -296,55 +296,82 @@ fn handle_output(
                 .map_err(|error| format!("Arrow batch write failed: {error:?}"))?;
         }
         RecorderOutput::SessionCompleted(recording) => {
-            context.live_broadcast.capture_ended();
-            clear_presence_session(context.status);
-            let Some(persistence) = active.take() else {
-                return Err("completed recording has no persistence identity".into());
-            };
-            let ActivePersistence::Recording {
-                mut descriptor,
-                mut writer,
-            } = persistence
-            else {
-                set_active_session(context.status, None);
-                update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
-                return Ok(());
-            };
-            let writer = writer
-                .take()
-                .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
-            let valid_lap_count = recording
-                .laps
-                .iter()
-                .filter(|lap| lap_is_valid_for_session(lap))
-                .count();
-            if valid_lap_count <= 1 {
-                let (writer, _) = (*writer)
-                    .finish()
-                    .map_err(|error| format!("Arrow stream discard failed: {error:?}"))?;
-                blobs
-                    .abort(&writer.into_pending())
-                    .map_err(|error| format!("empty telemetry cleanup failed: {error:?}"))?;
-                metadata
-                    .delete_session(&descriptor.session_id)
-                    .map_err(|error| format!("discarded session cleanup failed: {error:?}"))?;
-                eprintln!(
-                    "TRACE discarded capture with {valid_lap_count} valid lap(s); at least 2 are required"
-                );
-                set_active_session(context.status, None);
-                update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
-                return Ok(());
-            }
-            descriptor.ended_at = now_rfc3339()?;
-            let completed_session_id = descriptor.session_id.clone();
-            let result =
-                persist_streamed_recording(blobs, metadata, &recording, &descriptor, *writer);
-            set_active_session(context.status, None);
-            result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
-            set_completed_session(context.status, Some(completed_session_id));
-            update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
+            complete_recording(recording, active, metadata, blobs, context)?;
         }
     }
+    Ok(())
+}
+
+fn complete_recording(
+    recording: trace_recorder::RecordedSession,
+    active: &mut Option<ActivePersistence>,
+    metadata: &mut MetadataStore,
+    blobs: &mut FileBlobStore,
+    context: &CaptureOutputContext<'_>,
+) -> Result<(), String> {
+    context.live_broadcast.capture_ended();
+    clear_presence_session(context.status);
+    let Some(persistence) = active.take() else {
+        return Err("completed recording has no persistence identity".into());
+    };
+    let ActivePersistence::Recording {
+        mut descriptor,
+        mut writer,
+    } = persistence
+    else {
+        set_active_session(context.status, None);
+        update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
+        return Ok(());
+    };
+    let writer = writer
+        .take()
+        .ok_or_else(|| "completed recording has no Arrow writer".to_owned())?;
+    let valid_lap_count = recording
+        .laps
+        .iter()
+        .filter(|lap| lap_is_valid_for_session(lap))
+        .count();
+    if valid_lap_count <= 1 {
+        discard_short_recording(
+            writer,
+            metadata,
+            blobs,
+            &descriptor.session_id,
+            valid_lap_count,
+        )?;
+        set_active_session(context.status, None);
+        update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
+        return Ok(());
+    }
+    descriptor.ended_at = now_rfc3339()?;
+    let completed_session_id = descriptor.session_id.clone();
+    let result = persist_streamed_recording(blobs, metadata, &recording, &descriptor, *writer);
+    set_active_session(context.status, None);
+    result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
+    set_completed_session(context.status, Some(completed_session_id));
+    update_status(context.status, "waiting", 0, "NO ACTIVE SESSION");
+    Ok(())
+}
+
+fn discard_short_recording(
+    writer: Box<TelemetryIpcWriter<FileBlobWriter>>,
+    metadata: &mut MetadataStore,
+    blobs: &mut FileBlobStore,
+    session_id: &str,
+    valid_lap_count: usize,
+) -> Result<(), String> {
+    let (writer, _) = (*writer)
+        .finish()
+        .map_err(|error| format!("Arrow stream discard failed: {error:?}"))?;
+    blobs
+        .abort(&writer.into_pending())
+        .map_err(|error| format!("empty telemetry cleanup failed: {error:?}"))?;
+    metadata
+        .delete_session(session_id)
+        .map_err(|error| format!("discarded session cleanup failed: {error:?}"))?;
+    eprintln!(
+        "TRACE discarded capture with {valid_lap_count} valid lap(s); at least 2 are required"
+    );
     Ok(())
 }
 
