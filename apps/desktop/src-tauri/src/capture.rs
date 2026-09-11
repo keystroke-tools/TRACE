@@ -296,14 +296,14 @@ fn handle_output(
                 .map_err(|error| format!("Arrow batch write failed: {error:?}"))?;
         }
         RecorderOutput::SessionCompleted(recording) => {
-            complete_recording(recording, active, metadata, blobs, context)?;
+            complete_recording(&recording, active, metadata, blobs, context)?;
         }
     }
     Ok(())
 }
 
 fn complete_recording(
-    recording: trace_recorder::RecordedSession,
+    recording: &trace_recorder::RecordedSession,
     active: &mut Option<ActivePersistence>,
     metadata: &mut MetadataStore,
     blobs: &mut FileBlobStore,
@@ -345,7 +345,7 @@ fn complete_recording(
     }
     descriptor.ended_at = now_rfc3339()?;
     let completed_session_id = descriptor.session_id.clone();
-    let result = persist_streamed_recording(blobs, metadata, &recording, &descriptor, *writer);
+    let result = persist_streamed_recording(blobs, metadata, recording, &descriptor, *writer);
     set_active_session(context.status, None);
     result.map_err(|error| format!("recording persistence failed: {error:?}"))?;
     set_completed_session(context.status, Some(completed_session_id));

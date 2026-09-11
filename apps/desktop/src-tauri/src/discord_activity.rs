@@ -212,13 +212,6 @@ fn artwork_for(desired: &DesiredActivity) -> ActivityArtwork {
             asset_key: REVIEW_ARTWORK_ASSET_KEY,
             description: "TRACE · Telemetry review",
         },
-        DesiredActivity::Reviewing(ReviewActivity {
-            kind: ReviewKind::Sessions,
-            ..
-        }) => ActivityArtwork {
-            asset_key: GENERIC_ARTWORK_ASSET_KEY,
-            description: "TRACE · Sim racing telemetry",
-        },
         DesiredActivity::Driving { session, .. } if is_race_session(&session.session_type) => {
             ActivityArtwork {
                 asset_key: RACE_ARTWORK_ASSET_KEY,
@@ -231,7 +224,11 @@ fn artwork_for(desired: &DesiredActivity) -> ActivityArtwork {
                 description: "TRACE · Practice telemetry",
             }
         }
-        DesiredActivity::Driving { .. } => ActivityArtwork {
+        DesiredActivity::Reviewing(ReviewActivity {
+            kind: ReviewKind::Sessions,
+            ..
+        })
+        | DesiredActivity::Driving { .. } => ActivityArtwork {
             asset_key: GENERIC_ARTWORK_ASSET_KEY,
             description: "TRACE · Sim racing telemetry",
         },
