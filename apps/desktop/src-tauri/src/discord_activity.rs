@@ -15,7 +15,10 @@ use crate::{
 };
 
 const APPLICATION_ID: &str = "1540877666167689216";
-const LARGE_IMAGE_ASSET_KEY: &str = "trace-activity";
+const GENERIC_ARTWORK_ASSET_KEY: &str = "trace-activity";
+const REVIEW_ARTWORK_ASSET_KEY: &str = "trace-review";
+const RACE_ARTWORK_ASSET_KEY: &str = "trace-race";
+const PRACTICE_ARTWORK_ASSET_KEY: &str = "trace-practice";
 const UPDATE_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Default)]
@@ -70,6 +73,12 @@ enum DesiredActivity {
         spectator_url: Option<String>,
     },
     Reviewing(ReviewActivity),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActivityArtwork {
+    asset_key: &'static str,
+    description: &'static str,
 }
 
 pub(crate) fn spawn(
@@ -178,19 +187,66 @@ fn publish(
             None,
         ),
     };
+    let artwork = artwork_for(desired);
     let mut value = activity::Activity::new()
         .details(details)
         .state(state)
         .assets(
             activity::Assets::new()
-                .large_image(LARGE_IMAGE_ASSET_KEY)
-                .large_text("TRACE · Sim racing telemetry"),
+                .large_image(artwork.asset_key)
+                .large_text(artwork.description),
         )
         .timestamps(activity::Timestamps::new().start(started_at));
     if let Some(url) = spectator_url {
         value = value.buttons(vec![activity::Button::new("Watch Live", url)]);
     }
     client.set_activity(value)
+}
+
+fn artwork_for(desired: &DesiredActivity) -> ActivityArtwork {
+    match desired {
+        DesiredActivity::Reviewing(ReviewActivity {
+            kind: ReviewKind::Comparison | ReviewKind::Lap | ReviewKind::Session,
+            ..
+        }) => ActivityArtwork {
+            asset_key: REVIEW_ARTWORK_ASSET_KEY,
+            description: "TRACE · Telemetry review",
+        },
+        DesiredActivity::Reviewing(ReviewActivity {
+            kind: ReviewKind::Sessions,
+            ..
+        }) => ActivityArtwork {
+            asset_key: GENERIC_ARTWORK_ASSET_KEY,
+            description: "TRACE · Sim racing telemetry",
+        },
+        DesiredActivity::Driving { session, .. } if is_race_session(&session.session_type) => {
+            ActivityArtwork {
+                asset_key: RACE_ARTWORK_ASSET_KEY,
+                description: "TRACE · Race telemetry",
+            }
+        }
+        DesiredActivity::Driving { session, .. } if is_practice_session(&session.session_type) => {
+            ActivityArtwork {
+                asset_key: PRACTICE_ARTWORK_ASSET_KEY,
+                description: "TRACE · Practice telemetry",
+            }
+        }
+        DesiredActivity::Driving { .. } => ActivityArtwork {
+            asset_key: GENERIC_ARTWORK_ASSET_KEY,
+            description: "TRACE · Sim racing telemetry",
+        },
+    }
+}
+
+fn is_race_session(value: &str) -> bool {
+    value.eq_ignore_ascii_case("race")
+}
+
+fn is_practice_session(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "practice" | "hotlap" | "qualifying" | "time attack"
+    )
 }
 
 fn review_details(review: &ReviewActivity) -> String {
@@ -292,5 +348,47 @@ mod tests {
         };
         assert_eq!(review_details(&review), "Reviewing lap 4 · Zandvoort");
         assert_eq!(review_state(&review), "Assetto Corsa · Mazda MX-5 Cup");
+    }
+
+    fn driving_activity(session_type: &str) -> DesiredActivity {
+        DesiredActivity::Driving {
+            session: PresenceSession {
+                simulator: "assetto-corsa".into(),
+                session_type: session_type.into(),
+                track: "Zandvoort".into(),
+                car: "Mazda MX-5 Cup".into(),
+                started_at_unix: 1,
+            },
+            spectator_url: None,
+        }
+    }
+
+    #[test]
+    fn activity_artwork_matches_review_and_session_context() {
+        assert_eq!(
+            artwork_for(&driving_activity("race")).asset_key,
+            RACE_ARTWORK_ASSET_KEY
+        );
+        assert_eq!(
+            artwork_for(&driving_activity("hotlap")).asset_key,
+            PRACTICE_ARTWORK_ASSET_KEY
+        );
+        assert_eq!(
+            artwork_for(&driving_activity("drift")).asset_key,
+            GENERIC_ARTWORK_ASSET_KEY
+        );
+        assert_eq!(
+            artwork_for(&DesiredActivity::Reviewing(ReviewActivity {
+                kind: ReviewKind::Comparison,
+                simulator: None,
+                track: None,
+                car: None,
+                session_type: None,
+                lap_index: None,
+                started_at_unix: 1,
+            }))
+            .asset_key,
+            REVIEW_ARTWORK_ASSET_KEY
+        );
     }
 }

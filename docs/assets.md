@@ -39,11 +39,11 @@ redesign.
 
 | Field | Value |
 | --- | --- |
-| Repository path | `assets/discord/trace-activity.png` |
+| Repository paths | `assets/discord/trace-activity.png`, `assets/discord/trace-review.png`, `assets/discord/trace-race.png`, `assets/discord/trace-practice.png` |
 | Added | 2026-08-31 |
 | Generator | OpenAI built-in image generation through Codex |
-| Use | Discord Rich Presence large image, uploaded under asset key `trace-activity` |
-| Final format | 1254 × 1254, 8-bit RGB PNG |
+| Use | Discord Rich Presence large images |
+| Final format | Four 1254 × 1254, 8-bit RGB PNGs |
 | License | Distributed as part of TRACE under the MIT License |
 
 Prompt:
@@ -61,5 +61,18 @@ Constraints: no cars, steering wheels, chequered flags, speedometers, glassmorph
 ```
 
 Discord recommends 1024 × 1024 artwork for crisp rendering but accepts square PNG
-uploads and generates its own renditions. The application references the lowercase
-portal key `trace-activity`; the image itself is not transmitted through IPC.
+uploads and generates its own renditions. Upload these files to the TRACE Discord
+application using the exact lowercase keys below; the image itself is not transmitted
+through IPC.
+
+| Portal key | Repository asset | Selected for |
+| --- | --- | --- |
+| `trace-activity` | `assets/discord/trace-activity.png` | Generic fallback and session browsing |
+| `trace-review` | `assets/discord/trace-review.png` | Session/lap review and lap comparison |
+| `trace-race` | `assets/discord/trace-race.png` | Race capture |
+| `trace-practice` | `assets/discord/trace-practice.png` | Practice, hotlap, qualifying, and time-attack capture |
+
+The three contextual variants were generated with the same prompt constraints as the
+generic asset, using it as the visual reference. The review variant adds paired lime
+and purple traces; the race variant adds an abstract pack of track-position dots; the
+practice variant adds one precise driving line with neutral sector markers.

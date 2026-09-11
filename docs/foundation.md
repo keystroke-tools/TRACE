@@ -436,6 +436,12 @@ laps. Review presence includes only simulator, car, track, session type, and lap
 it does not publish driver names, custom titles, tags, or local spectator addresses.
 Leaving the Sessions or Compare workspace clears the review activity.
 
+Presence artwork follows the same context: races use `trace-race`; practice, hotlap,
+qualifying, and time-attack captures use `trace-practice`; telemetry review and
+comparison use `trace-review`; unknown contexts and session browsing use the generic
+`trace-activity` fallback. The required Discord Developer Portal asset-key mapping is
+maintained in `docs/assets.md`.
+
 The opt-in close-to-tray flag is persisted in `app_settings` and mirrored into the
 desktop runtime's atomic close policy. When enabled, a close request hides only the
 main window, leaving capture, Discord activity, overlays, and Go Live workers running.
