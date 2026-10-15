@@ -14,28 +14,22 @@ the same manually configured or auto-detected installation shown on the Settings
 
 Open Assetto Corsa with CSP enabled. **Tracer** is the normal primary app with standard
 window controls and two pages: **Reference** selects a session/lap and **HUDs** opens
-the optional coaching surfaces. The in-game app shelf also provides five
-independently positioned HUD windows:
+the optional driving surfaces. The in-game app shelf provides two independently
+positioned, borderless HUD windows:
 
-- **Tracer - Brake** is a borderless HUD that stays quiet until ten reference seconds
-  before a braking point, then shows the countdown and brake-now cue;
-- **Tracer - Progress** is a compact delta-style bar with a centre baseline and a marker
-  moving toward the brake event; and
-- **Tracer - Gear** shows the current and reference gears; and
-- **Tracer - Coach** combines brake, throttle-application, and gear cues in one
-  rectangular borderless HUD; and
-- **Tracer - Brake Trace** overlays the current lap's brake application on the
-  selected reference around the car's present track position.
+- **Tracer - Brake Countdown** stays hidden until the final three reference seconds
+  before a braking point, then shows only `3`, `2`, `1`, and `BRAKE`; and
+- **Tracer - Brake Comparison** shows the live driver and reference brake percentages
+  above their overlaid traces around the car's present track position.
 
 There is deliberately no generic live pedal-input display: Tracer is a coaching aid
 rather than another pedal telemetry overlay. Its brake trace shows live input only in
 the context of the selected reference. Users can open only the coaching windows they
 want and keep the larger settings window closed while driving.
 
-The resizable settings window separates reference selection from HUD controls. Its
-**HUDs** page stores a 5, 8, or 10-second reference countdown lead time for Brake and
-Progress. Each HUD is already an independent CSP app window, so it is enabled by
-opening it and disabled by closing it; there is no redundant toggle.
+The resizable settings window separates reference selection from the two HUD launchers.
+Each HUD is an independent CSP app window, so it is enabled by opening it and disabled
+by closing it; there is no redundant toggle.
 
 Keep TRACE running while choosing a reference. The Reference tab asks TRACE's
 loopback-only bridge for recorded sessions matching the current source car, track, and
@@ -62,27 +56,16 @@ The bridge response and generated profile must both contain the selected session
 lap index; the CSP app rejects the result if either differs. The Reference tab also
 shows the active driver, optional session title, lap number, and lap time.
 
-The coaching windows show:
+The driving HUDs show:
 
-- whole reference seconds to the next braking zone, counting down to `BRAKE NOW`;
-- a prominent brake-now state while inside that zone, including the reference brake
-  percentage at the current position;
-- a compact delta-style progress marker for the same countdown; and
-- current and reference gear; and
-- the reference throttle target at the current point on the track, highlighted green
-  when the reference first reaches meaningful throttle after each detected braking
-  zone; and
-- a live speed comparison expressed in plain language: **faster**, **slower**, or
-  **on reference pace** at that point on the circuit; and
+- the final three whole reference seconds to the next braking zone and a large
+  `BRAKE` cue while the reference is braking;
+- the driver's live brake percentage beside the reference percentage at the same
+  track position; and
 - a moving brake-input trace with the last 220 metres of the current lap and 80 metres
   of upcoming reference input. Red is the driver's current lap, purple is the selected
   reference, and the white marker is the car's current position. Current-lap history
   resets at the start/finish line and when another reference is loaded.
-
-New reference profiles store those throttle cues directly. When an older profile does
-not contain them, the CSP app derives the same cues from its compact throttle samples
-at load time. The cue remains visible for 60 metres after the reference application
-point so it can be read while driving.
 
 ## Reference profile
 

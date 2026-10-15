@@ -635,10 +635,10 @@ mod tests {
             .expect("installed manifest is readable");
         assert!(manifest.contains("FUNCTION_MAIN = windowSettings"));
         assert!(manifest.contains("FUNCTION_MAIN = windowBrake"));
-        assert!(manifest.contains("FUNCTION_MAIN = windowProgress"));
-        assert!(manifest.contains("FUNCTION_MAIN = windowGear"));
-        assert!(manifest.contains("FUNCTION_MAIN = windowCoach"));
-        assert!(manifest.contains("FUNCTION_MAIN = windowBrakeTrace"));
+        assert!(manifest.contains("FUNCTION_MAIN = windowBrakeComparison"));
+        assert!(!manifest.contains("FUNCTION_MAIN = windowProgress"));
+        assert!(!manifest.contains("FUNCTION_MAIN = windowGear"));
+        assert!(!manifest.contains("FUNCTION_MAIN = windowCoach"));
     }
 
     #[test]

@@ -16,24 +16,17 @@ local pendingSelection = nil
 local profileTrackOverride = false
 local settingsPage = 'reference'
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
-local preferences = ac.storage({
-  countdownLeadSeconds = 10
-})
-
 local colors = {
   text = rgbm(0.94, 0.94, 0.94, 1),
   muted = rgbm(0.52, 0.55, 0.56, 1),
-  green = rgbm(0.18, 0.86, 0.53, 1),
   red = rgbm(0.92, 0.25, 0.25, 1),
   purple = rgbm(0.70, 0.42, 1.00, 1),
   surface = rgbm(0.08, 0.08, 0.08, 0.96),
   raised = rgbm(0.12, 0.12, 0.12, 1),
   track = rgbm(0.18, 0.18, 0.18, 1)
 }
-local hudInset = 6
 local hudPadding = 12
 local throttleCuePercent = 30
-local throttleCueVisibleMetres = 60
 local brakeTraceBehindMetres = 220
 local brakeTraceAheadMetres = 80
 local liveBrakeTrace = {
@@ -172,10 +165,9 @@ local function sampleAt(distanceM)
   return samples[index]
 end
 
-local function normalizedBrakePercent(value)
+local function liveBrakePercent(value)
   if not value then return 0 end
-  if value <= 1.01 then value = value * 100 end
-  return math.clamp(value, 0, 100)
+  return math.clamp(value * 100, 0, 100)
 end
 
 local function recordLiveBrake(state)
@@ -194,7 +186,7 @@ local function recordLiveBrake(state)
   liveBrakeTrace.lastDistanceM = state.distanceM
   local spacing = math.max(profile.sampleSpacingM or 5, 1)
   local index = math.floor(state.distanceM / spacing + 0.5) + 1
-  liveBrakeTrace.samples[index] = normalizedBrakePercent(state.car.brake)
+  liveBrakeTrace.samples[index] = liveBrakePercent(state.car.brake)
 end
 
 local function liveBrakeAt(distanceM)
@@ -220,16 +212,6 @@ local function activeOrNextZone(distanceM)
     if zones[i].endM >= distanceM then return zones[i] end
   end
   return zones[1]
-end
-
-local function activeThrottleCue(distanceM)
-  local cues = profile and profile.throttleCues or {}
-  for index = 1, #cues do
-    local offset = distanceM - cues[index].startM
-    if offset < 0 then offset = offset + profile.trackLengthM end
-    if offset >= 0 and offset <= throttleCueVisibleMetres then return cues[index] end
-  end
-  return nil
 end
 
 local function sessionTitle(session)
@@ -402,7 +384,6 @@ local function coachState()
   local distanceM = math.saturate(car.splinePosition or 0) * profile.trackLengthM
   local target = sampleAt(distanceM)
   local zone = activeOrNextZone(distanceM)
-  local throttleCue = activeThrottleCue(distanceM)
   local secondsToBrake = nil
   if zone and target and target.e then
     local zoneStart = sampleAt(zone.startM)
@@ -419,7 +400,6 @@ local function coachState()
     car = car,
     target = target,
     zone = zone,
-    throttleCue = throttleCue,
     distanceM = distanceM,
     secondsToBrake = secondsToBrake,
     wrongTrack = wrongTrack
@@ -433,17 +413,8 @@ local function drawUnavailable(message)
   if ui.button('OPEN SETTINGS', vec2(108, 25)) then openSettings() end
 end
 
-local function drawHudSurface(accent, surface)
-  ui.drawRectFilled(vec2(hudInset, hudInset), ui.windowSize() - vec2(hudInset, hudInset), surface or colors.surface, 6)
-  ui.drawRectFilled(vec2(hudInset, 16), vec2(hudInset + 3, ui.windowHeight() - 16), accent, 2)
-end
-
-local function brakeHudStyle(state)
-  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if isBraking then return colors.red, rgbm(0.78, 0.10, 0.10, 0.98), true, true end
-  if not state.secondsToBrake then return colors.muted, colors.surface, false, false end
-  local urgency = math.saturate((5 - state.secondsToBrake) / 5)
-  return rgbm(0.92, 0.25, 0.25, 1), rgbm(0.08 + 0.62 * urgency, 0.08 - 0.03 * urgency, 0.08 - 0.03 * urgency, 0.98), urgency > 0, false
+local function drawFlatSurface(surface)
+  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), surface or colors.surface, 0)
 end
 
 local function centeredText(text, size, y, color, height)
@@ -452,56 +423,26 @@ local function centeredText(text, size, y, color, height)
 end
 
 local function countdownLabel(state)
-  if state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM then return 'BRAKE NOW' end
+  if state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM then return 'BRAKE' end
   if state.secondsToBrake then return tostring(math.max(1, math.ceil(state.secondsToBrake))) end
   return '—'
-end
-
-local function brakeTargetLabel(state)
-  local target = state.target and state.target.b
-  if target == nil then return 'BRAKE NOW' end
-  return string.format('BRAKE %d%%', math.clamp(math.floor(target + 0.5), 0, 100))
-end
-
-local function gearLabel(gear)
-  if gear == nil then return '—' end
-  if gear < 0 then return 'R' end
-  if gear == 0 then return 'N' end
-  return tostring(gear)
-end
-
-local function speedDeltaLabel(state)
-  local referenceSpeed = state.target and state.target.s
-  local liveSpeed = state.car and state.car.speedKmh
-  if not referenceSpeed or not liveSpeed then return '—', colors.muted end
-  local rawDelta = liveSpeed - referenceSpeed
-  local rounded = rawDelta >= 0 and math.floor(rawDelta + 0.5) or math.ceil(rawDelta - 0.5)
-  if rounded > 2 then return string.format('%d KM/H FASTER', rounded), colors.red end
-  if rounded < -2 then return string.format('%d KM/H SLOWER', math.abs(rounded)), colors.purple end
-  return 'ON REFERENCE PACE', colors.green
-end
-
-local function throttleTarget(state)
-  local target = state.target and state.target.t
-  if not target then return '—', 0 end
-  local percentage = math.clamp(math.floor(target + 0.5), 0, 100)
-  return string.format('%d%%', percentage), percentage / 100
 end
 
 function script.windowBrake()
   ensureProfileLoaded()
   local state, stateError = coachState()
   if not state then
-    drawHudSurface(colors.red)
+    drawFlatSurface(colors.surface)
     drawUnavailable(stateError)
     return
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds) then return end
+  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 3) then return end
 
-  local accent, surface, urgent = brakeHudStyle(state)
-  drawHudSurface(accent, surface)
-  centeredText(isBraking and brakeTargetLabel(state) or countdownLabel(state), isBraking and 40 or 68, 14, colors.text, 84)
+  local urgency = isBraking and 1 or math.saturate((3 - state.secondsToBrake) / 3)
+  local surface = rgbm(0.16 + 0.62 * urgency, 0.055, 0.055, 0.98)
+  drawFlatSurface(surface)
+  centeredText(countdownLabel(state), isBraking and 44 or 68, 0, colors.text, ui.windowHeight())
 end
 
 local function drawBrakeTraceSeries(state, graphStart, graphSize, source, color, thickness)
@@ -525,28 +466,34 @@ local function drawBrakeTraceSeries(state, graphStart, graphSize, source, color,
   end
 end
 
-function script.windowBrakeTrace()
+function script.windowBrakeComparison()
   ensureProfileLoaded()
   local state, stateError = coachState()
   if not state then
-    drawHudSurface(colors.red)
+    drawFlatSurface(colors.surface)
     drawUnavailable(stateError)
     return
   end
   recordLiveBrake(state)
-  drawHudSurface(colors.red)
+  drawFlatSurface(colors.surface)
 
-  local graphStart = vec2(hudPadding + 30, 30)
-  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, ui.windowHeight() - graphStart.y - 18)
+  local liveBrake = liveBrakePercent(state.car.brake)
+  local referenceBrake = math.clamp(state.target and state.target.b or 0, 0, 100)
+  local halfWidth = (ui.windowWidth() - hudPadding * 2) / 2
+  ui.setCursor(vec2(hudPadding, 8))
+  ui.dwriteTextAligned('YOU', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 12), false, colors.red)
+  ui.setCursor(vec2(hudPadding, 20))
+  ui.dwriteTextAligned(string.format('%d%%', math.floor(liveBrake + 0.5)), 24, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 28), false, colors.text)
+  ui.setCursor(vec2(hudPadding + halfWidth, 8))
+  ui.dwriteTextAligned('REFERENCE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 12), false, colors.purple)
+  ui.setCursor(vec2(hudPadding + halfWidth, 20))
+  ui.dwriteTextAligned(string.format('%d%%', math.floor(referenceBrake + 0.5)), 24, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 28), false, colors.text)
+
+  local graphStart = vec2(hudPadding + 30, 58)
+  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, ui.windowHeight() - graphStart.y - 14)
   ui.drawRectFilled(graphStart, graphStart + graphSize, rgbm(0.055, 0.055, 0.055, 1), 2)
   ui.drawLine(graphStart + vec2(0, graphSize.y / 2), graphStart + vec2(graphSize.x, graphSize.y / 2), colors.track, 1)
 
-  ui.setCursor(vec2(hudPadding, 8))
-  ui.dwriteText('BRAKE INPUT', 10, colors.text)
-  ui.sameLine()
-  ui.dwriteText('YOU', 10, colors.red)
-  ui.sameLine()
-  ui.dwriteText('REFERENCE', 10, colors.purple)
   ui.setCursor(vec2(hudPadding, graphStart.y - 6))
   ui.dwriteText('100', 9, colors.muted)
   ui.setCursor(vec2(hudPadding + 8, graphStart.y + graphSize.y - 8))
@@ -563,116 +510,14 @@ function script.windowBrakeTrace()
   ui.drawLine(vec2(cursorX, graphStart.y - 3), vec2(cursorX, graphStart.y + graphSize.y + 3), colors.text, 1)
 end
 
-function script.windowGear()
-  ensureProfileLoaded()
-  drawHudSurface(colors.purple)
-  local state, stateError = coachState()
-  if not state then
-    drawUnavailable(stateError)
-    return
-  end
-  local gap = 12
-  local contentWidth = ui.windowWidth() - hudPadding * 2
-  local half = (contentWidth - gap) / 2
-  local secondX = hudPadding + half + gap
-  ui.drawLine(vec2(hudPadding + half + gap / 2, 18), vec2(hudPadding + half + gap / 2, ui.windowHeight() - 14), colors.track, 1)
-  ui.setCursor(vec2(hudPadding, 11))
-  ui.dwriteTextAligned('CURRENT', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 14), false, colors.muted)
-  ui.setCursor(vec2(secondX, 11))
-  ui.dwriteTextAligned('REFERENCE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 14), false, colors.purple)
-  ui.setCursor(vec2(hudPadding, 30))
-  ui.dwriteTextAligned(gearLabel(state.car.gear), 44, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 48), false, colors.text)
-  ui.setCursor(vec2(secondX, 30))
-  ui.dwriteTextAligned(gearLabel(state.target and state.target.g or nil), 44, ui.Alignment.Center, ui.Alignment.Center, vec2(half, 48), false, colors.purple)
-end
-
-function script.windowProgress()
-  ensureProfileLoaded()
-  local state, stateError = coachState()
-  if not state then
-    drawHudSurface(colors.red)
-    drawUnavailable(stateError)
-    return
-  end
-  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  if not isBraking and (not state.secondsToBrake or state.secondsToBrake > preferences.countdownLeadSeconds) then return end
-  local accent, surface, urgent = brakeHudStyle(state)
-  drawHudSurface(accent, surface)
-  local display = isBraking and '0s' or countdownLabel(state) .. 's'
-  ui.setCursor(vec2(hudPadding, 7))
-  ui.dwriteTextAligned(display, 22, ui.Alignment.Center, ui.Alignment.Center, vec2(ui.windowWidth() - hudPadding * 2, 24), false, colors.text)
-  local barStart = vec2(hudPadding + 4, 39)
-  local barWidth = ui.windowWidth() - (hudPadding + 4) * 2
-  local progress = isBraking and 1 or (state.secondsToBrake and math.saturate((5 - state.secondsToBrake) / 5) or 0)
-  local centre = barStart.x + barWidth / 2
-  local marker = centre + barWidth / 2 * progress
-  ui.drawRectFilled(barStart, barStart + vec2(barWidth, 12), colors.track, 3)
-  ui.drawRectFilled(vec2(centre, barStart.y), vec2(marker, barStart.y + 12), accent, 3)
-  ui.drawLine(vec2(centre, barStart.y - 4), vec2(centre, barStart.y + 16), colors.muted, 1)
-  ui.drawRectFilled(vec2(marker - 2, barStart.y - 3), vec2(marker + 2, barStart.y + 15), colors.text, 2)
-end
-
-function script.windowCoach()
-  ensureProfileLoaded()
-  local state, stateError = coachState()
-  if not state then
-    drawHudSurface(colors.red)
-    drawUnavailable(stateError)
-    return
-  end
-  local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  local brakeText = isBraking and brakeTargetLabel(state) or (state.secondsToBrake and state.secondsToBrake <= preferences.countdownLeadSeconds and countdownLabel(state) .. 's' or '—')
-  local throttleText = throttleTarget(state)
-  local speedText, speedColor = speedDeltaLabel(state)
-  local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
-  drawHudSurface(accent, colors.surface)
-  local gap = 14
-  local contentWidth = ui.windowWidth() - hudPadding * 2
-  local third = (contentWidth - gap * 2) / 3
-  local secondX = hudPadding + third + gap
-  local thirdX = secondX + third + gap
-  ui.drawLine(vec2(hudPadding + third + gap / 2, 18), vec2(hudPadding + third + gap / 2, ui.windowHeight() - 18), colors.track, 1)
-  ui.drawLine(vec2(secondX + third + gap / 2, 18), vec2(secondX + third + gap / 2, ui.windowHeight() - 18), colors.track, 1)
-  ui.setCursor(vec2(hudPadding, 13))
-  ui.dwriteTextAligned('BRAKE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, isBraking and colors.red or colors.muted)
-  ui.setCursor(vec2(secondX, 13))
-  ui.dwriteTextAligned('THROTTLE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, state.throttleCue and colors.green or colors.muted)
-  ui.setCursor(vec2(thirdX, 13))
-  ui.dwriteTextAligned('GEAR', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, colors.muted)
-  ui.setCursor(vec2(hudPadding, 31))
-  ui.dwriteTextAligned(brakeText, isBraking and 25 or 34, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 37), false, colors.text)
-  ui.setCursor(vec2(secondX, 31))
-  ui.dwriteTextAligned(throttleText, 34, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 37), false, state.throttleCue and colors.green or colors.text)
-  ui.setCursor(vec2(thirdX, 31))
-  ui.dwriteTextAligned(string.format('%s → %s', gearLabel(state.car.gear), gearLabel(state.target and state.target.g or nil)), 29, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 37), false, colors.purple)
-  ui.setCursor(vec2(hudPadding, 73))
-  ui.dwriteTextAligned(speedText, 11, ui.Alignment.Center, ui.Alignment.Center, vec2(third, 14), false, speedColor)
-end
-
 local function drawHudSettings()
-  ui.dwriteText('BRAKING CUE', 13, colors.text)
-  ui.dwriteText('Show the countdown this many seconds before the reference braking point.', 11, colors.muted)
-  ui.dummy(8)
-  for index, seconds in ipairs({ 5, 8, 10 }) do
-    if index > 1 then ui.sameLine() end
-    local selected = preferences.countdownLeadSeconds == seconds
-    local label = selected and string.format('%ds *##lead-%d', seconds, seconds) or string.format('%ds##lead-%d', seconds, seconds)
-    if ui.button(label, vec2(52, 26)) then preferences.countdownLeadSeconds = seconds end
-  end
-  ui.dummy(14)
-  ui.separator()
-  ui.dummy(12)
-  ui.dwriteText('COACHING WINDOWS', 13, colors.text)
-  ui.dwriteText('Open a window, then position it with CSP. Closing it turns that view off.', 11, colors.muted)
+  ui.dwriteText('DRIVING HUDS', 13, colors.text)
+  ui.dwriteText('Open and position either borderless HUD with CSP. The countdown appears only for 3, 2, 1 and BRAKE.', 11, colors.muted)
   ui.dummy(9)
   local buttonWidth = math.max(120, (ui.availableSpaceX() - 8) / 2)
-  if ui.button('BRAKE', vec2(buttonWidth, 30)) then ac.setWindowOpen('brake', true) end
+  if ui.button('BRAKE COUNTDOWN', vec2(buttonWidth, 34)) then ac.setWindowOpen('brake', true) end
   ui.sameLine()
-  if ui.button('PROGRESS', vec2(buttonWidth, 30)) then ac.setWindowOpen('progress', true) end
-  if ui.button('GEAR', vec2(buttonWidth, 30)) then ac.setWindowOpen('gear', true) end
-  ui.sameLine()
-  if ui.button('COMBINED', vec2(buttonWidth, 30)) then ac.setWindowOpen('coach', true) end
-  if ui.button('BRAKE TRACE', vec2(buttonWidth, 30)) then ac.setWindowOpen('brakeTrace', true) end
+  if ui.button('BRAKE COMPARISON', vec2(buttonWidth, 34)) then ac.setWindowOpen('comparison', true) end
 end
 
 local function drawSettingsNavigation()
