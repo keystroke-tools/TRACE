@@ -26,6 +26,7 @@ import {
 import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import { ComparisonSessionPicker } from "./ComparisonSessionPicker";
+import { fasterReferenceSuggestions, type ComparisonSelection, type ReferenceSuggestion, validComparisonLaps } from "./comparison-selection";
 import { FEATURE_FLAGS_CHANGED_EVENT, richComparisonPickerEnabled } from "../settings/feature-flags";
 import {
 	filterSamplesByDistance,
@@ -40,16 +41,18 @@ const COMPARISON_PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4] as cons
 export function ComparePage({
 	sessions,
 	onReviewActivity,
+	initialSelection,
 }: {
 	sessions: RecordedSessionSummary[];
 	onReviewActivity: (activity: DiscordReviewActivity | null) => void;
+	initialSelection?: ComparisonSelection | null;
 }) {
 	const showToast = useToast();
 	const eligibleSessions = useMemo(() => sessions.filter((session) => validComparisonLaps(session).length > 0), [sessions]);
-	const [referenceSessionId, setReferenceSessionId] = useState("");
-	const [comparisonSessionId, setComparisonSessionId] = useState("");
-	const [referenceLap, setReferenceLap] = useState<number | null>(null);
-	const [comparisonLap, setComparisonLap] = useState<number | null>(null);
+	const [referenceSessionId, setReferenceSessionId] = useState(initialSelection?.referenceSessionId ?? "");
+	const [comparisonSessionId, setComparisonSessionId] = useState(initialSelection?.analysedSessionId ?? "");
+	const [referenceLap, setReferenceLap] = useState<number | null>(initialSelection?.referenceLapIndex ?? null);
+	const [comparisonLap, setComparisonLap] = useState<number | null>(initialSelection?.analysedLapIndex ?? null);
 	const [comparison, setComparison] = useState<LapComparison | null>(null);
 	const [comparisonRequestVersion, setComparisonRequestVersion] = useState(0);
 	const [state, setState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -64,8 +67,8 @@ export function ComparePage({
 	const [analysisCollapsed, setAnalysisCollapsed] = useState(false);
 	const [savedComparisons, setSavedComparisons] = useState<SavedComparison[]>([]);
 	const mapPip = useTrackMapPip(comparison != null && state === "ready");
-	const skipReferenceDefaults = useRef(false);
-	const skipComparisonDefaults = useRef(false);
+	const skipReferenceDefaults = useRef(initialSelection != null);
+	const skipComparisonDefaults = useRef(initialSelection != null);
 	const playbackAnimationFrame = useRef(0);
 	const playbackStartIndex = useRef(0);
 	const playbackSpeedRef = useRef(1);
@@ -131,7 +134,7 @@ export function ComparePage({
 	}, [showToast]);
 
 	useEffect(() => {
-		if (!referenceSessionId && eligibleSessions[0]) {
+		if (!initialSelection && !referenceSessionId && eligibleSessions[0]) {
 			const analysedSession = eligibleSessions.find((session) => sessionSourceGroup(session) !== "imported") ?? eligibleSessions[0];
 			const analysedLap = validComparisonLaps(analysedSession)[0];
 			if (!analysedLap) return;
@@ -159,7 +162,7 @@ export function ComparePage({
 			setComparisonSessionId(analysedSession.id);
 			setComparisonLap(analysedLap.index);
 		}
-	}, [eligibleSessions, referenceSessionId]);
+	}, [eligibleSessions, initialSelection, referenceSessionId]);
 
 	useEffect(() => {
 		if (skipReferenceDefaults.current) {
@@ -724,13 +727,6 @@ export function ComparePage({
 			)}
 		</>
 	);
-}
-
-function validComparisonLaps(session: RecordedSessionSummary) {
-	return session.laps
-		.filter((lap) => !lapIsInvalid(lap) && lap.time !== "—")
-		.slice()
-		.sort((left, right) => lapDuration(left) - lapDuration(right));
 }
 
 function SavedComparisonsDock({
@@ -1696,38 +1692,6 @@ function ComparisonHud({
 			</div>
 		</>
 	);
-}
-
-type ReferenceSuggestion = {
-	session: RecordedSessionSummary;
-	lap: RecordedSessionSummary["laps"][number];
-	imported: boolean;
-	gainSeconds: number;
-};
-
-function fasterReferenceSuggestions(
-	sessions: RecordedSessionSummary[],
-	targetSession: RecordedSessionSummary | undefined,
-	targetLap: RecordedSessionSummary["laps"][number] | null,
-	targetSessionId: string,
-	targetLapIndex: number | null,
-) {
-	if (!targetSession || !targetLap) return [];
-	const targetDuration = lapDuration(targetLap);
-	return sessions
-		.filter((session) => session.simulatorId === targetSession.simulatorId && session.track === targetSession.track && session.car === targetSession.car)
-		.flatMap((session) =>
-			validComparisonLaps(session)
-				.filter((lap) => lapDuration(lap) < targetDuration && (session.id !== targetSessionId || lap.index !== targetLapIndex))
-				.map((lap): ReferenceSuggestion => ({
-					session,
-					lap,
-					imported: sessionSourceGroup(session) === "imported",
-					gainSeconds: (targetDuration - lapDuration(lap)) / 1_000_000_000,
-				})),
-		)
-		.sort((left, right) => Number(right.imported) - Number(left.imported) || lapDuration(left.lap) - lapDuration(right.lap))
-		.slice(0, 10);
 }
 
 function SuggestedReferencesList({

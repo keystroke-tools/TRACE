@@ -336,6 +336,11 @@ Comparison uses the same projection for two complete valid laps from the same
 simulator, track, car, and layout. The faster benchmark is labelled **Reference**; the
 lap being reviewed is labelled **Analysed Lap**. Each lap has an independent session selector, so a
 driver can compare separate visits, imported drivers, or two laps from one run. The
+session overview also provides a direct **Compare** action. It starts from that
+session's quickest valid lap, lets the driver choose another valid lap from the run,
+and lists only faster compatible references before opening the comparison workspace
+with the complete pair selected. This uses the same imported-first, then lap-time
+ordering as the suggestions inside the comparison workspace.
 compact selectors live in the persistent comparison HUD rather than consuming the
 analysis canvas. Their labels always retain the session date and time alongside any
 driver or custom name, so repeated runs remain distinguishable. A collapsed attachment above the Analysed Lap side of the HUD lists

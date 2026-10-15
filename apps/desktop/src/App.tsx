@@ -12,6 +12,7 @@ import {
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
 import { ComparePage } from "./features/compare/ComparePage";
+import type { ComparisonSelection } from "./features/compare/comparison-selection";
 import { LivePage } from "./features/live/LivePage";
 import { OverlaysPage } from "./features/overlays/OverlaysPage";
 import { LapVisualizer } from "./features/sessions/LapVisualizer";
@@ -41,6 +42,7 @@ export function App() {
 	const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 	const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
 	const [summarySessionId, setSummarySessionId] = useState<string | null>(null);
+	const [comparisonSelection, setComparisonSelection] = useState<ComparisonSelection | null>(null);
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
@@ -250,6 +252,7 @@ export function App() {
 			<Navigation
 				active={section}
 				onChange={(next) => {
+					if (next === "COMPARE") setComparisonSelection(null);
 					setSection(next);
 					if (next !== "SESSIONS") {
 						setOpenSessionId(null);
@@ -276,7 +279,14 @@ export function App() {
 						openLapIndex == null ? (
 							<SessionDetail
 								session={openSession}
+								sessions={sessions}
 								onOpenLap={setOpenLapIndex}
+								onCompare={(selection) => {
+									setComparisonSelection(selection);
+									setOpenSessionId(null);
+									setOpenLapIndex(null);
+									setSection("COMPARE");
+								}}
 								liveBroadcast={liveBroadcast}
 								onShowSummary={() => setSummarySessionId(openSession.id)}
 								onStartLive={() => void startRecordedBroadcast(openSession.id, liveOptions())}
@@ -299,7 +309,9 @@ export function App() {
 							onImported={async () => setSessions(await telemetryDataSource.getSessions())}
 						/>
 					))}
-				{section === "COMPARE" && <ComparePage sessions={sessions} onReviewActivity={updateDiscordReviewActivity} />}
+				{section === "COMPARE" && (
+					<ComparePage sessions={sessions} initialSelection={comparisonSelection} onReviewActivity={updateDiscordReviewActivity} />
+				)}
 				{section === "OVERLAYS" && <OverlaysPage sessions={sessions} status={status} />}
 				{section === "SETUPS" && <SetupsPage />}
 				{section === "SETTINGS" && <SettingsPage />}

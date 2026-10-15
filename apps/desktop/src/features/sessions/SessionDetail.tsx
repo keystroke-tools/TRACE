@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
 	telemetryDataSource,
@@ -12,6 +13,7 @@ import { Metric, SectionHeading } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
 import { ConsistencyChart } from "./ConsistencyChart";
+import { fasterReferenceSuggestions, type ComparisonSelection, validComparisonLaps } from "../compare/comparison-selection";
 import { savedSetupFolder } from "../setups/setup-preferences";
 import {
 	DeleteConfirmation,
@@ -40,7 +42,9 @@ import {
 
 export function SessionDetail({
 	session,
+	sessions,
 	onOpenLap,
+	onCompare,
 	liveBroadcast,
 	onShowSummary,
 	onStartLive,
@@ -49,7 +53,9 @@ export function SessionDetail({
 	onOpenLiveLink,
 }: {
 	session: RecordedSessionSummary;
+	sessions: RecordedSessionSummary[];
 	onOpenLap: (lapIndex: number) => void;
+	onCompare: (selection: ComparisonSelection) => void;
 	liveBroadcast: LiveBroadcastStatus | null;
 	onShowSummary: () => void;
 	onStartLive: () => void;
@@ -67,6 +73,7 @@ export function SessionDetail({
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
 	const [exportingTrace, setExportingTrace] = useState(false);
+	const [compareOpen, setCompareOpen] = useState(false);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
 	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
 	const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
@@ -246,6 +253,14 @@ export function SessionDetail({
 					</Tooltip>
 					<button
 						type="button"
+						disabled={!bestLap}
+						onClick={() => setCompareOpen(true)}
+						className="h-9 border border-trace-purple/60 bg-trace-purple/10 px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-purple hover:bg-trace-purple hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+					>
+						COMPARE
+					</button>
+					<button
+						type="button"
 						onClick={onShowSummary}
 						className="h-9 border border-trace-divider bg-trace-deep px-3 font-mono text-[10px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-purple/70 hover:text-trace-purple"
 					>
@@ -295,6 +310,17 @@ export function SessionDetail({
 					</button>
 				</div>
 			</div>
+			{compareOpen && (
+				<SessionComparisonPicker
+					session={session}
+					sessions={sessions}
+					onClose={() => setCompareOpen(false)}
+					onSelect={(selection) => {
+						setCompareOpen(false);
+						onCompare(selection);
+					}}
+				/>
+			)}
 
 			{thisSessionIsLive && liveBroadcast && liveBroadcast.phase !== "idle" && (
 				<div className="mt-3 border border-trace-divider bg-trace-deep px-4 py-3">
@@ -458,6 +484,121 @@ export function SessionDetail({
 				<SectorLegend colour="bg-trace-sector-yellow" label="Slower" />
 			</div>
 		</>
+	);
+}
+
+function SessionComparisonPicker({
+	session,
+	sessions,
+	onClose,
+	onSelect,
+}: {
+	session: RecordedSessionSummary;
+	sessions: RecordedSessionSummary[];
+	onClose: () => void;
+	onSelect: (selection: ComparisonSelection) => void;
+}) {
+	const laps = validComparisonLaps(session);
+	const [analysedLapIndex, setAnalysedLapIndex] = useState(laps[0]?.index ?? null);
+	const analysedLap = laps.find((lap) => lap.index === analysedLapIndex) ?? null;
+	const suggestions = fasterReferenceSuggestions(sessions, session, analysedLap, session.id, analysedLapIndex);
+
+	useEffect(() => {
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") onClose();
+		};
+		document.addEventListener("keydown", closeOnEscape);
+		return () => document.removeEventListener("keydown", closeOnEscape);
+	}, [onClose]);
+
+	return createPortal(
+		<div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-6" role="presentation" onMouseDown={onClose}>
+			<section
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="session-compare-title"
+				className="w-full max-w-3xl border border-trace-divider bg-trace-surface shadow-2xl"
+				onMouseDown={(event) => event.stopPropagation()}
+			>
+				<header className="flex items-start justify-between gap-5 border-b border-trace-divider px-5 py-4">
+					<div>
+						<p className="font-mono text-[10px] font-bold tracking-[.12em] text-trace-purple">START A COMPARISON</p>
+						<h2 id="session-compare-title" className="mt-1 text-lg font-black text-trace-text">
+							Choose a faster reference
+						</h2>
+						<p className="mt-1 text-[12px] leading-5 text-trace-muted">
+							Only valid laps from the same simulator, car, track, and layout are shown.
+						</p>
+					</div>
+					<button
+						type="button"
+						onClick={onClose}
+						aria-label="Close comparison picker"
+						className="grid size-8 shrink-0 place-items-center border border-trace-divider font-mono text-sm text-trace-muted hover:border-trace-soft hover:text-white"
+					>
+						×
+					</button>
+				</header>
+
+				<div className="border-b border-trace-divider bg-trace-deep px-5 py-4">
+					<p className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">ANALYSED LAP</p>
+					<div className="mt-2 flex flex-wrap gap-2">
+						{laps.map((lap) => (
+							<button
+								type="button"
+								key={lap.index}
+								onClick={() => setAnalysedLapIndex(lap.index)}
+								className={`flex items-center gap-3 border px-3 py-2 font-mono text-[11px] ${lap.index === analysedLapIndex ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider text-trace-muted hover:border-trace-soft hover:text-white"}`}
+							>
+								<span className="text-trace-dim">LAP {lap.index}</span>
+								<strong>{lap.time}</strong>
+							</button>
+						))}
+					</div>
+				</div>
+
+				<div className="max-h-[420px] overflow-y-auto">
+					{suggestions.length === 0 ? (
+						<div className="px-5 py-10 text-center">
+							<strong className="text-[13px] text-trace-soft">No faster compatible lap found</strong>
+							<p className="mx-auto mt-2 max-w-md text-[12px] leading-5 text-trace-muted">
+								Import another driver’s .trace session or record a quicker lap, then it will appear here automatically.
+							</p>
+						</div>
+					) : (
+						suggestions.map((suggestion) => {
+							const identity = suggestion.session.driver ?? suggestion.session.title ?? "Recorded driver";
+							return (
+								<button
+									type="button"
+									key={`${suggestion.session.id}-${suggestion.lap.index}`}
+									onClick={() =>
+										onSelect({
+											referenceSessionId: suggestion.session.id,
+											referenceLapIndex: suggestion.lap.index,
+											analysedSessionId: session.id,
+											analysedLapIndex: analysedLapIndex ?? suggestion.lap.index,
+										})
+									}
+									className="grid w-full grid-cols-[minmax(0,1fr)_110px_90px] items-center gap-4 border-b border-trace-divider px-5 py-4 text-left last:border-b-0 hover:bg-trace-purple-wash"
+								>
+									<span className="min-w-0">
+										<strong className="block truncate text-[13px] text-trace-text">{identity}</strong>
+										<span className="mt-1 block truncate font-mono text-[10px] text-trace-dim">
+											{suggestion.imported ? "IMPORTED · " : ""}
+											{friendlySessionType(suggestion.session)} · {formatCompactSessionDate(suggestion.session.startedAt)}
+										</span>
+									</span>
+									<strong className="font-mono text-[13px] text-trace-purple">{suggestion.lap.time}</strong>
+									<span className="font-mono text-right text-[11px] text-trace-accent">−{suggestion.gainSeconds.toFixed(3)}s</span>
+								</button>
+							);
+						})
+					)}
+				</div>
+			</section>
+		</div>,
+		document.body,
 	);
 }
 
