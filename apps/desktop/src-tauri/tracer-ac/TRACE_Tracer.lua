@@ -10,6 +10,8 @@ local requestState = 'idle'
 local requestMessage = nil
 local profileLoaded = false
 local sessionsRequested = false
+local requestedIdentityKey = nil
+local autoReferenceAttempted = false
 local includeOtherTracks = false
 local expandedSessionId = nil
 local pendingSelection = nil
@@ -20,6 +22,7 @@ local colors = {
   text = rgbm(0.94, 0.94, 0.94, 1),
   muted = rgbm(0.52, 0.55, 0.56, 1),
   red = rgbm(0.92, 0.25, 0.25, 1),
+  green = rgbm(0.20, 0.86, 0.48, 1),
   purple = rgbm(0.70, 0.42, 1.00, 1),
   surface = rgbm(0.08, 0.08, 0.08, 0.96),
   raised = rgbm(0.12, 0.12, 0.12, 1),
@@ -27,13 +30,15 @@ local colors = {
 }
 local hudPadding = 12
 local throttleCuePercent = 30
-local brakeTraceBehindMetres = 220
-local brakeTraceAheadMetres = 80
-local liveBrakeTrace = {
+local inputTraceBehindMetres = 220
+local inputTraceAheadMetres = 80
+local liveInputTrace = {
   samples = {},
   lastDistanceM = nil,
   identity = nil
 }
+
+local generateReference
 
 local function currentIdentity()
   return {
@@ -41,6 +46,11 @@ local function currentIdentity()
     layoutId = ac.getTrackLayout() ~= '' and ac.getTrackLayout() or nil,
     carId = ac.getCarID(0)
   }
+end
+
+local function currentIdentityKey()
+  local identity = currentIdentity()
+  return string.format('%s:%s:%s', identity.carId or '', identity.trackId or '', identity.layoutId or '')
 end
 
 local function parseResponse(err, response)
@@ -95,6 +105,26 @@ local function loadProfile()
   return true
 end
 
+local function fastestExactReference(values)
+  local fastestSession = nil
+  local fastestLap = nil
+  for sessionIndex = 1, #values do
+    local session = values[sessionIndex]
+    if session.exactMatch then
+      for lapIndex = 1, #(session.laps or {}) do
+        local lap = session.laps[lapIndex]
+        if lap.isFastest
+            and lap.durationNs
+            and (not fastestLap or lap.durationNs < fastestLap.durationNs) then
+          fastestSession = session
+          fastestLap = lap
+        end
+      end
+    end
+  end
+  return fastestSession, fastestLap
+end
+
 local function refreshSessions()
   local identity = currentIdentity()
   if not identity.carId or identity.trackId == '' then
@@ -116,10 +146,21 @@ local function refreshSessions()
     sessions = value
     requestState = 'ready'
     requestMessage = #sessions == 0 and (includeOtherTracks and 'No recorded laps match this car.' or 'No recorded laps match this car, track, and layout.') or nil
+    if not includeOtherTracks and not autoReferenceAttempted then
+      autoReferenceAttempted = true
+      local fastestSession, fastestLap = fastestExactReference(sessions)
+      local source = profile and profile.source or {}
+      if fastestSession and fastestLap
+          and (source.sessionId ~= fastestSession.id or source.lapIndex ~= fastestLap.index) then
+        expandedSessionId = fastestSession.id
+        generateReference(fastestSession.id, fastestLap.index, fastestLap.time, false)
+        requestMessage = string.format('Loading fastest reference · %s…', fastestLap.time)
+      end
+    end
   end)
 end
 
-local function generateReference(sessionId, lapIndex, lapTime, allowTrackMismatch)
+generateReference = function(sessionId, lapIndex, lapTime, allowTrackMismatch)
   local request = currentIdentity()
   request.sessionId = sessionId
   request.lapIndex = lapIndex
@@ -165,35 +206,39 @@ local function sampleAt(distanceM)
   return samples[index]
 end
 
-local function liveBrakePercent(value)
+local function livePedalPercent(value)
   if not value then return 0 end
   return math.clamp(value * 100, 0, 100)
 end
 
-local function recordLiveBrake(state)
+local function recordLiveInput(state)
   if not profile or not state or not state.car then return end
   local source = profile.source or {}
   local identity = string.format('%s:%s', source.sessionId or '', source.lapIndex or '')
-  if liveBrakeTrace.identity ~= identity then
-    liveBrakeTrace.samples = {}
-    liveBrakeTrace.lastDistanceM = nil
-    liveBrakeTrace.identity = identity
+  if liveInputTrace.identity ~= identity then
+    liveInputTrace.samples = {}
+    liveInputTrace.lastDistanceM = nil
+    liveInputTrace.identity = identity
   end
-  if liveBrakeTrace.lastDistanceM
-      and state.distanceM < liveBrakeTrace.lastDistanceM - profile.trackLengthM * 0.5 then
-    liveBrakeTrace.samples = {}
+  if liveInputTrace.lastDistanceM
+      and state.distanceM < liveInputTrace.lastDistanceM - profile.trackLengthM * 0.5 then
+    liveInputTrace.samples = {}
   end
-  liveBrakeTrace.lastDistanceM = state.distanceM
+  liveInputTrace.lastDistanceM = state.distanceM
   local spacing = math.max(profile.sampleSpacingM or 5, 1)
   local index = math.floor(state.distanceM / spacing + 0.5) + 1
-  liveBrakeTrace.samples[index] = liveBrakePercent(state.car.brake)
+  liveInputTrace.samples[index] = {
+    brake = livePedalPercent(state.car.brake),
+    throttle = livePedalPercent(state.car.gas)
+  }
 end
 
-local function liveBrakeAt(distanceM)
+local function liveInputAt(distanceM, channel)
   if not profile then return nil end
   local spacing = math.max(profile.sampleSpacingM or 5, 1)
   local index = math.floor(distanceM / spacing + 0.5) + 1
-  return liveBrakeTrace.samples[index]
+  local sample = liveInputTrace.samples[index]
+  return sample and sample[channel] or nil
 end
 
 local function referenceLapDuration()
@@ -358,8 +403,11 @@ local function ensureProfileLoaded()
 end
 
 local function ensureSessionsRequested()
-  if sessionsRequested then return end
+  local identityKey = currentIdentityKey()
+  if sessionsRequested and requestedIdentityKey == identityKey then return end
   sessionsRequested = true
+  requestedIdentityKey = identityKey
+  autoReferenceAttempted = false
   refreshSessions()
 end
 
@@ -430,6 +478,7 @@ end
 
 function script.windowBrake()
   ensureProfileLoaded()
+  ensureSessionsRequested()
   local state, stateError = coachState()
   if not state then
     drawFlatSurface(colors.surface)
@@ -445,12 +494,12 @@ function script.windowBrake()
   centeredText(countdownLabel(state), isBraking and 44 or 68, 0, colors.text, ui.windowHeight())
 end
 
-local function drawBrakeTraceSeries(state, graphStart, graphSize, source, color, thickness)
+local function drawInputTraceSeries(state, graphStart, graphSize, source, color, thickness, dashed)
   local points = 100
   local previous = nil
   for index = 0, points do
     local fraction = index / points
-    local relativeM = -brakeTraceBehindMetres + (brakeTraceBehindMetres + brakeTraceAheadMetres) * fraction
+    local relativeM = -inputTraceBehindMetres + (inputTraceBehindMetres + inputTraceAheadMetres) * fraction
     local distanceM = (state.distanceM + relativeM) % profile.trackLengthM
     local value = source(distanceM)
     if value ~= nil then
@@ -458,7 +507,7 @@ local function drawBrakeTraceSeries(state, graphStart, graphSize, source, color,
         graphStart.x + graphSize.x * fraction,
         graphStart.y + graphSize.y * (1 - math.saturate(value / 100))
       )
-      if previous then ui.drawLine(previous, point, color, thickness) end
+      if previous and (not dashed or index % 4 < 2) then ui.drawLine(previous, point, color, thickness) end
       previous = point
     else
       previous = nil
@@ -468,29 +517,32 @@ end
 
 function script.windowBrakeComparison()
   ensureProfileLoaded()
+  ensureSessionsRequested()
   local state, stateError = coachState()
   if not state then
     drawFlatSurface(colors.surface)
     drawUnavailable(stateError)
     return
   end
-  recordLiveBrake(state)
+  recordLiveInput(state)
   drawFlatSurface(colors.surface)
 
-  local liveBrake = liveBrakePercent(state.car.brake)
+  local liveBrake = livePedalPercent(state.car.brake)
+  local liveThrottle = livePedalPercent(state.car.gas)
   local referenceBrake = math.clamp(state.target and state.target.b or 0, 0, 100)
+  local referenceThrottle = math.clamp(state.target and state.target.t or 0, 0, 100)
   local halfWidth = (ui.windowWidth() - hudPadding * 2) / 2
-  ui.setCursor(vec2(hudPadding, 8))
-  ui.dwriteTextAligned('YOU', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 12), false, colors.red)
-  ui.setCursor(vec2(hudPadding, 20))
-  ui.dwriteTextAligned(string.format('%d%%', math.floor(liveBrake + 0.5)), 24, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 28), false, colors.text)
-  ui.setCursor(vec2(hudPadding + halfWidth, 8))
-  ui.dwriteTextAligned('REFERENCE', 10, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 12), false, colors.purple)
-  ui.setCursor(vec2(hudPadding + halfWidth, 20))
-  ui.dwriteTextAligned(string.format('%d%%', math.floor(referenceBrake + 0.5)), 24, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 28), false, colors.text)
+  ui.setCursor(vec2(hudPadding, 5))
+  ui.dwriteTextAligned('YOU · SOLID', 9, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 11), false, colors.text)
+  ui.setCursor(vec2(hudPadding, 16))
+  ui.dwriteTextAligned(string.format('BRAKE %d%%   THROTTLE %d%%', math.floor(liveBrake + 0.5), math.floor(liveThrottle + 0.5)), 12, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 18), false, colors.text)
+  ui.setCursor(vec2(hudPadding + halfWidth, 5))
+  ui.dwriteTextAligned('REFERENCE · DASHED', 9, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 11), false, colors.muted)
+  ui.setCursor(vec2(hudPadding + halfWidth, 16))
+  ui.dwriteTextAligned(string.format('BRAKE %d%%   THROTTLE %d%%', math.floor(referenceBrake + 0.5), math.floor(referenceThrottle + 0.5)), 12, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 18), false, colors.text)
 
-  local graphStart = vec2(hudPadding + 30, 58)
-  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, ui.windowHeight() - graphStart.y - 14)
+  local graphStart = vec2(hudPadding + 30, 40)
+  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, math.max(58, ui.windowHeight() - graphStart.y - 10))
   ui.drawRectFilled(graphStart, graphStart + graphSize, rgbm(0.055, 0.055, 0.055, 1), 2)
   ui.drawLine(graphStart + vec2(0, graphSize.y / 2), graphStart + vec2(graphSize.x, graphSize.y / 2), colors.track, 1)
 
@@ -498,21 +550,34 @@ function script.windowBrakeComparison()
   ui.dwriteText('100', 9, colors.muted)
   ui.setCursor(vec2(hudPadding + 8, graphStart.y + graphSize.y - 8))
   ui.dwriteText('0', 9, colors.muted)
+  ui.setCursor(graphStart + vec2(5, 3))
+  ui.dwriteText('B', 9, colors.red)
+  ui.sameLine()
+  ui.dwriteText('T', 9, colors.green)
 
-  drawBrakeTraceSeries(state, graphStart, graphSize, function(distanceM)
+  drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     local target = sampleAt(distanceM)
     return target and target.b or nil
-  end, colors.purple, 2)
-  drawBrakeTraceSeries(state, graphStart, graphSize, liveBrakeAt, colors.red, 2.5)
+  end, rgbm(0.92, 0.25, 0.25, 0.55), 2, true)
+  drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
+    local target = sampleAt(distanceM)
+    return target and target.t or nil
+  end, rgbm(0.20, 0.86, 0.48, 0.55), 2, true)
+  drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
+    return liveInputAt(distanceM, 'brake')
+  end, colors.red, 2.5, false)
+  drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
+    return liveInputAt(distanceM, 'throttle')
+  end, colors.green, 2.5, false)
 
-  local cursorFraction = brakeTraceBehindMetres / (brakeTraceBehindMetres + brakeTraceAheadMetres)
+  local cursorFraction = inputTraceBehindMetres / (inputTraceBehindMetres + inputTraceAheadMetres)
   local cursorX = graphStart.x + graphSize.x * cursorFraction
   ui.drawLine(vec2(cursorX, graphStart.y - 3), vec2(cursorX, graphStart.y + graphSize.y + 3), colors.text, 1)
 end
 
 local function drawHudSettings()
   ui.dwriteText('DRIVING HUDS', 13, colors.text)
-  ui.dwriteText('Open and position either borderless HUD with CSP. The countdown appears only for 3, 2, 1 and BRAKE.', 11, colors.muted)
+  ui.dwriteText('The fastest exact-match lap loads automatically. Open and position either borderless HUD with CSP.', 11, colors.muted)
   ui.dummy(9)
   local buttonWidth = math.max(120, (ui.availableSpaceX() - 8) / 2)
   if ui.button('BRAKE COUNTDOWN', vec2(buttonWidth, 34)) then ac.setWindowOpen('brake', true) end

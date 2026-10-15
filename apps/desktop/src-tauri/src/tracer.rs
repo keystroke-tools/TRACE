@@ -89,6 +89,7 @@ pub(super) struct TracerSession {
 struct TracerLap {
     index: u32,
     time: String,
+    duration_ns: u64,
     validity: String,
     is_fastest: bool,
 }
@@ -333,6 +334,7 @@ fn matching_session_summaries(
                     Some(TracerLap {
                         index: lap.index,
                         time: super::format_lap_time(duration_ns),
+                        duration_ns,
                         validity: lap.validity.clone(),
                         is_fastest: Some(duration_ns) == fastest_valid_ns,
                     })
@@ -711,6 +713,14 @@ mod tests {
         assert_eq!(result[0].id, "matching");
         assert_eq!(result[0].best_lap_time.as_deref(), Some("1:51.000"));
         assert_eq!(result[0].laps.len(), 3);
+        assert_eq!(
+            result[0]
+                .laps
+                .iter()
+                .find(|lap| lap.index == 3)
+                .map(|lap| lap.duration_ns),
+            Some(111_000_000_000)
+        );
         assert!(
             result[0]
                 .laps

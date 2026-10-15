@@ -19,13 +19,14 @@ positioned, borderless HUD windows:
 
 - **Tracer - Brake Countdown** stays hidden until the final three reference seconds
   before a braking point, then shows only `3`, `2`, `1`, and `BRAKE`; and
-- **Tracer - Brake Comparison** shows the live driver and reference brake percentages
-  above their overlaid traces around the car's present track position.
+- **Tracer - Brake Comparison** shows the live driver and reference brake/throttle
+  percentages above their overlaid traces around the car's present track position. It
+  starts shorter than the previous trace window and can be resized in either direction.
 
-There is deliberately no generic live pedal-input display: Tracer is a coaching aid
-rather than another pedal telemetry overlay. Its brake trace shows live input only in
-the context of the selected reference. Users can open only the coaching windows they
-want and keep the larger settings window closed while driving.
+There is deliberately no standalone live pedal-input display: Tracer is a coaching aid
+rather than another pedal telemetry overlay. Its comparison trace shows live brake and
+throttle only in the context of the selected reference. Users can open only the driving
+HUDs they want and keep the larger settings window closed while driving.
 
 The resizable settings window separates reference selection from the two HUD launchers.
 Each HUD is an independent CSP app window, so it is enabled by opening it and disabled
@@ -34,7 +35,9 @@ by closing it; there is no redundant toggle.
 Keep TRACE running while choosing a reference. The Reference tab asks TRACE's
 loopback-only bridge for recorded sessions matching the current source car, track, and
 layout. Expand a session and select any timed lap; the fastest valid lap is marked as a
-convenient default rather than being forced. Selecting a lap makes TRACE:
+convenient default. On first load, Tracer automatically prepares the quickest valid
+exact-match lap across the available sessions. A manual selection still replaces it
+for the rest of that run. Selecting a lap makes TRACE:
 
 1. load the selected lap;
 2. resample it on TRACE's existing five-metre distance grid;
@@ -60,12 +63,13 @@ The driving HUDs show:
 
 - the final three whole reference seconds to the next braking zone and a large
   `BRAKE` cue while the reference is braking;
-- the driver's live brake percentage beside the reference percentage at the same
-  track position; and
-- a moving brake-input trace with the last 220 metres of the current lap and 80 metres
-  of upcoming reference input. Red is the driver's current lap, purple is the selected
-  reference, and the white marker is the car's current position. Current-lap history
-  resets at the start/finish line and when another reference is loaded.
+- the driver's live brake and throttle percentages beside the reference percentages at
+  the same track position; and
+- moving brake and throttle traces with the last 220 metres of the current lap and 80
+  metres of upcoming reference input. Brake is red and throttle is green; the driver's
+  lines are solid and the reference lines are dashed. The white marker is the car's
+  current position. Current-lap history resets at the start/finish line and when
+  another reference is loaded.
 
 ## Reference profile
 
