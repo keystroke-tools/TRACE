@@ -8,7 +8,7 @@ use crate::analysis::{
     Derivation, MetricEvidence, UncertaintyReason,
 };
 
-const ALGORITHM_VERSION: u32 = 3;
+const ALGORITHM_VERSION: u32 = 4;
 const MINIMUM_SAMPLES: usize = 12;
 const BRAKE_ACTIVE_PERCENT: f64 = 5.0;
 const STEERING_ACTIVE_DEGREES: f64 = 5.0;
@@ -609,16 +609,12 @@ fn braking_zone(
                     <= MAXIMUM_BRAKING_POINT_DIFFERENCE_M
             })
         })
-        .min_by(|left, right| {
-            let left_distance = preferred_start_distance_m.map_or_else(
-                || (samples[left.1].distance_m - samples[apex].distance_m).abs(),
-                |preferred| (samples[left.0].distance_m - preferred).abs(),
-            );
-            let right_distance = preferred_start_distance_m.map_or_else(
-                || (samples[right.1].distance_m - samples[apex].distance_m).abs(),
-                |preferred| (samples[right.0].distance_m - preferred).abs(),
-            );
-            left_distance.total_cmp(&right_distance)
+        .max_by(|left, right| {
+            left.2.total_cmp(&right.2).then_with(|| {
+                samples[right.0]
+                    .distance_m
+                    .total_cmp(&samples[left.0].distance_m)
+            })
         })
         .map(|(zone_start, release, peak_percent)| BrakingZone {
             start_distance_m: samples[zone_start].distance_m,
@@ -726,7 +722,7 @@ mod tests {
     #[test]
     fn detects_a_corner_and_keeps_phase_losses_coherent() {
         let result = analyze_corner_comparison(&synthetic_corner(), context());
-        assert_eq!(result.algorithm.version, 3);
+        assert_eq!(result.algorithm.version, 4);
         assert_eq!(result.availability, AnalysisAvailability::Available);
         let value = result.value.expect("available analysis");
         assert_eq!(value.corners.len(), 1);
@@ -780,7 +776,7 @@ mod tests {
     }
 
     #[test]
-    fn nearest_pre_apex_zone_wins_over_an_earlier_brake_application() {
+    fn strongest_pre_apex_zone_wins_over_an_earlier_brake_application() {
         let mut samples = synthetic_corner();
         for (index, sample) in samples.iter_mut().enumerate() {
             sample.comparison_brake_percent = Some(if (1..=3).contains(&index) {
@@ -795,6 +791,36 @@ mod tests {
         let corner = &result.value.expect("available analysis").corners[0];
         assert_eq!(corner.metrics.comparison_braking_point_m, Some(60.0));
         assert_eq!(corner.metrics.comparison_brake_release_point_m, Some(90.0));
+    }
+
+    #[test]
+    fn main_braking_event_wins_over_a_later_correction_for_both_laps() {
+        let mut samples = synthetic_corner();
+        for (index, sample) in samples.iter_mut().enumerate() {
+            sample.reference_brake_percent = Some(if (8..=12).contains(&index) {
+                82.0
+            } else if (16..=18).contains(&index) {
+                28.0
+            } else {
+                0.0
+            });
+            sample.comparison_brake_percent = Some(if (9..=13).contains(&index) {
+                78.0
+            } else if (17..=19).contains(&index) {
+                35.0
+            } else {
+                0.0
+            });
+        }
+
+        let result = analyze_corner_comparison(&samples, context());
+        let corner = &result.value.expect("available analysis").corners[0];
+        assert_eq!(corner.metrics.reference_braking_point_m, Some(40.0));
+        assert_eq!(corner.metrics.reference_brake_release_point_m, Some(60.0));
+        assert_eq!(corner.metrics.reference_peak_brake_percent, Some(82.0));
+        assert_eq!(corner.metrics.comparison_braking_point_m, Some(45.0));
+        assert_eq!(corner.metrics.comparison_brake_release_point_m, Some(65.0));
+        assert_eq!(corner.metrics.comparison_peak_brake_percent, Some(78.0));
     }
 
     #[test]

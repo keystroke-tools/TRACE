@@ -68,12 +68,13 @@ For each detected corner, TRACE performs these steps:
    observations separated by no more than 15 m remain one zone. This tolerance handles
    a brief pressure release and the 5 m analysis grid without connecting clearly
    separate braking events.
-4. Zones beginning after the driver's apex are rejected. The Reference zone whose final
-   active observation is closest to its apex is selected first. The Analysed Lap zone is
-   then paired by braking-point proximity to that Reference zone, and candidates more
-   than 125 m away are rejected. This prevents two different bends inside a compound
-   range from producing a plausible-looking but impossible braking difference. When no
-   credible pair exists, the Analysed braking metric is unavailable rather than guessed.
+4. Zones beginning after the driver's apex are rejected. TRACE selects the candidate
+   with the highest peak pressure, with the earlier candidate winning a tie. This keeps
+   a later corrective brake application from replacing the main braking event. The
+   Analysed Lap zone must still begin within 125 m of the selected Reference zone. This
+   prevents two different bends inside a compound range from producing a plausible-looking
+   but impossible braking difference. When no credible pair exists, the Analysed braking
+   metric is unavailable rather than guessed.
 5. The first active observation is the **braking point**, the final active observation
    is the **release point**, and the maximum pressure within the selected zone is the
    **peak brake pressure**.
@@ -186,7 +187,8 @@ Synthetic core tests cover:
 - coherent phase and total corner loss;
 - an Analysed Lap braking before the Reference-defined corner start;
 - a brief brake-pressure gap remaining within one zone;
-- selection of the nearest pre-apex zone when an earlier brake event exists;
+- selection of the strongest credible pre-apex zone, including a main brake event
+  followed by a lighter correction;
 - missing driver brake data producing no invented zone;
 - a preceding corner's braking not leaking into the following corner;
 - a continuously steered range splitting into two corners at a meaningful speed
@@ -210,9 +212,11 @@ Synthetic core tests cover:
   not claim driver or setup causality.
 
 Future revisions must increment the algorithm identity when thresholds or boundary
-semantics change so cached results remain attributable. Version 3 splits continuously
-active ranges at meaningful speed recoveries, constrains compound-corner apex selection,
-and pairs braking zones between laps. Version 2 introduced
+semantics change so cached results remain attributable. Version 4 selects the strongest
+credible braking event and uses the earlier event as a tie-break, preventing a later
+correction from replacing the main braking zone. Version 3 splits continuously active
+ranges at meaningful speed recoveries, constrains compound-corner apex selection, and
+pairs braking zones between laps. Version 2 introduced
 independent apex-centric braking-zone association, release points, and peak pressure;
 version 1 used the Reference-defined corner range for both laps' first and last threshold
 crossings.
