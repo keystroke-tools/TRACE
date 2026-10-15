@@ -18,13 +18,17 @@ local pendingSelection = nil
 local profileTrackOverride = false
 local settingsPage = 'reference'
 local configPath = ac.getFolder(ac.FolderID.ScriptConfig) .. '/reference.json'
+local preferences = ac.storage({
+  comparisonPreset = 2,
+  hudOpacity = 92,
+  traceThickness = 2.5
+})
 local colors = {
   text = rgbm(0.94, 0.94, 0.94, 1),
   muted = rgbm(0.52, 0.55, 0.56, 1),
   red = rgbm(0.92, 0.25, 0.25, 1),
   green = rgbm(0.20, 0.86, 0.48, 1),
   purple = rgbm(0.70, 0.42, 1.00, 1),
-  surface = rgbm(0.08, 0.08, 0.08, 0.96),
   raised = rgbm(0.12, 0.12, 0.12, 1),
   track = rgbm(0.18, 0.18, 0.18, 1)
 }
@@ -32,6 +36,15 @@ local hudPadding = 12
 local throttleCuePercent = 30
 local inputTraceBehindMetres = 220
 local inputTraceAheadMetres = 80
+local comparisonMinSize = vec2(360, 96)
+local comparisonMaxSize = vec2(800, 220)
+local comparisonPresets = {
+  { name = 'COMPACT', size = vec2(360, 96) },
+  { name = 'STANDARD', size = vec2(480, 112) },
+  { name = 'ULTRAWIDE', size = vec2(720, 112) }
+}
+local pendingComparisonSize = nil
+local restoreComparisonConstraints = false
 local liveInputTrace = {
   samples = {},
   lastDistanceM = nil,
@@ -462,7 +475,8 @@ local function drawUnavailable(message)
 end
 
 local function drawFlatSurface(surface)
-  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), surface or colors.surface, 0)
+  local opacity = math.clamp(preferences.hudOpacity / 100, 0.45, 1)
+  ui.drawRectFilled(vec2(0, 0), ui.windowSize(), surface or rgbm(0.08, 0.08, 0.08, opacity), 0)
 end
 
 local function centeredText(text, size, y, color, height)
@@ -481,7 +495,7 @@ function script.windowBrake()
   ensureSessionsRequested()
   local state, stateError = coachState()
   if not state then
-    drawFlatSurface(colors.surface)
+    drawFlatSurface()
     drawUnavailable(stateError)
     return
   end
@@ -489,7 +503,7 @@ function script.windowBrake()
   if not isBraking and (not state.secondsToBrake or state.secondsToBrake > 3) then return end
 
   local urgency = isBraking and 1 or math.saturate((3 - state.secondsToBrake) / 3)
-  local surface = rgbm(0.16 + 0.62 * urgency, 0.055, 0.055, 0.98)
+  local surface = rgbm(0.16 + 0.62 * urgency, 0.055, 0.055, math.clamp(preferences.hudOpacity / 100, 0.45, 1))
   drawFlatSurface(surface)
   centeredText(countdownLabel(state), isBraking and 44 or 68, 0, colors.text, ui.windowHeight())
 end
@@ -516,16 +530,25 @@ local function drawInputTraceSeries(state, graphStart, graphSize, source, color,
 end
 
 function script.windowBrakeComparison()
+  if pendingComparisonSize then
+    ac.setWindowSizeConstraints('comparison', pendingComparisonSize, pendingComparisonSize)
+    pendingComparisonSize = nil
+    restoreComparisonConstraints = true
+  elseif restoreComparisonConstraints then
+    ac.setWindowSizeConstraints('comparison', comparisonMinSize, comparisonMaxSize)
+    restoreComparisonConstraints = false
+  end
+
   ensureProfileLoaded()
   ensureSessionsRequested()
   local state, stateError = coachState()
   if not state then
-    drawFlatSurface(colors.surface)
+    drawFlatSurface()
     drawUnavailable(stateError)
     return
   end
   recordLiveInput(state)
-  drawFlatSurface(colors.surface)
+  drawFlatSurface()
 
   local liveBrake = livePedalPercent(state.car.brake)
   local liveThrottle = livePedalPercent(state.car.gas)
@@ -543,7 +566,8 @@ function script.windowBrakeComparison()
 
   local graphStart = vec2(hudPadding + 30, 35)
   local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, math.max(42, ui.windowHeight() - graphStart.y - 8))
-  ui.drawRectFilled(graphStart, graphStart + graphSize, rgbm(0.055, 0.055, 0.055, 1), 2)
+  local opacity = math.clamp(preferences.hudOpacity / 100, 0.45, 1)
+  ui.drawRectFilled(graphStart, graphStart + graphSize, rgbm(0.055, 0.055, 0.055, opacity), 2)
   ui.drawLine(graphStart + vec2(0, graphSize.y / 2), graphStart + vec2(graphSize.x, graphSize.y / 2), colors.track, 1)
 
   ui.setCursor(vec2(hudPadding, graphStart.y - 6))
@@ -558,17 +582,17 @@ function script.windowBrakeComparison()
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     local target = sampleAt(distanceM)
     return target and target.b or nil
-  end, rgbm(0.92, 0.25, 0.25, 0.42), 2)
+  end, rgbm(0.92, 0.25, 0.25, 0.42), math.max(1, preferences.traceThickness * 0.8))
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     local target = sampleAt(distanceM)
     return target and target.t or nil
-  end, rgbm(0.20, 0.86, 0.48, 0.42), 2)
+  end, rgbm(0.20, 0.86, 0.48, 0.42), math.max(1, preferences.traceThickness * 0.8))
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     return liveInputAt(distanceM, 'brake')
-  end, colors.red, 2.5)
+  end, colors.red, preferences.traceThickness)
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     return liveInputAt(distanceM, 'throttle')
-  end, colors.green, 2.5)
+  end, colors.green, preferences.traceThickness)
 
   local cursorFraction = inputTraceBehindMetres / (inputTraceBehindMetres + inputTraceAheadMetres)
   local cursorX = graphStart.x + graphSize.x * cursorFraction
@@ -577,12 +601,41 @@ end
 
 local function drawHudSettings()
   ui.dwriteText('DRIVING HUDS', 13, colors.text)
-  ui.dwriteText('The fastest exact-match lap loads automatically. Open and position either borderless HUD with CSP.', 11, colors.muted)
+  ui.dwriteText('The fastest exact-match lap loads automatically. Choose how the borderless HUDs should look.', 11, colors.muted)
+  ui.dummy(10)
+
+  ui.dwriteText('COMPARISON LAYOUT', 10, colors.muted)
+  local presetGap = 6
+  local presetWidth = (ui.availableSpaceX() - presetGap * 2) / 3
+  for index = 1, #comparisonPresets do
+    if index > 1 then ui.sameLine() end
+    local preset = comparisonPresets[index]
+    local label = preset.name .. (preferences.comparisonPreset == index and '  ●' or '')
+    if ui.button(label .. '##comparisonPreset' .. index, vec2(presetWidth, 30)) then
+      preferences.comparisonPreset = index
+      pendingComparisonSize = preset.size
+    end
+  end
+  local selectedPreset = comparisonPresets[math.clamp(preferences.comparisonPreset, 1, #comparisonPresets)]
+  ui.dwriteText(string.format('%d × %d · remains freely resizable', selectedPreset.size.x, selectedPreset.size.y), 10, colors.muted)
+
+  ui.dummy(8)
+  ui.dwriteText('HUD OPACITY', 10, colors.muted)
+  preferences.hudOpacity = math.floor(ui.slider('##hudOpacity', preferences.hudOpacity, 45, 100, '%.0f%%') + 0.5)
+
+  ui.dummy(7)
+  ui.dwriteText('TRACE THICKNESS', 10, colors.muted)
+  preferences.traceThickness = ui.slider('##traceThickness', preferences.traceThickness, 1, 4, '%.1f px')
+
   ui.dummy(9)
   local buttonWidth = math.max(120, (ui.availableSpaceX() - 8) / 2)
   if ui.button('BRAKE COUNTDOWN', vec2(buttonWidth, 34)) then ac.setWindowOpen('brake', true) end
   ui.sameLine()
-  if ui.button('BRAKE COMPARISON', vec2(buttonWidth, 34)) then ac.setWindowOpen('comparison', true) end
+  if ui.button('BRAKE COMPARISON', vec2(buttonWidth, 34)) then
+    local preset = comparisonPresets[math.clamp(preferences.comparisonPreset, 1, #comparisonPresets)]
+    pendingComparisonSize = preset.size
+    ac.setWindowOpen('comparison', true)
+  end
 end
 
 local function drawSettingsNavigation()

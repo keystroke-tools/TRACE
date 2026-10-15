@@ -21,7 +21,9 @@ positioned, borderless HUD windows:
   before a braking point, then shows only `3`, `2`, `1`, and `BRAKE`; and
 - **Tracer - Brake Comparison** shows the live driver and reference brake/throttle
   percentages above their overlaid traces around the car's present track position. It
-  uses a compact 480×112 default and can be resized in either direction.
+  uses a compact 480×112 default and can be resized in either direction. Compact,
+  Standard, and Ultrawide presets provide useful starting sizes without locking the
+  window afterward.
 
 There is deliberately no standalone live pedal-input display: Tracer is a coaching aid
 rather than another pedal telemetry overlay. Its comparison trace shows live brake and
@@ -29,6 +31,9 @@ throttle only in the context of the selected reference. Users can open only the 
 HUDs they want and keep the larger settings window closed while driving.
 
 The resizable settings window separates reference selection from the two HUD launchers.
+The HUDs page also persists background opacity and input-trace thickness controls. The
+opacity applies to both driving surfaces; thickness applies to the live and reference
+lines in the comparison graph.
 Each HUD is an independent CSP app window, so it is enabled by opening it and disabled
 by closing it; there is no redundant toggle.
 
