@@ -638,6 +638,7 @@ mod tests {
         assert!(manifest.contains("FUNCTION_MAIN = windowProgress"));
         assert!(manifest.contains("FUNCTION_MAIN = windowGear"));
         assert!(manifest.contains("FUNCTION_MAIN = windowCoach"));
+        assert!(manifest.contains("FUNCTION_MAIN = windowBrakeTrace"));
     }
 
     #[test]

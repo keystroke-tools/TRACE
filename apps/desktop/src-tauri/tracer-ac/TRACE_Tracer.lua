@@ -34,6 +34,13 @@ local hudInset = 6
 local hudPadding = 12
 local throttleCuePercent = 30
 local throttleCueVisibleMetres = 60
+local brakeTraceBehindMetres = 220
+local brakeTraceAheadMetres = 80
+local liveBrakeTrace = {
+  samples = {},
+  lastDistanceM = nil,
+  identity = nil
+}
 
 local function currentIdentity()
   return {
@@ -163,6 +170,38 @@ local function sampleAt(distanceM)
   local spacing = math.max(profile.sampleSpacingM or 5, 1)
   local index = math.clamp(math.floor(distanceM / spacing + 0.5) + 1, 1, #samples)
   return samples[index]
+end
+
+local function normalizedBrakePercent(value)
+  if not value then return 0 end
+  if value <= 1.01 then value = value * 100 end
+  return math.clamp(value, 0, 100)
+end
+
+local function recordLiveBrake(state)
+  if not profile or not state or not state.car then return end
+  local source = profile.source or {}
+  local identity = string.format('%s:%s', source.sessionId or '', source.lapIndex or '')
+  if liveBrakeTrace.identity ~= identity then
+    liveBrakeTrace.samples = {}
+    liveBrakeTrace.lastDistanceM = nil
+    liveBrakeTrace.identity = identity
+  end
+  if liveBrakeTrace.lastDistanceM
+      and state.distanceM < liveBrakeTrace.lastDistanceM - profile.trackLengthM * 0.5 then
+    liveBrakeTrace.samples = {}
+  end
+  liveBrakeTrace.lastDistanceM = state.distanceM
+  local spacing = math.max(profile.sampleSpacingM or 5, 1)
+  local index = math.floor(state.distanceM / spacing + 0.5) + 1
+  liveBrakeTrace.samples[index] = normalizedBrakePercent(state.car.brake)
+end
+
+local function liveBrakeAt(distanceM)
+  if not profile then return nil end
+  local spacing = math.max(profile.sampleSpacingM or 5, 1)
+  local index = math.floor(distanceM / spacing + 0.5) + 1
+  return liveBrakeTrace.samples[index]
 end
 
 local function referenceLapDuration()
@@ -418,6 +457,12 @@ local function countdownLabel(state)
   return '—'
 end
 
+local function brakeTargetLabel(state)
+  local target = state.target and state.target.b
+  if target == nil then return 'BRAKE NOW' end
+  return string.format('BRAKE %d%%', math.clamp(math.floor(target + 0.5), 0, 100))
+end
+
 local function gearLabel(gear)
   if gear == nil then return '—' end
   if gear < 0 then return 'R' end
@@ -456,7 +501,66 @@ function script.windowBrake()
 
   local accent, surface, urgent = brakeHudStyle(state)
   drawHudSurface(accent, surface)
-  centeredText(countdownLabel(state), isBraking and 44 or 68, 14, colors.text, 84)
+  centeredText(isBraking and brakeTargetLabel(state) or countdownLabel(state), isBraking and 40 or 68, 14, colors.text, 84)
+end
+
+local function drawBrakeTraceSeries(state, graphStart, graphSize, source, color, thickness)
+  local points = 100
+  local previous = nil
+  for index = 0, points do
+    local fraction = index / points
+    local relativeM = -brakeTraceBehindMetres + (brakeTraceBehindMetres + brakeTraceAheadMetres) * fraction
+    local distanceM = (state.distanceM + relativeM) % profile.trackLengthM
+    local value = source(distanceM)
+    if value ~= nil then
+      local point = vec2(
+        graphStart.x + graphSize.x * fraction,
+        graphStart.y + graphSize.y * (1 - math.saturate(value / 100))
+      )
+      if previous then ui.drawLine(previous, point, color, thickness) end
+      previous = point
+    else
+      previous = nil
+    end
+  end
+end
+
+function script.windowBrakeTrace()
+  ensureProfileLoaded()
+  local state, stateError = coachState()
+  if not state then
+    drawHudSurface(colors.red)
+    drawUnavailable(stateError)
+    return
+  end
+  recordLiveBrake(state)
+  drawHudSurface(colors.red)
+
+  local graphStart = vec2(hudPadding + 30, 30)
+  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, ui.windowHeight() - graphStart.y - 18)
+  ui.drawRectFilled(graphStart, graphStart + graphSize, rgbm(0.055, 0.055, 0.055, 1), 2)
+  ui.drawLine(graphStart + vec2(0, graphSize.y / 2), graphStart + vec2(graphSize.x, graphSize.y / 2), colors.track, 1)
+
+  ui.setCursor(vec2(hudPadding, 8))
+  ui.dwriteText('BRAKE INPUT', 10, colors.text)
+  ui.sameLine()
+  ui.dwriteText('YOU', 10, colors.red)
+  ui.sameLine()
+  ui.dwriteText('REFERENCE', 10, colors.purple)
+  ui.setCursor(vec2(hudPadding, graphStart.y - 6))
+  ui.dwriteText('100', 9, colors.muted)
+  ui.setCursor(vec2(hudPadding + 8, graphStart.y + graphSize.y - 8))
+  ui.dwriteText('0', 9, colors.muted)
+
+  drawBrakeTraceSeries(state, graphStart, graphSize, function(distanceM)
+    local target = sampleAt(distanceM)
+    return target and target.b or nil
+  end, colors.purple, 2)
+  drawBrakeTraceSeries(state, graphStart, graphSize, liveBrakeAt, colors.red, 2.5)
+
+  local cursorFraction = brakeTraceBehindMetres / (brakeTraceBehindMetres + brakeTraceAheadMetres)
+  local cursorX = graphStart.x + graphSize.x * cursorFraction
+  ui.drawLine(vec2(cursorX, graphStart.y - 3), vec2(cursorX, graphStart.y + graphSize.y + 3), colors.text, 1)
 end
 
 function script.windowGear()
@@ -517,7 +621,7 @@ function script.windowCoach()
     return
   end
   local isBraking = state.zone and state.distanceM >= state.zone.startM and state.distanceM <= state.zone.endM
-  local brakeText = isBraking and 'BRAKE NOW' or (state.secondsToBrake and state.secondsToBrake <= preferences.countdownLeadSeconds and countdownLabel(state) .. 's' or '—')
+  local brakeText = isBraking and brakeTargetLabel(state) or (state.secondsToBrake and state.secondsToBrake <= preferences.countdownLeadSeconds and countdownLabel(state) .. 's' or '—')
   local throttleText = throttleTarget(state)
   local speedText, speedColor = speedDeltaLabel(state)
   local accent = isBraking and colors.red or (state.throttleCue and colors.green or colors.purple)
@@ -568,6 +672,7 @@ local function drawHudSettings()
   if ui.button('GEAR', vec2(buttonWidth, 30)) then ac.setWindowOpen('gear', true) end
   ui.sameLine()
   if ui.button('COMBINED', vec2(buttonWidth, 30)) then ac.setWindowOpen('coach', true) end
+  if ui.button('BRAKE TRACE', vec2(buttonWidth, 30)) then ac.setWindowOpen('brakeTrace', true) end
 end
 
 local function drawSettingsNavigation()

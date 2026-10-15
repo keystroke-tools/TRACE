@@ -14,7 +14,7 @@ the same manually configured or auto-detected installation shown on the Settings
 
 Open Assetto Corsa with CSP enabled. **Tracer** is the normal primary app with standard
 window controls and two pages: **Reference** selects a session/lap and **HUDs** opens
-the optional coaching surfaces. The in-game app shelf also provides four
+the optional coaching surfaces. The in-game app shelf also provides five
 independently positioned HUD windows:
 
 - **Tracer - Brake** is a borderless HUD that stays quiet until ten reference seconds
@@ -23,10 +23,13 @@ independently positioned HUD windows:
   moving toward the brake event; and
 - **Tracer - Gear** shows the current and reference gears; and
 - **Tracer - Coach** combines brake, throttle-application, and gear cues in one
-  rectangular borderless HUD.
+  rectangular borderless HUD; and
+- **Tracer - Brake Trace** overlays the current lap's brake application on the
+  selected reference around the car's present track position.
 
-There is deliberately no live pedal-input display: Tracer is a coaching aid rather
-than another pedal telemetry overlay. Users can open only the coaching windows they
+There is deliberately no generic live pedal-input display: Tracer is a coaching aid
+rather than another pedal telemetry overlay. Its brake trace shows live input only in
+the context of the selected reference. Users can open only the coaching windows they
 want and keep the larger settings window closed while driving.
 
 The resizable settings window separates reference selection from HUD controls. Its
@@ -62,14 +65,19 @@ shows the active driver, optional session title, lap number, and lap time.
 The coaching windows show:
 
 - whole reference seconds to the next braking zone, counting down to `BRAKE NOW`;
-- a prominent brake-now state while inside that zone;
+- a prominent brake-now state while inside that zone, including the reference brake
+  percentage at the current position;
 - a compact delta-style progress marker for the same countdown; and
 - current and reference gear; and
 - the reference throttle target at the current point on the track, highlighted green
   when the reference first reaches meaningful throttle after each detected braking
   zone; and
 - a live speed comparison expressed in plain language: **faster**, **slower**, or
-  **on reference pace** at that point on the circuit.
+  **on reference pace** at that point on the circuit; and
+- a moving brake-input trace with the last 220 metres of the current lap and 80 metres
+  of upcoming reference input. Red is the driver's current lap, purple is the selected
+  reference, and the white marker is the car's current position. Current-lap history
+  resets at the start/finish line and when another reference is loaded.
 
 New reference profiles store those throttle cues directly. When an older profile does
 not contain them, the CSP app derives the same cues from its compact throttle samples
