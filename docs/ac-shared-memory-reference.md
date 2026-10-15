@@ -128,6 +128,13 @@ no packet counter and is copied with the changing pages.
 | 288 | `windSpeed` | `float` | wind speed |
 | 292 | `windDirection` | `float` | degrees, 0–359 |
 
+TRACE treats `PAUSE` plus `CHECKERED` as a candidate session ending, not an immediate
+disconnect. The combination must remain present for three seconds before capture is
+finalized. Some online servers briefly publish it when their timer expires and then
+resume the same session; retaining that confirmation window keeps later laps and their
+sector crossings in the original recording. Any ordinary live/replay snapshot clears
+the pending end state.
+
 ## Static page — `acpmf_static`
 
 | Offset | Source field | Type | Published meaning/unit |

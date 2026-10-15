@@ -125,6 +125,8 @@ enum ConnectionState {
     SessionEnded { session: SessionSeed },
 }
 
+const SESSION_END_CONFIRMATION: Duration = Duration::from_secs(3);
+
 /// Assetto Corsa implementation of the canonical simulator adapter lifecycle.
 pub struct AcAdapter<S = SystemAcSource> {
     identity: AdapterIdentity,
@@ -134,6 +136,7 @@ pub struct AcAdapter<S = SystemAcSource> {
     stream_started: Option<Instant>,
     stale_packets: StalePacketTracker,
     steering_lock_degrees: Option<f32>,
+    session_end_since: Option<Instant>,
 }
 
 impl AcAdapter<SystemAcSource> {
@@ -171,6 +174,7 @@ impl<S> AcAdapter<S> {
             stream_started: None,
             stale_packets: StalePacketTracker::new(DEFAULT_STALE_PACKET_TIMEOUT),
             steering_lock_degrees: None,
+            session_end_since: None,
         }
     }
 }
@@ -270,7 +274,14 @@ impl<S: AcSource> AcAdapter<S> {
                 DisconnectReason::SourceClosed,
             )]);
         }
-        if session_has_ended(status, snapshot.flag()) {
+        let session_end_confirmed = if session_has_ended(status, snapshot.flag()) {
+            let since = self.session_end_since.get_or_insert_with(Instant::now);
+            since.elapsed() >= SESSION_END_CONFIRMATION
+        } else {
+            self.session_end_since = None;
+            false
+        };
+        if session_end_confirmed {
             let (session, environment) = snapshot.map_session().map_err(adapter_error)?;
             let elapsed = self.stream_started.map_or(0, |started| {
                 u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
@@ -370,6 +381,7 @@ impl<S: AcSource> AcAdapter<S> {
         self.state = ConnectionState::Disconnected;
         self.stream_started = None;
         self.stale_packets.reset();
+        self.session_end_since = None;
     }
 }
 
@@ -715,6 +727,11 @@ mod tests {
             snapshot_with_flag(STATUS_PAUSE, FLAG_CHECKERED, "car-a", "track-a"),
         ]));
         adapter.poll().expect("connect");
+        adapter.session_end_since = Some(
+            Instant::now()
+                .checked_sub(SESSION_END_CONFIRMATION)
+                .expect("test confirmation instant"),
+        );
 
         let events = adapter.poll().expect("finish");
         assert!(matches!(
@@ -729,6 +746,63 @@ mod tests {
             AdapterEvent::Disconnected(DisconnectReason::SessionEnded)
         );
         assert!(adapter.poll().expect("remain finished").is_empty());
+    }
+
+    #[test]
+    fn transient_checkered_pause_keeps_recording_the_same_session() {
+        let mut adapter = AcAdapter::with_source(source([
+            snapshot_with_lap(STATUS_LIVE, 0, "car-a", "track-a", 3, 1, 30_000),
+            snapshot_with_lap(
+                STATUS_PAUSE,
+                FLAG_CHECKERED,
+                "car-a",
+                "track-a",
+                3,
+                2,
+                31_000,
+            ),
+            snapshot_with_lap(
+                STATUS_LIVE,
+                FLAG_CHECKERED,
+                "car-a",
+                "track-a",
+                3,
+                2,
+                31_000,
+            ),
+            snapshot_with_lap(
+                STATUS_LIVE,
+                FLAG_CHECKERED,
+                "car-a",
+                "track-a",
+                4,
+                0,
+                32_000,
+            ),
+        ]));
+        adapter.poll().expect("connect");
+
+        let paused = adapter.poll().expect("transient checkered pause");
+        assert!(matches!(
+            paused.as_slice(),
+            [AdapterEvent::Paused, AdapterEvent::Frame(_)]
+        ));
+
+        let resumed = adapter.poll().expect("same session resumes");
+        assert!(matches!(
+            resumed.as_slice(),
+            [AdapterEvent::Resumed, AdapterEvent::Frame(_)]
+        ));
+        assert!(adapter.session_end_since.is_none());
+
+        let completed_lap = adapter.poll().expect("lap completes after server timer");
+        assert!(matches!(
+            completed_lap.as_slice(),
+            [AdapterEvent::Frame(frame)]
+                if frame.sequence == FrameSequence(3)
+                    && frame.lap.completed_laps == Some(4)
+                    && frame.lap.current_sector_index == Some(0)
+        ));
     }
 
     #[test]
