@@ -21,7 +21,7 @@ positioned, borderless HUD windows:
   before a braking point, then shows only `3`, `2`, `1`, and `BRAKE`; and
 - **Tracer - Brake Comparison** shows the live driver and reference brake/throttle
   percentages above their overlaid traces around the car's present track position. It
-  starts shorter than the previous trace window and can be resized in either direction.
+  uses a compact 480×112 default and can be resized in either direction.
 
 There is deliberately no standalone live pedal-input display: Tracer is a coaching aid
 rather than another pedal telemetry overlay. Its comparison trace shows live brake and
@@ -67,9 +67,9 @@ The driving HUDs show:
   the same track position; and
 - moving brake and throttle traces with the last 220 metres of the current lap and 80
   metres of upcoming reference input. Brake is red and throttle is green; the driver's
-  lines are solid and the reference lines are dashed. The white marker is the car's
-  current position. Current-lap history resets at the start/finish line and when
-  another reference is loaded.
+  lines are bright and the continuous reference lines use faded versions of the same
+  channel colours. The white marker is the car's current position. Current-lap history
+  resets at the start/finish line and when another reference is loaded.
 
 ## Reference profile
 

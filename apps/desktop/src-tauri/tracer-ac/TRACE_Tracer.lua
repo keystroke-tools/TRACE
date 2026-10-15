@@ -494,7 +494,7 @@ function script.windowBrake()
   centeredText(countdownLabel(state), isBraking and 44 or 68, 0, colors.text, ui.windowHeight())
 end
 
-local function drawInputTraceSeries(state, graphStart, graphSize, source, color, thickness, dashed)
+local function drawInputTraceSeries(state, graphStart, graphSize, source, color, thickness)
   local points = 100
   local previous = nil
   for index = 0, points do
@@ -507,7 +507,7 @@ local function drawInputTraceSeries(state, graphStart, graphSize, source, color,
         graphStart.x + graphSize.x * fraction,
         graphStart.y + graphSize.y * (1 - math.saturate(value / 100))
       )
-      if previous and (not dashed or index % 4 < 2) then ui.drawLine(previous, point, color, thickness) end
+      if previous then ui.drawLine(previous, point, color, thickness) end
       previous = point
     else
       previous = nil
@@ -533,16 +533,16 @@ function script.windowBrakeComparison()
   local referenceThrottle = math.clamp(state.target and state.target.t or 0, 0, 100)
   local halfWidth = (ui.windowWidth() - hudPadding * 2) / 2
   ui.setCursor(vec2(hudPadding, 5))
-  ui.dwriteTextAligned('YOU · SOLID', 9, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 11), false, colors.text)
-  ui.setCursor(vec2(hudPadding, 16))
-  ui.dwriteTextAligned(string.format('BRAKE %d%%   THROTTLE %d%%', math.floor(liveBrake + 0.5), math.floor(liveThrottle + 0.5)), 12, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 18), false, colors.text)
+  ui.dwriteTextAligned('YOU · BRIGHT', 9, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 10), false, colors.text)
+  ui.setCursor(vec2(hudPadding, 15))
+  ui.dwriteTextAligned(string.format('BRAKE %d%%   THROTTLE %d%%', math.floor(liveBrake + 0.5), math.floor(liveThrottle + 0.5)), 11, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 16), false, colors.text)
   ui.setCursor(vec2(hudPadding + halfWidth, 5))
-  ui.dwriteTextAligned('REFERENCE · DASHED', 9, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 11), false, colors.muted)
-  ui.setCursor(vec2(hudPadding + halfWidth, 16))
-  ui.dwriteTextAligned(string.format('BRAKE %d%%   THROTTLE %d%%', math.floor(referenceBrake + 0.5), math.floor(referenceThrottle + 0.5)), 12, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 18), false, colors.text)
+  ui.dwriteTextAligned('REFERENCE · FADED', 9, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 10), false, colors.muted)
+  ui.setCursor(vec2(hudPadding + halfWidth, 15))
+  ui.dwriteTextAligned(string.format('BRAKE %d%%   THROTTLE %d%%', math.floor(referenceBrake + 0.5), math.floor(referenceThrottle + 0.5)), 11, ui.Alignment.Center, ui.Alignment.Center, vec2(halfWidth, 16), false, colors.text)
 
-  local graphStart = vec2(hudPadding + 30, 40)
-  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, math.max(58, ui.windowHeight() - graphStart.y - 10))
+  local graphStart = vec2(hudPadding + 30, 35)
+  local graphSize = vec2(ui.windowWidth() - graphStart.x - hudPadding, math.max(42, ui.windowHeight() - graphStart.y - 8))
   ui.drawRectFilled(graphStart, graphStart + graphSize, rgbm(0.055, 0.055, 0.055, 1), 2)
   ui.drawLine(graphStart + vec2(0, graphSize.y / 2), graphStart + vec2(graphSize.x, graphSize.y / 2), colors.track, 1)
 
@@ -558,17 +558,17 @@ function script.windowBrakeComparison()
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     local target = sampleAt(distanceM)
     return target and target.b or nil
-  end, rgbm(0.92, 0.25, 0.25, 0.55), 2, true)
+  end, rgbm(0.92, 0.25, 0.25, 0.42), 2)
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     local target = sampleAt(distanceM)
     return target and target.t or nil
-  end, rgbm(0.20, 0.86, 0.48, 0.55), 2, true)
+  end, rgbm(0.20, 0.86, 0.48, 0.42), 2)
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     return liveInputAt(distanceM, 'brake')
-  end, colors.red, 2.5, false)
+  end, colors.red, 2.5)
   drawInputTraceSeries(state, graphStart, graphSize, function(distanceM)
     return liveInputAt(distanceM, 'throttle')
-  end, colors.green, 2.5, false)
+  end, colors.green, 2.5)
 
   local cursorFraction = inputTraceBehindMetres / (inputTraceBehindMetres + inputTraceAheadMetres)
   local cursorX = graphStart.x + graphSize.x * cursorFraction
