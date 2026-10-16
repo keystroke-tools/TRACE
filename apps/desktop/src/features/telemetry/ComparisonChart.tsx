@@ -130,11 +130,19 @@ export function ComparisonChart({
 	const chartPixelHeight = compact ? 82 : 224;
 	const headerPixelHeight = compact ? 36 : 48;
 	const tooltipTops = tooltipValues.map(({ chartY }) => headerPixelHeight + (chartY / height) * chartPixelHeight);
-	if (tooltipTops.length === 2 && Math.abs(tooltipTops[0] - tooltipTops[1]) < 32) {
-		const midpoint = (tooltipTops[0] + tooltipTops[1]) / 2;
-		const firstIsHigher = tooltipTops[0] <= tooltipTops[1];
-		tooltipTops[0] = midpoint + (firstIsHigher ? -16 : 16);
-		tooltipTops[1] = midpoint + (firstIsHigher ? 16 : -16);
+	if (tooltipTops.length > 1) {
+		const minimumGap = 26;
+		const ordered = tooltipTops.map((top, index) => ({ top, index })).sort((left, right) => left.top - right.top);
+		for (let index = 1; index < ordered.length; index += 1) {
+			ordered[index].top = Math.max(ordered[index].top, ordered[index - 1].top + minimumGap);
+		}
+		const minimumTop = headerPixelHeight + 12;
+		const maximumTop = headerPixelHeight + chartPixelHeight - 12;
+		const overflow = ordered.at(-1)!.top - maximumTop;
+		if (overflow > 0) ordered.forEach((tooltip) => (tooltip.top -= overflow));
+		const underflow = minimumTop - ordered[0].top;
+		if (underflow > 0) ordered.forEach((tooltip) => (tooltip.top += underflow));
+		ordered.forEach((tooltip) => (tooltipTops[tooltip.index] = tooltip.top));
 	}
 	useLayoutEffect(() => {
 		const element = chart.current;

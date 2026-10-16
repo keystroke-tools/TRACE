@@ -97,6 +97,7 @@ length.
 | `speedKmh`                    | speed m/s                       | finite/non-negative, divided by 3.6                                                   |
 | `velocity[3]`                 | velocity                        | finite, AC source-world coordinate frame                                              |
 | `accG[3]`                     | acceleration m/s²               | finite, multiplied by standard gravity                                                |
+| `wheelLoad[4]`                | tyre load N                      | finite, non-negative, canonical wheel ordering                                         |
 | `tyreCoreTemperature[4]`      | tyre core °C                    | canonical wheel ordering                                                              |
 | `suspensionTravel[4]`         | suspension travel m             | canonical wheel ordering                                                              |
 | `completedLaps`               | completed laps                  | non-negative only                                                                     |
@@ -145,9 +146,14 @@ retain the page and source field name (for example `physics.wheel_slip.0`,
 suffix in AC's native wheel/vector order. Deprecated static slots are retained under
 their published deprecated names; no meaning is invented for them.
 
+The lap visualizer reads `wheelLoad` as four tyre-load traces. It also exposes AC's
+four `wheelSlip` source values, but labels them explicitly as source values: the shared-
+memory contract does not define them as degrees or as a ratio, so TRACE does not call
+them slip angle or calculate a fake maximum angle.
+
 ## Intentionally not mapped yet
 
-- wheel pressure, slip, load, wear, and angular speed: require unit/semantic fixture
+- wheel pressure, AC wheel slip, wear, and angular speed: require unit/semantic fixture
   validation before analysis use.
 - `distanceTraveled`: not assumed to be lap distance.
 - graphics `surfaceGrip`: outside the currently validated prefix; its source scale

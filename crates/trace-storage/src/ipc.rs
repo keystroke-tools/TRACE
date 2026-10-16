@@ -40,7 +40,7 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 12] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 32] = [
     "static.max_fuel_litres",
     "Max Fuel",
     "static.track_spline_length_m",
@@ -53,6 +53,26 @@ const SHARED_NATIVE_FLOAT_FIELDS: [&str; 12] = [
     "physics.tyre_wear.1",
     "physics.tyre_wear.2",
     "physics.tyre_wear.3",
+    "physics.wheel_slip.0",
+    "physics.wheel_slip.1",
+    "physics.wheel_slip.2",
+    "physics.wheel_slip.3",
+    "physics.wheel_load_n.0",
+    "physics.wheel_load_n.1",
+    "physics.wheel_load_n.2",
+    "physics.wheel_load_n.3",
+    "Tire Load FL",
+    "Tire Load FR",
+    "Tire Load RL",
+    "Tire Load RR",
+    "Tire Slip Angle FL",
+    "Tire Slip Angle FR",
+    "Tire Slip Angle RL",
+    "Tire Slip Angle RR",
+    "Tire Slip Ratio FL",
+    "Tire Slip Ratio FR",
+    "Tire Slip Ratio RL",
+    "Tire Slip Ratio RR",
 ];
 const SHARED_NATIVE_TEXT_FIELDS: [&str; 1] = ["static.track_configuration"];
 
@@ -76,6 +96,12 @@ pub struct TelemetryColumns {
     pub track_temperature_c: Vec<Option<f32>>,
     pub position_x_m: Vec<Option<f64>>,
     pub position_z_m: Vec<Option<f64>>,
+    pub tyre_load_n: [Vec<Option<f32>>; 4],
+    pub tyre_slip_angle_rad: [Vec<Option<f32>>; 4],
+    pub tyre_slip_ratio: [Vec<Option<f32>>; 4],
+    /// AC's published `wheelSlip` value has no documented unit, so it remains
+    /// distinct from canonical slip angle and ratio channels.
+    pub source_wheel_slip: [Vec<Option<f32>>; 4],
     pub gear_kind: Vec<Option<i8>>,
     pub gear_value: Vec<Option<i16>>,
     pub sector_index: Vec<Option<u32>>,
@@ -157,6 +183,10 @@ impl TelemetryColumns {
                 .iter()
                 .map(|frame| frame.motion.position_m.map(|position| position.z))
                 .collect(),
+            tyre_load_n: wheel_columns(frames, |wheel| wheel.tyre_load_n),
+            tyre_slip_angle_rad: wheel_columns(frames, |wheel| wheel.tyre_slip_angle_rad),
+            tyre_slip_ratio: wheel_columns(frames, |wheel| wheel.tyre_slip_ratio),
+            source_wheel_slip: source_wheel_slip_columns(frames),
             gear_kind: frames
                 .iter()
                 .map(|frame| frame.vehicle.gear.map(gear_kind))
@@ -224,6 +254,10 @@ impl TelemetryColumns {
             track_temperature_c: Vec::new(),
             position_x_m: Vec::new(),
             position_z_m: Vec::new(),
+            tyre_load_n: std::array::from_fn(|_| Vec::new()),
+            tyre_slip_angle_rad: std::array::from_fn(|_| Vec::new()),
+            tyre_slip_ratio: std::array::from_fn(|_| Vec::new()),
+            source_wheel_slip: std::array::from_fn(|_| Vec::new()),
             gear_kind: Vec::new(),
             gear_value: Vec::new(),
             sector_index: Vec::new(),
@@ -235,6 +269,44 @@ impl TelemetryColumns {
             native_schema: None,
         }
     }
+}
+
+fn wheel_columns(
+    frames: &[TelemetryFrame],
+    channel: impl Fn(trace_domain::WheelState) -> Option<f32> + Copy,
+) -> [Vec<Option<f32>>; 4] {
+    let corners = [
+        WheelCorner::FrontLeft,
+        WheelCorner::FrontRight,
+        WheelCorner::RearLeft,
+        WheelCorner::RearRight,
+    ];
+    std::array::from_fn(|index| {
+        frames
+            .iter()
+            .map(|frame| frame.wheels.get(&corners[index]).copied().and_then(channel))
+            .collect()
+    })
+}
+
+fn native_frame_float(frame: &TelemetryFrame, key: &str) -> Option<f32> {
+    frame
+        .native
+        .as_deref()
+        .and_then(|native| native.float_fields.get(key))
+        .copied()
+        .filter(|value| value.is_finite())
+        .map(narrow_native_float)
+}
+
+fn source_wheel_slip_columns(frames: &[TelemetryFrame]) -> [Vec<Option<f32>>; 4] {
+    std::array::from_fn(|index| {
+        let key = format!("physics.wheel_slip.{index}");
+        frames
+            .iter()
+            .map(|frame| native_frame_float(frame, &key))
+            .collect()
+    })
 }
 
 fn native_boolean(frame: &TelemetryFrame, key: &str) -> Option<bool> {
@@ -1335,6 +1407,39 @@ fn extend_projection(
     if let Ok(index) = batch.schema().index_of("native_float_fields")
         && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
     {
+        let corner_names = ["FL", "FR", "RL", "RR"];
+        for (corner, suffix) in corner_names.into_iter().enumerate() {
+            let ac_load = format!("physics.wheel_load_n.{corner}");
+            let ac_slip = format!("physics.wheel_slip.{corner}");
+            let motec_load = format!("Tire Load {suffix}");
+            let motec_angle = format!("Tire Slip Angle {suffix}");
+            let motec_ratio = format!("Tire Slip Ratio {suffix}");
+            for source_row in start..start + length {
+                decoded.tyre_load_n[corner].push(
+                    native_float_value(native, source_row, &ac_load)
+                        .or_else(|| native_float_value(native, source_row, &motec_load))
+                        .filter(|value| value.is_finite() && *value >= 0.0)
+                        .map(narrow_native_float),
+                );
+                decoded.tyre_slip_angle_rad[corner].push(
+                    native_float_value(native, source_row, &motec_angle)
+                        .filter(|value| value.is_finite())
+                        .map(f64::to_radians)
+                        .map(narrow_native_float),
+                );
+                decoded.tyre_slip_ratio[corner].push(
+                    native_float_value(native, source_row, &motec_ratio)
+                        .filter(|value| value.is_finite())
+                        .map(|value| value / 100.0)
+                        .map(narrow_native_float),
+                );
+                decoded.source_wheel_slip[corner].push(
+                    native_float_value(native, source_row, &ac_slip)
+                        .filter(|value| value.is_finite())
+                        .map(narrow_native_float),
+                );
+            }
+        }
         for offset in 0..length {
             let source_row = start + offset;
             let projected_row = projection_start + offset;
@@ -1367,6 +1472,13 @@ fn extend_projection(
                     native_float_value(native, source_row, "Last Sector Time")
                         .and_then(seconds_to_nanoseconds);
             }
+        }
+    } else {
+        for corner in 0..4 {
+            decoded.tyre_load_n[corner].extend((0..length).map(|_| None));
+            decoded.tyre_slip_angle_rad[corner].extend((0..length).map(|_| None));
+            decoded.tyre_slip_ratio[corner].extend((0..length).map(|_| None));
+            decoded.source_wheel_slip[corner].extend((0..length).map(|_| None));
         }
     }
     if decoded.track_length_m.is_none()
@@ -1809,6 +1921,9 @@ mod tests {
                         ("physics.steer_angle".into(), 0.4),
                         ("physics.clutch".into(), 0.3),
                         ("physics.tyre_wear.0".into(), 98.0),
+                        ("physics.wheel_load_n.0".into(), 2_600.0),
+                        ("physics.wheel_slip.0".into(), 0.06),
+                        ("Tire Slip Angle FL".into(), 4.5),
                         ("static.max_fuel_litres".into(), 60.0),
                         ("physics.unused".into(), 123.0),
                     ]),
@@ -1833,6 +1948,13 @@ mod tests {
         assert_eq!(projected.throttle, vec![Some(0.75); 8]);
         assert_eq!(projected.steering_angle_rad, vec![Some(0.4); 8]);
         assert_eq!(projected.clutch, vec![Some(0.3); 8]);
+        assert_eq!(projected.tyre_load_n[0], vec![Some(2_600.0); 8]);
+        assert_eq!(projected.source_wheel_slip[0], vec![Some(0.06); 8]);
+        assert!(
+            projected.tyre_slip_angle_rad[0]
+                .iter()
+                .all(|value| value.is_some_and(|value| (value.to_degrees() - 4.5).abs() < 0.001))
+        );
         assert_eq!(projected.track_configuration.as_deref(), Some("gp"));
         let metrics = read_lap_metrics(Cursor::new(&compact), 0, 8).expect("metrics");
         assert_eq!(metrics.fuel_capacity_litres, Some(60.0));
@@ -1859,6 +1981,14 @@ mod tests {
         assert_eq!(
             native_float_value(floats, 0, "physics.tyre_wear.0"),
             Some(98.0)
+        );
+        assert_eq!(
+            native_float_value(floats, 0, "physics.wheel_load_n.0"),
+            Some(2_600.0)
+        );
+        assert_eq!(
+            native_float_value(floats, 0, "Tire Slip Angle FL"),
+            Some(4.5)
         );
         assert_eq!(native_float_value(floats, 0, "physics.unused"), None);
     }
@@ -1987,6 +2117,7 @@ mod tests {
                 tyre_pressure_pa: Some(190_000.0),
                 tyre_core_temperature_c: Some(88.0),
                 suspension_travel_m: Some(0.04),
+                ..WheelState::default()
             },
         );
         let frame = TelemetryFrame {

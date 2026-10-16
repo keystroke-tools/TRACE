@@ -100,6 +100,7 @@ fn synthetic_frame(sequence: u64, rate_hz: u32) -> TelemetryFrame {
                 tyre_pressure_pa: Some(190_000.0 + (wave as f32 * 3_000.0) + offset),
                 tyre_core_temperature_c: Some(82.0 + (wave as f32 * 7.0) + offset),
                 suspension_travel_m: Some(0.05 + (wave as f32 * 0.01) + (offset / 100.0)),
+                ..WheelState::default()
             },
         );
     }

@@ -87,6 +87,9 @@ guessed.
 | Air/Road Temp                    | Celsius              | environment temperature                    |
 | Surface Grip                     | percent              | normalized track grip                      |
 | Wheel Angular Speed              | radians/second       | per-wheel angular speed                    |
+| Tire Load                        | newtons              | per-wheel contact load                     |
+| Tire Slip Angle                  | degrees              | per-wheel radians internally               |
+| Tire Slip Ratio                  | percent              | per-wheel normalized ratio                 |
 | Tire Pressure                    | psi                  | per-wheel pascals                          |
 | Tire Temp Core                   | Celsius              | per-wheel core temperature                 |
 | Suspension Travel                | millimetres          | per-wheel metres                           |
@@ -94,6 +97,8 @@ guessed.
 
 `Lap Invalidated` and all other ACTI channels remain in native fields even when no
 canonical field exists yet. Brake pressure is not treated as brake pedal position.
+The lap visualizer prefers the imported slip-angle channels, shows the maximum absolute
+angle for the lap, and falls back to slip ratio only when an angle channel is absent.
 
 ## MoTeC CSV foundation
 

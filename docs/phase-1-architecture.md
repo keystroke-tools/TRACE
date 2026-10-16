@@ -61,7 +61,7 @@ Clean canonical mappings:
 | physics `speedKmh` | speed | convert to metres/second |
 | physics `velocity[3]` | world velocity | metres/second, source coordinate frame recorded |
 | physics `accG[3]` | vehicle acceleration | convert standard gravity to metres/second squared; frame recorded |
-| physics wheel arrays | wheel state | fixed LF/RF/LR/RR ordering in adapter only |
+| physics wheel arrays | wheel state | fixed LF/RF/LR/RR ordering; documented load is newtons |
 | physics tyre temperature/pressure | tyre state | core temperature and pressure; units explicit |
 | physics `suspensionTravel` | suspension travel | metres |
 | physics `fuel` | fuel quantity | litres |
@@ -72,7 +72,7 @@ Clean canonical mappings:
 | static car/track/version | session identity | source IDs preserved separately from display names |
 | physics `airTemp`, `roadTemp` | conditions | degrees Celsius |
 
-Available but semantically qualified: wheel slip, wheel load, tyre wear/dirty
+Available but semantically qualified: wheel slip, tyre wear/dirty
 level, camber, damage, DRS, ABS/TC activity, KERS, ride height, turbo boost,
 ballast, penalties, flags, and assists. These enter canonical models only with a
 documented unit and meaning; otherwise they remain namespaced source extras in the
@@ -81,9 +81,11 @@ raw capture manifest, not arbitrary values consumed by analysis.
 Missing or insufficient in vanilla AC: individual brake temperatures, detailed
 tyre surface temperature bands, reliable active setup identity, physical track
 boundaries/centreline, weather model details, and an explicit lap-validity reason.
-Tyre slip arrays require fixture validation before analysis use. `distanceTraveled`
-is not assumed to be lap distance; distance is reconstructed/aligned from position
-and normalized spline position.
+AC's wheel-slip array has no published unit and remains a visibly source-native value.
+Authorised ACTI imports separately provide tyre slip angle in degrees and slip ratio in
+percent; those unit-qualified channels are canonical and available to the lap visualizer.
+`distanceTraveled` is not assumed to be lap distance; distance is reconstructed/aligned
+from position and normalized spline position.
 
 ### CSP enhancement
 

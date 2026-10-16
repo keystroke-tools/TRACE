@@ -49,12 +49,51 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 				referencePositionZM: sample.positionZM,
 				referenceAirTemperatureC: sample.airTemperatureC,
 				referenceTrackTemperatureC: sample.trackTemperatureC,
+				referenceTyreLoadFrontLeftN: sample.tyreLoadFrontLeftN,
+				referenceTyreLoadFrontRightN: sample.tyreLoadFrontRightN,
+				referenceTyreLoadRearLeftN: sample.tyreLoadRearLeftN,
+				referenceTyreLoadRearRightN: sample.tyreLoadRearRightN,
+				referenceTyreSlipFrontLeft: sample.tyreSlipFrontLeft,
+				referenceTyreSlipFrontRight: sample.tyreSlipFrontRight,
+				referenceTyreSlipRearLeft: sample.tyreSlipRearLeft,
+				referenceTyreSlipRearRight: sample.tyreSlipRearRight,
 			})) ?? [],
 		[trace],
 	);
 	const baseSamples = filterSamplesBySector(chartSamples, sector);
 	const samples = filterSamplesByTelemetryWindow(baseSamples, telemetryWindow);
 	const cursor = cursorIndex == null ? null : (samples[cursorIndex] ?? null);
+	const hasTyreLoad = chartSamples.some((sample) =>
+		[sample.referenceTyreLoadFrontLeftN, sample.referenceTyreLoadFrontRightN, sample.referenceTyreLoadRearLeftN, sample.referenceTyreLoadRearRightN].some(
+			(value) => value != null,
+		),
+	);
+	const hasTyreSlip = chartSamples.some((sample) =>
+		[sample.referenceTyreSlipFrontLeft, sample.referenceTyreSlipFrontRight, sample.referenceTyreSlipRearLeft, sample.referenceTyreSlipRearRight].some(
+			(value) => value != null,
+		),
+	);
+	const tyreColours = ["#45d6e8", "#5394ff", "#ffb84d", "#d276ff"];
+	const tyreLabels = ["FL", "FR", "RL", "RR"];
+	const tyreLoadReaders = [
+		(sample: LapComparisonSample) => sample.referenceTyreLoadFrontLeftN,
+		(sample: LapComparisonSample) => sample.referenceTyreLoadFrontRightN,
+		(sample: LapComparisonSample) => sample.referenceTyreLoadRearLeftN,
+		(sample: LapComparisonSample) => sample.referenceTyreLoadRearRightN,
+	];
+	const tyreSlipReaders = [
+		(sample: LapComparisonSample) => sample.referenceTyreSlipFrontLeft,
+		(sample: LapComparisonSample) => sample.referenceTyreSlipFrontRight,
+		(sample: LapComparisonSample) => sample.referenceTyreSlipRearLeft,
+		(sample: LapComparisonSample) => sample.referenceTyreSlipRearRight,
+	];
+	const tyreSlipUnit = trace?.tyreSlipKind === "angle" ? "°" : trace?.tyreSlipKind === "ratio" ? "%" : "";
+	const tyreSlipLabel =
+		trace?.tyreSlipKind === "angle"
+			? `TYRE SLIP ANGLE · PEAK ${trace.maximumAbsTyreSlip?.toFixed(1) ?? "—"}°`
+			: trace?.tyreSlipKind === "ratio"
+				? `TYRE SLIP RATIO · PEAK ${trace.maximumAbsTyreSlip?.toFixed(1) ?? "—"}%`
+				: "AC WHEEL SLIP · SOURCE VALUE";
 	const zoomTelemetry = (anchorM: number, direction: "in" | "out") => {
 		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchorM, direction));
 		setCursorIndex(null);
@@ -186,6 +225,33 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								zeroLine
 								series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
 							/>
+							{(hasTyreLoad || hasTyreSlip) && (
+								<div className="grid gap-3 2xl:grid-cols-2">
+									{hasTyreLoad && (
+										<ComparisonChart
+											label="TYRE LOAD"
+											unit="N"
+											samples={samples}
+											cursorIndex={cursorIndex}
+											onCursor={setCursorIndex}
+											onZoom={zoomTelemetry}
+											series={tyreLoadReaders.map((value, index) => ({ label: tyreLabels[index], colour: tyreColours[index], value }))}
+										/>
+									)}
+									{hasTyreSlip && (
+										<ComparisonChart
+											label={tyreSlipLabel}
+											unit={tyreSlipUnit}
+											samples={samples}
+											cursorIndex={cursorIndex}
+											onCursor={setCursorIndex}
+											onZoom={zoomTelemetry}
+											zeroLine
+											series={tyreSlipReaders.map((value, index) => ({ label: tyreLabels[index], colour: tyreColours[index], value }))}
+										/>
+									)}
+								</div>
+							)}
 						</div>
 					</div>
 					{mapPip.visible && (

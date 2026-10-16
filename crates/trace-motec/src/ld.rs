@@ -162,6 +162,9 @@ enum LdMapping {
     TrackTemperature,
     TrackGrip,
     WheelAngularSpeed(WheelCorner),
+    TyreLoad(WheelCorner),
+    TyreSlipAngle(WheelCorner),
+    TyreSlipRatio(WheelCorner),
     TyrePressure(WheelCorner),
     TyreCoreTemperature(WheelCorner),
     SuspensionTravel(WheelCorner),
@@ -605,6 +608,9 @@ fn wheel_mapping(name: &str, unit: &str) -> Option<LdMapping> {
     let (prefix, corner) = split_corner(name)?;
     match (prefix, unit) {
         ("wheelangularspeed", "rad/s") => Some(LdMapping::WheelAngularSpeed(corner)),
+        ("tireload", "n") => Some(LdMapping::TyreLoad(corner)),
+        ("tireslipangle", "deg") => Some(LdMapping::TyreSlipAngle(corner)),
+        ("tireslipratio", "%") => Some(LdMapping::TyreSlipRatio(corner)),
         ("tirepressure", "psi") => Some(LdMapping::TyrePressure(corner)),
         ("tiretempcore", "c") => Some(LdMapping::TyreCoreTemperature(corner)),
         ("suspensiontravel", "mm") => Some(LdMapping::SuspensionTravel(corner)),
@@ -684,6 +690,15 @@ fn apply_ld_mapping(
         LdMapping::TrackGrip => environment(frame).track_grip = percent(value),
         LdMapping::WheelAngularSpeed(corner) => {
             wheel(frame, corner).angular_speed_rad_s = finite_f32(value);
+        }
+        LdMapping::TyreLoad(corner) => {
+            wheel(frame, corner).tyre_load_n = nonnegative_f32(value);
+        }
+        LdMapping::TyreSlipAngle(corner) => {
+            wheel(frame, corner).tyre_slip_angle_rad = finite_f32(value.to_radians());
+        }
+        LdMapping::TyreSlipRatio(corner) => {
+            wheel(frame, corner).tyre_slip_ratio = finite_f32(value / 100.0);
         }
         LdMapping::TyrePressure(corner) => {
             wheel(frame, corner).tyre_pressure_pa = nonnegative_f32(value * 6_894.757_293_168);
@@ -897,6 +912,23 @@ mod tests {
         assert!((position.z - -438.942_857_142_9).abs() < 0.000_001);
         assert!(frame.environment.is_some());
         assert_eq!(frame.wheels.len(), 4);
+        let front_left = frame.wheels[&WheelCorner::FrontLeft];
+        let native = frame.native.as_ref().expect("native telemetry");
+        assert_approx_f64(
+            front_left.tyre_load_n,
+            native.float_fields["Tire Load FL"],
+            0.001,
+        );
+        assert_approx_f64(
+            front_left.tyre_slip_angle_rad,
+            native.float_fields["Tire Slip Angle FL"].to_radians(),
+            0.000_001,
+        );
+        assert_approx_f64(
+            front_left.tyre_slip_ratio,
+            native.float_fields["Tire Slip Ratio FL"] / 100.0,
+            0.000_001,
+        );
         let native = frame.native.expect("native telemetry");
         assert_eq!(native.schema, "motec.i2.ld/community-4");
         assert_eq!(
@@ -981,5 +1013,9 @@ mod tests {
 
     fn assert_approx(actual: Option<f32>, expected: f32, tolerance: f32) {
         assert!((actual.expect("available value") - expected).abs() <= tolerance);
+    }
+
+    fn assert_approx_f64(actual: Option<f32>, expected: f64, tolerance: f64) {
+        assert!((f64::from(actual.expect("available value")) - expected).abs() <= tolerance);
     }
 }

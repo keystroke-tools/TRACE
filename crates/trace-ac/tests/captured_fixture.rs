@@ -1,5 +1,5 @@
 use trace_ac::{AC_NATIVE_SCHEMA, AcSnapshot, decode_native_payload};
-use trace_domain::{ElapsedNanoseconds, FrameSequence};
+use trace_domain::{ElapsedNanoseconds, FrameSequence, WheelCorner};
 
 const PHYSICS: &[u8] = include_bytes!("fixtures/ac-1.16.4-sm-1.7/physics.bin");
 const GRAPHICS: &[u8] = include_bytes!("fixtures/ac-1.16.4-sm-1.7/graphics.bin");
@@ -34,4 +34,12 @@ fn captured_ac_1_16_4_fixture_maps_through_the_canonical_boundary() {
     assert_eq!(pages.graphics, GRAPHICS);
     assert_eq!(pages.static_page, STATIC);
     assert_eq!(frame.wheels.len(), 4);
+    assert_eq!(
+        frame.wheels[&WheelCorner::FrontLeft].tyre_load_n,
+        Some(2_600.163_8)
+    );
+    assert_eq!(
+        native.float_fields.get("physics.wheel_slip.0"),
+        Some(&0.060_806_915_163_993_835)
+    );
 }

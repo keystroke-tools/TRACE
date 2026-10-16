@@ -52,6 +52,9 @@ impl<'a> PhysicsPage<'a> {
     pub(crate) fn acceleration_g(&self) -> [f32; 3] {
         read_f32_array(self.0, 44)
     }
+    pub(crate) fn wheel_load_n(&self, index: usize) -> f32 {
+        read_f32(self.0, 72 + index * 4)
+    }
     pub(crate) fn tyre_core_temperature(&self, index: usize) -> f32 {
         read_f32(self.0, 152 + index * 4)
     }

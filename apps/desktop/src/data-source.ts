@@ -117,6 +117,14 @@ export interface LapComparisonSample {
 	referenceTrackTemperatureC?: number | null;
 	comparisonAirTemperatureC?: number | null;
 	comparisonTrackTemperatureC?: number | null;
+	referenceTyreLoadFrontLeftN?: number | null;
+	referenceTyreLoadFrontRightN?: number | null;
+	referenceTyreLoadRearLeftN?: number | null;
+	referenceTyreLoadRearRightN?: number | null;
+	referenceTyreSlipFrontLeft?: number | null;
+	referenceTyreSlipFrontRight?: number | null;
+	referenceTyreSlipRearLeft?: number | null;
+	referenceTyreSlipRearRight?: number | null;
 }
 
 export type CornerPhase = "entry" | "mid" | "exit";
@@ -203,6 +211,14 @@ export interface LapTraceSample {
 	positionZM?: number | null;
 	airTemperatureC?: number | null;
 	trackTemperatureC?: number | null;
+	tyreLoadFrontLeftN?: number | null;
+	tyreLoadFrontRightN?: number | null;
+	tyreLoadRearLeftN?: number | null;
+	tyreLoadRearRightN?: number | null;
+	tyreSlipFrontLeft?: number | null;
+	tyreSlipFrontRight?: number | null;
+	tyreSlipRearLeft?: number | null;
+	tyreSlipRearRight?: number | null;
 }
 
 export interface TrackMapAsset {
@@ -229,6 +245,8 @@ export interface LapTrace {
 	track: string;
 	car: string;
 	lapLengthM: number;
+	tyreSlipKind?: "angle" | "ratio" | "source" | null;
+	maximumAbsTyreSlip?: number | null;
 	trackMap?: TrackMapAsset | null;
 	samples: LapTraceSample[];
 }
@@ -622,6 +640,14 @@ export const fixtureDataSource: TelemetryDataSource = {
 					available: true,
 				},
 				{ id: "wheels.suspension_travel", label: "Suspension travel", category: "WHEELS", detail: "Metres at all four corners", available: true },
+				{ id: "wheels.tyre_load", label: "Tyre load", category: "WHEELS", detail: "Newtons at all four corners", available: true },
+				{
+					id: "wheels.tyre_slip",
+					label: "Tyre slip",
+					category: "WHEELS",
+					detail: "ACTI imports expose angle and ratio; AC shared memory retains its unitless source value",
+					available: true,
+				},
 				{
 					id: "native.inputs",
 					label: "Signed steering source value",
@@ -631,7 +657,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 				},
 				{
 					id: "native.tyres.dynamics",
-					label: "Slip, load, pressure & angular speed",
+					label: "Pressure, angular speed & source dynamics",
 					category: "AC-NATIVE · TYRES & WHEELS",
 					detail: "All four corners",
 					available: true,

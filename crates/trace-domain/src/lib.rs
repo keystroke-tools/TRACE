@@ -214,6 +214,13 @@ pub enum WheelCorner {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WheelState {
     pub angular_speed_rad_s: Option<f32>,
+    /// Vertical load reported at the tyre contact patch, in newtons.
+    pub tyre_load_n: Option<f32>,
+    /// Tyre slip angle, in radians. This is absent when a source only exposes an
+    /// undocumented or simulator-specific slip value.
+    pub tyre_slip_angle_rad: Option<f32>,
+    /// Longitudinal tyre slip ratio, where `1.0` is 100%.
+    pub tyre_slip_ratio: Option<f32>,
     pub tyre_pressure_pa: Option<f32>,
     pub tyre_core_temperature_c: Option<f32>,
     pub suspension_travel_m: Option<f32>,

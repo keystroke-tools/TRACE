@@ -60,6 +60,7 @@ pub fn map_frame(
         wheels.insert(
             corner,
             WheelState {
+                tyre_load_n: non_negative(physics.wheel_load_n(index)),
                 tyre_core_temperature_c: finite(physics.tyre_core_temperature(index)),
                 suspension_travel_m: finite(physics.suspension_travel(index)),
                 ..WheelState::default()
@@ -225,6 +226,7 @@ mod tests {
         put_f32(&mut physics, 28, 180.0);
         put_f32(&mut physics, 32, 50.0);
         put_f32(&mut physics, 44, 1.0);
+        put_f32(&mut physics, 72, 2_600.0);
         put_f32(&mut physics, 152, 90.0);
         put_f32(&mut physics, 184, 0.04);
         put_i32(&mut physics, 244, 2);
@@ -266,6 +268,10 @@ mod tests {
         assert_eq!(
             frame.wheels[&WheelCorner::FrontLeft].tyre_core_temperature_c,
             Some(90.0)
+        );
+        assert_eq!(
+            frame.wheels[&WheelCorner::FrontLeft].tyre_load_n,
+            Some(2_600.0)
         );
     }
 

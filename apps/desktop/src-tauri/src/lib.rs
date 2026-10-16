@@ -258,6 +258,8 @@ struct LapTrace {
     track: String,
     car: String,
     lap_length_m: f64,
+    tyre_slip_kind: Option<String>,
+    maximum_abs_tyre_slip: Option<f64>,
     track_map: Option<AcTrackGeometry>,
     samples: Vec<LapTraceSample>,
 }
@@ -279,6 +281,14 @@ struct LapTraceSample {
     position_z_m: Option<f64>,
     air_temperature_c: Option<f64>,
     track_temperature_c: Option<f64>,
+    tyre_load_front_left_n: Option<f64>,
+    tyre_load_front_right_n: Option<f64>,
+    tyre_load_rear_left_n: Option<f64>,
+    tyre_load_rear_right_n: Option<f64>,
+    tyre_slip_front_left: Option<f64>,
+    tyre_slip_front_right: Option<f64>,
+    tyre_slip_rear_left: Option<f64>,
+    tyre_slip_rear_right: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -1242,6 +1252,33 @@ fn visualize_session_lap(
     let position_z = interpolate_channel(channels.position_z.as_ref(), &grid, 1.0)?;
     let air_temperature = interpolate_channel(channels.air_temperature.as_ref(), &grid, 1.0)?;
     let track_temperature = interpolate_channel(channels.track_temperature.as_ref(), &grid, 1.0)?;
+    let tyre_load = interpolate_wheel_channels(&channels.tyre_load, &grid, 1.0)?;
+    let (tyre_slip_kind, tyre_slip, maximum_abs_tyre_slip) =
+        if channels.tyre_slip_angle.iter().any(Option::is_some) {
+            (
+                Some("angle".to_owned()),
+                interpolate_wheel_channels(
+                    &channels.tyre_slip_angle,
+                    &grid,
+                    180.0 / std::f64::consts::PI,
+                )?,
+                maximum_abs_wheel_value(&columns.tyre_slip_angle_rad, 180.0 / std::f64::consts::PI),
+            )
+        } else if channels.tyre_slip_ratio.iter().any(Option::is_some) {
+            (
+                Some("ratio".to_owned()),
+                interpolate_wheel_channels(&channels.tyre_slip_ratio, &grid, 100.0)?,
+                maximum_abs_wheel_value(&columns.tyre_slip_ratio, 100.0),
+            )
+        } else if channels.source_wheel_slip.iter().any(Option::is_some) {
+            (
+                Some("source".to_owned()),
+                interpolate_wheel_channels(&channels.source_wheel_slip, &grid, 1.0)?,
+                maximum_abs_wheel_value(&columns.source_wheel_slip, 1.0),
+            )
+        } else {
+            (None, std::array::from_fn(|_| vec![None; grid.len()]), None)
+        };
     let samples = grid
         .into_iter()
         .enumerate()
@@ -1260,6 +1297,14 @@ fn visualize_session_lap(
             position_z_m: position_z[index],
             air_temperature_c: air_temperature[index],
             track_temperature_c: track_temperature[index],
+            tyre_load_front_left_n: tyre_load[0][index],
+            tyre_load_front_right_n: tyre_load[1][index],
+            tyre_load_rear_left_n: tyre_load[2][index],
+            tyre_load_rear_right_n: tyre_load[3][index],
+            tyre_slip_front_left: tyre_slip[0][index],
+            tyre_slip_front_right: tyre_slip[1][index],
+            tyre_slip_rear_left: tyre_slip[2][index],
+            tyre_slip_rear_right: tyre_slip[3][index],
         })
         .collect();
     let lap_time = format_optional_lap_time(lap.duration_ns);
@@ -1279,6 +1324,8 @@ fn visualize_session_lap(
         track,
         car,
         lap_length_m,
+        tyre_slip_kind,
+        maximum_abs_tyre_slip,
         track_map,
         samples,
     })
@@ -1482,6 +1529,10 @@ struct AlignedLapChannels {
     position_z: Option<DistanceSeries>,
     air_temperature: Option<DistanceSeries>,
     track_temperature: Option<DistanceSeries>,
+    tyre_load: [Option<DistanceSeries>; 4],
+    tyre_slip_angle: [Option<DistanceSeries>; 4],
+    tyre_slip_ratio: [Option<DistanceSeries>; 4],
+    source_wheel_slip: [Option<DistanceSeries>; 4],
 }
 
 impl AlignedLapChannels {
@@ -1553,6 +1604,30 @@ impl AlignedLapChannels {
                     .map(|value| value.filter(|value| *value != 0.0).map(f64::from)),
                 lap_length_m,
             ),
+            tyre_load: std::array::from_fn(|index| {
+                continuous_series(&lap_positions, &columns.tyre_load_n[index], lap_length_m)
+            }),
+            tyre_slip_angle: std::array::from_fn(|index| {
+                continuous_series(
+                    &lap_positions,
+                    &columns.tyre_slip_angle_rad[index],
+                    lap_length_m,
+                )
+            }),
+            tyre_slip_ratio: std::array::from_fn(|index| {
+                continuous_series(
+                    &lap_positions,
+                    &columns.tyre_slip_ratio[index],
+                    lap_length_m,
+                )
+            }),
+            source_wheel_slip: std::array::from_fn(|index| {
+                continuous_series(
+                    &lap_positions,
+                    &columns.source_wheel_slip[index],
+                    lap_length_m,
+                )
+            }),
         })
     }
 }
@@ -1705,6 +1780,28 @@ fn interpolate_discrete(
                 .map_err(|error| format!("telemetry interpolation failed: {error:?}"))
         },
     )
+}
+
+fn interpolate_wheel_channels(
+    series: &[Option<DistanceSeries>; 4],
+    grid: &[f64],
+    scale: f64,
+) -> Result<[Vec<Option<f64>>; 4], String> {
+    let values = series
+        .iter()
+        .map(|series| interpolate_channel(series.as_ref(), grid, scale))
+        .collect::<Result<Vec<_>, _>>()?;
+    values
+        .try_into()
+        .map_err(|_| "wheel telemetry did not contain four corners".to_owned())
+}
+
+fn maximum_abs_wheel_value(values: &[Vec<Option<f32>>; 4], scale: f64) -> Option<f64> {
+    values
+        .iter()
+        .flat_map(|corner| corner.iter().flatten())
+        .map(|value| f64::from(*value).abs() * scale)
+        .reduce(f64::max)
 }
 
 #[tauri::command]
@@ -2472,6 +2569,20 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
         true,
     ),
     (
+        "wheels.tyre_load",
+        "Tyre load",
+        "WHEELS",
+        "Newtons at all four corners",
+        true,
+    ),
+    (
+        "wheels.tyre_slip",
+        "Tyre slip",
+        "WHEELS",
+        "ACTI imports expose angle and ratio; AC shared memory retains its unitless source value",
+        true,
+    ),
+    (
         "native.inputs",
         "Signed steering source value",
         "AC-NATIVE · INPUTS",
@@ -2480,7 +2591,7 @@ const AC_CHANNEL_CAPABILITY_DEFINITIONS: &[ChannelCapabilityDefinition] = &[
     ),
     (
         "native.tyres.dynamics",
-        "Slip, load, pressure & angular speed",
+        "Pressure, angular speed & source dynamics",
         "AC-NATIVE · TYRES & WHEELS",
         "All four corners in AC's native units and ordering",
         true,
