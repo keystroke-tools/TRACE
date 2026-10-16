@@ -84,6 +84,8 @@ pub struct LdImportMetadata {
     pub source_comment: Option<String>,
     pub channels: Vec<LdChannel>,
     pub ldx: Option<LdxMetadata>,
+    /// Resolved lap crossings, sourced from sidecar markers or native lap counters.
+    pub lap_boundaries: Vec<LapBoundary>,
     pub output_rate_hz: u16,
     pub frame_count: u64,
 }
@@ -146,6 +148,7 @@ enum LdMapping {
     Throttle,
     Brake,
     Clutch,
+    ClutchEngagement,
     Steering,
     Speed,
     EngineRpm,
@@ -166,6 +169,7 @@ enum LdMapping {
     TyreSlipAngle(WheelCorner),
     TyreSlipRatio(WheelCorner),
     TyrePressure(WheelCorner),
+    TyrePressureKpa(WheelCorner),
     TyreCoreTemperature(WheelCorner),
     SuspensionTravel(WheelCorner),
 }
@@ -219,6 +223,7 @@ impl MotecLdReader {
         let mut channels = Vec::with_capacity(log.channels.len());
         let mut output_rate_hz = 0_u16;
         let mut native_names = BTreeMap::<String, usize>::new();
+        let is_ac_live = log.event.event_name.trim() == "AC_LIVE";
         for channel in &log.channels {
             if channel.freq == 0 || channel.freq > limits.max_sample_rate_hz {
                 return Err(LdImportError::InvalidSampleRate {
@@ -260,7 +265,7 @@ impl MotecLdReader {
                 unit: channel.unit.clone(),
                 sample_rate_hz: channel.freq,
                 values,
-                mapping: ld_mapping(&channel.name, &channel.unit),
+                mapping: ld_mapping(&channel.name, &channel.unit, is_ac_live),
             });
         }
         if channels.is_empty() || output_rate_hz == 0 {
@@ -288,6 +293,13 @@ impl MotecLdReader {
         let ldx = sidecar_bytes
             .map(|bytes| parse_ldx(bytes, duration_ns, limits))
             .transpose()?;
+        let lap_boundaries = ldx
+            .as_ref()
+            .filter(|metadata| !metadata.boundaries.is_empty())
+            .map_or_else(
+                || derive_lap_boundaries(&channels, duration_ns, limits.max_lap_boundaries),
+                |metadata| Ok(metadata.boundaries.clone()),
+            )?;
         let session_type = nonempty(&log.event.session);
         let event_name = nonempty(&log.event.event_name);
         let source_comment = [
@@ -310,6 +322,7 @@ impl MotecLdReader {
             source_comment: (!source_comment.is_empty()).then_some(source_comment),
             channels: channel_metadata,
             ldx,
+            lap_boundaries,
             output_rate_hz,
             frame_count,
         };
@@ -383,14 +396,15 @@ impl MotecLdReader {
                 ..MotionState::default()
             };
         }
-        if let Some(ldx) = &self.metadata.ldx {
-            let completed = ldx
-                .boundaries
+        if !self.metadata.lap_boundaries.is_empty() {
+            let completed = self
+                .metadata
+                .lap_boundaries
                 .partition_point(|boundary| boundary.elapsed_ns <= elapsed);
             frame.lap.completed_laps = u32::try_from(completed).ok();
             let start = completed
                 .checked_sub(1)
-                .and_then(|index| ldx.boundaries.get(index))
+                .and_then(|index| self.metadata.lap_boundaries.get(index))
                 .map_or(0, |boundary| boundary.elapsed_ns);
             frame.lap.current_lap_time_ns = Some(elapsed.saturating_sub(start));
             if self.previous_completed_laps != Some(completed) {
@@ -510,15 +524,59 @@ fn parse_ldx(
         }
         buffer.clear();
     }
-    if metadata
-        .total_laps
-        .is_some_and(|total| usize::try_from(total).ok() != Some(metadata.boundaries.len() + 1))
-    {
-        return Err(LdImportError::InvalidSidecar(
-            "total laps does not match the number of lap boundaries".into(),
-        ));
-    }
     Ok(metadata)
+}
+
+fn derive_lap_boundaries(
+    channels: &[DecodedChannel],
+    duration_ns: u64,
+    maximum: usize,
+) -> Result<Vec<LapBoundary>, LdImportError> {
+    let mut candidates = channels
+        .iter()
+        .filter(|channel| {
+            matches!(
+                normalized(&channel.name).as_str(),
+                "lapnumber" | "sessionlapcount"
+            )
+        })
+        .map(|channel| {
+            let mut boundaries = Vec::new();
+            let mut highest_lap = channel
+                .values
+                .first()
+                .copied()
+                .and_then(nonnegative_integer);
+            for (index, value) in channel.values.iter().copied().enumerate().skip(1) {
+                let Some(current) = nonnegative_integer(value) else {
+                    continue;
+                };
+                let Some(highest) = highest_lap else {
+                    highest_lap = Some(current);
+                    continue;
+                };
+                if current <= highest {
+                    continue;
+                }
+                highest_lap = Some(current);
+                let sample = u64::try_from(index).unwrap_or(u64::MAX);
+                let elapsed_ns = elapsed_ns(sample, channel.sample_rate_hz);
+                if elapsed_ns == 0 || elapsed_ns >= duration_ns {
+                    continue;
+                }
+                if boundaries.len() >= maximum {
+                    return Err(LdImportError::TooManyLapBoundaries { maximum });
+                }
+                boundaries.push(LapBoundary {
+                    name: format!("Lap {current}"),
+                    elapsed_ns,
+                });
+            }
+            Ok(boundaries)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    candidates.sort_by_key(Vec::len);
+    Ok(candidates.pop().unwrap_or_default())
 }
 
 fn attributes(
@@ -578,12 +636,13 @@ fn parse_duration_ns(value: &str) -> Option<u64> {
     Some(nanoseconds.round() as u64)
 }
 
-fn ld_mapping(name: &str, unit: &str) -> LdMapping {
+fn ld_mapping(name: &str, unit: &str, is_ac_live: bool) -> LdMapping {
     let name = normalized(name);
     let unit = normalized(unit);
     match name.as_str() {
         "throttlepos" if unit == "%" => LdMapping::Throttle,
         "brakepos" if unit == "%" => LdMapping::Brake,
+        "clutchpos" if unit == "%" && is_ac_live => LdMapping::ClutchEngagement,
         "clutchpos" if unit == "%" => LdMapping::Clutch,
         "steeringangle" if unit == "deg" => LdMapping::Steering,
         "groundspeed" if unit == "km/h" => LdMapping::Speed,
@@ -597,8 +656,8 @@ fn ld_mapping(name: &str, unit: &str) -> LdMapping {
         "carposnorm" => LdMapping::LapPosition,
         "numtiresofftrack" => LdMapping::TyresOut,
         "lastsectortime" if unit == "s" => LdMapping::LastSectorTime,
-        "airtemp" if unit == "c" => LdMapping::AmbientTemperature,
-        "roadtemp" if unit == "c" => LdMapping::TrackTemperature,
+        "airtemp" | "ambienttemperature" if unit == "c" => LdMapping::AmbientTemperature,
+        "roadtemp" | "tracktemperature" if unit == "c" => LdMapping::TrackTemperature,
         "surfacegrip" if unit == "%" => LdMapping::TrackGrip,
         _ => wheel_mapping(&name, &unit).unwrap_or(LdMapping::Native),
     }
@@ -607,12 +666,15 @@ fn ld_mapping(name: &str, unit: &str) -> LdMapping {
 fn wheel_mapping(name: &str, unit: &str) -> Option<LdMapping> {
     let (prefix, corner) = split_corner(name)?;
     match (prefix, unit) {
-        ("wheelangularspeed", "rad/s") => Some(LdMapping::WheelAngularSpeed(corner)),
-        ("tireload", "n") => Some(LdMapping::TyreLoad(corner)),
-        ("tireslipangle", "deg") => Some(LdMapping::TyreSlipAngle(corner)),
-        ("tireslipratio", "%") => Some(LdMapping::TyreSlipRatio(corner)),
-        ("tirepressure", "psi") => Some(LdMapping::TyrePressure(corner)),
-        ("tiretempcore", "c") => Some(LdMapping::TyreCoreTemperature(corner)),
+        ("wheelangularspeed" | "wheelrotspeed", "rad/s") => {
+            Some(LdMapping::WheelAngularSpeed(corner))
+        }
+        ("tireload" | "tyreload", "n") => Some(LdMapping::TyreLoad(corner)),
+        ("tireslipangle" | "tyreslipangle", "deg") => Some(LdMapping::TyreSlipAngle(corner)),
+        ("tireslipratio" | "tyreslipratio", "%") => Some(LdMapping::TyreSlipRatio(corner)),
+        ("tirepressure" | "tyrepressure", "psi") => Some(LdMapping::TyrePressure(corner)),
+        ("tirepressure" | "tyrepressure", "kpa") => Some(LdMapping::TyrePressureKpa(corner)),
+        ("tiretempcore" | "tyretempcore", "c") => Some(LdMapping::TyreCoreTemperature(corner)),
         ("suspensiontravel", "mm") => Some(LdMapping::SuspensionTravel(corner)),
         _ => None,
     }
@@ -642,9 +704,10 @@ fn apply_ld_mapping(
     match mapping {
         LdMapping::Throttle => frame.inputs.throttle = percent(value),
         LdMapping::Brake => frame.inputs.brake = percent(value),
+        LdMapping::Clutch => frame.inputs.clutch = percent(value),
         // ACTI reports clutch engagement: 100% is connected/unpressed and 0%
         // is disconnected/pressed. TRACE's canonical input is pedal travel.
-        LdMapping::Clutch => frame.inputs.clutch = inverted_percent(value),
+        LdMapping::ClutchEngagement => frame.inputs.clutch = inverted_percent(value),
         LdMapping::Steering => {
             frame.inputs.steering_angle_rad = finite_f32(value.to_radians());
         }
@@ -703,6 +766,9 @@ fn apply_ld_mapping(
         LdMapping::TyrePressure(corner) => {
             wheel(frame, corner).tyre_pressure_pa = nonnegative_f32(value * 6_894.757_293_168);
         }
+        LdMapping::TyrePressureKpa(corner) => {
+            wheel(frame, corner).tyre_pressure_pa = nonnegative_f32(value * 1_000.0);
+        }
         LdMapping::TyreCoreTemperature(corner) => {
             wheel(frame, corner).tyre_core_temperature_c = finite_f32(value);
         }
@@ -743,6 +809,13 @@ fn finite_f32(value: f64) -> Option<f32> {
 
 fn integral_i16(value: f64) -> Option<i16> {
     if value.fract() != 0.0 || value < f64::from(i16::MIN) || value > f64::from(i16::MAX) {
+        return None;
+    }
+    value.to_string().parse().ok()
+}
+
+fn nonnegative_integer(value: f64) -> Option<u32> {
+    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > f64::from(u32::MAX) {
         return None;
     }
     value.to_string().parse().ok()
@@ -856,6 +929,7 @@ mod tests {
             assert_eq!(ldx.version.as_deref(), Some("1.5"));
             assert_eq!(ldx.total_laps, Some(expected.laps));
             assert_eq!(ldx.boundaries.len(), expected.boundaries);
+            assert_eq!(metadata.lap_boundaries, ldx.boundaries);
             assert_eq!(ldx.fastest_time_ns, Some(expected.fastest_time_ns));
         }
     }
@@ -993,6 +1067,66 @@ mod tests {
         assert_eq!(observed[&2_363], (Some(0), Some(36_022_000_000)));
         assert_eq!(observed[&3_324], (Some(1), Some(48_038_000_000)));
         assert_eq!(observed[&3_890], (Some(2), Some(28_319_000_000)));
+    }
+
+    #[test]
+    fn sidecar_total_laps_is_informational_when_markers_are_absent() {
+        let sidecar = br#"<?xml version="1.0"?>
+            <LDXFile Version="1.6"><Layers><Details>
+            <String Id="Total Laps" Value="10"/>
+            <String Id="Fastest Time" Value="1:32.789"/>
+            </Details></Layers></LDXFile>"#;
+        let metadata = parse_ldx(sidecar, 100_000_000_000, LdImportLimits::default())
+            .expect("a session lap count does not require sidecar markers");
+        assert_eq!(metadata.total_laps, Some(10));
+        assert!(metadata.boundaries.is_empty());
+    }
+
+    #[test]
+    fn native_lap_number_changes_provide_fallback_boundaries() {
+        let channels = [DecodedChannel {
+            name: "Lap Number".into(),
+            unit: String::new(),
+            sample_rate_hz: 2,
+            values: vec![4.0, 4.0, 5.0, 5.0, 3.0, 4.0, 6.0],
+            mapping: LdMapping::Native,
+        }];
+        let boundaries = derive_lap_boundaries(&channels, 4_000_000_000, 10)
+            .expect("bounded lap-number channel");
+        assert_eq!(
+            boundaries,
+            vec![
+                LapBoundary {
+                    name: "Lap 5".into(),
+                    elapsed_ns: 1_000_000_000,
+                },
+                LapBoundary {
+                    name: "Lap 6".into(),
+                    elapsed_ns: 3_000_000_000,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn generic_channels_do_not_inherit_acti_specific_semantics() {
+        assert_eq!(ld_mapping("Clutch Pos", "%", false), LdMapping::Clutch);
+        assert_eq!(
+            ld_mapping("Clutch Pos", "%", true),
+            LdMapping::ClutchEngagement
+        );
+        assert_eq!(
+            ld_mapping("Tyre Load FL", "N", false),
+            LdMapping::TyreLoad(WheelCorner::FrontLeft)
+        );
+        assert_eq!(
+            ld_mapping("Tyre Pressure RR", "kPa", false),
+            LdMapping::TyrePressureKpa(WheelCorner::RearRight)
+        );
+        assert_eq!(
+            ld_mapping("Track Temperature", "C", false),
+            LdMapping::TrackTemperature
+        );
     }
 
     #[test]

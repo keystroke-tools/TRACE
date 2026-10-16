@@ -1,13 +1,17 @@
-use std::{env, fs};
+use std::{env, fs, path::Path};
 
 use i3rs_core::LdFile;
+use trace_motec::{LdImportLimits, MotecLdReader};
 
 fn main() -> Result<(), String> {
     let path = env::args().nth(1).ok_or_else(|| {
         "usage: cargo run -p trace-motec --example inspect_ld -- <file.ld>".to_owned()
     })?;
     let bytes = fs::read(&path).map_err(|error| format!("failed to read {path}: {error}"))?;
-    let log = LdFile::from_bytes(bytes)?;
+    let log = LdFile::from_bytes(bytes.clone())?;
+    let sidecar = fs::read(Path::new(&path).with_extension("ldx")).ok();
+    let trace_reader = MotecLdReader::new(bytes, sidecar.as_deref(), LdImportLimits::default())
+        .map_err(|error| format!("TRACE compatibility error: {error:?}"))?;
     println!(
         "driver={:?} vehicle={:?} venue={:?} date={:?} time={:?} comment={:?} event={:?} session={:?} channels={} duration={:.3}s",
         log.session.driver,
@@ -20,6 +24,11 @@ fn main() -> Result<(), String> {
         log.event.session,
         log.channels.len(),
         log.duration_secs()
+    );
+    println!(
+        "TRACE resolved {} lap boundaries: {:?}",
+        trace_reader.metadata().lap_boundaries.len(),
+        trace_reader.metadata().lap_boundaries
     );
     if env::args().nth(2).as_deref() != Some("--selected-only") {
         for channel in &log.channels {
@@ -51,6 +60,12 @@ fn main() -> Result<(), String> {
         "Session Lap Count",
         "Lap Invalidated",
         "Lap Time",
+        "Lap Number",
+        "Beacon (Internal)",
+        "Marker",
+        "Session Elapsed Time",
+        "Steering",
+        "Steering Wheel Position",
         "Num Tires Off Track",
     ] {
         let Some(channel) = log.find_channel_by_name(name) else {
@@ -66,6 +81,19 @@ fn main() -> Result<(), String> {
             channel.unit,
             values.first()
         );
+        if name == "Lap Number" {
+            let transitions = values
+                .windows(2)
+                .enumerate()
+                .filter_map(|(index, pair)| {
+                    pair[0]
+                        .total_cmp(&pair[1])
+                        .is_ne()
+                        .then_some((index + 1, pair[0], pair[1]))
+                })
+                .collect::<Vec<_>>();
+            println!("transitions={transitions:?}");
+        }
     }
     Ok(())
 }

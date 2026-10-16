@@ -132,9 +132,9 @@ fn read_source(
     let mut reader = MotecLdReader::new(source, sidecar.as_deref(), limits)
         .map_err(|error| format!("invalid or unsupported MoTeC log: {error:?}"))?;
     let source_metadata = reader.metadata().clone();
-    if source_metadata.ldx.is_none() {
+    if source_metadata.lap_boundaries.is_empty() {
         return Err(format!(
-            "No matching {} was found. This first import path requires the .ldx sidecar so lap boundaries are not guessed.",
+            "No usable lap boundaries were found. Add the matching {}, or export a MoTeC log with a Lap Number channel.",
             sidecar_path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -160,7 +160,7 @@ fn read_source(
 }
 
 fn derive_track_length(metadata: &LdImportMetadata, frames: &[TelemetryFrame]) -> Option<f64> {
-    let boundaries = &metadata.ldx.as_ref()?.boundaries;
+    let boundaries = &metadata.lap_boundaries;
     let mut lengths = boundaries
         .windows(2)
         .filter_map(|window| {
@@ -254,13 +254,12 @@ fn build_laps(
     metadata: &LdImportMetadata,
     frames: &[TelemetryFrame],
 ) -> Result<Vec<NewLap>, String> {
-    let sidecar = metadata
-        .ldx
-        .as_ref()
-        .ok_or_else(|| "MoTeC lap sidecar is missing".to_owned())?;
-    let mut starts = Vec::with_capacity(sidecar.boundaries.len() + 2);
+    if metadata.lap_boundaries.is_empty() {
+        return Err("MoTeC lap boundaries are missing".to_owned());
+    }
+    let mut starts = Vec::with_capacity(metadata.lap_boundaries.len() + 2);
     starts.push((0_u64, 0_usize));
-    for boundary in &sidecar.boundaries {
+    for boundary in &metadata.lap_boundaries {
         let sample = boundary_sample(boundary.elapsed_ns, metadata.output_rate_hz);
         let sample = usize::try_from(sample)
             .map_err(|_| "MoTeC lap marker does not fit this system".to_owned())?

@@ -1,7 +1,7 @@
 # MoTeC telemetry import
 
-TRACE can import paired MoTeC i2 `.ld`/`.ldx` outings into the desktop session
-library. It also has a parser foundation for CSV files exported from MoTeC i2, but
+TRACE can import native MoTeC i2 `.ld` outings into the desktop session library,
+using a matching `.ldx` when one is available. It also has a parser foundation for CSV files exported from MoTeC i2, but
 CSV is not connected to the desktop workflow yet.
 
 MoTeC is the telemetry tool, not necessarily the simulator which produced a log.
@@ -22,12 +22,19 @@ The reader:
 - retains every readable numeric source channel in the frame's native data map;
 - maps conservative channel-and-unit matches into TRACE's canonical telemetry model;
 - resamples channels onto the highest source sample-rate grid without interpolation;
-- reads `.ldx` lap markers and rebases the outing to local lap numbers; and
+- resolves lap crossings from `.ldx` markers or a native `Lap Number`/`Session Lap
+  Count` channel and rebases the outing to local lap numbers; and
 - exposes source metadata and a complete channel inventory before persistence.
 
 The binary layout is not an official open interchange specification. Native support
 therefore remains compatibility work backed by authorised real-world fixtures, not a
 claim that every producer or i2 version is supported.
+
+An `.ldx` `Total Laps` value is treated as informational. Producers disagree about
+whether it describes laps in the file, the source session's current lap number, or
+the full session. It is not required to equal the number of marker elements. For
+example, Le Mans Ultimate exports can omit `.ldx` markers while recording precise
+lap-number transitions in the `.ld` itself; TRACE uses those transitions instead.
 
 ### Validated ACTI fixtures
 
@@ -74,7 +81,9 @@ guessed.
 
 | Source data                      | Accepted native unit | TRACE value                                |
 | -------------------------------- | -------------------- | ------------------------------------------ |
-| Throttle, brake, clutch position | percent              | normalized input ratio                     |
+| Throttle and brake position      | percent              | normalized input ratio                     |
+| Clutch position                  | percent              | normalized pedal ratio                     |
+| ACTI clutch engagement           | percent              | inverted normalized pedal ratio            |
 | Steering angle                   | degrees              | radians                                    |
 | Ground speed                     | km/h                 | metres per second                          |
 | Engine speed                     | rpm                  | revolutions per minute                     |
@@ -84,13 +93,13 @@ guessed.
 | Car Coord X/Y/Z                  | metres               | source-world position                      |
 | Car Pos Norm                     | ratio                | normalized lap position                    |
 | Num Tires Off Track              | count                | tyres outside the track                    |
-| Air/Road Temp                    | Celsius              | environment temperature                    |
+| Air/Ambient and Road/Track Temp  | Celsius              | environment temperature                    |
 | Surface Grip                     | percent              | normalized track grip                      |
-| Wheel Angular Speed              | radians/second       | per-wheel angular speed                    |
-| Tire Load                        | newtons              | per-wheel contact load                     |
-| Tire Slip Angle                  | degrees              | per-wheel radians internally               |
-| Tire Slip Ratio                  | percent              | per-wheel normalized ratio                 |
-| Tire Pressure                    | psi                  | per-wheel pascals                          |
+| Wheel Angular/Rot Speed          | radians/second       | per-wheel angular speed                    |
+| Tire/Tyre Load                   | newtons              | per-wheel contact load                     |
+| Tire/Tyre Slip Angle             | degrees              | per-wheel radians internally               |
+| Tire/Tyre Slip Ratio             | percent              | per-wheel normalized ratio                 |
+| Tire/Tyre Pressure               | psi or kPa           | per-wheel pascals                          |
 | Tire Temp Core                   | Celsius              | per-wheel core temperature                 |
 | Suspension Travel                | millimetres          | per-wheel metres                           |
 | Last Sector Time                 | seconds              | completed split and current sector         |
@@ -127,8 +136,9 @@ the normal Arrow telemetry representation, and creates SQLite session and lap re
 with imported provenance. The original driver is attributed as another driver so the
 outing is not confused with the local profile.
 
-This initial UI path requires the sidecar. It indexes the partial leading and trailing
-segments as invalid laps and uses marker-to-marker spans as complete laps. ACTI's
+The import requires trustworthy lap crossings, either as sidecar markers or as a
+monotonically increasing lap-number channel in the native log. It indexes partial
+leading and trailing segments as invalid laps and uses crossing-to-crossing spans as complete laps. ACTI's
 `Lap Invalidated` channel determines validity when present; the fastest complete valid
 lap is highlighted normally. An `AC_LIVE` event identifies Assetto Corsa without
 making that simulator the default for other MoTeC producers.
