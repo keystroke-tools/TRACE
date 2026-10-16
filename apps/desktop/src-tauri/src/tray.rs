@@ -86,7 +86,7 @@ pub(crate) fn handle_window_event(window: &Window, event: &WindowEvent) {
     }
 }
 
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
