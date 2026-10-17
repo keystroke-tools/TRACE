@@ -110,11 +110,11 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
-      - name: Check Assetto Corsa acquisition boundary
-        run: cargo check -p trace-windows-shmem -p trace-ac
+      - name: Check simulator acquisition boundaries
+        run: cargo check -p trace-windows-shmem -p trace-ac -p trace-lmu
 
       - name: Test Windows storage and acquisition boundaries
-        run: cargo test -p trace-storage -p trace-recorder -p trace-ac
+        run: cargo test -p trace-storage -p trace-recorder -p trace-ac -p trace-lmu
 
       - name: Check Windows desktop shell
         if: github.event_name == 'pull_request'
