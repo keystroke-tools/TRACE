@@ -46,6 +46,7 @@ mod setup_editor;
 
 use motec_import::{MotecImportOptions, MotecImportPreview};
 mod setup_import;
+mod simulator_adapter;
 mod startup;
 mod tracer;
 mod tray;
@@ -150,12 +151,20 @@ struct SimulatorOption {
     available: bool,
 }
 
-const SIMULATORS: &[SimulatorOption] = &[SimulatorOption {
-    id: "assetto-corsa",
-    name: "Assetto Corsa",
-    short_name: "AC",
-    available: true,
-}];
+const SIMULATORS: &[SimulatorOption] = &[
+    SimulatorOption {
+        id: "assetto-corsa",
+        name: "Assetto Corsa",
+        short_name: "AC",
+        available: true,
+    },
+    SimulatorOption {
+        id: "le-mans-ultimate",
+        name: "Le Mans Ultimate",
+        short_name: "LMU",
+        available: true,
+    },
+];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2467,7 +2476,7 @@ fn select_simulator(
     status: tauri::State<'_, SharedCaptureStatus>,
     simulator_id: String,
 ) -> Result<(), String> {
-    let current = status
+    let mut current = status
         .lock()
         .map_err(|_| "capture status is unavailable".to_owned())?;
     if current.simulator_id == simulator_id {
@@ -2476,7 +2485,15 @@ fn select_simulator(
     if simulator_option(&simulator_id).is_none() {
         return Err("That simulator adapter is not installed.".into());
     }
-    Err("Close the active adapter before selecting another simulator.".into())
+    if current.connection != "waiting" || current.active_session_id.is_some() {
+        return Err("Finish the active capture before selecting another simulator.".into());
+    }
+    let selected = simulator_option(&simulator_id).expect("simulator checked above");
+    current.simulator_id = simulator_id;
+    current.source = selected.name.to_uppercase();
+    current.sample_rate_hz = 0;
+    current.session = "NO ACTIVE SESSION".into();
+    Ok(())
 }
 
 fn simulator_option(id: &str) -> Option<SimulatorOption> {
@@ -2756,8 +2773,53 @@ fn ac_channel_capabilities() -> Vec<ChannelCapability> {
 fn simulator_channel_capabilities(simulator_id: &str) -> Vec<ChannelCapability> {
     match simulator_id {
         "assetto-corsa" => ac_channel_capabilities(),
+        "le-mans-ultimate" => lmu_channel_capabilities(),
         _ => Vec::new(),
     }
+}
+
+fn lmu_channel_capabilities() -> Vec<ChannelCapability> {
+    [
+        (
+            "lmu.inputs",
+            "Driver inputs & steering",
+            "LMU-NATIVE · DRIVER",
+            "Throttle, brake, clutch, and steering angle using the reported wheel range",
+        ),
+        (
+            "lmu.laps",
+            "Lap, sectors & validity",
+            "LMU-NATIVE · TIMING",
+            "Authoritative sector timing, lap invalidation, and track-limit progression",
+        ),
+        (
+            "lmu.vehicle",
+            "Vehicle telemetry",
+            "LMU-NATIVE · VEHICLE",
+            "Speed, RPM, gear, fuel, motion, brake bias, and best-lap delta",
+        ),
+        (
+            "lmu.tyres",
+            "Tyres & suspension",
+            "LMU-NATIVE · WHEELS",
+            "Per-corner speed, load, pressure, carcass temperature, and suspension travel",
+        ),
+        (
+            "lmu.conditions",
+            "Session & conditions",
+            "LMU-NATIVE · SESSION",
+            "Session type, pit state, ambient temperature, and track temperature",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, label, category, detail)| ChannelCapability {
+        id,
+        label,
+        category,
+        detail,
+        available: true,
+    })
+    .collect()
 }
 
 fn setup_app(
@@ -2793,13 +2855,14 @@ fn setup_app(
     tracer::refresh_if_installed(app.handle());
     discord_activity::spawn(discord_activity, status.clone(), live_broadcast.clone());
     obs_overlay::spawn(app.handle().clone(), status.clone());
+    let adapter_status = status.clone();
     capture::spawn(
         directory,
         ac_race_config,
         status,
         live_broadcast,
         adapter_identity,
-        move || AcAdapter::with_steering_lock_degrees(steering_lock),
+        move || simulator_adapter::SelectedSimulatorAdapter::new(adapter_status, steering_lock),
     );
     Ok(())
 }

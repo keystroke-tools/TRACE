@@ -305,6 +305,7 @@ fn display_session_type(value: &str) -> String {
 fn simulator_name(value: &str) -> &str {
     match value {
         "assetto-corsa" => "Assetto Corsa",
+        "le-mans-ultimate" => "Le Mans Ultimate",
         _ => value,
     }
 }

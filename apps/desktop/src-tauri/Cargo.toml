@@ -42,6 +42,7 @@ trace-adapter = { path = "../../../crates/trace-adapter" }
 trace-core = { version = "0.6.5", path = "../../../crates/trace-core" }
 trace-domain.workspace = true
 trace-live = { path = "../../../crates/trace-live" }
+trace-lmu = { path = "../../../crates/trace-lmu" }
 trace-motec = { path = "../../../crates/trace-motec" }
 trace-protocol = { path = "../../../crates/trace-protocol" }
 trace-recorder = { path = "../../../crates/trace-recorder" }
