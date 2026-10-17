@@ -284,7 +284,7 @@ fn capabilities() -> ChannelCapabilities {
         (
             "inputs.steering",
             Unit::Radian,
-            "mUnfilteredSteering × mPhysicalSteeringWheelRange",
+            "mUnfilteredSteering × physical/visual steering wheel range",
             ValueProvenance::SimulatorDerived,
         ),
         (

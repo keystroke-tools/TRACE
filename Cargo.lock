@@ -5199,6 +5199,7 @@ dependencies = [
 name = "trace-lmu"
 version = "0.6.5"
 dependencies = [
+ "miniz_oxide",
  "trace-adapter",
  "trace-domain",
  "trace-windows-shmem",

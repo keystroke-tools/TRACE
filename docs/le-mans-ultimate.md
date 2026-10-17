@@ -73,7 +73,7 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | lap validity                      | authoritative `lap invalidated` flag                               |
 | track-limit progression           | simulator track-limit steps                                        |
 | throttle, brake, clutch           | normalized player inputs                                           |
-| steering angle                    | normalized input × reported physical wheel range                   |
+| steering angle                    | normalized input × physical range, falling back to visual range    |
 | speed, RPM, gear, fuel            | player telemetry                                                   |
 | position, velocity, acceleration  | player world/vehicle vectors                                       |
 | tyres                             | angular speed, load, pressure, carcass temperature, suspension     |
@@ -117,8 +117,24 @@ Build the Windows collector from WSL with:
 mise run build-lmu-fixture-collector
 ```
 
-With LMU in an active session, run `capture_lmu_fixture.exe <output-directory>`. The
-collector rebuilds a one-player mapping and removes driver names, Steam IDs, other
-vehicles, result streams, filesystem paths, and reserved expansion bytes before it
-writes `shared-memory.bin` and its text manifest. Inspect that output before adding an
-explicitly authorised fixture under `crates/trace-lmu/tests/fixtures/`.
+With LMU in an active session, run
+`capture_lmu_fixture.exe <output-directory> [duration-seconds]`. The collector prints
+`READY` before sampling at 10 Hz for up to ten minutes by default. Create an empty
+`STOP` file in the output directory to finish early without corrupting the compressed
+recording. It rebuilds every successful sample as a one-player mapping and removes
+driver names, Steam IDs, other vehicles, result streams, filesystem paths, and reserved
+expansion bytes before writing `snapshots.trlmu` and its text manifest. Inspect that
+output before adding an explicitly authorised fixture under
+`crates/trace-lmu/tests/fixtures/`.
+
+Inspect and optionally thin a capture from 10 Hz to 1 Hz with:
+
+```bash
+cargo run -p trace-lmu --example inspect_lmu_recording -- \
+  <output-directory>/snapshots.trlmu [thin-output.trlmu]
+```
+
+The inspector decodes every snapshot through the production LMU boundary and reports
+lap, sector, phase, pit, input, motion, and steering-range coverage. The optional thin
+output retains every tenth redacted snapshot for a smaller CI regression fixture; keep
+the full local capture until the thinned fixture has passed its regression test.

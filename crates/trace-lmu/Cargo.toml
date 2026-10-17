@@ -10,5 +10,8 @@ trace-adapter = { path = "../trace-adapter" }
 trace-domain.workspace = true
 trace-windows-shmem = { path = "../trace-windows-shmem" }
 
+[dev-dependencies]
+miniz_oxide = "0.8.9"
+
 [lints]
 workspace = true

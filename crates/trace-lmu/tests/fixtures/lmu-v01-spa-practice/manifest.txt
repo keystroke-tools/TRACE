@@ -1,0 +1,15 @@
+format=trace.lmu.recording.v1
+compression=zlib-records
+privacy=one-player allowlist; driver names, Steam IDs, other cars, streams, paths, and expansion bytes removed
+simulator_version=16
+car_model=Duqueine D09 P3
+track=Circuit de Spa-Francorchamps
+session_type=practice
+snapshot_bytes=324824
+sample_interval_ms=1000
+sample_count=600
+source_sample_interval_ms=100
+source_sample_count=5999
+source_skipped_samples=1
+duration_ms=599100
+capture=authorised outlap, timed laps, inlap, and pit return

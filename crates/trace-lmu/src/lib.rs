@@ -134,12 +134,14 @@ impl LmuSnapshot {
             .and_then(|(distance, length)| finite_f32((distance / length).clamp(0.0, 1.0)));
         let local_velocity = page.vector3(telemetry + 184, CoordinateFrame::Vehicle)?;
         let physical_rotation_degrees = f64::from(page.f32(telemetry + 692)?);
+        let visual_rotation_degrees = f64::from(page.f32(telemetry + 660)?);
         let steering_input = page.f64(telemetry + 404)?;
-        let steering_angle_rad = (physical_rotation_degrees.is_finite()
-            && (90.0..=2_160.0).contains(&physical_rotation_degrees)
-            && (-1.0..=1.0).contains(&steering_input))
-        .then(|| finite_f32(steering_input * physical_rotation_degrees.to_radians() / 2.0))
-        .flatten();
+        let steering_range_degrees = [physical_rotation_degrees, visual_rotation_degrees]
+            .into_iter()
+            .find(|range| range.is_finite() && (90.0..=2_160.0).contains(range));
+        let steering_angle_rad = steering_range_degrees
+            .filter(|_| (-1.0..=1.0).contains(&steering_input))
+            .and_then(|range| finite_f32(steering_input * range.to_radians() / 2.0));
         let wheels = map_wheels(&page, telemetry)?;
         let current_lap_time_ns =
             nonnegative(page.f64(telemetry + 12)? - page.f64(telemetry + 24)?)
@@ -411,6 +413,15 @@ fn native_fields(
     integer_fields.insert("in_pits".into(), i64::from(page.u8(scoring + 198)?));
     integer_fields.insert("pit_state".into(), i64::from(page.u8(scoring + 457)?));
     let mut float_fields = BTreeMap::new();
+    float_fields.insert("unfiltered_steering".into(), page.f64(telemetry + 404)?);
+    float_fields.insert(
+        "physical_steering_wheel_range".into(),
+        f64::from(page.f32(telemetry + 692)?),
+    );
+    float_fields.insert(
+        "visual_steering_wheel_range".into(),
+        f64::from(page.f32(telemetry + 660)?),
+    );
     float_fields.insert("fuel_capacity_litres".into(), page.f64(telemetry + 608)?);
     float_fields.insert("delta_best_seconds".into(), page.f64(telemetry + 696)?);
     float_fields.insert("rear_brake_bias".into(), page.f64(telemetry + 664)?);
