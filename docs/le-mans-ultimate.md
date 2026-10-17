@@ -110,3 +110,15 @@ The unit suite uses constructed, identity-free snapshots. Before declaring live 
 capture supported, record a real session fixture that strips player identity and any
 unrelated scoring stream data, then test connection, pause, pit, session-end, validity,
 sector, and reconnect behaviour against it.
+
+Build the Windows collector from WSL with:
+
+```bash
+mise run build-lmu-fixture-collector
+```
+
+With LMU in an active session, run `capture_fixture.exe <output-directory>`. The
+collector rebuilds a one-player mapping and removes driver names, Steam IDs, other
+vehicles, result streams, filesystem paths, and reserved expansion bytes before it
+writes `shared-memory.bin` and its text manifest. Inspect that output before adding an
+explicitly authorised fixture under `crates/trace-lmu/tests/fixtures/`.

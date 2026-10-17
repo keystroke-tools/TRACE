@@ -53,6 +53,16 @@ pub struct LmuSnapshot {
     player_scoring_offset: usize,
 }
 
+/// Privacy-redacted LMU mapping suitable for a checked-in regression fixture.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LmuRedactedFixture {
+    pub bytes: Vec<u8>,
+    pub simulator_version: Option<String>,
+    pub car_model: Option<String>,
+    pub track: Option<String>,
+    pub session_type: Option<String>,
+}
+
 impl LmuSnapshot {
     /// Validates an owned shared-memory copy and resolves the local player in
     /// telemetry and scoring independently.
@@ -254,6 +264,65 @@ impl LmuSnapshot {
         Ok((version > 0).then(|| version.to_string()))
     }
 
+    /// Rebuilds a one-player mapping without driver names, Steam IDs, other cars,
+    /// result streams, filesystem paths, or unused expansion bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when session metadata cannot be decoded from this snapshot.
+    pub fn redacted_fixture(&self) -> Result<LmuRedactedFixture, LmuPageError> {
+        let session = self.map_session()?;
+        let simulator_version = self.simulator_version()?;
+        let mut bytes = vec![0; SHARED_MEMORY_SIZE];
+        copy_bytes(&self.bytes, &mut bytes, 60, 4);
+        copy_bytes(&self.bytes, &mut bytes, SCORING_OFFSET, 96);
+        copy_bytes(&self.bytes, &mut bytes, SCORING_OFFSET + 104, 12);
+        copy_bytes(&self.bytes, &mut bytes, SCORING_OFFSET + 228, 16);
+        bytes[TELEMETRY_OFFSET] = 1;
+        bytes[TELEMETRY_OFFSET + 1] = 0;
+        bytes[TELEMETRY_OFFSET + 2] = 1;
+        copy_bytes(
+            &self.bytes,
+            &mut bytes,
+            self.player_telemetry_offset,
+            TELEMETRY_SIZE,
+        );
+        bytes[TELEMETRY_VEHICLES_OFFSET + 828..TELEMETRY_VEHICLES_OFFSET + WHEEL_OFFSET].fill(0);
+        for index in 0..4 {
+            let expansion = TELEMETRY_VEHICLES_OFFSET + WHEEL_OFFSET + index * WHEEL_SIZE + 242;
+            bytes[expansion..expansion + 18].fill(0);
+        }
+        let source = self.player_scoring_offset;
+        let target = SCORING_VEHICLES_OFFSET;
+        for (offset, length) in [
+            (0, 4),
+            (36, 164),
+            (200, 32),
+            (264, 72),
+            (457, 1),
+            (464, 8),
+            (507, 1),
+        ] {
+            copy_between(
+                &self.bytes,
+                &mut bytes,
+                source + offset,
+                target + offset,
+                length,
+            );
+        }
+        // Keep only one player scoring record, resolved by both the player flag and ID.
+        bytes[target + 196] = 1;
+        bytes[SCORING_OFFSET + 104..SCORING_OFFSET + 108].copy_from_slice(&1_i32.to_le_bytes());
+        Ok(LmuRedactedFixture {
+            bytes,
+            simulator_version,
+            car_model: session.car_id,
+            track: session.track_id,
+            session_type: session.session_type,
+        })
+    }
+
     fn native_payload(&self) -> Vec<u8> {
         let segments = [
             &self.bytes[SCORING_OFFSET..SCORING_OFFSET + SCORING_INFO_SIZE],
@@ -281,6 +350,21 @@ impl LmuSnapshot {
         }
         payload
     }
+}
+
+fn copy_bytes(source: &[u8], target: &mut [u8], offset: usize, length: usize) {
+    copy_between(source, target, offset, offset, length);
+}
+
+fn copy_between(
+    source: &[u8],
+    target: &mut [u8],
+    source_offset: usize,
+    target_offset: usize,
+    length: usize,
+) {
+    target[target_offset..target_offset + length]
+        .copy_from_slice(&source[source_offset..source_offset + length]);
 }
 
 fn map_wheels(page: &Page<'_>, telemetry: usize) -> Result<WheelStates, LmuPageError> {
@@ -598,5 +682,24 @@ mod tests {
             frame.wheels[&WheelCorner::FrontLeft].tyre_pressure_pa,
             Some(180_000.0)
         );
+    }
+
+    #[test]
+    fn redacted_fixture_removes_identity_and_other_scoring_records() {
+        let snapshot = snapshot();
+        let original_frame = snapshot
+            .map_frame(FrameSequence(1), ElapsedNanoseconds(2))
+            .expect("original frame");
+        let fixture = snapshot.redacted_fixture().expect("redacted fixture");
+        let redacted = LmuSnapshot::from_bytes(fixture.bytes).expect("redacted snapshot");
+        assert_eq!(redacted.driver_name(), None);
+        assert_eq!(redacted.map_session(), snapshot.map_session());
+        let redacted_frame = redacted
+            .map_frame(FrameSequence(1), ElapsedNanoseconds(2))
+            .expect("redacted frame");
+        assert_eq!(redacted_frame.inputs, original_frame.inputs);
+        assert_eq!(redacted_frame.vehicle, original_frame.vehicle);
+        assert_eq!(redacted_frame.lap, original_frame.lap);
+        assert_eq!(redacted_frame.wheels, original_frame.wheels);
     }
 }
