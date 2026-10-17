@@ -138,7 +138,9 @@ impl<S: LmuSource> LmuAdapter<S> {
                 let phase = snapshot.game_phase().map_err(page_error)?;
                 let session = snapshot.map_session().map_err(page_error)?;
                 if phase == PHASE_BEFORE_SESSION
-                    || phase == PHASE_SESSION_OVER
+                    || (phase == PHASE_SESSION_OVER
+                        && (!snapshot.in_realtime().map_err(page_error)?
+                            || snapshot.player_finish_status().map_err(page_error)? != 0))
                     || !complete_identity(&session)
                 {
                     self.disconnect();
@@ -181,7 +183,11 @@ impl<S: LmuSource> LmuAdapter<S> {
             }
         };
         let phase = snapshot.game_phase().map_err(page_error)?;
-        if phase == PHASE_SESSION_OVER || phase == PHASE_BEFORE_SESSION {
+        let in_realtime = snapshot.in_realtime().map_err(page_error)?;
+        let player_finished = snapshot.player_finish_status().map_err(page_error)? != 0;
+        if phase == PHASE_BEFORE_SESSION
+            || (phase == PHASE_SESSION_OVER && (!in_realtime || player_finished))
+        {
             let frame = self.map_next_frame(&snapshot)?;
             self.disconnect();
             return Ok(vec![
@@ -202,7 +208,7 @@ impl<S: LmuSource> LmuAdapter<S> {
             *previous = session.clone();
             events.push(AdapterEvent::SessionChanged(session));
         }
-        let now_paused = phase == PHASE_PAUSED || !snapshot.in_realtime().map_err(page_error)?;
+        let now_paused = phase == PHASE_PAUSED || !in_realtime;
         if *paused != now_paused {
             events.push(if now_paused {
                 AdapterEvent::Paused
@@ -416,6 +422,10 @@ mod tests {
     }
 
     fn snapshot(phase: u8, realtime: bool) -> LmuSnapshot {
+        snapshot_with_finish(phase, realtime, 0)
+    }
+
+    fn snapshot_with_finish(phase: u8, realtime: bool, finish_status: u8) -> LmuSnapshot {
         let mut bytes = vec![0; SHARED_MEMORY_SIZE];
         put_i32(&mut bytes, 60, 202_610);
         bytes[TELEMETRY_OFFSET] = 1;
@@ -433,8 +443,37 @@ mod tests {
             "BMW M Hybrid V8",
         );
         put_i32(&mut bytes, SCORING_VEHICLES_OFFSET, 7);
+        bytes[SCORING_VEHICLES_OFFSET + 103] = finish_status;
         bytes[SCORING_VEHICLES_OFFSET + 196] = 1;
         LmuSnapshot::from_bytes(bytes).expect("valid fixture snapshot")
+    }
+
+    #[test]
+    fn keeps_recording_after_global_session_end_until_the_player_finishes() {
+        let source = ScriptedSource {
+            availability: VecDeque::from([LmuAvailability::Available]),
+            snapshots: VecDeque::from([
+                Ok(snapshot(5, true)),
+                Ok(snapshot_with_finish(PHASE_SESSION_OVER, true, 0)),
+                Ok(snapshot_with_finish(PHASE_SESSION_OVER, true, 1)),
+            ]),
+            connects: 0,
+            disconnects: 0,
+        };
+        let mut adapter = LmuAdapter::with_source(source);
+
+        adapter.poll().expect("connect poll");
+        let still_running = adapter.poll().expect("global finish poll");
+        assert!(matches!(still_running.as_slice(), [AdapterEvent::Frame(_)]));
+        let player_finished = adapter.poll().expect("player finish poll");
+        assert!(matches!(
+            player_finished.first(),
+            Some(AdapterEvent::Frame(_))
+        ));
+        assert!(matches!(
+            player_finished.last(),
+            Some(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+        ));
     }
 
     #[test]

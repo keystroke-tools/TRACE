@@ -90,6 +90,11 @@ At the finish line, it derives sector three from the last lap and cumulative sec
 values. A completed lap with an observed false invalidation flag is stored as valid;
 sources without an authoritative validity channel remain unknown.
 
+In multiclass races, LMU can switch the global game phase to session-over when the
+overall winner finishes while the player is still completing a final lap. TRACE keeps
+recording in that state until LMU marks the player finished or removes them from
+realtime driving, so a later-class chequered-flag lap is not truncated.
+
 ## Native preservation
 
 Each canonical frame retains a compact `le-mans-ultimate.shared-memory/v01` envelope

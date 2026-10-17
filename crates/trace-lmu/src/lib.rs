@@ -256,6 +256,18 @@ impl LmuSnapshot {
         Ok(Page::new(&self.bytes).u8(SCORING_OFFSET + 115)? != 0)
     }
 
+    /// Player result state reported by LMU scoring.
+    ///
+    /// `0` means the player is still running, `1` finished, `2` DNF, and `3`
+    /// disqualified in the validated V01 interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the resolved player scoring record is truncated.
+    pub fn player_finish_status(&self) -> Result<u8, LmuPageError> {
+        Page::new(&self.bytes).u8(self.player_scoring_offset + 103)
+    }
+
     /// Numeric game version published in LMU's generic shared-memory region.
     ///
     /// # Errors
@@ -675,6 +687,7 @@ mod tests {
         assert_eq!(session.car_id.as_deref(), Some("Oreca 07"));
         assert_eq!(session.session_type.as_deref(), Some("race"));
         assert_eq!(snapshot.driver_name().as_deref(), Some("TRACE DRIVER"));
+        assert_eq!(snapshot.player_finish_status(), Ok(0));
 
         let frame = snapshot
             .map_frame(FrameSequence(7), ElapsedNanoseconds(123))
