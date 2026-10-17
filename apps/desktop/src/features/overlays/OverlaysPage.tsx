@@ -239,7 +239,7 @@ export function OverlaysPage({ sessions, status }: { sessions: RecordedSessionSu
 	return (
 		<>
 			<PageIntro
-				index="04"
+				index="05"
 				eyebrow="OVERLAY WORKSHOP"
 				title="BUILD THE VIEW YOU NEED"
 				description="Preview overlays at their real window proportions, test them against live or recorded telemetry, then open the configured overlay above your simulator or in OBS."

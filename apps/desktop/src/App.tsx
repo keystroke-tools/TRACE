@@ -21,6 +21,7 @@ import { SessionsPage } from "./features/sessions/SessionsPage";
 import { SessionSummaryModal } from "./features/sessions/SessionSummaryModal";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SetupsPage } from "./features/setups/SetupsPage";
+import { StatsPage } from "./features/stats/StatsPage";
 import { autoIndexSetupsEnabled, indexDetectedSetupLibraries } from "./features/setups/setup-preferences";
 import { TitleBar } from "./TitleBar";
 import { useToast } from "./Toast";
@@ -311,6 +312,15 @@ export function App() {
 					))}
 				{section === "COMPARE" && (
 					<ComparePage sessions={sessions} initialSelection={comparisonSelection} onReviewActivity={updateDiscordReviewActivity} />
+				)}
+				{section === "STATS" && (
+					<StatsPage
+						onOpenSession={(sessionId) => {
+							setOpenSessionId(sessionId);
+							setOpenLapIndex(null);
+							setSection("SESSIONS");
+						}}
+					/>
 				)}
 				{section === "OVERLAYS" && <OverlaysPage sessions={sessions} status={status} />}
 				{section === "SETUPS" && <SetupsPage />}

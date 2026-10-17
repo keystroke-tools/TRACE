@@ -370,6 +370,7 @@ struct GameInstallDirectory {
 fn recent_sessions(
     app: tauri::AppHandle,
     status: tauri::State<'_, SharedCaptureStatus>,
+    limit: Option<usize>,
 ) -> Result<Vec<RecordedSessionSummary>, String> {
     let directory = app
         .path()
@@ -379,7 +380,7 @@ fn recent_sessions(
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
     let mut sessions = store
-        .recent_sessions(100)
+        .recent_sessions(limit.unwrap_or(100).clamp(1, 10_000))
         .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
     enrich_legacy_motec_sectors(&directory, &store, &mut sessions);
     let profile_name = store

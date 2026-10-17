@@ -536,6 +536,7 @@ export interface TelemetryDataSource {
 	selectSimulator(simulatorId: string): Promise<void>;
 	setReplayCaptureArmed(armed: boolean): Promise<void>;
 	getSessions(): Promise<RecordedSessionSummary[]>;
+	getStatsSessions(): Promise<RecordedSessionSummary[]>;
 	getSessionLapMetrics(sessionId: string): Promise<RecordedLapMetrics[]>;
 	visualizeSessionLap(sessionId: string, lapIndex: number): Promise<LapTrace>;
 	getTracerInstallStatus(): Promise<TracerInstallStatus>;
@@ -851,6 +852,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 		return sessions
 			.filter((session) => !deletedFixtureSessionIds.has(session.id))
 			.map((session) => ({ ...session, ...fixtureSessionDetails.get(session.id) }));
+	},
+	async getStatsSessions() {
+		return this.getSessions();
 	},
 	async exportSession(_sessionId, format) {
 		return {
@@ -1393,6 +1397,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	getSessions() {
 		return invoke<RecordedSessionSummary[]>("recent_sessions");
+	},
+	getStatsSessions() {
+		return invoke<RecordedSessionSummary[]>("recent_sessions", { limit: 10_000 });
 	},
 	getSessionLapMetrics(sessionId) {
 		return invoke<RecordedLapMetrics[]>("session_lap_metrics", { sessionId });

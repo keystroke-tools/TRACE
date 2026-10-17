@@ -1,6 +1,6 @@
 import { UpdateNotice } from "../features/update/UpdateNotice";
 
-const navigation = ["LIVE", "SESSIONS", "COMPARE", "OVERLAYS", "SETUPS", "SETTINGS"] as const;
+const navigation = ["LIVE", "SESSIONS", "STATS", "COMPARE", "OVERLAYS", "SETUPS", "SETTINGS"] as const;
 export type Section = (typeof navigation)[number];
 
 export function Navigation({ active, onChange }: { active: Section; onChange: (section: Section) => void }) {

@@ -268,7 +268,7 @@ export function SetupsPage() {
 	return (
 		<>
 			<PageIntro
-				index="05"
+				index="06"
 				eyebrow="CAR SETUPS"
 				title="SETUP LIBRARY"
 				description="Browse setups across supported simulators, or import new files into the layout each simulator expects."
