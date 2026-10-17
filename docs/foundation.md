@@ -41,8 +41,9 @@ through commands rather than a local HTTP server.
 The desktop contract exposes installed simulator descriptors, the selected adapter,
 and a simulator identity on every archived session. Product copy, source labels,
 filtering, and native-channel presentation derive from those descriptors rather than
-assuming Assetto Corsa. The current registry contains one adapter; adding another
-does not require a simulator-specific session browser.
+assuming Assetto Corsa. The registry now exposes Assetto Corsa and Le Mans Ultimate;
+switching while idle replaces the active adapter without requiring a
+simulator-specific session browser.
 
 Action feedback uses a shared bottom-right toast provider instead of inserting
 messages into page layout. Toasts provide success, error, and informational variants,
@@ -131,6 +132,21 @@ for car, track, and ambient/road temperatures. The adapter exposes the observed 
 version and rejects unverified shared-memory versions. Fixture export reconstructs
 the static page from a non-personal allowlist so player identity fields are zeroed
 before bytes are written.
+
+## Le Mans Ultimate boundary
+
+`trace-lmu` reads LMU's official built-in `LMU_Data` mapping and follows its shared
+spin-lock protocol before making an owned snapshot. It bounds-checks the SDK's
+four-byte-packed V01 layout and resolves player telemetry independently from player
+scoring instead of assuming matching array indexes. The adapter maps session type,
+lap and sector timing, authoritative lap invalidation and track-limit progression,
+controls, physical steering angle, vehicle motion, fuel, conditions, pit state, and
+per-wheel telemetry into the canonical model.
+
+The desktop simulator picker can route its one capture worker between AC and LMU while
+idle. Synthetic snapshots cover decoding and adapter lifecycle transitions; a
+privacy-redacted real LMU fixture is still required before the boundary is treated as
+fully field-verified. See [the LMU boundary document](le-mans-ultimate.md).
 
 ## Distance-domain analysis
 

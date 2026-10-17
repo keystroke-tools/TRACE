@@ -7,6 +7,7 @@ members = [
   "crates/trace-core",
   "crates/trace-domain",
   "crates/trace-live",
+  "crates/trace-lmu",
   "crates/trace-motec",
   "crates/trace-protocol",
   "crates/trace-recorder",

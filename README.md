@@ -47,6 +47,7 @@ tested code.
 | [Architecture review](docs/phase-1-architecture.md)               | Boundaries, dependency rules, risks, and design decisions        |
 | [Assetto Corsa integration](docs/assetto-corsa.md)                | Capture boundary, mappings, and known omissions                  |
 | [Assetto Corsa API reference](docs/ac-shared-memory-reference.md) | Shared-memory pages, fields, offsets, units, and storage keys    |
+| [Le Mans Ultimate integration](docs/le-mans-ultimate.md)          | Official shared-memory foundation, synchronization, and channels |
 | [Corner analysis](docs/corner-analysis.md)                        | Deterministic corner detection and time-loss analysis            |
 | [Tracer driving cues](docs/tracer.md)                             | CSP Lua HUD, reference profile, and braking-zone extraction      |
 | [Session package](docs/session-package.md)                        | Portable `.trace` format and import safety limits                |
@@ -101,6 +102,7 @@ The workspace components are:
 | `trace-storage`       | SQLite metadata, Arrow telemetry, and portable session packages  |
 | `trace-protocol`      | Bounded live telemetry messages and validation                   |
 | `trace-ac`            | Assetto Corsa capture, decoding, and canonical mapping           |
+| `trace-lmu`           | Le Mans Ultimate shared-memory decoding and canonical mapping    |
 | `trace-windows-shmem` | Audited Win32 shared-memory boundary                             |
 
 `trace-core` must remain independent of Assetto Corsa, Tauri, storage engines,

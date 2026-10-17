@@ -117,6 +117,7 @@ fn synthetic_frame(sequence: u64, rate_hz: u32) -> TelemetryFrame {
             ),
             current_sector_index: None,
             last_sector_time_ns: None,
+            invalidated: None,
             tyres_out: None,
         },
         inputs: DriverInputs {

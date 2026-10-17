@@ -426,6 +426,7 @@ fn take_replay_capture_arm(status: &SharedCaptureStatus) -> bool {
 
 fn lap_is_valid_for_session(lap: &trace_recorder::RecordedLap) -> bool {
     !lap.partial
+        && !lap.invalidated
         && lap.duration_ns.is_some()
         && lap.max_tyres_out.is_none_or(|tyres_out| tyres_out < 3)
 }
@@ -761,6 +762,7 @@ mod tests {
             sample_start: 0,
             sample_count: 60,
             partial,
+            invalidated: false,
             max_tyres_out,
             sectors: Vec::new(),
         }

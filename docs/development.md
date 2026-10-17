@@ -112,6 +112,7 @@ crates/trace-domain/      canonical simulator-independent types
 crates/trace-adapter/     acquisition lifecycle and deterministic replay
 crates/trace-core/        deterministic telemetry mathematics
 crates/trace-ac/          private Assetto Corsa byte decoding and mapping
+crates/trace-lmu/         Le Mans Ultimate shared-memory decoding and adapter
 crates/trace-windows-shmem/ audited Win32 mapping and volatile-copy boundary
 crates/trace-recorder/    canonical session/lap state and persistence orchestration
 crates/trace-storage/     atomic filesystem blobs, SQLite metadata, Arrow IPC

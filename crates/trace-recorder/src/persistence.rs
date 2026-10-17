@@ -151,7 +151,12 @@ fn index_recording(
             lap_index: lap.lap_index,
             started_offset_ns: Some(lap.started_offset_ns),
             duration_ns: lap.duration_ns,
-            validity: if lap.partial { "invalid" } else { "unknown" }.into(),
+            validity: if lap.partial || lap.invalidated {
+                "invalid"
+            } else {
+                "unknown"
+            }
+            .into(),
             validity_reason: Some(lap_validity_reason(lap)),
             max_tyres_out: lap.max_tyres_out,
             sample_start: lap.sample_start,
@@ -185,6 +190,9 @@ fn index_recording(
 fn lap_validity_reason(lap: &crate::RecordedLap) -> String {
     if lap.partial {
         return "capture began after lap start; partial lap or outlap".into();
+    }
+    if lap.invalidated {
+        return "simulator marked this lap invalid".into();
     }
     match lap.max_tyres_out {
         Some(0) => {
@@ -262,6 +270,7 @@ mod tests {
                 sample_start: 0,
                 sample_count: 3,
                 partial: false,
+                invalidated: false,
                 max_tyres_out: None,
                 sectors: vec![
                     crate::RecordedSector {

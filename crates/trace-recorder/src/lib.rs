@@ -14,6 +14,7 @@ pub struct RecordedLap {
     pub sample_start: u64,
     pub sample_count: u64,
     pub partial: bool,
+    pub invalidated: bool,
     pub max_tyres_out: Option<u8>,
     pub sectors: Vec<RecordedSector>,
 }
@@ -86,6 +87,7 @@ struct OpenLap {
     sample_start: u64,
     started_offset_ns: u64,
     started_at_boundary: bool,
+    invalidated: bool,
     max_tyres_out: Option<u8>,
     current_sector_index: Option<u32>,
     sectors: Vec<RecordedSector>,
@@ -241,6 +243,7 @@ impl ActiveSession {
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: false,
+                        invalidated: false,
                         max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
                         sectors: Vec::new(),
@@ -258,6 +261,7 @@ impl ActiveSession {
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
                         partial: !open.started_at_boundary,
+                        invalidated: open.invalidated,
                         max_tyres_out: open.max_tyres_out,
                         sectors: open.sectors,
                     });
@@ -266,6 +270,7 @@ impl ActiveSession {
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: true,
+                        invalidated: false,
                         max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
                         sectors: Vec::new(),
@@ -282,6 +287,9 @@ impl ActiveSession {
                 open.max_tyres_out
                     .map_or(tyres_out, |value| value.max(tyres_out)),
             );
+        }
+        if let (Some(open), Some(invalidated)) = (&mut self.current_lap, frame.lap.invalidated) {
+            open.invalidated |= invalidated;
         }
         self.sample_count = self
             .sample_count
@@ -405,6 +413,7 @@ mod tests {
                     sample_start: 0,
                     sample_count: 3,
                     partial: true,
+                    invalidated: false,
                     max_tyres_out: None,
                     sectors: Vec::new(),
                 },
@@ -415,6 +424,7 @@ mod tests {
                     sample_start: 3,
                     sample_count: 3,
                     partial: false,
+                    invalidated: false,
                     max_tyres_out: None,
                     sectors: Vec::new(),
                 },
@@ -448,6 +458,33 @@ mod tests {
         };
 
         assert_eq!(session.laps[1].max_tyres_out, Some(3));
+    }
+
+    #[test]
+    fn preserves_authoritative_lap_invalidation() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for (sequence, completed, invalidated) in
+            [(1, 0, false), (2, 1, false), (3, 1, true), (4, 2, false)]
+        {
+            let mut sample = frame(sequence, sequence * 100, completed, 0);
+            sample.lap.invalidated = Some(invalidated);
+            recorder
+                .consume(AdapterEvent::Frame(sample))
+                .expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert!(session.laps[1].invalidated);
     }
 
     #[test]

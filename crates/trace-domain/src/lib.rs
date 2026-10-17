@@ -239,6 +239,8 @@ pub struct LapObservation {
     pub simulator_distance_m: Option<f64>,
     pub current_sector_index: Option<u32>,
     pub last_sector_time_ns: Option<u64>,
+    /// Authoritative final/current-lap invalidation from the simulator, when exposed.
+    pub invalidated: Option<bool>,
     /// Instantaneous simulator-reported count of tyres outside track limits.
     pub tyres_out: Option<u8>,
 }

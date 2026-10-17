@@ -79,6 +79,7 @@ pub fn map_frame(
             simulator_distance_m: None,
             current_sector_index: non_negative_i32(graphics.current_sector_index()),
             last_sector_time_ns: milliseconds_to_nanoseconds(graphics.last_sector_time_ms()),
+            invalidated: None,
             tyres_out: physics
                 .number_of_tyres_out()
                 .and_then(non_negative_i32)

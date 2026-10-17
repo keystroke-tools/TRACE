@@ -5172,6 +5172,7 @@ dependencies = [
  "trace-core",
  "trace-domain",
  "trace-live",
+ "trace-lmu",
  "trace-motec",
  "trace-protocol",
  "trace-recorder",
@@ -5192,6 +5193,15 @@ name = "trace-live"
 version = "0.6.5"
 dependencies = [
  "trace-protocol",
+]
+
+[[package]]
+name = "trace-lmu"
+version = "0.6.5"
+dependencies = [
+ "trace-adapter",
+ "trace-domain",
+ "trace-windows-shmem",
 ]
 
 [[package]]
