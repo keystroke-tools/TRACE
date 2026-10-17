@@ -93,6 +93,7 @@ struct OpenLap {
     max_tyres_out: Option<u8>,
     current_sector_index: Option<u32>,
     pending_sector: Option<PendingSector>,
+    initial_boundary_candidate: Option<InitialBoundaryCandidate>,
     sectors: Vec<RecordedSector>,
 }
 
@@ -101,6 +102,15 @@ struct PendingSector {
     index: u32,
     attach_to_completed_lap: bool,
 }
+
+#[derive(Clone, Copy, Debug)]
+struct InitialBoundaryCandidate {
+    sample_start: u64,
+    started_offset_ns: u64,
+    sector: Option<u32>,
+}
+
+const INITIAL_BOUNDARY_CONFIRMATION_NS: u64 = 1_000_000_000;
 
 /// Converts adapter lifecycle events into bounded session recordings.
 #[derive(Clone, Debug, Default)]
@@ -243,6 +253,7 @@ impl ActiveSession {
         }
 
         let sample_index = self.sample_count;
+        self.resynchronize_initial_lap_boundary(frame, sample_index);
         self.observe_sector(frame);
         if let Some(completed_laps) = frame.lap.completed_laps {
             match self.current_lap.as_ref() {
@@ -257,6 +268,7 @@ impl ActiveSession {
                         max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
                         pending_sector: None,
+                        initial_boundary_candidate: None,
                         sectors: Vec::new(),
                     });
                 }
@@ -287,6 +299,7 @@ impl ActiveSession {
                         max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
                         pending_sector: None,
+                        initial_boundary_candidate: None,
                         sectors: Vec::new(),
                     });
                 }
@@ -315,6 +328,61 @@ impl ActiveSession {
             self.frames.push(frame.clone());
         }
         Ok(())
+    }
+
+    /// LMU can expose the formation lap with a zero completed-lap counter and then
+    /// reset the lap clock at the race start without incrementing that counter. Treat
+    /// that first clock reset as the beginning of lap one instead of folding the
+    /// formation lap and the first racing lap into one invalid partial lap.
+    fn resynchronize_initial_lap_boundary(&mut self, frame: &TelemetryFrame, sample_index: u64) {
+        let Some(open) = self.current_lap.as_mut() else {
+            return;
+        };
+        if open.started_at_boundary
+            || frame.lap.completed_laps != Some(open.index)
+            || self
+                .last_frame
+                .as_ref()
+                .and_then(|previous| previous.lap.completed_laps)
+                != Some(open.index)
+        {
+            return;
+        }
+        let Some((previous_time, current_time)) = self
+            .last_frame
+            .as_ref()
+            .and_then(|previous| previous.lap.current_lap_time_ns)
+            .zip(frame.lap.current_lap_time_ns)
+        else {
+            return;
+        };
+        if current_time < previous_time {
+            open.initial_boundary_candidate = Some(InitialBoundaryCandidate {
+                sample_start: sample_index,
+                started_offset_ns: frame.elapsed.0,
+                sector: frame.lap.current_sector_index,
+            });
+            return;
+        }
+        let Some(candidate) = open.initial_boundary_candidate else {
+            return;
+        };
+        if current_time < INITIAL_BOUNDARY_CONFIRMATION_NS {
+            return;
+        }
+        *open = OpenLap {
+            index: open.index,
+            sample_start: candidate.sample_start,
+            started_offset_ns: candidate.started_offset_ns,
+            started_at_boundary: true,
+            validity_observed: false,
+            invalidated: false,
+            max_tyres_out: None,
+            current_sector_index: candidate.sector,
+            pending_sector: None,
+            initial_boundary_candidate: None,
+            sectors: Vec::new(),
+        };
     }
 
     fn observe_sector(&mut self, frame: &TelemetryFrame) {
@@ -357,10 +425,10 @@ impl ActiveSession {
         };
         if pending.attach_to_completed_lap {
             if let Some(completed) = self.laps.last_mut() {
-                completed.sectors.push(sector);
+                upsert_sector(&mut completed.sectors, sector);
             }
         } else {
-            open.sectors.push(sector);
+            upsert_sector(&mut open.sectors, sector);
         }
     }
 
@@ -373,6 +441,17 @@ impl ActiveSession {
             laps: self.laps,
             end_reason,
         }
+    }
+}
+
+fn upsert_sector(sectors: &mut Vec<RecordedSector>, sector: RecordedSector) {
+    if let Some(existing) = sectors
+        .iter_mut()
+        .find(|existing| existing.index == sector.index)
+    {
+        *existing = sector;
+    } else {
+        sectors.push(sector);
     }
 }
 
@@ -466,6 +545,112 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn treats_initial_lap_clock_reset_as_the_race_start_boundary() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for value in [
+            frame(1, 100, 0, 67_000_000_000),
+            frame(2, 200, 0, 10_000_000),
+            frame(3, 300, 0, 1_010_000_000),
+            frame(4, 400, 1, 10_000_000),
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps.len(), 1);
+        assert_eq!(session.laps[0].lap_index, 1);
+        assert_eq!(session.laps[0].sample_start, 1);
+        assert_eq!(session.laps[0].sample_count, 2);
+        assert_eq!(session.laps[0].duration_ns, Some(200));
+        assert!(!session.laps[0].partial);
+    }
+
+    #[test]
+    fn does_not_treat_a_delayed_lap_counter_update_as_a_new_start_boundary() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for value in [
+            frame(1, 100, 0, 130_000_000_000),
+            frame(2, 200, 0, 10_000_000),
+            frame(3, 300, 1, 30_000_000),
+            frame(4, 400, 1, 1_030_000_000),
+            frame(5, 500, 2, 10_000_000),
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps.len(), 2);
+        assert!(session.laps[0].partial);
+        assert_eq!(session.laps[0].duration_ns, None);
+        assert_eq!(session.laps[1].duration_ns, Some(200));
+    }
+
+    #[test]
+    fn repeated_sector_transitions_do_not_create_duplicate_sector_rows() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for (sequence, sector, duration) in [
+            (1, 0, None),
+            (2, 2, Some(10)),
+            (3, 0, Some(20)),
+            (4, 1, Some(30)),
+            (5, 2, Some(40)),
+            (6, 0, Some(50)),
+        ] {
+            let mut value = frame(
+                sequence,
+                sequence * 100,
+                u32::from(sequence == 6),
+                sequence * 10,
+            );
+            value.lap.current_sector_index = Some(sector);
+            value.lap.last_sector_time_ns = duration;
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        let indices = session.laps[0]
+            .sectors
+            .iter()
+            .map(|sector| sector.index)
+            .collect::<Vec<_>>();
+        assert_eq!(indices.iter().filter(|index| **index == 1).count(), 1);
+        assert_eq!(indices.iter().filter(|index| **index == 3).count(), 1);
     }
 
     #[test]
