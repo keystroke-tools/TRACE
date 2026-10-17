@@ -299,6 +299,20 @@ export interface SessionImport {
 	setupName?: string | null;
 }
 
+export interface MotecImportOptions {
+	simulatorKey: string;
+	track: string;
+	car: string;
+	driver: string;
+	sessionType: string;
+	title: string;
+}
+
+export interface MotecImportPreview extends MotecImportOptions {
+	completeLapCount: number;
+	sampleCount: number;
+}
+
 export interface GameInstallDirectory {
 	simulatorId: string;
 	simulatorName: string;
@@ -566,7 +580,8 @@ export interface TelemetryDataSource {
 	deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
 	renameSavedComparison(comparisonId: string, name: string): Promise<SavedComparison[]>;
 	exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
-	importSession(path: string): Promise<SessionImport>;
+	previewMotecImport(path: string): Promise<MotecImportPreview>;
+	importSession(path: string, motecOptions?: MotecImportOptions): Promise<SessionImport>;
 	deleteSession(sessionId: string): Promise<SessionDeletion>;
 	updateSessionDetails(
 		sessionId: string,
@@ -840,6 +855,18 @@ export const fixtureDataSource: TelemetryDataSource = {
 	},
 	async importSession(_path) {
 		return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600, setupName: "shared-race.ini" };
+	},
+	async previewMotecImport(_path) {
+		return {
+			simulatorKey: "le-mans-ultimate",
+			track: "Algarve International Circuit",
+			car: "LMP2_ELMS",
+			driver: "",
+			sessionType: "Practice",
+			title: "",
+			completeLapCount: 1,
+			sampleCount: 4_900,
+		};
 	},
 	async getSessionLapMetrics(_sessionId) {
 		return [
@@ -1485,8 +1512,11 @@ export const tauriDataSource: TelemetryDataSource = {
 	exportSession(sessionId, exportFormat) {
 		return invoke<SessionExport>("export_session", { sessionId, exportFormat });
 	},
-	importSession(path) {
-		return invoke<SessionImport>("import_session", { path });
+	previewMotecImport(path) {
+		return invoke<MotecImportPreview>("preview_motec_import", { path });
+	},
+	importSession(path, motecOptions) {
+		return invoke<SessionImport>("import_session", { path, motecOptions });
 	},
 	deleteSession(sessionId) {
 		return invoke<SessionDeletion>("delete_session", { sessionId });

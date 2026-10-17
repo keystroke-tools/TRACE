@@ -131,10 +131,13 @@ CSV path is exposed in the application.
 ## Desktop import flow
 
 Select the `.ld` file from **Sessions → Import telemetry**. TRACE automatically looks
-for a same-named `.ldx` beside it, decodes the canonical and native channels, writes
-the normal Arrow telemetry representation, and creates SQLite session and lap records
-with imported provenance. The original driver is attributed as another driver so the
-outing is not confused with the local profile.
+for a same-named `.ldx` beside it, then opens a review step before anything is stored.
+The review infers simulator, track, car, driver, and session type from source metadata
+and conservative filename hints; missing or ambiguous values can be corrected there.
+After confirmation, TRACE decodes the canonical and native channels, writes the normal
+Arrow telemetry representation, and creates SQLite session and lap records with
+imported provenance. The original driver is attributed as another driver so the outing
+is not confused with the local profile.
 
 The import requires trustworthy lap crossings, either as sidecar markers or as a
 monotonically increasing lap-number channel in the native log. It indexes partial
@@ -147,9 +150,15 @@ Comparisons align laps by normalized track position. Small differences between a
 ACTI path-derived length and the simulator's nominal spline length are reconciled;
 large disagreements still fail rather than comparing different layouts.
 
-A later inspection step will let users confirm missing or ambiguous simulator, car,
-track/layout, driver, and session identity before writing. CSV desktop import also
-remains future work.
+Logs without Cartesian position channels can use `GPS Latitude` and `GPS Longitude`.
+TRACE projects those coordinates into a local metre-based plane, reconstructs the
+track path, and derives normalized progress independently for each lap. This supports
+track maps and position-aligned comparisons for producers such as Le Mans Ultimate.
+When a log contains no sector crossings at all, TRACE also derives three equal-distance
+splits from that normalized GPS path. The session is tagged and labelled **Estimated
+sectors** in the UI; these splits support comparison and theoretical-best tools but
+must not be confused with the simulator's official sector boundaries.
+CSV desktop import remains future work.
 
 TRACE-to-MoTeC export is separate work. Creating `.ld` files or importing datasets
 into i2 may involve MoTeC software and feature licences, so any future export must

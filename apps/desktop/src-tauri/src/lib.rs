@@ -43,6 +43,8 @@ mod motec_import;
 mod obs_overlay;
 mod setup_analysis;
 mod setup_editor;
+
+use motec_import::{MotecImportOptions, MotecImportPreview};
 mod setup_import;
 mod startup;
 mod tracer;
@@ -56,7 +58,6 @@ use live_broadcast::{
     load_live_automation_settings, save_live_automation_settings, start_active_live_broadcast,
     start_recorded_live_broadcast, stop_live_broadcast,
 };
-use motec_import::import_motec_session;
 use setup_analysis::compare_setups;
 use setup_editor::{save_setup_copy, setup_document};
 use setup_import::{
@@ -2005,7 +2006,17 @@ fn package_confirmed_setup(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn import_session(app: tauri::AppHandle, path: String) -> Result<SessionImport, String> {
+fn preview_motec_import(path: String) -> Result<MotecImportPreview, String> {
+    motec_import::preview_motec_session(Path::new(&path), MAX_SESSION_BYTES)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn import_session(
+    app: tauri::AppHandle,
+    path: String,
+    motec_options: Option<MotecImportOptions>,
+) -> Result<SessionImport, String> {
     let source_path = PathBuf::from(&path);
     match source_path
         .extension()
@@ -2020,11 +2031,12 @@ fn import_session(app: tauri::AppHandle, path: String) -> Result<SessionImport, 
                 .app_data_dir()
                 .map_err(|error| error.to_string())?;
             let session_id = unique_import_session_id();
-            let imported = import_motec_session(
+            let imported = motec_import::import_motec_session_with_options(
                 &data_directory,
                 &source_path,
                 &session_id,
                 MAX_SESSION_BYTES,
+                motec_options.as_ref(),
             )?;
             Ok(SessionImport {
                 session_id,
@@ -2862,6 +2874,7 @@ pub fn run() {
             delete_saved_comparison,
             rename_saved_comparison,
             export_session,
+            preview_motec_import,
             import_session,
             delete_session,
             update_session_details

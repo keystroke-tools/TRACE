@@ -15,6 +15,7 @@ const LD_MAGIC: u8 = 0x40;
 const MINIMUM_LD_BYTES: usize = 0x6e2;
 const NATIVE_SCHEMA: &str = "motec.i2.ld/community-4";
 const U64_EXCLUSIVE_UPPER_F64: f64 = 18_446_744_073_709_551_616.0;
+const EARTH_RADIUS_M: f64 = 6_378_137.0;
 
 /// Resource limits applied before and after decoding a native log pair.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -158,6 +159,8 @@ enum LdMapping {
     PositionX,
     PositionY,
     PositionZ,
+    GpsLatitude,
+    GpsLongitude,
     LapPosition,
     TyresOut,
     LastSectorTime,
@@ -182,6 +185,7 @@ pub struct MotecLdReader {
     previous_completed_laps: Option<usize>,
     previous_last_sector_time_ns: Option<u64>,
     current_sector_index: u32,
+    gps_origin: Option<(f64, f64)>,
 }
 
 impl MotecLdReader {
@@ -333,6 +337,7 @@ impl MotecLdReader {
             previous_completed_laps: None,
             previous_last_sector_time_ns: None,
             current_sector_index: 0,
+            gps_origin: None,
         })
     }
 
@@ -359,6 +364,7 @@ impl MotecLdReader {
             ..TelemetryFrame::default()
         };
         let mut source_position = [None; 3];
+        let mut gps_position = [None; 2];
         for channel in &self.channels {
             let index = sample_index(
                 sequence,
@@ -382,20 +388,15 @@ impl MotecLdReader {
                         .insert(format!("unit.{}", channel.name), channel.unit.clone());
                 }
             }
-            apply_ld_mapping(&mut frame, &mut source_position, channel.mapping, value);
+            apply_ld_mapping(
+                &mut frame,
+                &mut source_position,
+                &mut gps_position,
+                channel.mapping,
+                value,
+            );
         }
-        // ACTI names its horizontal plane X/Y and height Z. TRACE's map consumes X/Z.
-        if let [Some(source_x), Some(source_y), Some(source_z)] = source_position {
-            frame.motion = MotionState {
-                position_m: Some(Vector3 {
-                    x: source_x,
-                    y: source_z,
-                    z: source_y,
-                    frame: CoordinateFrame::SourceWorld,
-                }),
-                ..MotionState::default()
-            };
-        }
+        frame.motion = mapped_motion(source_position, gps_position, &mut self.gps_origin);
         if !self.metadata.lap_boundaries.is_empty() {
             let completed = self
                 .metadata
@@ -421,6 +422,43 @@ impl MotecLdReader {
             frame.lap.current_sector_index = Some(self.current_sector_index);
         }
         Some(frame)
+    }
+}
+
+fn mapped_motion(
+    source_position: [Option<f64>; 3],
+    gps_position: [Option<f64>; 2],
+    gps_origin: &mut Option<(f64, f64)>,
+) -> MotionState {
+    // ACTI names its horizontal plane X/Y and height Z. TRACE's map consumes X/Z.
+    if let [Some(source_x), Some(source_y), Some(source_z)] = source_position {
+        return MotionState {
+            position_m: Some(Vector3 {
+                x: source_x,
+                y: source_z,
+                z: source_y,
+                frame: CoordinateFrame::SourceWorld,
+            }),
+            ..MotionState::default()
+        };
+    }
+    let [Some(latitude), Some(longitude)] = gps_position else {
+        return MotionState::default();
+    };
+    if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+        return MotionState::default();
+    }
+    let latitude = latitude.to_radians();
+    let longitude = longitude.to_radians();
+    let (origin_latitude, origin_longitude) = *gps_origin.get_or_insert((latitude, longitude));
+    MotionState {
+        position_m: Some(Vector3 {
+            x: (longitude - origin_longitude) * origin_latitude.cos() * EARTH_RADIUS_M,
+            y: 0.0,
+            z: (latitude - origin_latitude) * EARTH_RADIUS_M,
+            frame: CoordinateFrame::SourceWorld,
+        }),
+        ..MotionState::default()
     }
 }
 
@@ -653,6 +691,8 @@ fn ld_mapping(name: &str, unit: &str, is_ac_live: bool) -> LdMapping {
         "carcoordx" if unit == "m" => LdMapping::PositionX,
         "carcoordy" if unit == "m" => LdMapping::PositionY,
         "carcoordz" if unit == "m" => LdMapping::PositionZ,
+        "gpslatitude" if unit == "deg" => LdMapping::GpsLatitude,
+        "gpslongitude" if unit == "deg" => LdMapping::GpsLongitude,
         "carposnorm" => LdMapping::LapPosition,
         "numtiresofftrack" => LdMapping::TyresOut,
         "lastsectortime" if unit == "s" => LdMapping::LastSectorTime,
@@ -698,6 +738,7 @@ fn split_corner(name: &str) -> Option<(&str, WheelCorner)> {
 fn apply_ld_mapping(
     frame: &mut TelemetryFrame,
     source_position: &mut [Option<f64>; 3],
+    gps_position: &mut [Option<f64>; 2],
     mapping: LdMapping,
     value: f64,
 ) {
@@ -736,6 +777,8 @@ fn apply_ld_mapping(
         LdMapping::PositionX => source_position[0] = Some(-value),
         LdMapping::PositionY => source_position[1] = Some(value),
         LdMapping::PositionZ => source_position[2] = Some(value),
+        LdMapping::GpsLatitude => gps_position[0] = Some(value),
+        LdMapping::GpsLongitude => gps_position[1] = Some(value),
         LdMapping::LapPosition => {
             frame.lap.normalized_position =
                 finite_f32(value).filter(|value| (0.0..=1.0).contains(value));

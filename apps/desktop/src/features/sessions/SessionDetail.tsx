@@ -404,6 +404,12 @@ export function SessionDetail({
 					available.
 				</div>
 			)}
+			{hasSectorTiming && session.tags.includes("Estimated sectors") && (
+				<div className="mt-4 border-l-2 border-trace-sector-yellow bg-trace-surface px-4 py-3 text-[12px] leading-5 text-trace-muted">
+					<strong className="text-trace-soft">Estimated sector splits.</strong> This MoTeC log did not contain official sector crossings, so TRACE
+					divided the GPS lap into three equal-distance sections.
+				</div>
+			)}
 
 			{metricsState === "error" && (
 				<div className="mt-4 border border-trace-warning/40 bg-trace-warning/10 px-4 py-3 text-[12px] text-trace-warning">

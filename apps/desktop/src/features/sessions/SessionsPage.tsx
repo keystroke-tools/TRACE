@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { telemetryDataSource, type RecordedSessionSummary, type SessionExportFormat } from "../../data-source";
+import {
+	telemetryDataSource,
+	type MotecImportOptions,
+	type MotecImportPreview,
+	type RecordedSessionSummary,
+	type SessionExportFormat,
+} from "../../data-source";
 import { PageIntro, SectionHeading } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
@@ -30,6 +36,7 @@ import {
 	setupDifferenceLabel,
 	theoreticalBestLap,
 } from "./session-components";
+import { MotecImportModal } from "./MotecImportModal";
 
 function extension(path: string) {
 	const fileName = path.replaceAll("\\", "/").split("/").pop() ?? "";
@@ -63,6 +70,7 @@ export function SessionsPage({
 	const [sortOrder, setSortOrder] = useState("newest");
 	const [importing, setImporting] = useState(false);
 	const [draggingTelemetry, setDraggingTelemetry] = useState(false);
+	const [motecReview, setMotecReview] = useState<{ path: string; preview: MotecImportPreview } | null>(null);
 	const visibleSessions = useMemo(() => {
 		const normalizedQuery = query.trim().toLocaleLowerCase();
 		return sessions
@@ -131,14 +139,36 @@ export function SessionsPage({
 	async function importTelemetryPath(path: string) {
 		setImporting(true);
 		try {
-			const result = await telemetryDataSource.importSession(path);
-			await onImported();
-			showToast({
-				kind: "success",
-				title: "Telemetry imported",
-				message: `${result.lapCount} laps and ${result.sampleCount.toLocaleString()} telemetry samples are ready${result.setupName ? ` · ${result.setupName} was restored to the setup library` : ""}.`,
-				timeoutMs: 6_000,
-			});
+			if (extension(path) === "ld") {
+				const preview = await telemetryDataSource.previewMotecImport(path);
+				setMotecReview({ path, preview });
+			} else {
+				await finishImport(path);
+			}
+		} catch (error) {
+			showToast({ kind: "error", title: "Import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		} finally {
+			setImporting(false);
+		}
+	}
+
+	async function finishImport(path: string, motecOptions?: MotecImportOptions) {
+		const result = await telemetryDataSource.importSession(path, motecOptions);
+		await onImported();
+		setMotecReview(null);
+		showToast({
+			kind: "success",
+			title: "Telemetry imported",
+			message: `${result.lapCount} laps and ${result.sampleCount.toLocaleString()} telemetry samples are ready${result.setupName ? ` · ${result.setupName} was restored to the setup library` : ""}.`,
+			timeoutMs: 6_000,
+		});
+	}
+
+	async function confirmMotecImport(options: MotecImportOptions) {
+		if (!motecReview) return;
+		setImporting(true);
+		try {
+			await finishImport(motecReview.path, options);
 		} catch (error) {
 			showToast({ kind: "error", title: "Import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
 		} finally {
@@ -213,6 +243,7 @@ export function SessionsPage({
 
 	return (
 		<>
+			{motecReview && <MotecImportModal preview={motecReview.preview} onCancel={() => setMotecReview(null)} onImport={confirmMotecImport} />}
 			{draggingTelemetry && (
 				<div className="pointer-events-none fixed inset-3 z-[90] grid place-items-center border-2 border-dashed border-trace-accent bg-trace-deep/95">
 					<div className="text-center">

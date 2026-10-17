@@ -1,5 +1,6 @@
 use std::{fs, io::Write, path::Path};
 
+use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use trace_domain::TelemetryFrame;
 use trace_motec::{LdImportLimits, LdImportMetadata, MotecLdReader};
@@ -16,16 +17,86 @@ pub(crate) struct MotecImportSummary {
     pub sample_count: u64,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MotecImportOptions {
+    pub simulator_key: String,
+    pub track: String,
+    pub car: String,
+    pub driver: String,
+    pub session_type: String,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MotecImportPreview {
+    pub simulator_key: String,
+    pub track: String,
+    pub car: String,
+    pub driver: String,
+    pub session_type: String,
+    pub title: String,
+    pub complete_lap_count: usize,
+    pub sample_count: u64,
+}
+
+pub(crate) fn preview_motec_session(
+    source_path: &Path,
+    maximum_session_bytes: u64,
+) -> Result<MotecImportPreview, String> {
+    let (metadata, frames) = read_source(source_path, maximum_session_bytes)?;
+    let inferred = inferred_options(source_path, &metadata);
+    Ok(MotecImportPreview {
+        simulator_key: inferred.simulator_key,
+        track: inferred.track,
+        car: inferred.car,
+        driver: inferred.driver,
+        session_type: inferred.session_type,
+        title: inferred.title,
+        complete_lap_count: metadata.lap_boundaries.len().saturating_sub(1),
+        sample_count: u64::try_from(frames.len()).unwrap_or(u64::MAX),
+    })
+}
+
+#[cfg(test)]
 pub(crate) fn import_motec_session(
     data_directory: &Path,
     source_path: &Path,
     session_id: &str,
     maximum_session_bytes: u64,
 ) -> Result<MotecImportSummary, String> {
+    import_motec_session_with_options(
+        data_directory,
+        source_path,
+        session_id,
+        maximum_session_bytes,
+        None,
+    )
+}
+
+pub(crate) fn import_motec_session_with_options(
+    data_directory: &Path,
+    source_path: &Path,
+    session_id: &str,
+    maximum_session_bytes: u64,
+    options: Option<&MotecImportOptions>,
+) -> Result<MotecImportSummary, String> {
     let (source_metadata, frames) = read_source(source_path, maximum_session_bytes)?;
+    let inferred;
+    let options = if let Some(options) = options {
+        options
+    } else {
+        inferred = inferred_options(source_path, &source_metadata);
+        &inferred
+    };
     let sample_count = u64::try_from(frames.len())
         .map_err(|_| "MoTeC sample count does not fit TRACE storage".to_owned())?;
     let laps = build_laps(session_id, &source_metadata, &frames)?;
+    let estimated_sectors = !frames
+        .iter()
+        .any(|frame| frame.lap.last_sector_time_ns.is_some())
+        && laps.iter().any(|lap| lap.sectors.len() == 3);
     let arrow = encode_frames(&frames)
         .map_err(|error| format!("failed to encode imported MoTeC telemetry: {error:?}"))?;
     if u64::try_from(arrow.len()).unwrap_or(u64::MAX) > maximum_session_bytes {
@@ -43,12 +114,7 @@ pub(crate) fn import_motec_session(
         .format(&Rfc3339)
         .map_err(|error| format!("failed to timestamp imported session: {error}"))?;
     metadata
-        .create_session(&new_session(
-            session_id,
-            &source_metadata,
-            &frames,
-            &imported_at,
-        ))
+        .create_session(&new_session(session_id, &frames, &imported_at, options))
         .map_err(|error| format!("failed to create imported session: {error:?}"))?;
 
     let relative_path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
@@ -78,13 +144,18 @@ pub(crate) fn import_motec_session(
         metadata
             .complete_session(session_id, &imported_at, &blob, &laps)
             .map_err(|error| format!("failed to index imported laps: {error:?}"))?;
+        let tags = if estimated_sectors {
+            vec!["MoTeC".into(), "Estimated sectors".into()]
+        } else {
+            vec!["MoTeC".into()]
+        };
         metadata
             .update_session_details(
                 session_id,
-                None,
-                nonempty(&source_metadata.driver).as_deref(),
+                nonempty(&options.title).as_deref(),
+                nonempty(&options.driver).as_deref(),
                 "other",
-                &["MoTeC".into()],
+                &tags,
             )
             .map_err(|error| format!("failed to restore MoTeC attribution: {error:?}"))?;
         Ok::<(), String>(())
@@ -147,6 +218,7 @@ fn read_source(
     while let Some(frame) = reader.next_frame() {
         frames.push(frame);
     }
+    normalize_lap_positions(&source_metadata, &mut frames);
     if let Some(track_length_m) = derive_track_length(&source_metadata, &frames) {
         for frame in &mut frames {
             if let Some(native) = frame.native.as_deref_mut() {
@@ -208,30 +280,33 @@ fn derive_track_length(metadata: &LdImportMetadata, frames: &[TelemetryFrame]) -
 
 fn new_session(
     session_id: &str,
-    source: &LdImportMetadata,
     frames: &[TelemetryFrame],
     imported_at: &str,
+    options: &MotecImportOptions,
 ) -> NewSession {
-    let simulator_key = if source.event_name.as_deref() == Some("AC_LIVE") {
-        "assetto-corsa"
-    } else {
-        "unknown-simulator"
-    };
+    let simulator_key =
+        nonempty(&options.simulator_key).unwrap_or_else(|| "unknown-simulator".into());
+    let track = nonempty(&options.track);
+    let car = nonempty(&options.car);
     let environment = frames.first().and_then(|frame| frame.environment);
     NewSession {
         id: session_id.into(),
         simulator_id: format!("sim-{simulator_key}"),
-        simulator_key: simulator_key.into(),
+        simulator_key,
         simulator_version: None,
-        track_id: nonempty(&source.venue).map(|value| format!("track-{}", hex_identity(&value))),
-        source_track_id: nonempty(&source.venue),
+        track_id: track
+            .as_ref()
+            .map(|value| format!("track-{}", hex_identity(&identity_key(value)))),
+        source_track_id: track.as_deref().map(identity_key),
         layout_id: None,
-        track_display_name: nonempty(&source.venue),
-        car_id: nonempty(&source.vehicle_id).map(|value| format!("car-{}", hex_identity(&value))),
-        source_car_id: nonempty(&source.vehicle_id),
-        car_display_name: nonempty(&source.vehicle_id),
+        track_display_name: track,
+        car_id: car
+            .as_ref()
+            .map(|value| format!("car-{}", hex_identity(&identity_key(value)))),
+        source_car_id: car.as_deref().map(identity_key),
+        car_display_name: car,
         started_at: imported_at.into(),
-        session_type: source.session_type.as_deref().and_then(nonempty),
+        session_type: nonempty(&options.session_type),
         source_kind: "imported".into(),
         conditions: SessionConditions {
             ambient_temperature_c: environment
@@ -246,6 +321,134 @@ fn new_session(
                 .map(|value| (value * 100.0).round())
                 .and_then(float_to_u8),
         },
+    }
+}
+
+fn inferred_options(source_path: &Path, source: &LdImportMetadata) -> MotecImportOptions {
+    let stem = source_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let parts = stem.split(" - ").map(str::trim).collect::<Vec<_>>();
+    let timestamped_name =
+        parts.len() >= 4 && looks_like_date(parts[0]) && looks_like_clock(parts[1]);
+    let inferred_track = timestamped_name
+        .then(|| parts[2..parts.len() - 1].join(" - "))
+        .filter(|value| !value.is_empty());
+    let run_label = timestamped_name.then(|| parts[parts.len() - 1]);
+    let path_hint = source_path.to_string_lossy().to_ascii_lowercase();
+    let simulator_key = if source.event_name.as_deref() == Some("AC_LIVE") {
+        "assetto-corsa"
+    } else if path_hint.contains("lmu") || path_hint.contains("le mans ultimate") {
+        "le-mans-ultimate"
+    } else {
+        "unknown-simulator"
+    };
+    MotecImportOptions {
+        simulator_key: simulator_key.into(),
+        track: nonempty(&source.venue)
+            .or(inferred_track)
+            .unwrap_or_default(),
+        car: source.vehicle_id.trim().to_owned(),
+        driver: source.driver.trim().to_owned(),
+        session_type: source
+            .session_type
+            .as_deref()
+            .and_then(nonempty)
+            .or_else(|| run_label.and_then(infer_session_type))
+            .unwrap_or_default(),
+        title: String::new(),
+    }
+}
+
+fn looks_like_date(value: &str) -> bool {
+    let parts = value.split('-').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts[0].len() == 4
+        && parts[1].len() == 2
+        && parts[2].len() == 2
+        && parts
+            .iter()
+            .all(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn looks_like_clock(value: &str) -> bool {
+    let parts = value.split('-').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn infer_session_type(label: &str) -> Option<String> {
+    let normalized = label.trim().to_ascii_lowercase();
+    if normalized.starts_with('p') || normalized.contains("practice") {
+        Some("Practice".into())
+    } else if normalized.starts_with('q') || normalized.contains("qual") {
+        Some("Qualifying".into())
+    } else if normalized.starts_with('r') || normalized.contains("race") {
+        Some("Race".into())
+    } else if normalized.starts_with('h') || normalized.contains("hotlap") {
+        Some("Hotlap".into())
+    } else {
+        None
+    }
+}
+
+fn identity_key(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+fn normalize_lap_positions(metadata: &LdImportMetadata, frames: &mut [TelemetryFrame]) {
+    let mut starts = Vec::with_capacity(metadata.lap_boundaries.len() + 2);
+    starts.push(0);
+    starts.extend(metadata.lap_boundaries.iter().filter_map(|boundary| {
+        usize::try_from(boundary_sample(
+            boundary.elapsed_ns,
+            metadata.output_rate_hz,
+        ))
+        .ok()
+        .map(|sample| sample.min(frames.len()))
+    }));
+    starts.push(frames.len());
+    starts.sort_unstable();
+    starts.dedup();
+    for range in starts.windows(2) {
+        normalize_position_range(&mut frames[range[0]..range[1]]);
+    }
+}
+
+fn normalize_position_range(frames: &mut [TelemetryFrame]) {
+    if frames.len() < 2
+        || frames
+            .iter()
+            .any(|frame| frame.lap.normalized_position.is_some())
+    {
+        return;
+    }
+    let mut cumulative = Vec::with_capacity(frames.len());
+    cumulative.push(0.0);
+    for pair in frames.windows(2) {
+        let step = pair[0]
+            .motion
+            .position_m
+            .zip(pair[1].motion.position_m)
+            .map(|(left, right)| (right.x - left.x).hypot(right.z - left.z))
+            .filter(|step| step.is_finite() && *step <= 100.0)
+            .unwrap_or(0.0);
+        cumulative.push(cumulative.last().copied().unwrap_or(0.0) + step);
+    }
+    let Some(total) = cumulative.last().copied().filter(|total| *total >= 100.0) else {
+        return;
+    };
+    for (frame, distance) in frames.iter_mut().zip(cumulative) {
+        #[allow(clippy::cast_possible_truncation)]
+        let normalized = (distance / total) as f32;
+        frame.lap.normalized_position = normalized.is_finite().then_some(normalized);
     }
 }
 
@@ -331,22 +534,22 @@ fn build_laps(
 }
 
 fn derive_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<NewSector> {
-    let mut previous = samples
-        .first()
-        .and_then(|frame| frame.lap.last_sector_time_ns);
-    if previous.is_none() {
-        return Vec::new();
-    }
+    let Some(mut previous) = samples
+        .iter()
+        .find_map(|frame| frame.lap.last_sector_time_ns)
+    else {
+        return derive_estimated_sector_times(samples, lap_duration_ns);
+    };
     let mut durations = Vec::new();
     for duration in samples
         .iter()
         .skip(1)
         .filter_map(|frame| frame.lap.last_sector_time_ns)
     {
-        if previous.is_some_and(|previous| previous != duration) {
+        if previous != duration {
             durations.push(duration);
         }
-        previous = Some(duration);
+        previous = duration;
     }
     let completed_duration = durations.iter().copied().sum::<u64>();
     if completed_duration >= lap_duration_ns {
@@ -362,6 +565,64 @@ fn derive_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<
             duration_ns,
         })
         .collect()
+}
+
+fn derive_estimated_sector_times(
+    samples: &[TelemetryFrame],
+    lap_duration_ns: u64,
+) -> Vec<NewSector> {
+    let positions = samples
+        .iter()
+        .filter_map(|frame| {
+            frame
+                .lap
+                .normalized_position
+                .filter(|position| position.is_finite())
+                .map(|position| (f64::from(position), frame.elapsed.0))
+        })
+        .collect::<Vec<_>>();
+    if positions.first().is_none_or(|sample| sample.0 > 0.05)
+        || positions.last().is_none_or(|sample| sample.0 < 0.95)
+    {
+        return Vec::new();
+    }
+    let origin = positions[0].1;
+    let crossings = [1.0 / 3.0, 2.0 / 3.0]
+        .into_iter()
+        .filter_map(|target| interpolated_crossing_time(&positions, target, origin))
+        .collect::<Vec<_>>();
+    let [first, second] = crossings.as_slice() else {
+        return Vec::new();
+    };
+    if *first == 0 || second <= first || *second >= lap_duration_ns {
+        return Vec::new();
+    }
+    [*first, *second - *first, lap_duration_ns - *second]
+        .into_iter()
+        .enumerate()
+        .map(|(index, duration_ns)| NewSector {
+            index: u32::try_from(index + 1).unwrap_or(u32::MAX),
+            duration_ns,
+        })
+        .collect()
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn interpolated_crossing_time(
+    positions: &[(f64, u64)],
+    target: f64,
+    origin_ns: u64,
+) -> Option<u64> {
+    let pair = positions
+        .windows(2)
+        .find(|pair| pair[0].0 <= target && pair[1].0 >= target && pair[1].0 > pair[0].0)?;
+    let fraction = (target - pair[0].0) / (pair[1].0 - pair[0].0);
+    let elapsed = pair[0].1 as f64 + fraction * pair[1].1.saturating_sub(pair[0].1) as f64;
+    if !elapsed.is_finite() || elapsed < origin_ns as f64 || elapsed >= u64::MAX as f64 {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some((elapsed.round() as u64).saturating_sub(origin_ns))
 }
 
 fn boundary_sample(elapsed_ns: u64, rate_hz: u16) -> u64 {
@@ -412,6 +673,106 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../crates/trace-motec/tests/fixtures/acti-zandvoort")
             .join(name)
+    }
+
+    fn source_metadata() -> LdImportMetadata {
+        LdImportMetadata {
+            date: "09/10/2026".into(),
+            time: "16:12:58".into(),
+            driver: String::new(),
+            vehicle_id: "LMP2_ELMS".into(),
+            venue: String::new(),
+            session_type: None,
+            event_name: None,
+            source_comment: None,
+            channels: Vec::new(),
+            ldx: None,
+            lap_boundaries: Vec::new(),
+            output_rate_hz: 1,
+            frame_count: 0,
+        }
+    }
+
+    #[test]
+    fn infers_missing_lmu_identity_from_a_timestamped_filename() {
+        let source = source_metadata();
+        let options = inferred_options(
+            Path::new("lmu/2026-10-09 - 16-12-58 - Algarve International Circuit - P1.ld"),
+            &source,
+        );
+        assert_eq!(options.simulator_key, "le-mans-ultimate");
+        assert_eq!(options.track, "Algarve International Circuit");
+        assert_eq!(options.car, "LMP2_ELMS");
+        assert_eq!(options.session_type, "Practice");
+    }
+
+    #[test]
+    fn derives_lap_progress_independently_for_each_position_range() {
+        let mut source = source_metadata();
+        source.lap_boundaries = vec![trace_motec::LapBoundary {
+            name: "Lap 2".into(),
+            elapsed_ns: 3_000_000_000,
+        }];
+        let mut frames = [0.0, 50.0, 100.0, 0.0, 50.0, 100.0]
+            .into_iter()
+            .enumerate()
+            .map(|(index, x)| TelemetryFrame {
+                sequence: trace_domain::FrameSequence(u64::try_from(index).unwrap()),
+                elapsed: trace_domain::ElapsedNanoseconds(
+                    u64::try_from(index).unwrap() * 1_000_000_000,
+                ),
+                motion: trace_domain::MotionState {
+                    position_m: Some(trace_domain::Vector3 {
+                        x,
+                        y: 0.0,
+                        z: 0.0,
+                        frame: trace_domain::CoordinateFrame::SourceWorld,
+                    }),
+                    ..trace_domain::MotionState::default()
+                },
+                ..TelemetryFrame::default()
+            })
+            .collect::<Vec<_>>();
+        normalize_lap_positions(&source, &mut frames);
+        assert_eq!(
+            frames
+                .iter()
+                .map(|frame| frame.lap.normalized_position)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(0.0),
+                Some(0.5),
+                Some(1.0),
+                Some(0.0),
+                Some(0.5),
+                Some(1.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn estimates_three_equal_distance_sectors_when_source_splits_are_missing() {
+        let samples = [0.0_f32, 1.0 / 3.0, 2.0 / 3.0, 1.0]
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| TelemetryFrame {
+                elapsed: trace_domain::ElapsedNanoseconds(
+                    u64::try_from(index).unwrap() * 10_000_000_000,
+                ),
+                lap: trace_domain::LapObservation {
+                    normalized_position: Some(position),
+                    ..trace_domain::LapObservation::default()
+                },
+                ..TelemetryFrame::default()
+            })
+            .collect::<Vec<_>>();
+        let sectors = derive_sector_times(&samples, 30_000_000_000);
+        assert_eq!(sectors.len(), 3);
+        assert!(
+            sectors
+                .iter()
+                .all(|sector| sector.duration_ns == 10_000_000_000)
+        );
     }
 
     #[test]

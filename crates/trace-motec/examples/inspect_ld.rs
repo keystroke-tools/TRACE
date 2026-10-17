@@ -10,7 +10,7 @@ fn main() -> Result<(), String> {
     let bytes = fs::read(&path).map_err(|error| format!("failed to read {path}: {error}"))?;
     let log = LdFile::from_bytes(bytes.clone())?;
     let sidecar = fs::read(Path::new(&path).with_extension("ldx")).ok();
-    let trace_reader = MotecLdReader::new(bytes, sidecar.as_deref(), LdImportLimits::default())
+    let mut trace_reader = MotecLdReader::new(bytes, sidecar.as_deref(), LdImportLimits::default())
         .map_err(|error| format!("TRACE compatibility error: {error:?}"))?;
     println!(
         "driver={:?} vehicle={:?} venue={:?} date={:?} time={:?} comment={:?} event={:?} session={:?} channels={} duration={:.3}s",
@@ -30,6 +30,26 @@ fn main() -> Result<(), String> {
         trace_reader.metadata().lap_boundaries.len(),
         trace_reader.metadata().lap_boundaries
     );
+    let positions = std::iter::from_fn(|| trace_reader.next_frame())
+        .filter_map(|frame| frame.motion.position_m)
+        .collect::<Vec<_>>();
+    if let Some(first) = positions.first() {
+        let (min_x, max_x, min_z, max_z) = positions.iter().fold(
+            (first.x, first.x, first.z, first.z),
+            |(min_x, max_x, min_z, max_z), point| {
+                (
+                    min_x.min(point.x),
+                    max_x.max(point.x),
+                    min_z.min(point.z),
+                    max_z.max(point.z),
+                )
+            },
+        );
+        println!(
+            "TRACE mapped {} positions: x={min_x:.1}..{max_x:.1}m z={min_z:.1}..{max_z:.1}m",
+            positions.len()
+        );
+    }
     if env::args().nth(2).as_deref() != Some("--selected-only") {
         for channel in &log.channels {
             println!(
