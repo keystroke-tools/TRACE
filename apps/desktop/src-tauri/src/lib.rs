@@ -25,7 +25,7 @@ use trace_storage::{
         read_columns_range, read_lap_metrics, sample_count,
     },
     metadata::{
-        CompatibleSetup, MetadataStore, NewSetupImport, SavedComparison, SectorSummary,
+        CompatibleSetup, LapSummary, MetadataStore, NewSetupImport, SavedComparison, SectorSummary,
         SessionSummary,
     },
     package::{
@@ -1190,6 +1190,23 @@ fn sessions_share_track(
     }
 }
 
+fn recorded_session(store: &MetadataStore, session_id: &str) -> Result<SessionSummary, String> {
+    store
+        .recent_sessions(1_000)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .ok_or_else(|| "recorded session was not found".to_owned())
+}
+
+fn recorded_lap(session: &SessionSummary, lap_index: u32) -> Result<&LapSummary, String> {
+    session
+        .laps
+        .iter()
+        .find(|lap| lap.index == lap_index)
+        .ok_or_else(|| "lap was not found".to_owned())
+}
+
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
 fn visualize_session_lap(
@@ -1203,17 +1220,8 @@ fn visualize_session_lap(
         .map_err(|error| error.to_string())?;
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let session = store
-        .recent_sessions(1_000)
-        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?
-        .into_iter()
-        .find(|session| session.id == session_id)
-        .ok_or_else(|| "recorded session was not found".to_owned())?;
-    let lap = session
-        .laps
-        .iter()
-        .find(|lap| lap.index == lap_index)
-        .ok_or_else(|| "lap was not found".to_owned())?;
+    let session = recorded_session(&store, &session_id)?;
+    let lap = recorded_lap(&session, lap_index)?;
     let columns = read_recorded_lap(
         &directory,
         &store,
@@ -1252,33 +1260,7 @@ fn visualize_session_lap(
     let position_z = interpolate_channel(channels.position_z.as_ref(), &grid, 1.0)?;
     let air_temperature = interpolate_channel(channels.air_temperature.as_ref(), &grid, 1.0)?;
     let track_temperature = interpolate_channel(channels.track_temperature.as_ref(), &grid, 1.0)?;
-    let tyre_load = interpolate_wheel_channels(&channels.tyre_load, &grid, 1.0)?;
-    let (tyre_slip_kind, tyre_slip, maximum_abs_tyre_slip) =
-        if channels.tyre_slip_angle.iter().any(Option::is_some) {
-            (
-                Some("angle".to_owned()),
-                interpolate_wheel_channels(
-                    &channels.tyre_slip_angle,
-                    &grid,
-                    180.0 / std::f64::consts::PI,
-                )?,
-                maximum_abs_wheel_value(&columns.tyre_slip_angle_rad, 180.0 / std::f64::consts::PI),
-            )
-        } else if channels.tyre_slip_ratio.iter().any(Option::is_some) {
-            (
-                Some("ratio".to_owned()),
-                interpolate_wheel_channels(&channels.tyre_slip_ratio, &grid, 100.0)?,
-                maximum_abs_wheel_value(&columns.tyre_slip_ratio, 100.0),
-            )
-        } else if channels.source_wheel_slip.iter().any(Option::is_some) {
-            (
-                Some("source".to_owned()),
-                interpolate_wheel_channels(&channels.source_wheel_slip, &grid, 1.0)?,
-                maximum_abs_wheel_value(&columns.source_wheel_slip, 1.0),
-            )
-        } else {
-            (None, std::array::from_fn(|_| vec![None; grid.len()]), None)
-        };
+    let tyres = interpolate_tyre_channels(&channels, &columns, &grid)?;
     let samples = grid
         .into_iter()
         .enumerate()
@@ -1297,14 +1279,14 @@ fn visualize_session_lap(
             position_z_m: position_z[index],
             air_temperature_c: air_temperature[index],
             track_temperature_c: track_temperature[index],
-            tyre_load_front_left_n: tyre_load[0][index],
-            tyre_load_front_right_n: tyre_load[1][index],
-            tyre_load_rear_left_n: tyre_load[2][index],
-            tyre_load_rear_right_n: tyre_load[3][index],
-            tyre_slip_front_left: tyre_slip[0][index],
-            tyre_slip_front_right: tyre_slip[1][index],
-            tyre_slip_rear_left: tyre_slip[2][index],
-            tyre_slip_rear_right: tyre_slip[3][index],
+            tyre_load_front_left_n: tyres.load[0][index],
+            tyre_load_front_right_n: tyres.load[1][index],
+            tyre_load_rear_left_n: tyres.load[2][index],
+            tyre_load_rear_right_n: tyres.load[3][index],
+            tyre_slip_front_left: tyres.slip[0][index],
+            tyre_slip_front_right: tyres.slip[1][index],
+            tyre_slip_rear_left: tyres.slip[2][index],
+            tyre_slip_rear_right: tyres.slip[3][index],
         })
         .collect();
     let lap_time = format_optional_lap_time(lap.duration_ns);
@@ -1324,8 +1306,8 @@ fn visualize_session_lap(
         track,
         car,
         lap_length_m,
-        tyre_slip_kind,
-        maximum_abs_tyre_slip,
+        tyre_slip_kind: tyres.slip_kind,
+        maximum_abs_tyre_slip: tyres.maximum_abs_slip,
         track_map,
         samples,
     })
@@ -1533,6 +1515,13 @@ struct AlignedLapChannels {
     tyre_slip_angle: [Option<DistanceSeries>; 4],
     tyre_slip_ratio: [Option<DistanceSeries>; 4],
     source_wheel_slip: [Option<DistanceSeries>; 4],
+}
+
+struct InterpolatedTyreChannels {
+    load: [Vec<Option<f64>>; 4],
+    slip: [Vec<Option<f64>>; 4],
+    slip_kind: Option<String>,
+    maximum_abs_slip: Option<f64>,
 }
 
 impl AlignedLapChannels {
@@ -1794,6 +1783,46 @@ fn interpolate_wheel_channels(
     values
         .try_into()
         .map_err(|_| "wheel telemetry did not contain four corners".to_owned())
+}
+
+fn interpolate_tyre_channels(
+    channels: &AlignedLapChannels,
+    columns: &TelemetryColumns,
+    grid: &[f64],
+) -> Result<InterpolatedTyreChannels, String> {
+    let load = interpolate_wheel_channels(&channels.tyre_load, grid, 1.0)?;
+    let (slip_kind, slip, maximum_abs_slip) =
+        if channels.tyre_slip_angle.iter().any(Option::is_some) {
+            (
+                Some("angle".to_owned()),
+                interpolate_wheel_channels(
+                    &channels.tyre_slip_angle,
+                    grid,
+                    180.0 / std::f64::consts::PI,
+                )?,
+                maximum_abs_wheel_value(&columns.tyre_slip_angle_rad, 180.0 / std::f64::consts::PI),
+            )
+        } else if channels.tyre_slip_ratio.iter().any(Option::is_some) {
+            (
+                Some("ratio".to_owned()),
+                interpolate_wheel_channels(&channels.tyre_slip_ratio, grid, 100.0)?,
+                maximum_abs_wheel_value(&columns.tyre_slip_ratio, 100.0),
+            )
+        } else if channels.source_wheel_slip.iter().any(Option::is_some) {
+            (
+                Some("source".to_owned()),
+                interpolate_wheel_channels(&channels.source_wheel_slip, grid, 1.0)?,
+                maximum_abs_wheel_value(&columns.source_wheel_slip, 1.0),
+            )
+        } else {
+            (None, std::array::from_fn(|_| vec![None; grid.len()]), None)
+        };
+    Ok(InterpolatedTyreChannels {
+        load,
+        slip,
+        slip_kind,
+        maximum_abs_slip,
+    })
 }
 
 fn maximum_abs_wheel_value(values: &[Vec<Option<f32>>; 4], scale: f64) -> Option<f64> {
