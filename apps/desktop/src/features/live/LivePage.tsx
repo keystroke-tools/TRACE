@@ -39,7 +39,13 @@ export function LivePage({
 			<PageIntro
 				index="01"
 				eyebrow="LIVE CAPTURE"
-				title={recording ? `RECORDING ${simulatorName.toUpperCase()}` : awaitingDetection ? "READY FOR YOUR SIMULATOR" : `READY WHEN ${simulatorName.toUpperCase()} IS`}
+				title={
+					recording
+						? `RECORDING ${simulatorName.toUpperCase()}`
+						: awaitingDetection
+							? "READY FOR YOUR SIMULATOR"
+							: `READY WHEN ${simulatorName.toUpperCase()} IS`
+				}
 				description={
 					recording
 						? "TRACE is recording the current drive. Keep it running until the session ends."
