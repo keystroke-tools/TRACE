@@ -73,7 +73,11 @@ impl LmuSource for SystemLmuSource {
 #[derive(Clone, Debug)]
 enum ConnectionState {
     Disconnected,
-    Running { session: SessionSeed, paused: bool },
+    Running {
+        session: SessionSeed,
+        paused: bool,
+        replay: bool,
+    },
 }
 
 /// Le Mans Ultimate implementation of TRACE's simulator adapter lifecycle.
@@ -136,11 +140,13 @@ impl<S: LmuSource> LmuAdapter<S> {
                 self.source.connect().map_err(adapter_error)?;
                 let snapshot = self.source.snapshot().map_err(adapter_error)?;
                 let phase = snapshot.game_phase().map_err(page_error)?;
+                let in_realtime = snapshot.in_realtime().map_err(page_error)?;
+                let replay = snapshot.player_control().map_err(page_error)? == 3;
+                let player_finished = snapshot.player_finish_status().map_err(page_error)? != 0;
                 let session = snapshot.map_session().map_err(page_error)?;
                 if phase == PHASE_BEFORE_SESSION
                     || (phase == PHASE_SESSION_OVER
-                        && (!snapshot.in_realtime().map_err(page_error)?
-                            || snapshot.player_finish_status().map_err(page_error)? != 0))
+                        && (player_finished || (!replay && !in_realtime)))
                     || !complete_identity(&session)
                 {
                     self.disconnect();
@@ -152,10 +158,12 @@ impl<S: LmuSource> LmuAdapter<S> {
                 self.state = ConnectionState::Running {
                     session: session.clone(),
                     paused,
+                    replay,
                 };
                 let mut events = vec![
                     AdapterEvent::Detected(source_descriptor(
                         snapshot.simulator_version().map_err(page_error)?,
+                        replay,
                     )),
                     AdapterEvent::Connected(session),
                     AdapterEvent::CapabilitiesChanged(capabilities()),
@@ -185,8 +193,9 @@ impl<S: LmuSource> LmuAdapter<S> {
         let phase = snapshot.game_phase().map_err(page_error)?;
         let in_realtime = snapshot.in_realtime().map_err(page_error)?;
         let player_finished = snapshot.player_finish_status().map_err(page_error)? != 0;
+        let replay = matches!(&self.state, ConnectionState::Running { replay: true, .. });
         if phase == PHASE_BEFORE_SESSION
-            || (phase == PHASE_SESSION_OVER && (!in_realtime || player_finished))
+            || (phase == PHASE_SESSION_OVER && (player_finished || (!replay && !in_realtime)))
         {
             let frame = self.map_next_frame(&snapshot)?;
             self.disconnect();
@@ -195,11 +204,19 @@ impl<S: LmuSource> LmuAdapter<S> {
                 AdapterEvent::Disconnected(DisconnectReason::SessionEnded),
             ]);
         }
+        let now_replay = snapshot.player_control().map_err(page_error)? == 3;
+        if replay != now_replay {
+            self.disconnect();
+            return Ok(vec![AdapterEvent::Disconnected(
+                DisconnectReason::SourceClosed,
+            )]);
+        }
         let session = snapshot.map_session().map_err(page_error)?;
         let mut events = Vec::new();
         let ConnectionState::Running {
             session: previous,
             paused,
+            ..
         } = &mut self.state
         else {
             unreachable!("running poll requires running state")
@@ -208,7 +225,7 @@ impl<S: LmuSource> LmuAdapter<S> {
             *previous = session.clone();
             events.push(AdapterEvent::SessionChanged(session));
         }
-        let now_paused = phase == PHASE_PAUSED || !in_realtime;
+        let now_paused = phase == PHASE_PAUSED || (!replay && !in_realtime);
         if *paused != now_paused {
             events.push(if now_paused {
                 AdapterEvent::Paused
@@ -256,13 +273,17 @@ fn session_identity_changed(previous: &SessionSeed, current: &SessionSeed) -> bo
             || previous.session_type != current.session_type)
 }
 
-fn source_descriptor(simulator_version: Option<String>) -> SourceDescriptor {
+fn source_descriptor(simulator_version: Option<String>, replay: bool) -> SourceDescriptor {
     SourceDescriptor {
         simulator: SimulatorId::parse("le-mans-ultimate")
             .expect("static simulator identifier is valid"),
         adapter_version: env!("CARGO_PKG_VERSION").into(),
         simulator_version,
-        kind: SourceKind::NativeCapture,
+        kind: if replay {
+            SourceKind::SimulatorReplay
+        } else {
+            SourceKind::NativeCapture
+        },
     }
 }
 
@@ -422,10 +443,19 @@ mod tests {
     }
 
     fn snapshot(phase: u8, realtime: bool) -> LmuSnapshot {
-        snapshot_with_finish(phase, realtime, 0)
+        snapshot_with_finish_and_control(phase, realtime, 0, 0)
     }
 
     fn snapshot_with_finish(phase: u8, realtime: bool, finish_status: u8) -> LmuSnapshot {
+        snapshot_with_finish_and_control(phase, realtime, finish_status, 0)
+    }
+
+    fn snapshot_with_finish_and_control(
+        phase: u8,
+        realtime: bool,
+        finish_status: u8,
+        control: i8,
+    ) -> LmuSnapshot {
         let mut bytes = vec![0; SHARED_MEMORY_SIZE];
         put_i32(&mut bytes, 60, 202_610);
         bytes[TELEMETRY_OFFSET] = 1;
@@ -445,6 +475,7 @@ mod tests {
         put_i32(&mut bytes, SCORING_VEHICLES_OFFSET, 7);
         bytes[SCORING_VEHICLES_OFFSET + 103] = finish_status;
         bytes[SCORING_VEHICLES_OFFSET + 196] = 1;
+        bytes[SCORING_VEHICLES_OFFSET + 197] = control.to_le_bytes()[0];
         LmuSnapshot::from_bytes(bytes).expect("valid fixture snapshot")
     }
 
@@ -473,6 +504,49 @@ mod tests {
         assert!(matches!(
             player_finished.last(),
             Some(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+        ));
+    }
+
+    #[test]
+    fn identifies_replay_control_as_a_distinct_source_kind() {
+        let source = ScriptedSource {
+            availability: VecDeque::from([LmuAvailability::Available]),
+            snapshots: VecDeque::from([Ok(snapshot_with_finish_and_control(5, false, 0, 3))]),
+            connects: 0,
+            disconnects: 0,
+        };
+        let mut adapter = LmuAdapter::with_source(source);
+
+        let events = adapter.poll().expect("replay connect");
+        assert!(matches!(
+            events.first(),
+            Some(AdapterEvent::Detected(source)) if source.kind == SourceKind::SimulatorReplay
+        ));
+    }
+
+    #[test]
+    fn reconnects_as_a_native_capture_when_leaving_the_monitor_for_the_car() {
+        let source = ScriptedSource {
+            availability: VecDeque::from([LmuAvailability::Available, LmuAvailability::Available]),
+            snapshots: VecDeque::from([
+                Ok(snapshot_with_finish_and_control(5, false, 0, 3)),
+                Ok(snapshot(5, true)),
+                Ok(snapshot(5, true)),
+            ]),
+            connects: 0,
+            disconnects: 0,
+        };
+        let mut adapter = LmuAdapter::with_source(source);
+
+        adapter.poll().expect("monitor connect");
+        assert_eq!(
+            adapter.poll().expect("monitor exit"),
+            vec![AdapterEvent::Disconnected(DisconnectReason::SourceClosed)]
+        );
+        let driving = adapter.poll().expect("driving reconnect");
+        assert!(matches!(
+            driving.first(),
+            Some(AdapterEvent::Detected(source)) if source.kind == SourceKind::NativeCapture
         ));
     }
 

@@ -95,6 +95,24 @@ overall winner finishes while the player is still completing a final lap. TRACE 
 recording in that state until LMU marks the player finished or removes them from
 realtime driving, so a later-class chequered-flag lap is not truncated.
 
+## Replay capture and recovery
+
+LMU keeps publishing the selected car through shared memory while a saved replay is
+playing. Its scoring page marks replay as the vehicle's control source, which TRACE
+uses to classify it as a simulator replay instead of a live drive or the normal
+garage monitor. Replay telemetry is ignored
+by default so merely reviewing footage cannot create sessions accidentally. Choose
+**Arm next replay** on TRACE's Live page before loading or restarting the replay to
+record it once.
+
+The replay must be played through the laps that should be recovered. Result XML files
+can supply authoritative lap and sector times, but they do not contain the sampled
+inputs, vehicle motion, tyres, or racing line needed for lap visualisation and
+comparison. A matching `.Vcr` replay can republish those samples for TRACE to capture.
+When playback reaches a multiclass race finish, TRACE continues until the selected
+player is marked finished rather than stopping as soon as the overall winner crosses
+the line.
+
 ## Native preservation
 
 Each canonical frame retains a compact `le-mans-ultimate.shared-memory/v01` envelope

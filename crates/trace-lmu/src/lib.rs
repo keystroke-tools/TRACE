@@ -268,6 +268,17 @@ impl LmuSnapshot {
         Page::new(&self.bytes).u8(self.player_scoring_offset + 103)
     }
 
+    /// Control source for the resolved player scoring record.
+    ///
+    /// LMU reports `3` while the vehicle is being supplied by replay playback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the resolved player scoring record is truncated.
+    pub fn player_control(&self) -> Result<i8, LmuPageError> {
+        Page::new(&self.bytes).i8(self.player_scoring_offset + 197)
+    }
+
     /// Numeric game version published in LMU's generic shared-memory region.
     ///
     /// # Errors
@@ -327,6 +338,7 @@ impl LmuSnapshot {
         }
         // Keep only one player scoring record, resolved by both the player flag and ID.
         bytes[target + 196] = 1;
+        bytes[target + 197] = self.bytes[source + 197];
         bytes[SCORING_OFFSET + 104..SCORING_OFFSET + 108].copy_from_slice(&1_i32.to_le_bytes());
         Ok(LmuRedactedFixture {
             bytes,
@@ -423,6 +435,7 @@ fn native_fields(
         i64::from(page.u8(telemetry + 767)?),
     );
     integer_fields.insert("in_pits".into(), i64::from(page.u8(scoring + 198)?));
+    integer_fields.insert("control_source".into(), i64::from(page.i8(scoring + 197)?));
     integer_fields.insert("pit_state".into(), i64::from(page.u8(scoring + 457)?));
     let mut float_fields = BTreeMap::new();
     float_fields.insert("unfiltered_steering".into(), page.f64(telemetry + 404)?);
@@ -468,6 +481,10 @@ impl<'a> Page<'a> {
                 expected: offset.saturating_add(1),
                 actual: self.bytes.len(),
             })
+    }
+
+    fn i8(&self, offset: usize) -> Result<i8, LmuPageError> {
+        Ok(i8::from_le_bytes([self.u8(offset)?]))
     }
 
     fn i16(&self, offset: usize) -> Result<i16, LmuPageError> {
@@ -688,6 +705,7 @@ mod tests {
         assert_eq!(session.session_type.as_deref(), Some("race"));
         assert_eq!(snapshot.driver_name().as_deref(), Some("TRACE DRIVER"));
         assert_eq!(snapshot.player_finish_status(), Ok(0));
+        assert_eq!(snapshot.player_control(), Ok(0));
 
         let frame = snapshot
             .map_frame(FrameSequence(7), ElapsedNanoseconds(123))
