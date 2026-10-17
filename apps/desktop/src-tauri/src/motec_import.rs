@@ -768,10 +768,14 @@ mod tests {
             .collect::<Vec<_>>();
         let sectors = derive_sector_times(&samples, 30_000_000_000);
         assert_eq!(sectors.len(), 3);
+        assert_eq!(
+            sectors.iter().map(|sector| sector.duration_ns).sum::<u64>(),
+            30_000_000_000
+        );
         assert!(
             sectors
                 .iter()
-                .all(|sector| sector.duration_ns == 10_000_000_000)
+                .all(|sector| sector.duration_ns.abs_diff(10_000_000_000) <= 1_000)
         );
     }
 

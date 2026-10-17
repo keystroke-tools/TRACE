@@ -117,7 +117,7 @@ Build the Windows collector from WSL with:
 mise run build-lmu-fixture-collector
 ```
 
-With LMU in an active session, run `capture_fixture.exe <output-directory>`. The
+With LMU in an active session, run `capture_lmu_fixture.exe <output-directory>`. The
 collector rebuilds a one-player mapping and removes driver names, Steam IDs, other
 vehicles, result streams, filesystem paths, and reserved expansion bytes before it
 writes `shared-memory.bin` and its text manifest. Inspect that output before adding an

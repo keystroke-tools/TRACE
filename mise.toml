@@ -46,7 +46,7 @@ run = "cargo xwin build --target x86_64-pc-windows-msvc -p trace-ac --example ca
 [tasks.build-lmu-fixture-collector]
 description = "Cross-compile the privacy-redacted LMU fixture collector for Windows"
 tools = { "cargo:cargo-xwin" = "0.23.1", clang = "22.1.8" }
-run = "cargo xwin build --target x86_64-pc-windows-msvc -p trace-lmu --example capture_fixture --release"
+run = "cargo xwin build --target x86_64-pc-windows-msvc -p trace-lmu --example capture_lmu_fixture --release"
 
 [tasks.build-windows-desktop]
 description = "Build a runnable Windows TRACE desktop executable from Linux"

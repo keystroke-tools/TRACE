@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .ok_or_else(|| io::Error::other("usage: capture_fixture <output-directory>"))?;
+        .ok_or_else(|| io::Error::other("usage: capture_lmu_fixture <output-directory>"))?;
     fs::create_dir_all(&output)?;
 
     let source = LmuSharedMemory::open().map_err(capture_error)?;
@@ -43,6 +43,6 @@ fn capture_error(error: trace_lmu::LmuCaptureError) -> io::Error {
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("capture_fixture must be compiled for and run on Windows");
+    eprintln!("capture_lmu_fixture must be compiled for and run on Windows");
     std::process::exit(1);
 }
