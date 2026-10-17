@@ -239,6 +239,7 @@ export function App() {
 				liveMode={liveMode}
 				onLiveModeChange={(mode) => void selectLiveMode(mode)}
 				onStopLive={() => void stopLiveBroadcast()}
+				onSelectSimulator={selectSimulator}
 				backLabel={openLapIndex == null ? "SESSIONS" : "SESSION"}
 				onBack={
 					openSession
@@ -270,7 +271,6 @@ export function App() {
 						onCopyLiveLink={() => void copyLiveLink()}
 						onOpenLiveLink={() => void openLiveLink()}
 						onOpenSessions={() => setSection("SESSIONS")}
-						onSelectSimulator={selectSimulator}
 						onSetReplayCaptureArmed={(armed) => void setReplayCaptureArmed(armed)}
 					/>
 				)}

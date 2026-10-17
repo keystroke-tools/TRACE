@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { telemetryDataSource, type LiveBroadcastOptions, type LiveBroadcastStatus, type TelemetryStatus } from "./data-source";
+import { SimulatorPicker } from "./app/SimulatorPicker";
 import { Tooltip } from "./Tooltip";
 
 const desktopWindow = isTauri() ? getCurrentWindow() : null;
@@ -18,6 +19,7 @@ export function TitleBar({
 	liveMode,
 	onLiveModeChange,
 	onStopLive,
+	onSelectSimulator,
 	onBack,
 	backLabel = "SESSIONS",
 }: {
@@ -26,6 +28,7 @@ export function TitleBar({
 	liveMode: LiveBroadcastOptions["mode"];
 	onLiveModeChange: (mode: LiveBroadcastOptions["mode"]) => void;
 	onStopLive: () => void;
+	onSelectSimulator: (simulatorId: string) => Promise<void>;
 	onBack?: () => void;
 	backLabel?: string;
 }) {
@@ -95,7 +98,7 @@ export function TitleBar({
 	}
 
 	return (
-		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
+		<div className="col-span-full grid select-none grid-cols-[var(--trace-sidebar)_minmax(0,1fr)_auto_auto_auto_auto_88px_auto] items-stretch border-b border-trace-divider bg-trace-black">
 			{confirmingExit && (
 				<div
 					className="fixed inset-0 z-[200] grid place-items-center bg-black/75 p-6"
@@ -174,6 +177,7 @@ export function TitleBar({
 					{status?.session ?? "NO ACTIVE SESSION"}
 				</span>
 			</div>
+			<SimulatorPicker status={status} onSelect={onSelectSimulator} />
 			<div className="flex items-center gap-2.5 border-l border-trace-divider px-4 font-mono text-[12px] font-bold tracking-[.1em] text-trace-muted">
 				<span
 					className={`size-2 rounded-full ${

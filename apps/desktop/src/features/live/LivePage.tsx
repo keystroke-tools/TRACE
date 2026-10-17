@@ -12,7 +12,6 @@ export function LivePage({
 	onCopyLiveLink,
 	onOpenLiveLink,
 	onOpenSessions,
-	onSelectSimulator,
 	onSetReplayCaptureArmed,
 }: {
 	status: TelemetryStatus | null;
@@ -22,14 +21,14 @@ export function LivePage({
 	onCopyLiveLink: () => void;
 	onOpenLiveLink: () => void;
 	onOpenSessions: () => void;
-	onSelectSimulator: (simulatorId: string) => Promise<void>;
 	onSetReplayCaptureArmed: (armed: boolean) => void;
 }) {
 	const recording = status?.connection === "recording" || status?.connection === "replay";
 	const replayDetected = status?.connection === "replay_ready";
 	const replayCaptureArmed = status?.replayCaptureArmed ?? false;
-	const simulatorName = status?.simulatorName ?? "YOUR SIMULATOR";
-	const simulatorShortName = status?.simulatorShortName ?? "SIM";
+	const awaitingDetection = status?.simulatorId === "auto" && status.simulatorName === "Auto-detect";
+	const simulatorName = awaitingDetection ? "a supported simulator" : (status?.simulatorName ?? "YOUR SIMULATOR");
+	const simulatorShortName = awaitingDetection ? "SIM" : (status?.simulatorShortName ?? "SIM");
 	const availableChannels = status?.channels.filter((channel) => channel.available) ?? [];
 	const unavailableChannels = status?.channels.filter((channel) => !channel.available) ?? [];
 	const categories = Array.from(new Set(availableChannels.map((channel) => channel.category)));
@@ -40,14 +39,13 @@ export function LivePage({
 			<PageIntro
 				index="01"
 				eyebrow="LIVE CAPTURE"
-				title={recording ? `RECORDING ${simulatorName.toUpperCase()}` : `READY WHEN ${simulatorName.toUpperCase()} IS`}
+				title={recording ? `RECORDING ${simulatorName.toUpperCase()}` : awaitingDetection ? "READY FOR YOUR SIMULATOR" : `READY WHEN ${simulatorName.toUpperCase()} IS`}
 				description={
 					recording
 						? "TRACE is recording the current drive. Keep it running until the session ends."
 						: `Start driving in ${simulatorName} and TRACE records locally—there is no record button to press.`
 				}
 			/>
-			<SimulatorPicker status={status} onSelect={onSelectSimulator} />
 			<div className="mt-3 flex flex-wrap items-center gap-3 border border-trace-divider bg-trace-surface p-3">
 				<div className="min-w-52 flex-1">
 					<strong className="text-[12px] font-black tracking-[.08em] text-trace-text">REPLAY CAPTURE</strong>
@@ -186,45 +184,6 @@ export function LivePage({
 				</details>
 			)}
 		</>
-	);
-}
-
-function SimulatorPicker({ status, onSelect }: { status: TelemetryStatus | null; onSelect: (simulatorId: string) => Promise<void> }) {
-	const showToast = useToast();
-	const simulators = status?.simulators ?? [];
-	const selectable = simulators.filter((simulator) => simulator.available);
-
-	async function changeSimulator(simulatorId: string) {
-		try {
-			await onSelect(simulatorId);
-		} catch (error) {
-			showToast({ kind: "error", title: "Simulator not changed", message: error instanceof Error ? error.message : String(error), timeoutMs: 7_000 });
-		}
-	}
-
-	return (
-		<div className="mt-5 flex min-h-14 items-center border border-trace-divider bg-trace-surface">
-			<label className="flex h-14 min-w-64 items-center gap-3 border-r border-trace-divider px-4">
-				<span className="font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">SIMULATOR</span>
-				<select
-					aria-label="Capture simulator"
-					value={status?.simulatorId ?? ""}
-					disabled={selectable.length <= 1}
-					onChange={(event) => void changeSimulator(event.target.value)}
-					className="trace-select min-w-0 flex-1 border-0 bg-transparent pl-2 text-[12px] font-bold text-trace-text outline-none disabled:cursor-default disabled:opacity-100"
-				>
-					{simulators.map((simulator) => (
-						<option value={simulator.id} disabled={!simulator.available} key={simulator.id}>
-							{simulator.name}
-							{simulator.available ? "" : " · unavailable"}
-						</option>
-					))}
-				</select>
-			</label>
-			<span className="px-4 text-[12px] text-trace-dim">
-				{selectable.length} capture adapter{selectable.length === 1 ? "" : "s"} installed
-			</span>
-		</div>
 	);
 }
 

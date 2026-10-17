@@ -9,8 +9,6 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::Manager;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use trace_ac::AcAdapter;
-use trace_adapter::SimulatorAdapter;
 use trace_core::{
     analysis::{AnalysisResult, ComparisonContext},
     corners::{CornerComparison, CornerComparisonSample, analyze_corner_comparison},
@@ -117,6 +115,7 @@ struct DiscordReviewActivityInput {
 #[serde(rename_all = "camelCase")]
 struct FoundationStatus {
     simulator_id: String,
+    active_simulator_id: Option<String>,
     simulator_name: String,
     simulator_short_name: String,
     simulators: Vec<SimulatorOption>,
@@ -152,6 +151,12 @@ struct SimulatorOption {
 }
 
 const SIMULATORS: &[SimulatorOption] = &[
+    SimulatorOption {
+        id: "auto",
+        name: "Auto-detect",
+        short_name: "AUTO",
+        available: true,
+    },
     SimulatorOption {
         id: "assetto-corsa",
         name: "Assetto Corsa",
@@ -2416,10 +2421,15 @@ fn foundation_status(status: tauri::State<'_, SharedCaptureStatus>) -> Foundatio
     let snapshot = status
         .lock()
         .map_or_else(|_| CaptureStatus::default(), |value| value.clone());
-    let simulator = simulator_option(&snapshot.simulator_id);
-    let channels = simulator_channel_capabilities(&snapshot.simulator_id);
+    let effective_simulator_id = snapshot
+        .detected_simulator_id
+        .as_deref()
+        .unwrap_or(&snapshot.simulator_id);
+    let simulator = simulator_option(effective_simulator_id);
+    let channels = simulator_channel_capabilities(effective_simulator_id);
     FoundationStatus {
         simulator_id: snapshot.simulator_id,
+        active_simulator_id: snapshot.detected_simulator_id,
         simulator_name: simulator
             .map_or_else(|| snapshot.source.clone(), |value| value.name.into()),
         simulator_short_name: simulator
@@ -2447,7 +2457,12 @@ fn live_pedal_telemetry(status: tauri::State<'_, SharedCaptureStatus>) -> LivePe
     let snapshot = status
         .lock()
         .map_or_else(|_| CaptureStatus::default(), |value| value.clone());
-    let simulator_name = simulator_name(&snapshot.simulator_id);
+    let simulator_name = simulator_name(
+        snapshot
+            .detected_simulator_id
+            .as_deref()
+            .unwrap_or(&snapshot.simulator_id),
+    );
     LivePedalTelemetry {
         connection: snapshot.connection,
         simulator_name,
@@ -2873,7 +2888,11 @@ fn setup_app(
 ///
 /// Panics when Tauri cannot initialize or run the desktop event loop.
 pub fn run() {
-    let adapter_identity = AcAdapter::new().identity().clone();
+    let adapter_identity = trace_adapter::AdapterIdentity {
+        key: "auto".into(),
+        display_name: "Auto-detect".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+    };
     let capture_status = SharedCaptureStatus::new(std::sync::Mutex::new(
         CaptureStatus::for_adapter(&adapter_identity),
     ));

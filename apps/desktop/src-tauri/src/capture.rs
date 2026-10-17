@@ -29,6 +29,7 @@ const ARROW_BATCH_FRAMES: usize = 240;
 #[derive(Clone, Debug)]
 pub struct CaptureStatus {
     pub simulator_id: String,
+    pub detected_simulator_id: Option<String>,
     pub connection: String,
     pub source: String,
     pub sample_rate_hz: u16,
@@ -72,6 +73,7 @@ impl CaptureStatus {
     pub fn for_adapter(adapter: &AdapterIdentity) -> Self {
         Self {
             simulator_id: adapter.key.clone(),
+            detected_simulator_id: None,
             connection: "waiting".into(),
             source: adapter.display_name.to_uppercase(),
             sample_rate_hz: 0,
@@ -381,6 +383,15 @@ fn filter_replay_capture(
     ignoring_replay: &mut bool,
 ) -> Option<AdapterEvent> {
     match &event {
+        AdapterEvent::Detected(source) => {
+            set_detected_simulator(status, Some(source.simulator.as_str()));
+        }
+        AdapterEvent::Disconnected(_) => {
+            set_detected_simulator(status, None);
+        }
+        _ => {}
+    }
+    match &event {
         AdapterEvent::Detected(source) if source.kind == SourceKind::SimulatorReplay => {
             if take_replay_capture_arm(status) {
                 *ignoring_replay = false;
@@ -402,6 +413,12 @@ fn filter_replay_capture(
         }
         _ if *ignoring_replay => None,
         _ => Some(event),
+    }
+}
+
+fn set_detected_simulator(status: &SharedCaptureStatus, simulator_id: Option<&str>) {
+    if let Ok(mut value) = status.lock() {
+        value.detected_simulator_id = simulator_id.map(str::to_owned);
     }
 }
 
@@ -834,7 +851,14 @@ mod tests {
             .is_none()
         );
         assert!(ignoring);
-        assert_eq!(status.lock().expect("status").connection, "replay_ready");
+        {
+            let status = status.lock().expect("status");
+            assert_eq!(status.connection, "replay_ready");
+            assert_eq!(
+                status.detected_simulator_id.as_deref(),
+                Some("assetto-corsa")
+            );
+        }
         assert!(
             filter_replay_capture(
                 AdapterEvent::Connected(SessionSeed::default()),
@@ -852,6 +876,13 @@ mod tests {
             .is_none()
         );
         assert!(!ignoring);
+        assert!(
+            status
+                .lock()
+                .expect("status")
+                .detected_simulator_id
+                .is_none()
+        );
 
         set_replay_capture_armed(&status, true);
         assert!(

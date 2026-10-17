@@ -2,9 +2,21 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { telemetryDataSource } from "./data-source";
 import { TitleBar } from "./TitleBar";
+import { ToastProvider } from "./Toast";
 
 function renderTitleBar() {
-	render(<TitleBar status={null} liveBroadcast={null} liveMode="hosted" onLiveModeChange={() => {}} onStopLive={() => {}} />);
+	render(
+		<ToastProvider>
+			<TitleBar
+				status={null}
+				liveBroadcast={null}
+				liveMode="hosted"
+				onLiveModeChange={() => {}}
+				onStopLive={() => {}}
+				onSelectSimulator={async () => {}}
+			/>
+		</ToastProvider>,
+	);
 }
 
 afterEach(() => {

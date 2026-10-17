@@ -17,6 +17,7 @@ export interface SimulatorOption {
 
 export interface TelemetryStatus {
 	simulatorId: string;
+	activeSimulatorId?: string | null;
 	simulatorName: string;
 	simulatorShortName: string;
 	simulators: SimulatorOption[];
@@ -623,10 +624,15 @@ let fixtureSavedComparisons: SavedComparison[] = [];
 export const fixtureDataSource: TelemetryDataSource = {
 	async getStatus() {
 		return {
-			simulatorId: "assetto-corsa",
+			simulatorId: "auto",
+			activeSimulatorId: "assetto-corsa",
 			simulatorName: "Assetto Corsa",
 			simulatorShortName: "AC",
-			simulators: [{ id: "assetto-corsa", name: "Assetto Corsa", shortName: "AC", available: true }],
+			simulators: [
+				{ id: "auto", name: "Auto-detect", shortName: "AUTO", available: true },
+				{ id: "assetto-corsa", name: "Assetto Corsa", shortName: "AC", available: true },
+				{ id: "le-mans-ultimate", name: "Le Mans Ultimate", shortName: "LMU", available: true },
+			],
 			connection: "replay",
 			source: "TRACE REPLAY",
 			sampleRateHz: 100,
@@ -792,7 +798,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 		};
 	},
 	async selectSimulator(simulatorId) {
-		if (simulatorId !== "assetto-corsa") throw new Error("That simulator adapter is not installed.");
+		if (!["auto", "assetto-corsa", "le-mans-ultimate"].includes(simulatorId)) throw new Error("That simulator adapter is not installed.");
 	},
 	async setReplayCaptureArmed() {},
 	async getSessions() {
