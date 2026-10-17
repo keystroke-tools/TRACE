@@ -153,6 +153,8 @@ fn index_recording(
             duration_ns: lap.duration_ns,
             validity: if lap.partial || lap.invalidated {
                 "invalid"
+            } else if lap.validity_observed {
+                "valid"
             } else {
                 "unknown"
             }
@@ -193,6 +195,9 @@ fn lap_validity_reason(lap: &crate::RecordedLap) -> String {
     }
     if lap.invalidated {
         return "simulator marked this lap invalid".into();
+    }
+    if lap.validity_observed {
+        return "simulator reported no lap invalidation".into();
     }
     match lap.max_tyres_out {
         Some(0) => {
@@ -270,6 +275,7 @@ mod tests {
                 sample_start: 0,
                 sample_count: 3,
                 partial: false,
+                validity_observed: false,
                 invalidated: false,
                 max_tyres_out: None,
                 sectors: vec![
@@ -352,6 +358,32 @@ mod tests {
         assert_eq!(
             summaries[0].laps[0].validity_reason.as_deref(),
             Some("capture began after lap start; partial lap or outlap")
+        );
+    }
+
+    #[test]
+    fn persists_an_observed_clean_lap_as_valid() {
+        let mut metadata = MetadataStore::open_in_memory().expect("metadata");
+        metadata
+            .create_session(&session("session-valid"))
+            .expect("session");
+        let mut blobs = InMemoryBlobStore::new(1_000_000).expect("blobs");
+        let mut valid = recording();
+        valid.laps[0].validity_observed = true;
+
+        persist_recording(
+            &mut blobs,
+            &mut metadata,
+            &valid,
+            &descriptor("session-valid", "sessions/session-valid.arrow"),
+        )
+        .expect("persisted");
+
+        let summaries = metadata.recent_sessions(10).expect("summaries");
+        assert_eq!(summaries[0].laps[0].validity, "valid");
+        assert_eq!(
+            summaries[0].laps[0].validity_reason.as_deref(),
+            Some("simulator reported no lap invalidation")
         );
     }
 

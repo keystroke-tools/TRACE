@@ -12,6 +12,8 @@ trace-windows-shmem = { path = "../trace-windows-shmem" }
 
 [dev-dependencies]
 miniz_oxide = "0.8.9"
+trace-recorder = { path = "../trace-recorder" }
+trace-storage = { path = "../trace-storage" }
 
 [lints]
 workspace = true

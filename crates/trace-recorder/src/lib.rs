@@ -14,6 +14,7 @@ pub struct RecordedLap {
     pub sample_start: u64,
     pub sample_count: u64,
     pub partial: bool,
+    pub validity_observed: bool,
     pub invalidated: bool,
     pub max_tyres_out: Option<u8>,
     pub sectors: Vec<RecordedSector>,
@@ -87,10 +88,18 @@ struct OpenLap {
     sample_start: u64,
     started_offset_ns: u64,
     started_at_boundary: bool,
+    validity_observed: bool,
     invalidated: bool,
     max_tyres_out: Option<u8>,
     current_sector_index: Option<u32>,
+    pending_sector: Option<PendingSector>,
     sectors: Vec<RecordedSector>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingSector {
+    index: u32,
+    attach_to_completed_lap: bool,
 }
 
 /// Converts adapter lifecycle events into bounded session recordings.
@@ -243,9 +252,11 @@ impl ActiveSession {
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: false,
+                        validity_observed: false,
                         invalidated: false,
                         max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
+                        pending_sector: None,
                         sectors: Vec::new(),
                     });
                 }
@@ -261,6 +272,7 @@ impl ActiveSession {
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
                         partial: !open.started_at_boundary,
+                        validity_observed: open.validity_observed,
                         invalidated: open.invalidated,
                         max_tyres_out: open.max_tyres_out,
                         sectors: open.sectors,
@@ -270,9 +282,11 @@ impl ActiveSession {
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
                         started_at_boundary: true,
+                        validity_observed: false,
                         invalidated: false,
                         max_tyres_out: None,
                         current_sector_index: frame.lap.current_sector_index,
+                        pending_sector: None,
                         sectors: Vec::new(),
                     });
                 }
@@ -289,6 +303,7 @@ impl ActiveSession {
             );
         }
         if let (Some(open), Some(invalidated)) = (&mut self.current_lap, frame.lap.invalidated) {
+            open.validity_observed = true;
             open.invalidated |= invalidated;
         }
         self.sample_count = self
@@ -313,20 +328,39 @@ impl ActiveSession {
             return;
         };
         if current == previous {
+            if let Some(duration_ns) = frame.lap.last_sector_time_ns.filter(|value| *value > 0) {
+                self.resolve_pending_sector(duration_ns);
+            }
             return;
         }
+        open.pending_sector = Some(PendingSector {
+            index: previous.saturating_add(1),
+            attach_to_completed_lap: current < previous
+                && open.started_at_boundary
+                && open.sectors.is_empty(),
+        });
         if let Some(duration_ns) = frame.lap.last_sector_time_ns.filter(|value| *value > 0) {
-            let sector = RecordedSector {
-                index: previous.saturating_add(1),
-                duration_ns,
-            };
-            if current < previous && open.started_at_boundary && open.sectors.is_empty() {
-                if let Some(completed) = self.laps.last_mut() {
-                    completed.sectors.push(sector);
-                }
-            } else {
-                open.sectors.push(sector);
+            self.resolve_pending_sector(duration_ns);
+        }
+    }
+
+    fn resolve_pending_sector(&mut self, duration_ns: u64) {
+        let Some(open) = self.current_lap.as_mut() else {
+            return;
+        };
+        let Some(pending) = open.pending_sector.take() else {
+            return;
+        };
+        let sector = RecordedSector {
+            index: pending.index,
+            duration_ns,
+        };
+        if pending.attach_to_completed_lap {
+            if let Some(completed) = self.laps.last_mut() {
+                completed.sectors.push(sector);
             }
+        } else {
+            open.sectors.push(sector);
         }
     }
 
@@ -413,6 +447,7 @@ mod tests {
                     sample_start: 0,
                     sample_count: 3,
                     partial: true,
+                    validity_observed: false,
                     invalidated: false,
                     max_tyres_out: None,
                     sectors: Vec::new(),
@@ -424,6 +459,7 @@ mod tests {
                     sample_start: 3,
                     sample_count: 3,
                     partial: false,
+                    validity_observed: false,
                     invalidated: false,
                     max_tyres_out: None,
                     sectors: Vec::new(),
@@ -535,6 +571,44 @@ mod tests {
                     duration_ns: 49
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn accepts_a_sector_duration_published_after_the_crossing_frame() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for (sequence, elapsed, completed, sector, last_sector_time) in [
+            (1, 100, 0, 0, None),
+            (2, 200, 1, 0, None),
+            (3, 300, 1, 1, None),
+            (4, 310, 1, 1, Some(30)),
+            (5, 400, 1, 2, Some(40)),
+            (6, 500, 2, 0, Some(50)),
+        ] {
+            let mut value = frame(sequence, elapsed, completed, 0);
+            value.lap.current_sector_index = Some(sector);
+            value.lap.last_sector_time_ns = last_sector_time;
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(
+            session.laps[1]
+                .sectors
+                .iter()
+                .map(|sector| sector.duration_ns)
+                .collect::<Vec<_>>(),
+            vec![30, 40, 50]
         );
     }
 

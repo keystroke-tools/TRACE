@@ -49,6 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .transpose()?;
     let mut summary = Summary::default();
     let mut session = None;
+    let mut previous_lap = None;
+    let mut previous_sector = None;
     while let Some((elapsed_ms, bytes)) = read_snapshot(&mut input, snapshot_bytes)? {
         if summary.samples % 10 == 0
             && let Some(output) = &mut thin
@@ -64,6 +66,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ElapsedNanoseconds(elapsed_ms.saturating_mul(1_000_000)),
             )
             .map_err(page_error)?;
+        if frame.lap.completed_laps != previous_lap
+            || frame.lap.current_sector_index != previous_sector
+        {
+            println!(
+                "event elapsed_ms={elapsed_ms} lap={:?} sector={:?} last_sector_ns={:?}",
+                frame.lap.completed_laps,
+                frame.lap.current_sector_index,
+                frame.lap.last_sector_time_ns
+            );
+            previous_lap = frame.lap.completed_laps;
+            previous_sector = frame.lap.current_sector_index;
+        }
         summary.samples += 1;
         summary.last_elapsed_ms = elapsed_ms;
         summary.completed_laps.extend(frame.lap.completed_laps);

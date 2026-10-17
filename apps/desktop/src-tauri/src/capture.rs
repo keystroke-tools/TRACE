@@ -762,6 +762,7 @@ mod tests {
             sample_start: 0,
             sample_count: 60,
             partial,
+            validity_observed: false,
             invalidated: false,
             max_tyres_out,
             sectors: Vec::new(),

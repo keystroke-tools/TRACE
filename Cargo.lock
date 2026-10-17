@@ -5202,6 +5202,8 @@ dependencies = [
  "miniz_oxide",
  "trace-adapter",
  "trace-domain",
+ "trace-recorder",
+ "trace-storage",
  "trace-windows-shmem",
 ]
 

@@ -511,22 +511,23 @@ fn session_type(value: i32) -> Option<&'static str> {
 fn current_sector(value: i32) -> Option<u32> {
     let without_pit = value & 0x7fff_ffff;
     match without_pit {
-        0 => Some(2),
-        1 => Some(0),
-        2 => Some(1),
+        0..=2 => u32::try_from(without_pit).ok(),
         _ => None,
     }
 }
 
 fn last_sector_duration(page: &Page<'_>, scoring: usize, sector: Option<u32>) -> Option<f64> {
-    let first = positive(page.f64(scoring + 152).ok()?);
-    let first_two = positive(page.f64(scoring + 160).ok()?);
+    let last_first_two = positive(page.f64(scoring + 160).ok()?);
     let lap = positive(page.f64(scoring + 168).ok()?);
+    let current_first = positive(page.f64(scoring + 176).ok()?);
+    let current_first_two = positive(page.f64(scoring + 184).ok()?);
     match sector {
-        Some(0) => lap.zip(first_two).map(|(lap, first_two)| lap - first_two),
-        Some(1) => first,
-        Some(2) => first_two
-            .zip(first)
+        Some(0) => lap
+            .zip(last_first_two)
+            .map(|(lap, first_two)| lap - first_two),
+        Some(1) => current_first,
+        Some(2) => current_first_two
+            .zip(current_first)
             .map(|(first_two, first)| first_two - first),
         _ => None,
     }
@@ -638,7 +639,8 @@ mod tests {
         write_f64(&mut bytes, telemetry + 404, -0.5);
         write_f64(&mut bytes, telemetry + 412, 0.0);
         write_f64(&mut bytes, telemetry + 524, 57.0);
-        write_i32(&mut bytes, telemetry + 600, 2);
+        write_i32(&mut bytes, telemetry + 600, 1);
+        write_f64(&mut bytes, scoring + 176, 31.0);
         write_f32(&mut bytes, telemetry + 692, 540.0);
         write_f64(&mut bytes, telemetry + 608, 75.0);
         write_f64(&mut bytes, SCORING_OFFSET + 228, 21.0);

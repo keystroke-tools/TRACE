@@ -69,7 +69,7 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | track, vehicle, driver            | scoring and player telemetry identity                              |
 | session type                      | test day, practice, qualifying, warmup, or race                    |
 | lap count and normalized position | scoring lap count/distance plus reported track length              |
-| current lap and sector timing     | elapsed/lap-start time and cumulative scoring sectors              |
+| current lap and sector timing     | elapsed/lap-start time plus current and last scoring splits         |
 | lap validity                      | authoritative `lap invalidated` flag                               |
 | track-limit progression           | simulator track-limit steps                                        |
 | throttle, brake, clutch           | normalized player inputs                                           |
@@ -79,11 +79,16 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | tyres                             | angular speed, load, pressure, carcass temperature, suspension     |
 | conditions                        | ambient and track temperature                                      |
 | pit state                         | scoring pit flags/state                                            |
-| additional native values          | fuel capacity, best-lap delta, rear brake bias                      |
+| additional native values          | fuel capacity, best-lap delta, brake bias, steering ranges          |
 
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
-The source sector encoding is `0 = sector 3`, `1 = sector 1`, `2 = sector 2`; TRACE
-normalizes that to zero-based sector indexes while preserving simulator timing.
+Telemetry's `mCurrentSector` is already zero-based (`0`, `1`, `2`) and must not be
+confused with the separate scoring-sector byte whose documented numbering is unusual.
+Current-sector scoring values may arrive one scoring update after the sector changes,
+so the recorder holds a pending crossing until its authoritative duration is available.
+At the finish line, it derives sector three from the last lap and cumulative sector-two
+values. A completed lap with an observed false invalidation flag is stored as valid;
+sources without an authoritative validity channel remain unknown.
 
 ## Native preservation
 
@@ -106,10 +111,11 @@ against the installed header before offsets or expected sizes are updated. TRACE
 fail closed on truncated or structurally impossible snapshots instead of interpreting
 unknown bytes.
 
-The unit suite uses constructed, identity-free snapshots. Before declaring live LMU
-capture supported, record a real session fixture that strips player identity and any
-unrelated scoring stream data, then test connection, pause, pit, session-end, validity,
-sector, and reconnect behaviour against it.
+The suite includes constructed identity-free snapshots and an authorised, redacted
+Spa practice capture. The real fixture covers an outlap, two completed timed laps, an
+inlap, pit/monitor transitions, all three sectors, both steering directions, full pedal
+travel, and Arrow/SQLite persistence. It strips player identity and unrelated scoring
+data, then thins the original 10 Hz capture to 1 Hz for CI.
 
 Build the Windows collector from WSL with:
 
