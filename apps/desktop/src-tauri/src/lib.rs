@@ -2282,6 +2282,7 @@ fn import_trace_reader<R: Read + Seek>(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri command state must implement CommandArg by value.
 fn take_shared_session_import_result(
     state: tauri::State<'_, SharedSessionImportState>,
 ) -> Option<SharedSessionImportResult> {
