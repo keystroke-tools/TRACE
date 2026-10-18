@@ -340,6 +340,9 @@ footer small {
 	color: var(--muted);
 	line-height: 1.7;
 }
+.error-card .actions {
+	margin-bottom: 2rem;
+}
 @media (max-width: 900px) {
 	header {
 		grid-template-columns: 1fr auto;
