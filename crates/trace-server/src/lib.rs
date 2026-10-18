@@ -622,6 +622,10 @@ fn shared_session_html(summary: &SharedSessionSummary, public_base_url: &str) ->
         summary.car,
         summary.track
     );
+    let open_url = format!(
+        "trace://shared-session?url={}",
+        percent_encode_component(&summary.download_url)
+    );
     render_page(
         include_str!("../assets/site/shared.html"),
         &title,
@@ -637,10 +641,24 @@ fn shared_session_html(summary: &SharedSessionSummary, public_base_url: &str) ->
         &escape_html(&format_session_type(&summary.session_type)),
     )
     .replace("{{TRACE_LAPS}}", &summary.lap_count.to_string())
+    .replace("{{TRACE_OPEN_URL}}", &escape_html(&open_url))
     .replace(
         "{{TRACE_DOWNLOAD_URL}}",
         &escape_html(&summary.download_url),
     )
+}
+
+fn percent_encode_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+                char::from(byte).to_string()
+            } else {
+                format!("%{byte:02X}")
+            }
+        })
+        .collect()
 }
 
 async fn spectator_styles() -> impl IntoResponse {
@@ -1422,6 +1440,12 @@ mod tests {
             .expect("share page body");
         let page = String::from_utf8(page.to_vec()).expect("share page HTML");
         assert!(page.contains("Alex at Zandvoort"));
+        assert!(page.contains("Open in TRACE"));
+        let open_url_prefix = concat!(
+            "trace://shared-session?url=https%3A%2F%2Flive.simtrace.run%2Fapi%2Fv1%",
+            "2Fshared-sessions%2F"
+        );
+        assert!(page.contains(open_url_prefix));
         assert!(!page.contains("{{TRACE_"));
 
         let download = restarted

@@ -1,13 +1,16 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use futures_util::StreamExt;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+use tauri_plugin_deep_link::DeepLinkExt;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use trace_core::{
     analysis::{AnalysisResult, ComparisonContext},
@@ -349,6 +352,19 @@ struct SessionImport {
 }
 
 const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_SHARED_SESSION_DOWNLOAD_BYTES: u64 = 128 * 1024 * 1024;
+
+#[derive(Clone, Default)]
+struct SharedSessionImportState(Arc<Mutex<Option<SharedSessionImportResult>>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedSessionImportResult {
+    success: bool,
+    session_id: Option<String>,
+    lap_count: Option<usize>,
+    message: String,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2164,6 +2180,14 @@ fn import_trace_session(
         .metadata()
         .map_err(|error| format!("failed to inspect TRACE session: {error}"))?
         .len();
+    import_trace_reader(app, source, file_length)
+}
+
+fn import_trace_reader<R: Read + Seek>(
+    app: &tauri::AppHandle,
+    source: R,
+    file_length: u64,
+) -> Result<SessionImport, String> {
     let package = read_package(source, file_length, MAX_SESSION_BYTES)
         .map_err(|error| format!("invalid TRACE session package: {error:?}"))?;
     let manifest = package.manifest;
@@ -2255,6 +2279,140 @@ fn import_trace_session(
         sample_count: manifest.sample_count,
         setup_name: manifest.confirmed_setup.map(|setup| setup.name),
     })
+}
+
+#[tauri::command]
+fn take_shared_session_import_result(
+    state: tauri::State<'_, SharedSessionImportState>,
+) -> Option<SharedSessionImportResult> {
+    state.0.lock().ok()?.take()
+}
+
+fn shared_session_download_url(value: &str) -> Result<reqwest::Url, String> {
+    let deep_link = reqwest::Url::parse(value).map_err(|_| "invalid TRACE share link")?;
+    if deep_link.scheme() != "trace" || deep_link.host_str() != Some("shared-session") {
+        return Err("unsupported TRACE link".into());
+    }
+    let download = deep_link
+        .query_pairs()
+        .find_map(|(key, value)| (key == "url").then(|| value.into_owned()))
+        .ok_or_else(|| "TRACE share link is missing its download URL".to_owned())?;
+    let download =
+        reqwest::Url::parse(&download).map_err(|_| "TRACE share download URL is invalid")?;
+    if !matches!(download.scheme(), "https" | "http")
+        || download.host_str().is_none()
+        || !download.username().is_empty()
+        || download.password().is_some()
+        || download.fragment().is_some()
+    {
+        return Err("TRACE share download URL is not allowed".into());
+    }
+    Ok(download)
+}
+
+async fn download_shared_session(
+    app: tauri::AppHandle,
+    deep_link: String,
+) -> Result<SessionImport, String> {
+    let download_url = shared_session_download_url(&deep_link)?;
+    let response = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|error| format!("failed to prepare shared-session download: {error}"))?
+        .get(download_url)
+        .send()
+        .await
+        .map_err(|error| format!("failed to download shared session: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "shared-session download failed with {}",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SHARED_SESSION_DOWNLOAD_BYTES)
+    {
+        return Err("shared TRACE session exceeds the 128 MiB download limit".into());
+    }
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or(0),
+    );
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("shared-session download failed: {error}"))?;
+        let next_length = body
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| "shared TRACE session size overflowed".to_owned())?;
+        if u64::try_from(next_length).unwrap_or(u64::MAX) > MAX_SHARED_SESSION_DOWNLOAD_BYTES {
+            return Err("shared TRACE session exceeds the 128 MiB download limit".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let file_length =
+        u64::try_from(body.len()).map_err(|_| "shared TRACE session size overflowed".to_owned())?;
+    import_trace_reader(&app, Cursor::new(body), file_length)
+}
+
+fn publish_shared_session_import(app: &tauri::AppHandle, result: SharedSessionImportResult) {
+    if let Ok(mut pending) = app.state::<SharedSessionImportState>().0.lock() {
+        *pending = Some(result.clone());
+    }
+    let _ = app.emit("shared-session-imported", result);
+}
+
+fn handle_shared_session_links(app: &tauri::AppHandle, urls: Vec<String>) {
+    let Some(url) = urls
+        .into_iter()
+        .find(|url| shared_session_download_url(url).is_ok())
+    else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = match download_shared_session(app.clone(), url).await {
+            Ok(imported) => SharedSessionImportResult {
+                success: true,
+                session_id: Some(imported.session_id),
+                lap_count: Some(imported.lap_count),
+                message: "The shared telemetry is ready in your session library.".into(),
+            },
+            Err(message) => SharedSessionImportResult {
+                success: false,
+                session_id: None,
+                lap_count: None,
+                message,
+            },
+        };
+        publish_shared_session_import(&app, result);
+    });
+}
+
+fn setup_shared_session_links(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = app.handle().clone();
+    app.deep_link().on_open_url(move |event| {
+        tray::show_main_window(&handle);
+        handle_shared_session_links(
+            &handle,
+            event
+                .urls()
+                .into_iter()
+                .map(|url| url.to_string())
+                .collect(),
+        );
+    });
+    if let Some(urls) = app.deep_link().get_current()? {
+        handle_shared_session_links(
+            app.handle(),
+            urls.into_iter().map(|url| url.to_string()).collect(),
+        );
+    }
+    Ok(())
 }
 
 fn restore_package_setup(
@@ -2991,6 +3149,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main_window(app);
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -3000,8 +3159,12 @@ pub fn run() {
         .manage(SharedLiveBroadcast::default())
         .manage(SharedDiscordActivity::default())
         .manage(CloseToTrayState::default())
+        .manage(SharedSessionImportState::default())
         .on_window_event(tray::handle_window_event)
-        .setup(move |app| setup_app(app, &adapter_identity))
+        .setup(move |app| {
+            setup_app(app, &adapter_identity)?;
+            setup_shared_session_links(app)
+        })
         .invoke_handler(tauri::generate_handler![
             foundation_status,
             set_replay_capture_armed,
@@ -3050,6 +3213,7 @@ pub fn run() {
             share_session,
             preview_motec_import,
             import_session,
+            take_shared_session_import_result,
             delete_session,
             update_session_details
         ])
@@ -3075,6 +3239,26 @@ mod tests {
             safe_export_component("  Mazda MX-5 Cup  "),
             "Mazda-MX-5-Cup"
         );
+    }
+
+    #[test]
+    fn shared_session_links_allow_bounded_web_downloads_only() {
+        let parsed = shared_session_download_url(
+            "trace://shared-session?url=https%3A%2F%2Flive.simtrace.run%2Fapi%2Fv1%2Fshared-sessions%2Fabc%2Fdownload",
+        )
+        .expect("valid shared-session link");
+        assert_eq!(
+            parsed.as_str(),
+            "https://live.simtrace.run/api/v1/shared-sessions/abc/download"
+        );
+        for invalid in [
+            "https://live.simtrace.run/s/abc",
+            "trace://other?url=https%3A%2F%2Flive.simtrace.run%2Ffile",
+            "trace://shared-session?url=file%3A%2F%2F%2Ftmp%2Fsession.trace",
+            "trace://shared-session?url=https%3A%2F%2Fuser%3Asecret%40example.com%2Ffile",
+        ] {
+            assert!(shared_session_download_url(invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

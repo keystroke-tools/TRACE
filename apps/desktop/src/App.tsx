@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	telemetryDataSource,
@@ -7,6 +9,7 @@ import {
 	type LiveBroadcastStatus,
 	type LiveSettings,
 	type RecordedSessionSummary,
+	type SharedSessionImportResult,
 	type TelemetryStatus,
 } from "./data-source";
 import { Footer } from "./app/Footer";
@@ -47,12 +50,54 @@ export function App() {
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
+	const handledSharedImport = useRef<string | null>(null);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
 	const summarySession = sessions.find((session) => session.id === summarySessionId) ?? null;
 
 	useEffect(() => {
 		if (autoIndexSetupsEnabled()) void indexDetectedSetupLibraries();
 	}, []);
+
+	useEffect(() => {
+		if (!isTauri()) return undefined;
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		const handleImport = (result: SharedSessionImportResult) => {
+			const key = `${result.success}:${result.sessionId ?? ""}:${result.message}`;
+			if (disposed || handledSharedImport.current === key) return;
+			handledSharedImport.current = key;
+			if (!result.success || !result.sessionId) {
+				showToast({ kind: "error", title: "Could not import shared session", message: result.message, timeoutMs: 9_000 });
+				return;
+			}
+			void telemetryDataSource.getSessions().then((nextSessions) => {
+				setSessions(nextSessions);
+				setSection("SESSIONS");
+				setOpenSessionId(result.sessionId ?? null);
+				setOpenLapIndex(null);
+				showToast({
+					kind: "success",
+					title: "Shared session imported",
+					message: `${result.lapCount ?? 0} ${result.lapCount === 1 ? "lap" : "laps"} added to your library.`,
+					timeoutMs: 6_000,
+				});
+			});
+		};
+		void listen<SharedSessionImportResult>("shared-session-imported", (event) => handleImport(event.payload)).then((stop) => {
+			if (disposed) {
+				stop();
+				return;
+			}
+			unlisten = stop;
+			void telemetryDataSource.takeSharedSessionImportResult().then((result) => {
+				if (result) handleImport(result);
+			});
+		});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, [showToast]);
 	const selectLiveMode = async (mode: LiveBroadcastOptions["mode"]) => {
 		if (!liveSettings || liveSettings.autoStream.mode === mode) return;
 		try {

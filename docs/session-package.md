@@ -91,4 +91,11 @@ their server-reported expiry. Reopening the lap picker allows a link to be copie
 requesting the exact same lap selection reuses the active link rather than uploading a
 duplicate package. Expired history is discarded automatically.
 
+Hosted download pages expose both a normal package download and an **Open in TRACE**
+link. Installed desktop builds register the `trace:` URL scheme. Activating that link
+hands the HTTP(S) package URL to the existing single TRACE instance, bounds the download
+to 128 MiB, validates the package and Arrow stream through the normal importer, and
+opens the imported session in the library. The browser download remains available when
+TRACE is not installed or protocol launching is blocked.
+
 Local `.trace` export remains separate and never contacts the hosted service.
