@@ -523,7 +523,7 @@ function connect() {
 		} else if (payload.type === "telemetry_batch") {
 			const data = payload.data || {};
 			telemetryFrames.push(data);
-			if (telemetryFrames.length > 2400) telemetryFrames.shift();
+			if (telemetryFrames.length > 12000) telemetryFrames.shift();
 			if (followingLive) {
 				renderTelemetry(data);
 				renderedBufferTime = elapsedOf(data);

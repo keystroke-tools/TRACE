@@ -5299,6 +5299,7 @@ dependencies = [
  "axum",
  "futures-util",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

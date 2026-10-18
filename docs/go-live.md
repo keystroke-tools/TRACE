@@ -73,10 +73,13 @@ Completed `.trace` shares are stored beneath `/var/lib/trace-server` and expire 
 seven days by default. Set `TRACE_SHARE_TTL_DAYS` in `/etc/trace-server.env` to retain
 them for 1–365 days. Uploads are validated before publication and limited to 128 MiB.
 
-An update restarts the process and interrupts active streams. Publisher credentials
-and live-session buffers remain in memory; completed `.trace` shares persist beneath
-the configured data directory. Durable live state and zero-downtime deployment remain
-future work.
+Live publisher credentials, session state, and the rolling playback window are stored
+in `/var/lib/trace-server/live.sqlite`. `TRACE_LIVE_RETENTION_MINUTES` controls the
+retained window from 1–10 minutes and defaults to 10. Older envelopes are pruned as
+new telemetry arrives. A process restart briefly interrupts connected sockets, but
+the publisher can authenticate again against the same session and spectators receive
+the retained window after reconnecting. Zero-downtime and multi-instance deployment
+remain future work.
 
 ## HTTP API
 
@@ -130,14 +133,12 @@ Each envelope must:
 - have a sequence greater than every previously accepted envelope.
 
 Accepted envelopes are broadcast to connected spectators and retained in a bounded
-2,400-message queue—roughly two minutes when the desktop publishes at 20 Hz. A new
-spectator first receives that retained snapshot in sequence order, then follows new
-messages. Ending a session publishes a terminal `end` envelope to spectators.
-
-The buffer and credentials are intentionally in memory in this first slice. Restarting
-the process therefore ends existing sessions and requires installation bootstrap
-again. Durable credentials/session records, expiry, rate limits, resume acknowledgements,
-and multi-instance fan-out must be added before deploying the public service.
+rolling queue—10 minutes by default when the desktop publishes at 20 Hz. The same tail
+is committed to SQLite, so it survives service and deployment restarts. A new or
+reconnecting spectator first receives that retained snapshot in sequence order, then
+follows new messages. Ending a session publishes a terminal `end` envelope to spectators.
+Rate limits, explicit resume acknowledgements, and multi-instance fan-out remain future
+work.
 
 ## Recorded-session publishing
 
@@ -171,9 +172,10 @@ spectating use the same implementation and do not require a separate frontend pr
 The browser reconnects automatically after a transient WebSocket interruption; a terminal
 session end stops retries and leaves the retained replay visible.
 
-Publisher credentials remain memory-only while the server credential store is also
-memory-only. A failed broadcast discards the cached credential so a later attempt can
-bootstrap against a restarted service.
+The desktop caches publisher credentials for its current process. Hosted services persist
+the authoritative credential hash in SQLite, while the intentionally temporary local-screen
+server keeps it in memory. An authentication rejection discards the desktop cache so a later
+attempt can bootstrap cleanly.
 
 ## Active-capture publishing
 
@@ -221,6 +223,6 @@ includes a human-readable simulator name and compact simulator mark.
 
 ## Next slices
 
-1. Persist installation credentials and live-session lifecycle in the service database.
-2. Add publisher acknowledgements, reconnect/resume negotiation, expiry, and rate limits.
-3. Add explicit publisher acknowledgements and retained-sequence negotiation for multi-instance deployments.
+1. Add publisher acknowledgements, explicit resume negotiation, and rate limits.
+2. Add retained-sequence negotiation and shared fan-out for multi-instance deployments.
+3. Extend the spectator protocol with multi-car timing and privacy controls.

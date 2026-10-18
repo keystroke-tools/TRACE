@@ -35,11 +35,14 @@ use trace_protocol::{
 };
 use uuid::Uuid;
 
+mod live_store;
 mod shares;
 
+use live_store::LiveStore;
 use shares::{ShareStore, ShareStoreError};
 
-const DEFAULT_BUFFER_CAPACITY: usize = 2_400;
+const DEFAULT_BUFFER_CAPACITY: usize = 12_000;
+const DEFAULT_LIVE_RETENTION: Duration = Duration::from_secs(10 * 60);
 const BROADCAST_CAPACITY: usize = 512;
 const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 512 * 1024;
 const DEFAULT_MAX_SHARED_SESSION_BYTES: u64 = 128 * 1024 * 1024;
@@ -50,6 +53,7 @@ const DEFAULT_SHARED_SESSION_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 6
 pub struct ServerConfig {
     public_base_url: String,
     buffer_capacity: usize,
+    live_retention: Duration,
     share_directory: Option<PathBuf>,
     shared_session_ttl: Duration,
     max_shared_session_bytes: u64,
@@ -62,6 +66,7 @@ impl ServerConfig {
         Self {
             public_base_url: public_base_url.into().trim_end_matches('/').to_owned(),
             buffer_capacity: DEFAULT_BUFFER_CAPACITY,
+            live_retention: DEFAULT_LIVE_RETENTION,
             share_directory: None,
             shared_session_ttl: DEFAULT_SHARED_SESSION_TTL,
             max_shared_session_bytes: DEFAULT_MAX_SHARED_SESSION_BYTES,
@@ -82,6 +87,13 @@ impl ServerConfig {
         self
     }
 
+    /// Changes how much recent live telemetry survives for playback and restart recovery.
+    #[must_use]
+    pub fn with_live_retention(mut self, retention: Duration) -> Self {
+        self.live_retention = retention;
+        self
+    }
+
     #[cfg(test)]
     fn with_buffer_capacity(mut self, capacity: usize) -> Self {
         self.buffer_capacity = capacity;
@@ -95,6 +107,7 @@ pub struct LiveService {
     inner: Arc<RwLock<ServiceState>>,
     config: ServerConfig,
     shares: Option<ShareStore>,
+    live_store: Option<LiveStore>,
 }
 
 /// Handle for a server embedded in the desktop process.
@@ -164,8 +177,14 @@ struct LiveSession {
     owner_id: String,
     state: SessionState,
     last_sequence: Option<u64>,
-    buffer: VecDeque<Envelope>,
+    updated_at_unix_ms: i64,
+    buffer: VecDeque<BufferedEnvelope>,
     broadcast: broadcast::Sender<Envelope>,
+}
+
+struct BufferedEnvelope {
+    envelope: Envelope,
+    received_at_unix_ms: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -214,6 +233,12 @@ impl IntoResponse for ServiceError {
 
 impl LiveService {
     /// Creates an empty service state.
+    ///
+    /// # Panics
+    ///
+    /// Panics when durable storage is configured but its `SQLite` database cannot be
+    /// opened or contains invalid live-session data. The standalone service treats
+    /// this as a fatal startup error instead of silently losing persistence.
     #[must_use]
     pub fn new(config: ServerConfig) -> Self {
         let shares = config.share_directory.as_ref().map(|directory| {
@@ -224,10 +249,60 @@ impl LiveService {
                 config.max_shared_session_bytes,
             )
         });
+        let live_store = config.share_directory.as_ref().map(|directory| {
+            LiveStore::open(directory, config.live_retention)
+                .expect("TRACE live persistence could not be opened")
+        });
+        let mut state = ServiceState::default();
+        if let Some(store) = &live_store {
+            let (installations, sessions) = store
+                .load(unix_timestamp_ms())
+                .expect("TRACE live persistence could not be loaded");
+            state.installations = installations
+                .into_iter()
+                .map(|installation| {
+                    (
+                        installation.installation_id,
+                        Installation {
+                            token_hash: installation.token_hash,
+                        },
+                    )
+                })
+                .collect();
+            state.sessions = sessions
+                .into_iter()
+                .map(|session| {
+                    let (broadcast, _) = broadcast::channel(BROADCAST_CAPACITY);
+                    let mut buffer = session
+                        .messages
+                        .into_iter()
+                        .map(|(envelope, received_at_unix_ms)| BufferedEnvelope {
+                            envelope,
+                            received_at_unix_ms,
+                        })
+                        .collect::<VecDeque<_>>();
+                    while buffer.len() > config.buffer_capacity {
+                        buffer.pop_front();
+                    }
+                    (
+                        session.session_id,
+                        LiveSession {
+                            owner_id: session.owner_id,
+                            state: session.state,
+                            last_sequence: session.last_sequence,
+                            updated_at_unix_ms: session.updated_at_unix_ms,
+                            buffer,
+                            broadcast,
+                        },
+                    )
+                })
+                .collect();
+        }
         Self {
-            inner: Arc::new(RwLock::new(ServiceState::default())),
+            inner: Arc::new(RwLock::new(state)),
             config,
             shares,
+            live_store,
         }
     }
 
@@ -246,6 +321,15 @@ impl LiveService {
         let installation = Installation {
             token_hash: hash_token(&publishing_token),
         };
+        if let Some(store) = &self.live_store {
+            store
+                .save_installation(
+                    &installation_id,
+                    &installation.token_hash,
+                    unix_timestamp_ms(),
+                )
+                .map_err(|_| ServiceError::Unavailable)?;
+        }
         self.inner
             .write()
             .map_err(|_| ServiceError::Unavailable)?
@@ -269,12 +353,19 @@ impl LiveService {
         state.status = LiveStatus::Paused;
         validate_session_state(&session_id, &state)?;
         let (broadcast, _) = broadcast::channel(BROADCAST_CAPACITY);
+        let now_unix_ms = unix_timestamp_ms();
+        if let Some(store) = &self.live_store {
+            store
+                .save_session(&session_id, installation_id, &state, now_unix_ms)
+                .map_err(|_| ServiceError::Unavailable)?;
+        }
         service.sessions.insert(
             session_id.clone(),
             LiveSession {
                 owner_id: installation_id.to_owned(),
                 state,
                 last_sequence: None,
+                updated_at_unix_ms: now_unix_ms,
                 buffer: VecDeque::with_capacity(self.config.buffer_capacity),
                 broadcast,
             },
@@ -291,7 +382,8 @@ impl LiveService {
     }
 
     fn summary(&self, session_id: &str) -> Result<LiveSessionSummary, ServiceError> {
-        let service = self.inner.read().map_err(|_| ServiceError::Unavailable)?;
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        self.expire_session(&mut service, session_id, unix_timestamp_ms())?;
         let live = service
             .sessions
             .get(session_id)
@@ -299,8 +391,8 @@ impl LiveService {
         Ok(LiveSessionSummary {
             session_id: session_id.to_owned(),
             session: live.state.clone(),
-            oldest_sequence: live.buffer.front().map(|message| message.sequence),
-            newest_sequence: live.buffer.back().map(|message| message.sequence),
+            oldest_sequence: live.buffer.front().map(|message| message.envelope.sequence),
+            newest_sequence: live.buffer.back().map(|message| message.envelope.sequence),
         })
     }
 
@@ -310,8 +402,9 @@ impl LiveService {
         installation_id: &str,
         token: &str,
     ) -> Result<(), ServiceError> {
-        let service = self.inner.read().map_err(|_| ServiceError::Unavailable)?;
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
         authenticate(&service, installation_id, token)?;
+        self.expire_session(&mut service, session_id, unix_timestamp_ms())?;
         let session = service
             .sessions
             .get(session_id)
@@ -332,6 +425,7 @@ impl LiveService {
         }
 
         let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        self.expire_session(&mut service, session_id, unix_timestamp_ms())?;
         let session = service
             .sessions
             .get_mut(session_id)
@@ -344,7 +438,7 @@ impl LiveService {
                 && session
                     .buffer
                     .back()
-                    .is_some_and(|accepted| accepted.message_id == message.message_id)
+                    .is_some_and(|accepted| accepted.envelope.message_id == message.message_id)
             {
                 return Ok(());
             }
@@ -359,8 +453,21 @@ impl LiveService {
         if matches!(message.payload, Payload::End(_)) {
             session.state.status = LiveStatus::Ended;
         }
+        let received_at_unix_ms = unix_timestamp_ms();
+        if let Some(store) = &self.live_store {
+            store
+                .save_message(session_id, &session.state, &message, received_at_unix_ms)
+                .map_err(|_| ServiceError::Unavailable)?;
+        }
         session.last_sequence = Some(message.sequence);
-        push_buffered(session, message, self.config.buffer_capacity);
+        session.updated_at_unix_ms = received_at_unix_ms;
+        push_buffered(
+            session,
+            message,
+            received_at_unix_ms,
+            self.config.buffer_capacity,
+            self.config.live_retention,
+        );
         Ok(())
     }
 
@@ -368,13 +475,18 @@ impl LiveService {
         &self,
         session_id: &str,
     ) -> Result<(Vec<Envelope>, broadcast::Receiver<Envelope>), ServiceError> {
-        let service = self.inner.read().map_err(|_| ServiceError::Unavailable)?;
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        self.expire_session(&mut service, session_id, unix_timestamp_ms())?;
         let session = service
             .sessions
             .get(session_id)
             .ok_or(ServiceError::NotFound)?;
         Ok((
-            session.buffer.iter().cloned().collect(),
+            session
+                .buffer
+                .iter()
+                .map(|message| message.envelope.clone())
+                .collect(),
             session.broadcast.subscribe(),
         ))
     }
@@ -408,8 +520,45 @@ impl LiveService {
                 reason: "publisher ended the session".to_owned(),
             }),
         };
+        let received_at_unix_ms = unix_timestamp_ms();
+        if let Some(store) = &self.live_store {
+            store
+                .save_message(session_id, &session.state, &message, received_at_unix_ms)
+                .map_err(|_| ServiceError::Unavailable)?;
+        }
         session.last_sequence = Some(sequence);
-        push_buffered(session, message, self.config.buffer_capacity);
+        session.updated_at_unix_ms = received_at_unix_ms;
+        push_buffered(
+            session,
+            message,
+            received_at_unix_ms,
+            self.config.buffer_capacity,
+            self.config.live_retention,
+        );
+        Ok(())
+    }
+
+    fn expire_session(
+        &self,
+        service: &mut ServiceState,
+        session_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<(), ServiceError> {
+        let retention_ms =
+            i64::try_from(self.config.live_retention.as_millis()).unwrap_or(i64::MAX);
+        let cutoff = now_unix_ms.saturating_sub(retention_ms);
+        let expired = service
+            .sessions
+            .get(session_id)
+            .is_some_and(|session| session.updated_at_unix_ms < cutoff);
+        if expired {
+            if let Some(store) = &self.live_store {
+                store
+                    .delete_session(session_id)
+                    .map_err(|_| ServiceError::Unavailable)?;
+            }
+            service.sessions.remove(session_id);
+        }
         Ok(())
     }
 }
@@ -924,11 +1073,29 @@ fn validate_session_state(session_id: &str, state: &SessionState) -> Result<(), 
     .map_err(|_| ServiceError::InvalidMessage)
 }
 
-fn push_buffered(session: &mut LiveSession, message: Envelope, capacity: usize) {
+fn push_buffered(
+    session: &mut LiveSession,
+    message: Envelope,
+    received_at_unix_ms: i64,
+    capacity: usize,
+    retention: Duration,
+) {
+    let retention_ms = i64::try_from(retention.as_millis()).unwrap_or(i64::MAX);
+    let cutoff = received_at_unix_ms.saturating_sub(retention_ms);
+    while session
+        .buffer
+        .front()
+        .is_some_and(|buffered| buffered.received_at_unix_ms < cutoff)
+    {
+        session.buffer.pop_front();
+    }
     if session.buffer.len() == capacity {
         session.buffer.pop_front();
     }
-    session.buffer.push_back(message.clone());
+    session.buffer.push_back(BufferedEnvelope {
+        envelope: message.clone(),
+        received_at_unix_ms,
+    });
     let _ = session.broadcast.send(message);
 }
 
@@ -1250,6 +1417,44 @@ mod tests {
             ended_snapshot.last().map(|envelope| &envelope.payload),
             Some(Payload::End(_))
         ));
+    }
+
+    #[test]
+    fn durable_live_state_survives_a_service_restart() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let config = ServerConfig::new("https://live.simtrace.run")
+            .with_share_directory(directory.path())
+            .with_live_retention(Duration::from_secs(600));
+        let service = LiveService::new(config.clone());
+        let credentials = service.bootstrap_installation().expect("credentials");
+        let created = service
+            .create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            )
+            .expect("session");
+        service
+            .publish(&created.session_id, message(&created.session_id, 7))
+            .expect("publish");
+        drop(service);
+
+        let restarted = LiveService::new(config);
+        restarted
+            .authorize_session(
+                &created.session_id,
+                &credentials.installation_id,
+                &credentials.publishing_token,
+            )
+            .expect("persisted credentials and ownership");
+        let summary = restarted.summary(&created.session_id).expect("summary");
+        assert_eq!(summary.oldest_sequence, Some(7));
+        assert_eq!(summary.newest_sequence, Some(7));
+        let (snapshot, _) = restarted
+            .subscribe(&created.session_id)
+            .expect("subscription");
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].message_id, "message_7");
     }
 
     #[tokio::test]

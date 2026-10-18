@@ -158,9 +158,10 @@ boundaries.
 
 ## Spectator time shifting
 
-The spectator page needs a bounded playback buffer rather than a latest-frame-only
-view. Its seek bar spans the telemetry still retained by the service and ends with a
-`LIVE ●` control at the current broadcast edge.
+The spectator page uses a durable bounded playback buffer rather than a
+latest-frame-only view. Its seek bar spans the telemetry still retained by the service
+and ends with a `LIVE ●` control at the current broadcast edge. Hosted deployments
+default to ten minutes and may configure a shorter 1–10 minute window.
 
 - Dragging or clicking the seek bar moves only that spectator through retained data;
   it does not pause the publisher or affect other spectators.

@@ -260,8 +260,8 @@
 							<summary>Can I rewatch old hosted live sessions?</summary>
 							<div>
 								<p>
-									Not reliably yet. The current live server keeps sessions, credentials, and a bounded telemetry window in memory. A server
-									restart clears them, and durable history with automatic expiry is planned.
+									You can scrub through the server's rolling live window, which defaults to ten minutes and survives service restarts. It is
+									designed for recent pit-wall playback rather than permanent race archives; older telemetry expires automatically.
 								</p>
 							</div>
 						</details>

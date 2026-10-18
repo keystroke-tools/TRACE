@@ -19,6 +19,8 @@ Optional environment variables:
   TRACE_SERVER_REPOSITORY    GitHub owner/repository (default: keystroke-tools/TRACE)
   TRACE_BIND                 Initial listen address (default: 127.0.0.1:8080)
   TRACE_PUBLIC_BASE_URL      Initial public URL (default: https://live.simtrace.run)
+  TRACE_LIVE_RETENTION_MINUTES
+                             Rolling live history, from 1 to 10 minutes (default: 10)
   TRACE_SHARE_TTL_DAYS       Shared-session retention in days (default: 7)
   TRACE_INSTALL_NONINTERACTIVE=1
                              Accept defaults instead of opening the first-install wizard
@@ -77,6 +79,7 @@ if [ ! -f "$ENV_PATH" ]; then
     new_configuration=true
     bind="${TRACE_BIND:-}"
     public_base_url="${TRACE_PUBLIC_BASE_URL:-}"
+    live_retention_minutes="${TRACE_LIVE_RETENTION_MINUTES:-}"
 
     if [ "$interactive" = true ]; then
         printf '\nTRACE Go Live server — first-time setup\n' > /dev/tty
@@ -87,19 +90,25 @@ if [ ! -f "$ENV_PATH" ]; then
         if [ -z "$public_base_url" ]; then
             public_base_url="$(prompt_value "Public URL" "https://live.simtrace.run")"
         fi
+        if [ -z "$live_retention_minutes" ]; then
+            live_retention_minutes="$(prompt_value "Live playback history in minutes (1-10)" "10")"
+        fi
     else
         bind="${bind:-127.0.0.1:8080}"
         public_base_url="${public_base_url:-https://live.simtrace.run}"
+        live_retention_minutes="${live_retention_minutes:-10}"
         printf 'No interactive terminal detected; using supplied values or first-install defaults.\n'
     fi
 
     case "$bind" in *[!A-Za-z0-9.:_-]*) fail "TRACE_BIND contains unsupported characters" ;; esac
     case "$public_base_url" in http://* | https://*) ;; *) fail "TRACE_PUBLIC_BASE_URL must use HTTP or HTTPS" ;; esac
     case "$public_base_url" in *[!A-Za-z0-9.:/_-]*) fail "TRACE_PUBLIC_BASE_URL contains unsupported characters" ;; esac
+    case "$live_retention_minutes" in 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) ;; *) fail "TRACE_LIVE_RETENTION_MINUTES must be between 1 and 10" ;; esac
 
     printf '\nConfiguration:\n'
     printf '  Listen address: %s\n' "$bind"
     printf '  Public URL:     %s\n' "$public_base_url"
+    printf '  Live history:   %s minutes\n' "$live_retention_minutes"
     if [ "$interactive" = true ] && ! confirm_install; then
         printf 'Installation cancelled.\n'
         exit 0
@@ -154,7 +163,7 @@ tar -xzf "${temporary_directory}/${archive}" -C "$temporary_directory"
 
 if [ "$new_configuration" = true ]; then
     install -m 0600 /dev/null "$ENV_PATH"
-    printf 'TRACE_BIND=%s\nTRACE_PUBLIC_BASE_URL=%s\n' "$bind" "$public_base_url" > "$ENV_PATH"
+    printf 'TRACE_BIND=%s\nTRACE_PUBLIC_BASE_URL=%s\nTRACE_LIVE_RETENTION_MINUTES=%s\n' "$bind" "$public_base_url" "$live_retention_minutes" > "$ENV_PATH"
     printf 'Created %s\n' "$ENV_PATH"
 fi
 
