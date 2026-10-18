@@ -94,6 +94,8 @@ struct OpenLap {
     current_sector_index: Option<u32>,
     pending_sector: Option<PendingSector>,
     initial_boundary_candidate: Option<InitialBoundaryCandidate>,
+    minimum_lap_position: Option<f32>,
+    maximum_lap_position: Option<f32>,
     sectors: Vec<RecordedSector>,
 }
 
@@ -108,6 +110,7 @@ struct InitialBoundaryCandidate {
     sample_start: u64,
     started_offset_ns: u64,
     sector: Option<u32>,
+    lap_position: Option<f32>,
 }
 
 const INITIAL_BOUNDARY_CONFIRMATION_NS: u64 = 1_000_000_000;
@@ -254,6 +257,7 @@ impl ActiveSession {
 
         let sample_index = self.sample_count;
         self.resynchronize_initial_lap_boundary(frame, sample_index);
+        self.observe_lap_position(frame);
         self.observe_sector(frame);
         if let Some(completed_laps) = frame.lap.completed_laps {
             match self.current_lap.as_ref() {
@@ -269,21 +273,22 @@ impl ActiveSession {
                         current_sector_index: frame.lap.current_sector_index,
                         pending_sector: None,
                         initial_boundary_candidate: None,
+                        minimum_lap_position: frame.lap.normalized_position,
+                        maximum_lap_position: frame.lap.normalized_position,
                         sectors: Vec::new(),
                     });
                 }
                 Some(open) if completed_laps == open.index => {}
                 Some(open) if completed_laps == open.index + 1 => {
                     let open = self.current_lap.take().expect("open lap exists");
+                    let partial = !open.started_at_boundary || !open.has_full_position_coverage();
                     self.laps.push(RecordedLap {
                         lap_index: open.index.saturating_add(1),
                         started_offset_ns: open.started_offset_ns,
-                        duration_ns: open
-                            .started_at_boundary
-                            .then_some(frame.elapsed.0 - open.started_offset_ns),
+                        duration_ns: (!partial).then_some(frame.elapsed.0 - open.started_offset_ns),
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
-                        partial: !open.started_at_boundary,
+                        partial,
                         validity_observed: open.validity_observed,
                         invalidated: open.invalidated,
                         max_tyres_out: open.max_tyres_out,
@@ -300,6 +305,8 @@ impl ActiveSession {
                         current_sector_index: frame.lap.current_sector_index,
                         pending_sector: None,
                         initial_boundary_candidate: None,
+                        minimum_lap_position: frame.lap.normalized_position,
+                        maximum_lap_position: frame.lap.normalized_position,
                         sectors: Vec::new(),
                     });
                 }
@@ -361,6 +368,7 @@ impl ActiveSession {
                 sample_start: sample_index,
                 started_offset_ns: frame.elapsed.0,
                 sector: frame.lap.current_sector_index,
+                lap_position: frame.lap.normalized_position,
             });
             return;
         }
@@ -381,8 +389,27 @@ impl ActiveSession {
             current_sector_index: candidate.sector,
             pending_sector: None,
             initial_boundary_candidate: None,
+            minimum_lap_position: candidate.lap_position,
+            maximum_lap_position: candidate.lap_position,
             sectors: Vec::new(),
         };
+    }
+
+    fn observe_lap_position(&mut self, frame: &TelemetryFrame) {
+        let Some(position) = frame.lap.normalized_position else {
+            return;
+        };
+        let Some(open) = self.current_lap.as_mut() else {
+            return;
+        };
+        open.minimum_lap_position = Some(
+            open.minimum_lap_position
+                .map_or(position, |current| current.min(position)),
+        );
+        open.maximum_lap_position = Some(
+            open.maximum_lap_position
+                .map_or(position, |current| current.max(position)),
+        );
     }
 
     fn observe_sector(&mut self, frame: &TelemetryFrame) {
@@ -444,6 +471,15 @@ impl ActiveSession {
     }
 }
 
+impl OpenLap {
+    fn has_full_position_coverage(&self) -> bool {
+        match (self.minimum_lap_position, self.maximum_lap_position) {
+            (Some(minimum), Some(maximum)) => maximum - minimum >= 0.8,
+            _ => true,
+        }
+    }
+}
+
 fn upsert_sector(sectors: &mut Vec<RecordedSector>, sector: RecordedSector) {
     if let Some(existing) = sectors
         .iter_mut()
@@ -485,6 +521,18 @@ mod tests {
             },
             ..TelemetryFrame::default()
         }
+    }
+
+    fn frame_at_position(
+        sequence: u64,
+        elapsed: u64,
+        completed: u32,
+        lap_time: u64,
+        position: f32,
+    ) -> TelemetryFrame {
+        let mut value = frame(sequence, elapsed, completed, lap_time);
+        value.lap.normalized_position = Some(position);
+        value
     }
 
     #[test]
@@ -608,6 +656,35 @@ mod tests {
         assert!(session.laps[0].partial);
         assert_eq!(session.laps[0].duration_ns, None);
         assert_eq!(session.laps[1].duration_ns, Some(200));
+    }
+
+    #[test]
+    fn rejects_a_lap_counter_increment_without_full_track_coverage() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for value in [
+            frame_at_position(1, 100, 0, 90, 0.9),
+            frame_at_position(2, 200, 1, 0, 0.0),
+            frame_at_position(3, 300, 1, 100, 0.02),
+            frame_at_position(4, 400, 2, 0, 0.0),
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps.len(), 2);
+        assert!(session.laps[1].partial);
+        assert_eq!(session.laps[1].duration_ns, None);
     }
 
     #[test]

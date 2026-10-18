@@ -49,8 +49,32 @@ function completedLaps(session: RecordedSessionSummary) {
 	return session.laps.filter((lap) => typeof lap.durationNs === "number" && lap.durationNs > 0);
 }
 
-function paceLaps(session: RecordedSessionSummary) {
-	return completedLaps(session).filter((lap) => lap.validity !== "invalid");
+function sectorCount(lap: RecordedSessionSummary["laps"][number]) {
+	return new Set(lap.sectors.map((sector) => sector.index)).size;
+}
+
+function expectedSectorCounts(sessions: RecordedSessionSummary[]) {
+	const frequencies = new Map<string, Map<number, number>>();
+	for (const session of sessions) {
+		const key = [session.simulatorId, session.track, session.car].join("\u0000");
+		const counts = frequencies.get(key) ?? new Map<number, number>();
+		for (const lap of completedLaps(session)) {
+			if (lap.validity === "invalid") continue;
+			const count = sectorCount(lap);
+			if (count > 0) counts.set(count, (counts.get(count) ?? 0) + 1);
+		}
+		frequencies.set(key, counts);
+	}
+	return new Map(
+		[...frequencies].flatMap(([key, counts]) => {
+			const expected = [...counts].sort((left, right) => right[1] - left[1] || right[0] - left[0])[0]?.[0];
+			return expected == null ? [] : [[key, expected] as const];
+		}),
+	);
+}
+
+function paceLaps(session: RecordedSessionSummary, expectedSectors?: number) {
+	return completedLaps(session).filter((lap) => lap.validity !== "invalid" && (expectedSectors == null || sectorCount(lap) === expectedSectors));
 }
 
 function rank(
@@ -72,18 +96,19 @@ function rank(
 
 export function calculateDrivingStats(allSessions: RecordedSessionSummary[]): DrivingStats {
 	const sessions = allSessions.filter(isDrivenSession);
+	const sectorCounts = expectedSectorCounts(sessions);
 	const combinations = new Map<string, CombinationStat>();
 	let lapCount = 0;
 	let drivingTimeNs = 0;
 
 	for (const session of sessions) {
 		const completed = completedLaps(session);
-		const laps = paceLaps(session);
+		const key = [session.simulatorId, session.track, session.car].join("\u0000");
+		const laps = paceLaps(session, sectorCounts.get(key));
 		lapCount += completed.length;
 		drivingTimeNs += completed.reduce((total, lap) => total + (lap.durationNs ?? 0), 0);
 		if (laps.length === 0) continue;
 		const bestLapNs = Math.min(...laps.map((lap) => lap.durationNs as number));
-		const key = [session.simulatorId, session.track, session.car].join("\u0000");
 		const current = combinations.get(key);
 		if (!current) {
 			combinations.set(key, {

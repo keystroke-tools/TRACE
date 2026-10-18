@@ -31,6 +31,10 @@ function lap(index: number, seconds: number, validity: "valid" | "invalid" | "un
 	};
 }
 
+function sectors(count: number) {
+	return Array.from({ length: count }, (_, index) => ({ index: index + 1, time: "0:30.000", durationNs: 30_000_000_000 }));
+}
+
 describe("calculateDrivingStats", () => {
 	it("ranks recorded driving and excludes imported and replay sessions", () => {
 		const stats = calculateDrivingStats([
@@ -57,5 +61,18 @@ describe("calculateDrivingStats", () => {
 		expect(combination.bestSessionId).toBe("later");
 		expect(combination.lapCount).toBe(4);
 		expect(combination.points.map((point) => point.sessionId)).toEqual(["first", "later"]);
+	});
+
+	it("does not promote an incomplete lap fragment over laps with the normal sector set", () => {
+		const stats = calculateDrivingStats([
+			session({
+				id: "race",
+				startedAt: "2026-10-17T12:00:00Z",
+				laps: [{ ...lap(1, 133), sectors: sectors(3) }, { ...lap(2, 132), sectors: sectors(3) }, lap(3, 10.8)],
+			}),
+		]);
+
+		expect(stats.combinations[0].bestLapNs).toBe(132_000_000_000);
+		expect(stats.combinations[0].lapCount).toBe(3);
 	});
 });
