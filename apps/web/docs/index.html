@@ -28,7 +28,7 @@
 			<div class="header-actions">
 				<a class="text-link github-link" href="https://github.com/keystroke-tools/TRACE">GitHub</a>
 				<a class="text-link mobile-docs-link" href="/faq/">FAQ</a>
-				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.7.2</span></a>
+				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.7.3</span></a>
 			</div>
 		</header>
 
@@ -49,7 +49,7 @@
 				</div>
 				<dl class="content-facts reveal">
 					<div>
-						<dt>SUPPORTED SIM</dt>
+						<dt>SUPPORTED SIMS</dt>
 						<dd>Assetto Corsa and Le Mans Ultimate</dd>
 					</div>
 					<div>
@@ -90,7 +90,8 @@
 						<h2>Quick start</h2>
 						<p class="doc-lead">
 							Install TRACE, leave simulator selection on Auto-detect, then let the recorder follow Assetto Corsa or Le Mans Ultimate. Game
-							folders can be set manually if installation detection needs help.
+							folders can be set manually if installation detection needs help. Both integrations feed TRACE's shared session library and analysis
+							model; simulator-specific channels remain optional rather than being fabricated.
 						</p>
 						<ol class="doc-steps">
 							<li>
@@ -232,14 +233,18 @@
 
 					<section id="sharing" class="doc-section reveal">
 						<span class="doc-index">06</span>
-						<h2>Share a complete session</h2>
+						<h2>Share the laps that matter</h2>
 						<p>
-							Export <code>.trace</code> when another TRACE user needs the session. The compact package contains attribution, metadata, laps,
-							sectors, telemetry, and a setup only when it was explicitly associated with the session.
+							Export <code>.trace</code> when another TRACE user needs your telemetry. Choose one lap, every valid lap, or a custom selection;
+							omitted laps add no telemetry bytes. The compact package contains attribution, metadata, selected laps, sectors, telemetry, and a
+							setup only when it was explicitly associated with the session.
 						</p>
 						<div class="doc-callout">
 							<strong>Use <code>.trace</code> for TRACE-to-TRACE sharing.</strong
-							><span>CSV and Arrow are specialist data exports and do not carry the complete portable session.</span>
+							><span
+								>Save it locally or create an expiring hosted link. CSV and Arrow are specialist exports without the complete portable
+								session.</span
+							>
 						</div>
 					</section>
 

@@ -34,7 +34,7 @@
 			<div class="header-actions">
 				<a class="text-link github-link" href="https://github.com/keystroke-tools/TRACE">GitHub</a>
 				<a class="text-link mobile-docs-link" href="/docs/">Docs</a>
-				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.7.2</span></a>
+				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.7.3</span></a>
 			</div>
 		</header>
 
@@ -67,7 +67,8 @@
 							<div>
 								<p>
 									Assetto Corsa and Le Mans Ultimate are supported today. TRACE auto-detects whichever supported simulator starts sending
-									telemetry, while manual selection remains available for troubleshooting.
+									telemetry, while manual selection remains available for troubleshooting. TRACE itself is multi-sim: each integration maps
+									into a shared telemetry and session model, so future simulators do not require a separate library or comparison experience.
 								</p>
 							</div>
 						</details>
@@ -93,8 +94,9 @@
 							<summary>Can I import MoTeC files?</summary>
 							<div>
 								<p>
-									Not yet. MoTeC import and export remain planned work. Do not convert a MoTeC log to CSV and expect it to become a complete
-									TRACE session automatically.
+									TRACE can import supported MoTeC <code>.ld</code> logs and automatically uses a matching <code>.ldx</code> sidecar when one
+									is present. Logs from different simulators can be imported, but the available identity, lap, sector, and channel metadata
+									depends on what the producer wrote. MoTeC export remains future work.
 								</p>
 							</div>
 						</details>
@@ -181,8 +183,9 @@
 							<summary>Can a friend send me their telemetry?</summary>
 							<div>
 								<p>
-									Yes. Ask them to export the session as a <code>.trace</code> package, then import it in your session library. Driver
-									attribution, laps, sectors, telemetry, tags, and an explicitly associated setup travel with it.
+									Yes. They can select the useful laps and either save a local <code>.trace</code> package or create an expiring hosted
+									download link. Import the downloaded package into your session library; driver attribution, selected laps, sectors,
+									telemetry, tags, and an explicitly associated setup travel with it.
 								</p>
 							</div>
 						</details>

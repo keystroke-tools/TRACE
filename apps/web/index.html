@@ -6,16 +6,16 @@
 		<meta name="theme-color" content="#101010" />
 		<meta
 			name="description"
-			content="TRACE is a local-first racing telemetry recorder and lap comparison tool built to make driving data understandable."
+			content="TRACE is a local-first, multi-simulator telemetry recorder and lap comparison tool built to make driving data understandable."
 		/>
 		<meta property="og:title" content="TRACE — Understand every lap" />
-		<meta property="og:description" content="Record, compare, and share racing telemetry without needing to become a data engineer." />
+		<meta property="og:description" content="Record, compare, and share telemetry across supported racing simulators without becoming a data engineer." />
 		<meta property="og:type" content="website" />
 		<meta property="og:url" content="https://simtrace.run" />
 		<meta property="og:image" content="https://simtrace.run/screenshots/trace-comparison.png" />
 		<meta name="twitter:card" content="summary_large_image" />
 		<meta name="twitter:title" content="TRACE — Understand every lap" />
-		<meta name="twitter:description" content="Record, compare, and share approachable racing telemetry." />
+		<meta name="twitter:description" content="Local-first, approachable telemetry across supported racing simulators." />
 		<meta name="twitter:image" content="https://simtrace.run/screenshots/trace-comparison.png" />
 		<link rel="canonical" href="https://simtrace.run/" />
 		<link rel="icon" href="/trace-mark.svg" type="image/svg+xml" />
@@ -34,7 +34,7 @@
 			<div class="header-actions">
 				<a class="text-link github-link" href="https://github.com/keystroke-tools/TRACE">GitHub</a>
 				<a class="text-link mobile-docs-link" href="/docs/">Docs</a>
-				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.7.2</span></a>
+				<a class="button button-small" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download <span>v0.7.3</span></a>
 			</div>
 		</header>
 
@@ -42,11 +42,11 @@
 			<section class="hero" id="top">
 				<div class="hero-grid" aria-hidden="true"></div>
 				<div class="hero-copy reveal">
-					<div class="eyebrow"><span class="status-dot"></span> Local-first racing telemetry</div>
+					<div class="eyebrow"><span class="status-dot"></span> Local-first · multi-sim telemetry</div>
 					<h1>Find the lap time<br /><em>hiding in your data.</em></h1>
 					<p>
-						TRACE records your driving, aligns every lap by distance, and shows where time was gained or lost—in a workspace made for drivers, not
-						data engineers.
+						TRACE brings telemetry from supported racing simulators into one library, aligns every lap by distance, and shows where time was gained
+						or lost—in a workspace made for drivers, not data engineers.
 					</p>
 					<div class="hero-actions">
 						<a class="button" href="https://github.com/keystroke-tools/TRACE/releases/latest"
@@ -55,7 +55,7 @@
 						<a class="button button-ghost" href="/docs/">Read the guide <span aria-hidden="true">→</span></a>
 					</div>
 					<div class="hero-meta">
-						<span>Windows 10/11</span><span>Assetto Corsa + LMU</span><span>No account required</span><span>MIT licensed</span>
+						<span>Windows 10/11</span><span>Multi-sim · AC + LMU today</span><span>No account required</span><span>MIT licensed</span>
 					</div>
 				</div>
 				<div class="hero-product reveal">
@@ -78,7 +78,7 @@
 			</section>
 
 			<section class="signal-strip" aria-label="TRACE workflow summary">
-				<div><span>01</span><strong>CAPTURE</strong><small>Drive or AC playback</small></div>
+				<div><span>01</span><strong>CAPTURE</strong><small>Supported sims + imports</small></div>
 				<div><span>02</span><strong>COMPARE</strong><small>Distance-aligned laps</small></div>
 				<div><span>03</span><strong>UNDERSTAND</strong><small>Inputs, line, and corners</small></div>
 				<div><span>04</span><strong>SHARE</strong><small>Portable .trace sessions</small></div>
@@ -90,7 +90,8 @@
 					<h2>See what changed.<br />Know what to try next.</h2>
 					<p>
 						TRACE turns raw simulator telemetry into synchronized, approachable evidence. It does not pretend a heuristic is a coach—and it never
-						hides the underlying data.
+						hides the underlying data. Simulator-specific adapters feed the same analysis model, so the library and comparison tools are not tied to
+						one game.
 					</p>
 				</div>
 				<div class="feature-grid">
@@ -266,11 +267,11 @@
 			<section class="download-section">
 				<div class="download-mark" aria-hidden="true">//</div>
 				<div class="reveal">
-					<span class="kicker">TRACE v0.7.2</span>
+					<span class="kicker">TRACE v0.7.3</span>
 					<h2>There is time<br />in the lap.</h2>
 					<p>
 						Install TRACE once, then get future releases through the app with cryptographically verified updates. Assetto Corsa and Le Mans Ultimate
-						are supported through simulator-specific adapters over a shared data model.
+						are the current integrations; simulator-specific adapters map both into the same portable data model, with room for more sims.
 					</p>
 					<div class="hero-actions">
 						<a class="button" href="https://github.com/keystroke-tools/TRACE/releases/latest">Download Windows installer <span>↘</span></a
