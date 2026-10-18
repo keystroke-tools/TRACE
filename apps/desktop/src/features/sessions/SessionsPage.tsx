@@ -37,6 +37,7 @@ import {
 	theoreticalBestLap,
 } from "./session-components";
 import { MotecImportModal } from "./MotecImportModal";
+import { LapPackageDialog, type LapPackageAction } from "./LapPackageDialog";
 
 function extension(path: string) {
 	const fileName = path.replaceAll("\\", "/").split("/").pop() ?? "";
@@ -375,7 +376,7 @@ function SessionRow({
 	const [draftOwnership, setDraftOwnership] = useState<RecordedSessionSummary["ownership"]>(session.ownership);
 	const [draftTags, setDraftTags] = useState(session.tags.join(", "));
 	const [exporting, setExporting] = useState(false);
-	const [sharing, setSharing] = useState(false);
+	const [packageAction, setPackageAction] = useState<LapPackageAction | null>(null);
 	const [deleting, setDeleting] = useState(false);
 	const [savingDetails, setSavingDetails] = useState(false);
 	const actionsMenu = useRef<HTMLDivElement>(null);
@@ -427,32 +428,6 @@ function SessionRow({
 		}
 	}
 
-	async function shareTelemetry() {
-		setSharing(true);
-		try {
-			const result = await telemetryDataSource.shareSession(session.id);
-			let copied = false;
-			try {
-				await navigator.clipboard.writeText(result.shareUrl);
-				copied = true;
-			} catch {
-				// The URL remains visible in the notification when clipboard access is unavailable.
-			}
-			showToast({
-				kind: "success",
-				title: copied ? "Share link copied" : "Share link created",
-				message: copied
-					? `Anyone with the link can download this session until ${new Date(result.expiresAtUnixMs).toLocaleString()}.`
-					: result.shareUrl,
-				timeoutMs: 9_000,
-			});
-		} catch (error) {
-			showToast({ kind: "error", title: "Could not share session", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
-		} finally {
-			setSharing(false);
-		}
-	}
-
 	async function deleteRecording() {
 		setDeleting(true);
 		const deleted = await onDelete(session);
@@ -483,196 +458,205 @@ function SessionRow({
 	}
 
 	return (
-		<article className="relative border-b border-trace-divider last:border-b-0">
-			<div className="flex items-stretch">
-				<button
-					type="button"
-					aria-label={`View ${session.track} session`}
-					onClick={onOpen}
-					className="group grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_88px_124px_20px] items-center gap-6 border-0 bg-transparent px-5 py-5 text-left hover:bg-trace-raised"
-				>
-					<div className="min-w-0">
-						<div className="flex min-w-0 items-center gap-3">
-							<span className="shrink-0 font-mono text-[12px] font-extrabold tracking-[.1em] text-trace-accent">
-								{friendlySessionType(session)}
-							</span>
-							<h2 className="min-w-0 truncate text-base font-black tracking-[.02em]">{session.title ?? session.track}</h2>
-							{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
-						</div>
-						<span className="mt-2 flex min-w-0 items-center gap-2 text-[12px] text-trace-dim">
-							<span className="shrink-0 text-trace-soft">{session.car}</span>
-							{session.title && (
-								<>
-									<span aria-hidden="true">·</span>
-									<span className="min-w-0 truncate">{session.track}</span>
-								</>
-							)}
-							<span aria-hidden="true">·</span>
-							<Tooltip className="shrink-0" content={session.startedAt}>
-								{formatSessionDate(session.startedAt)}
-							</Tooltip>
-							{session.driver && (
-								<>
-									<span aria-hidden="true">·</span>
-									<span className="min-w-0 truncate text-trace-muted">{session.driver}</span>
-								</>
-							)}
-						</span>
-					</div>
-					<div className="font-mono text-right">
-						<strong className="block text-sm text-trace-soft">{session.laps.length}</strong>
-						<span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
-					</div>
-					<div className="font-mono text-right">
-						<strong className="block text-sm text-trace-soft">{bestLap?.time ?? "—"}</strong>
-						<span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">BEST LAP</span>
-					</div>
-					<svg
-						className="size-4 fill-none stroke-current text-trace-muted transition-transform group-hover:translate-x-0.5 group-hover:text-trace-text"
-						viewBox="0 0 16 16"
-						aria-hidden="true"
+		<>
+			<article className="relative border-b border-trace-divider last:border-b-0">
+				<div className="flex items-stretch">
+					<button
+						type="button"
+						aria-label={`View ${session.track} session`}
+						onClick={onOpen}
+						className="group grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_88px_124px_20px] items-center gap-6 border-0 bg-transparent px-5 py-5 text-left hover:bg-trace-raised"
 					>
-						<path d="m6 4 4 4-4 4" />
-					</svg>
-				</button>
-				<div className="flex shrink-0 items-stretch border-l border-trace-divider">
-					<Tooltip className="h-full" content="Create an expiring share link">
-						<button
-							type="button"
-							aria-label={`Create a share link for ${session.track}`}
-							disabled={sharing || !session.exportable}
-							onClick={() => void shareTelemetry()}
-							className="grid h-full w-12 place-items-center border-0 border-r border-trace-divider bg-transparent text-trace-accent hover:bg-trace-accent-wash hover:text-trace-text disabled:text-trace-dim disabled:hover:bg-transparent"
+						<div className="min-w-0">
+							<div className="flex min-w-0 items-center gap-3">
+								<span className="shrink-0 font-mono text-[12px] font-extrabold tracking-[.1em] text-trace-accent">
+									{friendlySessionType(session)}
+								</span>
+								<h2 className="min-w-0 truncate text-base font-black tracking-[.02em]">{session.title ?? session.track}</h2>
+								{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
+							</div>
+							<span className="mt-2 flex min-w-0 items-center gap-2 text-[12px] text-trace-dim">
+								<span className="shrink-0 text-trace-soft">{session.car}</span>
+								{session.title && (
+									<>
+										<span aria-hidden="true">·</span>
+										<span className="min-w-0 truncate">{session.track}</span>
+									</>
+								)}
+								<span aria-hidden="true">·</span>
+								<Tooltip className="shrink-0" content={session.startedAt}>
+									{formatSessionDate(session.startedAt)}
+								</Tooltip>
+								{session.driver && (
+									<>
+										<span aria-hidden="true">·</span>
+										<span className="min-w-0 truncate text-trace-muted">{session.driver}</span>
+									</>
+								)}
+							</span>
+						</div>
+						<div className="font-mono text-right">
+							<strong className="block text-sm text-trace-soft">{session.laps.length}</strong>
+							<span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
+						</div>
+						<div className="font-mono text-right">
+							<strong className="block text-sm text-trace-soft">{bestLap?.time ?? "—"}</strong>
+							<span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">BEST LAP</span>
+						</div>
+						<svg
+							className="size-4 fill-none stroke-current text-trace-muted transition-transform group-hover:translate-x-0.5 group-hover:text-trace-text"
+							viewBox="0 0 16 16"
+							aria-hidden="true"
 						>
-							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-								<path d="M6.2 9.8 9.8 6.2M5.1 11.9l-1 .9a2.1 2.1 0 0 1-3-3l2.3-2.3a2.1 2.1 0 0 1 3 0M10.9 4.1l1-.9a2.1 2.1 0 0 1 3 3l-2.3 2.3a2.1 2.1 0 0 1-3 0" />
-							</svg>
-						</button>
-					</Tooltip>
-					<div className="relative flex" ref={actionsMenu}>
-						<Tooltip className="h-full" content="Session actions">
+							<path d="m6 4 4 4-4 4" />
+						</svg>
+					</button>
+					<div className="flex shrink-0 items-stretch border-l border-trace-divider">
+						<Tooltip className="h-full" content="Create an expiring share link">
 							<button
 								type="button"
-								aria-label={`Actions for ${session.track} session`}
-								aria-expanded={actionsOpen}
-								onClick={() => {
-									setActionsOpen((value) => !value);
-									setConfirmingDelete(false);
-									setEditingDetails(false);
-									setExportMenuOpen(false);
-								}}
-								className="grid h-full w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+								aria-label={`Create a share link for ${session.track}`}
+								disabled={!session.exportable}
+								onClick={() => setPackageAction("share")}
+								className="grid h-full w-12 place-items-center border-0 border-r border-trace-divider bg-transparent text-trace-accent hover:bg-trace-accent-wash hover:text-trace-text disabled:text-trace-dim disabled:hover:bg-transparent"
 							>
-								<svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
-									<circle cx="3" cy="8" r="1.2" />
-									<circle cx="8" cy="8" r="1.2" />
-									<circle cx="13" cy="8" r="1.2" />
+								<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+									<path d="M6.2 9.8 9.8 6.2M5.1 11.9l-1 .9a2.1 2.1 0 0 1-3-3l2.3-2.3a2.1 2.1 0 0 1 3 0M10.9 4.1l1-.9a2.1 2.1 0 0 1 3 3l-2.3 2.3a2.1 2.1 0 0 1-3 0" />
 								</svg>
 							</button>
 						</Tooltip>
-						{actionsOpen && (
-							<div className="absolute right-0 top-[calc(100%-10px)] z-20 max-h-[calc(100vh-80px)] w-72 overflow-y-auto border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
-								{confirmingDelete ? (
-									<DeleteConfirmation
-										session={session}
-										deleting={deleting}
-										onCancel={() => setConfirmingDelete(false)}
-										onConfirm={() => void deleteRecording()}
-									/>
-								) : editingDetails ? (
-									<SessionDetailsEditor
-										title={draftTitle}
-										driver={draftDriver}
-										ownership={draftOwnership}
-										tags={draftTags}
-										saving={savingDetails}
-										onTitleChange={setDraftTitle}
-										onDriverChange={setDraftDriver}
-										onOwnershipChange={setDraftOwnership}
-										onTagsChange={setDraftTags}
-										onCancel={() => setEditingDetails(false)}
-										onSave={() => void saveDetails()}
-									/>
-								) : (
-									<>
-										<span className="block px-2 pb-2 pt-1 text-[12px] font-bold text-trace-soft">Session actions</span>
-										<button
-											type="button"
-											onClick={() => {
-												setDraftTitle(session.title ?? "");
-												setDraftDriver(session.driver ?? "");
-												setDraftOwnership(session.ownership);
-												setDraftTags(session.tags.join(", "));
-												setExportMenuOpen(false);
-												setEditingDetails(true);
-											}}
-											className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised"
-										>
-											Name, driver & tags…
-										</button>
-										<button
-											type="button"
-											aria-expanded={exportMenuOpen}
-											disabled={exporting || !session.exportable}
-											onClick={() => setExportMenuOpen((value) => !value)}
-											className="flex w-full items-center justify-between border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
-										>
-											<span>{exporting ? "Exporting…" : "Data exports…"}</span>
-											<svg
-												className={`size-3 fill-none stroke-current transition-transform ${exportMenuOpen ? "rotate-90" : ""}`}
-												viewBox="0 0 12 12"
-												aria-hidden="true"
+						<div className="relative flex" ref={actionsMenu}>
+							<Tooltip className="h-full" content="Session actions">
+								<button
+									type="button"
+									aria-label={`Actions for ${session.track} session`}
+									aria-expanded={actionsOpen}
+									onClick={() => {
+										setActionsOpen((value) => !value);
+										setConfirmingDelete(false);
+										setEditingDetails(false);
+										setExportMenuOpen(false);
+									}}
+									className="grid h-full w-12 place-items-center border-0 bg-transparent text-trace-muted hover:bg-trace-raised hover:text-trace-text"
+								>
+									<svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
+										<circle cx="3" cy="8" r="1.2" />
+										<circle cx="8" cy="8" r="1.2" />
+										<circle cx="13" cy="8" r="1.2" />
+									</svg>
+								</button>
+							</Tooltip>
+							{actionsOpen && (
+								<div className="absolute right-0 top-[calc(100%-10px)] z-20 max-h-[calc(100vh-80px)] w-72 overflow-y-auto border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
+									{confirmingDelete ? (
+										<DeleteConfirmation
+											session={session}
+											deleting={deleting}
+											onCancel={() => setConfirmingDelete(false)}
+											onConfirm={() => void deleteRecording()}
+										/>
+									) : editingDetails ? (
+										<SessionDetailsEditor
+											title={draftTitle}
+											driver={draftDriver}
+											ownership={draftOwnership}
+											tags={draftTags}
+											saving={savingDetails}
+											onTitleChange={setDraftTitle}
+											onDriverChange={setDraftDriver}
+											onOwnershipChange={setDraftOwnership}
+											onTagsChange={setDraftTags}
+											onCancel={() => setEditingDetails(false)}
+											onSave={() => void saveDetails()}
+										/>
+									) : (
+										<>
+											<span className="block px-2 pb-2 pt-1 text-[12px] font-bold text-trace-soft">Session actions</span>
+											<button
+												type="button"
+												onClick={() => {
+													setDraftTitle(session.title ?? "");
+													setDraftDriver(session.driver ?? "");
+													setDraftOwnership(session.ownership);
+													setDraftTags(session.tags.join(", "));
+													setExportMenuOpen(false);
+													setEditingDetails(true);
+												}}
+												className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised"
 											>
-												<path d="m4.5 2.5 3 3.5-3 3.5" />
-											</svg>
-										</button>
-										{exportMenuOpen && session.exportable && (
-											<div className="ml-2 border-l border-trace-divider bg-trace-deep pb-1 pl-1 pt-2">
-												<span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">
-													DATA EXPORTS
-												</span>
-												<ExportOption
-													label="TRACE package"
-													detail=".trace · portable session"
-													disabled={exporting}
-													onClick={() => void exportTelemetry("trace")}
-												/>
-												<ExportOption
-													label="Raw telemetry"
-													detail="Arrow IPC · all captured channels"
-													disabled={exporting}
-													onClick={() => void exportTelemetry("arrow")}
-												/>
-												<ExportOption
-													label="Spreadsheet"
-													detail="CSV · core channels"
-													disabled={exporting}
-													onClick={() => void exportTelemetry("csv")}
-												/>
-											</div>
-										)}
-										{!session.exportable && (
-											<p className="px-2 py-2 text-[12px] leading-4 text-trace-dim">This session has no finalized telemetry to export.</p>
-										)}
-										<div className="my-1 border-t border-trace-divider" />
-										<button
-											type="button"
-											disabled={!session.deletable}
-											onClick={() => {
-												setExportMenuOpen(false);
-												setConfirmingDelete(true);
-											}}
-											className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
-										>
-											{session.deletable ? "Delete session…" : "Session in progress"}
-										</button>
-									</>
-								)}
-							</div>
-						)}
+												Name, driver & tags…
+											</button>
+											<button
+												type="button"
+												aria-expanded={exportMenuOpen}
+												disabled={exporting || !session.exportable}
+												onClick={() => setExportMenuOpen((value) => !value)}
+												className="flex w-full items-center justify-between border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
+											>
+												<span>{exporting ? "Exporting…" : "Data exports…"}</span>
+												<svg
+													className={`size-3 fill-none stroke-current transition-transform ${exportMenuOpen ? "rotate-90" : ""}`}
+													viewBox="0 0 12 12"
+													aria-hidden="true"
+												>
+													<path d="m4.5 2.5 3 3.5-3 3.5" />
+												</svg>
+											</button>
+											{exportMenuOpen && session.exportable && (
+												<div className="ml-2 border-l border-trace-divider bg-trace-deep pb-1 pl-1 pt-2">
+													<span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">
+														DATA EXPORTS
+													</span>
+													<ExportOption
+														label="TRACE package"
+														detail=".trace · portable session"
+														disabled={exporting}
+														onClick={() => {
+															setExportMenuOpen(false);
+															setActionsOpen(false);
+															setPackageAction("export");
+														}}
+													/>
+													<ExportOption
+														label="Raw telemetry"
+														detail="Arrow IPC · all captured channels"
+														disabled={exporting}
+														onClick={() => void exportTelemetry("arrow")}
+													/>
+													<ExportOption
+														label="Spreadsheet"
+														detail="CSV · core channels"
+														disabled={exporting}
+														onClick={() => void exportTelemetry("csv")}
+													/>
+												</div>
+											)}
+											{!session.exportable && (
+												<p className="px-2 py-2 text-[12px] leading-4 text-trace-dim">
+													This session has no finalized telemetry to export.
+												</p>
+											)}
+											<div className="my-1 border-t border-trace-divider" />
+											<button
+												type="button"
+												disabled={!session.deletable}
+												onClick={() => {
+													setExportMenuOpen(false);
+													setConfirmingDelete(true);
+												}}
+												className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-warning hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
+											>
+												{session.deletable ? "Delete session…" : "Session in progress"}
+											</button>
+										</>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 				</div>
-			</div>
-		</article>
+			</article>
+			{packageAction && <LapPackageDialog session={session} action={packageAction} onClose={() => setPackageAction(null)} />}
+		</>
 	);
 }

@@ -40,6 +40,13 @@ compression. On a measured 69,739-sample AC session, this reduced the package pa
 from 111.4 MB to 11.2 MB (about 90%). Choose the raw Arrow export when exact native
 bytes and every unpromoted simulator field are required for archival or decoder work.
 
+Before a local package export or hosted upload, the user chooses which completed laps
+to include. TRACE copies only those immutable sample ranges into the package, preserves
+their original lap numbers and metadata, and rebases each package-local sample offset.
+Omitted outlaps, invalid laps, and race laps contribute no telemetry bytes unless they
+are explicitly selected. This keeps endurance-race packages proportional to the laps
+someone actually wants to review.
+
 SQLite rows are not copied directly. They are local implementation details and contain
 identities that could collide on another machine. Import validates the package and
 Arrow stream, assigns fresh local session/lap/blob identities, recreates the relevant
@@ -78,5 +85,10 @@ sample count before publishing an unlisted link. A package is written atomically
 remains available across server restarts until its configured expiry (seven days by
 default). The browser page exposes a normal `.trace` download, so recipients retain a
 self-contained file and can import it without access to the sender's database.
+
+The desktop remembers a small bounded list of active links on that installation until
+their server-reported expiry. Reopening the lap picker allows a link to be copied again;
+requesting the exact same lap selection reuses the active link rather than uploading a
+duplicate package. Expired history is discarded automatically.
 
 Local `.trace` export remains separate and never contacts the hosted service.

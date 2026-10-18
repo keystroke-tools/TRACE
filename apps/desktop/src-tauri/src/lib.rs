@@ -19,8 +19,8 @@ use trace_core::{
 use trace_storage::{
     BlobCommit, BlobFormat, FileBlobStore, RelativeBlobPath, TelemetryBlobStore,
     ipc::{
-        TELEMETRY_SCHEMA_VERSION, TelemetryColumns, derive_sector_durations, export_core_csv,
-        read_columns_range, read_lap_metrics, sample_count,
+        TELEMETRY_SCHEMA_VERSION, TelemetryColumns, TelemetrySampleRange, derive_sector_durations,
+        export_core_csv, read_columns_range, read_lap_metrics, sample_count,
     },
     metadata::{
         CompatibleSetup, LapSummary, MetadataStore, NewSetupImport, SavedComparison, SectorSummary,
@@ -29,7 +29,7 @@ use trace_storage::{
     package::{
         MAX_SETUP_PAYLOAD_BYTES, PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest,
         SessionPackageSetup, decode_setup_payload, encode_setup_payload, imported_records,
-        read_package, write_compact_package,
+        read_package, write_selected_compact_package,
     },
 };
 
@@ -1856,6 +1856,7 @@ fn export_session(
     app: tauri::AppHandle,
     session_id: String,
     export_format: String,
+    lap_indices: Option<Vec<u32>>,
 ) -> Result<SessionExport, String> {
     let data_directory = app
         .path()
@@ -1902,9 +1903,13 @@ fn export_session(
     let stem = session_export_stem(&session, &display_track, &display_car);
     let (destination_path, mut destination) = create_export_file(&downloads, &stem, extension)?;
     let export_result = if export_format == "trace" {
-        let manifest = trace_package_manifest(&store, &session_id, locator.sample_count)?;
-        write_compact_package(&mut destination, &mut source, &manifest)
-            .map(|_| locator.sample_count)
+        let (manifest, ranges) = trace_package_plan(
+            &store,
+            &session_id,
+            locator.sample_count,
+            lap_indices.as_deref(),
+        )?;
+        write_selected_compact_package(&mut destination, &mut source, &manifest, &ranges)
             .map_err(|error| format!("failed to export TRACE session: {error:?}"))
     } else if export_format == "arrow" {
         io::copy(&mut source, &mut destination)
@@ -1941,6 +1946,7 @@ async fn share_session(
     app: tauri::AppHandle,
     live: tauri::State<'_, SharedLiveBroadcast>,
     session_id: String,
+    lap_indices: Vec<u32>,
 ) -> Result<SharedSessionSummary, String> {
     let data_directory = app
         .path()
@@ -1953,7 +1959,7 @@ async fn share_session(
         .map_err(|error| format!("failed to read service settings: {error:?}"))?
         .filter(|value| value != LEGACY_SERVICE_ENDPOINT)
         .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
-    let contents = build_share_package(&data_directory, &store, &session_id)?;
+    let contents = build_share_package(&data_directory, &store, &session_id, &lap_indices)?;
     upload_shared_session(&live, endpoint.trim_end_matches('/'), contents).await
 }
 
@@ -1961,6 +1967,7 @@ fn build_share_package(
     data_directory: &Path,
     store: &MetadataStore,
     session_id: &str,
+    lap_indices: &[u32],
 ) -> Result<Vec<u8>, String> {
     let locator = store
         .session_telemetry(session_id)
@@ -1970,18 +1977,20 @@ fn build_share_package(
         .join(locator.blob_path.as_str());
     let mut source = File::open(source_path)
         .map_err(|error| format!("failed to open session telemetry: {error}"))?;
-    let manifest = trace_package_manifest(store, session_id, locator.sample_count)?;
+    let (manifest, ranges) =
+        trace_package_plan(store, session_id, locator.sample_count, Some(lap_indices))?;
     let mut destination = Vec::new();
-    write_compact_package(&mut destination, &mut source, &manifest)
+    write_selected_compact_package(&mut destination, &mut source, &manifest, &ranges)
         .map_err(|error| format!("failed to prepare shared TRACE session: {error:?}"))?;
     Ok(destination)
 }
 
-fn trace_package_manifest(
+fn trace_package_plan(
     store: &MetadataStore,
     session_id: &str,
-    sample_count: u64,
-) -> Result<SessionPackageManifest, String> {
+    source_sample_count: u64,
+    selected_lap_indices: Option<&[u32]>,
+) -> Result<(SessionPackageManifest, Vec<TelemetrySampleRange>), String> {
     let mut session = store
         .recent_sessions(10_000)
         .map_err(|error| format!("failed to read session metadata: {error:?}"))?
@@ -1999,29 +2008,67 @@ fn trace_package_manifest(
     let (track, car) = session_content_names(store, &session)?;
     session.track = Some(track);
     session.car = Some(car);
-    let laps = session
+    let mut selected_indices = selected_lap_indices.map_or_else(
+        || session.laps.iter().map(|lap| lap.index).collect(),
+        <[u32]>::to_vec,
+    );
+    selected_indices.sort_unstable();
+    selected_indices.dedup();
+    if selected_indices.is_empty() {
+        return Err("choose at least one lap to include".into());
+    }
+    let selected_laps = session
         .laps
+        .iter()
+        .filter(|lap| selected_indices.binary_search(&lap.index).is_ok())
+        .cloned()
+        .collect::<Vec<_>>();
+    if selected_laps.len() != selected_indices.len() {
+        return Err("one or more selected laps no longer exist".into());
+    }
+    let mut selected_sample_count = 0_u64;
+    let mut ranges = Vec::with_capacity(selected_laps.len());
+    let laps = selected_laps
         .iter()
         .map(|lap| {
             let locator = store
                 .lap_telemetry(&lap.id)
                 .map_err(|error| format!("failed to read lap metadata: {error:?}"))?;
-            Ok(SessionPackageLap {
-                summary: lap.clone(),
+            if locator
+                .sample_start
+                .checked_add(locator.sample_count)
+                .is_none_or(|end| end > source_sample_count)
+            {
+                return Err("selected lap telemetry is outside the session".to_owned());
+            }
+            ranges.push(TelemetrySampleRange {
                 sample_start: locator.sample_start,
                 sample_count: locator.sample_count,
-            })
+            });
+            let package_lap = SessionPackageLap {
+                summary: lap.clone(),
+                sample_start: selected_sample_count,
+                sample_count: locator.sample_count,
+            };
+            selected_sample_count = selected_sample_count
+                .checked_add(locator.sample_count)
+                .ok_or_else(|| "selected telemetry sample count overflowed".to_owned())?;
+            Ok(package_lap)
         })
         .collect::<Result<Vec<_>, String>>()?;
+    session.laps = selected_laps;
     let confirmed_setup = package_confirmed_setup(store, session_id)?;
-    Ok(SessionPackageManifest {
-        format_version: PACKAGE_VERSION,
-        telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
-        session,
-        laps,
-        sample_count,
-        confirmed_setup,
-    })
+    Ok((
+        SessionPackageManifest {
+            format_version: PACKAGE_VERSION,
+            telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
+            session,
+            laps,
+            sample_count: selected_sample_count,
+            confirmed_setup,
+        },
+        ranges,
+    ))
 }
 
 fn package_confirmed_setup(

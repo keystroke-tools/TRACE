@@ -595,8 +595,8 @@ export interface TelemetryDataSource {
 	): Promise<SavedComparison[]>;
 	deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
 	renameSavedComparison(comparisonId: string, name: string): Promise<SavedComparison[]>;
-	exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
-	shareSession(sessionId: string): Promise<SharedSession>;
+	exportSession(sessionId: string, format: SessionExportFormat, lapIndices?: number[]): Promise<SessionExport>;
+	shareSession(sessionId: string, lapIndices: number[]): Promise<SharedSession>;
 	previewMotecImport(path: string): Promise<MotecImportPreview>;
 	importSession(path: string, motecOptions?: MotecImportOptions): Promise<SessionImport>;
 	deleteSession(sessionId: string): Promise<SessionDeletion>;
@@ -871,14 +871,14 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async getStatsSessions() {
 		return this.getSessions();
 	},
-	async exportSession(_sessionId, format) {
+	async exportSession(_sessionId, format, lapIndices) {
 		return {
 			path: `Browser preview (${format.toUpperCase()})`,
 			format: format === "trace" ? "TRACE session" : format === "arrow" ? "Arrow IPC" : "CSV",
-			sampleCount: 0,
+			sampleCount: (lapIndices?.length ?? 0) * 1_200,
 		};
 	},
-	async shareSession(_sessionId) {
+	async shareSession(_sessionId, lapIndices) {
 		return {
 			shareId: "shared-fixture",
 			shareUrl: "https://live.simtrace.run/s/shared-fixture",
@@ -890,7 +890,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			car: "Mazda MX-5 Cup",
 			track: "Zandvoort",
 			sessionType: "Hotlap",
-			lapCount: 3,
+			lapCount: lapIndices.length,
 		};
 	},
 	async importSession(_path) {
@@ -1552,11 +1552,11 @@ export const tauriDataSource: TelemetryDataSource = {
 	renameSavedComparison(comparisonId, name) {
 		return invoke<SavedComparison[]>("rename_saved_comparison", { comparisonId, name });
 	},
-	exportSession(sessionId, exportFormat) {
-		return invoke<SessionExport>("export_session", { sessionId, exportFormat });
+	exportSession(sessionId, exportFormat, lapIndices) {
+		return invoke<SessionExport>("export_session", { sessionId, exportFormat, lapIndices });
 	},
-	shareSession(sessionId) {
-		return invoke<SharedSession>("share_session", { sessionId });
+	shareSession(sessionId, lapIndices) {
+		return invoke<SharedSession>("share_session", { sessionId, lapIndices });
 	},
 	previewMotecImport(path) {
 		return invoke<MotecImportPreview>("preview_motec_import", { path });

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ipc::{IpcError, compact_for_sharing},
+    ipc::{IpcError, TelemetrySampleRange, compact_for_sharing, compact_ranges_for_sharing},
     metadata::{LapSummary, NewLap, NewSector, NewSession, SessionSummary},
 };
 
@@ -142,6 +142,28 @@ pub fn write_compact_package<W: Write, R: Read + Seek>(
     if samples != manifest.sample_count {
         return Err(PackageError::Invalid(
             "session sample count does not match telemetry",
+        ));
+    }
+    Ok(samples)
+}
+
+/// Writes a compact package containing only the requested telemetry ranges.
+///
+/// # Errors
+///
+/// Returns [`PackageError`] when the manifest is invalid, the ranges are malformed,
+/// the selected sample total differs from the manifest, or Arrow rewriting fails.
+pub fn write_selected_compact_package<W: Write, R: Read + Seek>(
+    mut destination: W,
+    telemetry: R,
+    manifest: &SessionPackageManifest,
+    ranges: &[TelemetrySampleRange],
+) -> Result<u64, PackageError> {
+    write_package_header(&mut destination, manifest)?;
+    let samples = compact_ranges_for_sharing(telemetry, &mut destination, ranges)?;
+    if samples != manifest.sample_count {
+        return Err(PackageError::Invalid(
+            "selected sample count does not match session metadata",
         ));
     }
     Ok(samples)

@@ -384,31 +384,14 @@ pub fn compact_for_sharing<R: Read + Seek, W: Write>(
     for batch in &mut reader {
         let batch = batch.map_err(IpcError::from)?;
         let rows = batch.num_rows();
-        let batch = if payload_index.is_some()
-            || float_index.is_some()
-            || integer_index.is_some()
-            || text_index.is_some()
-        {
-            let mut columns = batch.columns().to_vec();
-            if let Some(index) = payload_index {
-                columns[index] =
-                    Arc::new(std::iter::repeat_n(None::<&[u8]>, rows).collect::<BinaryArray>());
-            }
-            if let Some(index) = float_index {
-                let source = batch.column(index).as_any().downcast_ref::<MapArray>();
-                columns[index] = Arc::new(shared_native_float_map(source, rows)?);
-            }
-            if let Some(index) = integer_index {
-                columns[index] = Arc::new(empty_native_integer_map(rows)?);
-            }
-            if let Some(index) = text_index {
-                let source = batch.column(index).as_any().downcast_ref::<MapArray>();
-                columns[index] = Arc::new(shared_native_text_map(source, rows)?);
-            }
-            RecordBatch::try_new(schema.clone(), columns).map_err(IpcError::from)?
-        } else {
-            batch
-        };
+        let batch = compact_share_batch(
+            batch,
+            &schema,
+            payload_index,
+            float_index,
+            integer_index,
+            text_index,
+        )?;
         writer.write(&batch).map_err(IpcError::from)?;
         samples = samples
             .checked_add(u64::try_from(rows).map_err(|_| IpcError::SampleOverflow)?)
@@ -419,6 +402,148 @@ pub fn compact_for_sharing<R: Read + Seek, W: Write>(
     }
     writer.finish().map_err(IpcError::from)?;
     Ok(samples)
+}
+
+/// One source sample range retained in a selective share export.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TelemetrySampleRange {
+    pub sample_start: u64,
+    pub sample_count: u64,
+}
+
+/// Writes only the requested, ordered telemetry ranges into a compact Arrow file.
+///
+/// # Errors
+///
+/// Returns [`IpcError::InvalidSampleRange`] when ranges are empty, overlap, are not
+/// ordered, or extend past the source, and other IPC errors for malformed input.
+pub fn compact_ranges_for_sharing<R: Read + Seek, W: Write>(
+    reader: R,
+    writer: W,
+    ranges: &[TelemetrySampleRange],
+) -> Result<u64, IpcError> {
+    if ranges.is_empty()
+        || ranges.iter().any(|range| range.sample_count == 0)
+        || ranges.windows(2).any(|pair| {
+            pair[0]
+                .sample_start
+                .checked_add(pair[0].sample_count)
+                .is_none_or(|end| end > pair[1].sample_start)
+        })
+    {
+        return Err(IpcError::InvalidSampleRange);
+    }
+    let requested_samples = ranges.iter().try_fold(0_u64, |total, range| {
+        total
+            .checked_add(range.sample_count)
+            .ok_or(IpcError::SampleOverflow)
+    })?;
+    let final_end = ranges
+        .last()
+        .and_then(|range| range.sample_start.checked_add(range.sample_count))
+        .ok_or(IpcError::InvalidSampleRange)?;
+    let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
+    validate_schema(reader.schema().as_ref())?;
+    let schema = reader.schema();
+    let payload_index = schema.index_of("native_payload").ok();
+    let float_index = schema.index_of("native_float_fields").ok();
+    let integer_index = schema.index_of("native_integer_fields").ok();
+    let text_index = schema.index_of("native_text_fields").ok();
+    let mut writer = FileWriter::try_new_with_options(
+        writer,
+        &schema,
+        ipc_write_options(DEFAULT_IPC_COMPRESSION)?,
+    )
+    .map_err(IpcError::from)?;
+    let mut batch_start = 0_u64;
+    let mut range_index = 0_usize;
+    let mut written = 0_u64;
+    for batch in &mut reader {
+        let batch = batch.map_err(IpcError::from)?;
+        let rows = u64::try_from(batch.num_rows()).map_err(|_| IpcError::SampleOverflow)?;
+        let batch_end = batch_start
+            .checked_add(rows)
+            .ok_or(IpcError::SampleOverflow)?;
+        while let Some(range) = ranges.get(range_index) {
+            let range_end = range
+                .sample_start
+                .checked_add(range.sample_count)
+                .ok_or(IpcError::InvalidSampleRange)?;
+            if range.sample_start >= batch_end {
+                break;
+            }
+            let overlap_start = range.sample_start.max(batch_start);
+            let overlap_end = range_end.min(batch_end);
+            if overlap_start < overlap_end {
+                let local_start = usize::try_from(overlap_start - batch_start)
+                    .map_err(|_| IpcError::SampleOverflow)?;
+                let length = usize::try_from(overlap_end - overlap_start)
+                    .map_err(|_| IpcError::SampleOverflow)?;
+                let selected = batch.slice(local_start, length);
+                let selected = compact_share_batch(
+                    selected,
+                    &schema,
+                    payload_index,
+                    float_index,
+                    integer_index,
+                    text_index,
+                )?;
+                writer.write(&selected).map_err(IpcError::from)?;
+                written = written
+                    .checked_add(u64::try_from(length).map_err(|_| IpcError::SampleOverflow)?)
+                    .ok_or(IpcError::SampleOverflow)?;
+            }
+            if range_end <= batch_end {
+                range_index += 1;
+            } else {
+                break;
+            }
+        }
+        batch_start = batch_end;
+        if batch_start >= final_end {
+            break;
+        }
+    }
+    if written != requested_samples || range_index != ranges.len() {
+        return Err(IpcError::InvalidSampleRange);
+    }
+    writer.finish().map_err(IpcError::from)?;
+    Ok(written)
+}
+
+fn compact_share_batch(
+    batch: RecordBatch,
+    schema: &Arc<Schema>,
+    payload_index: Option<usize>,
+    float_index: Option<usize>,
+    integer_index: Option<usize>,
+    text_index: Option<usize>,
+) -> Result<RecordBatch, IpcError> {
+    let rows = batch.num_rows();
+    if payload_index.is_none()
+        && float_index.is_none()
+        && integer_index.is_none()
+        && text_index.is_none()
+    {
+        return Ok(batch);
+    }
+    let mut columns = batch.columns().to_vec();
+    if let Some(index) = payload_index {
+        columns[index] =
+            Arc::new(std::iter::repeat_n(None::<&[u8]>, rows).collect::<BinaryArray>());
+    }
+    if let Some(index) = float_index {
+        let source = batch.column(index).as_any().downcast_ref::<MapArray>();
+        columns[index] = Arc::new(shared_native_float_map(source, rows)?);
+    }
+    if let Some(index) = integer_index {
+        columns[index] = Arc::new(empty_native_integer_map(rows)?);
+    }
+    if let Some(index) = text_index {
+        let source = batch.column(index).as_any().downcast_ref::<MapArray>();
+        columns[index] = Arc::new(shared_native_text_map(source, rows)?);
+    }
+    RecordBatch::try_new(schema.clone(), columns).map_err(IpcError::from)
 }
 
 fn shared_native_float_map(source: Option<&MapArray>, rows: usize) -> Result<MapArray, IpcError> {
@@ -1991,6 +2116,53 @@ mod tests {
             Some(4.5)
         );
         assert_eq!(native_float_value(floats, 0, "physics.unused"), None);
+    }
+
+    #[test]
+    fn selective_share_compaction_keeps_only_ordered_ranges() {
+        let frames = (0..8)
+            .map(|sequence| TelemetryFrame {
+                sequence: FrameSequence(sequence),
+                elapsed: ElapsedNanoseconds(sequence * 1_000),
+                ..TelemetryFrame::default()
+            })
+            .collect::<Vec<_>>();
+        let source = encode_frames(&frames).expect("source");
+        let ranges = [
+            TelemetrySampleRange {
+                sample_start: 1,
+                sample_count: 2,
+            },
+            TelemetrySampleRange {
+                sample_start: 5,
+                sample_count: 2,
+            },
+        ];
+        let mut selected = Vec::new();
+        assert_eq!(
+            compact_ranges_for_sharing(Cursor::new(source.clone()), &mut selected, &ranges)
+                .expect("selected export"),
+            4
+        );
+        let columns = read_columns_range(Cursor::new(selected), 0, 4).expect("selected columns");
+        assert_eq!(columns.sequence, vec![1, 2, 5, 6]);
+        assert!(matches!(
+            compact_ranges_for_sharing(
+                Cursor::new(source),
+                Vec::new(),
+                &[
+                    TelemetrySampleRange {
+                        sample_start: 1,
+                        sample_count: 3,
+                    },
+                    TelemetrySampleRange {
+                        sample_start: 3,
+                        sample_count: 1,
+                    },
+                ],
+            ),
+            Err(IpcError::InvalidSampleRange)
+        ));
     }
 
     #[test]

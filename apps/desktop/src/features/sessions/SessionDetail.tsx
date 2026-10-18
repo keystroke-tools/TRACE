@@ -13,6 +13,7 @@ import { Metric, SectionHeading } from "../../components/layout";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
 import { ConsistencyChart } from "./ConsistencyChart";
+import { LapPackageDialog, type LapPackageAction } from "./LapPackageDialog";
 import { fasterReferenceSuggestions, type ComparisonSelection, validComparisonLaps } from "../compare/comparison-selection";
 import { savedSetupFolder } from "../setups/setup-preferences";
 import {
@@ -72,8 +73,7 @@ export function SessionDetail({
 	const [attachingSetup, setAttachingSetup] = useState(false);
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
-	const [exportingTrace, setExportingTrace] = useState(false);
-	const [sharingTrace, setSharingTrace] = useState(false);
+	const [packageAction, setPackageAction] = useState<LapPackageAction | null>(null);
 	const [compareOpen, setCompareOpen] = useState(false);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
 	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
@@ -186,49 +186,6 @@ export function SessionDetail({
 		}
 	}
 
-	async function exportTrace() {
-		setExportingTrace(true);
-		try {
-			const result = await telemetryDataSource.exportSession(session.id, "trace");
-			showToast({
-				kind: "success",
-				title: ".trace package exported",
-				message: `${result.sampleCount.toLocaleString()} samples saved to ${result.path}`,
-				timeoutMs: 7_000,
-			});
-		} catch (error) {
-			showToast({ kind: "error", title: "Export failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
-		} finally {
-			setExportingTrace(false);
-		}
-	}
-
-	async function shareTrace() {
-		setSharingTrace(true);
-		try {
-			const result = await telemetryDataSource.shareSession(session.id);
-			let copied = false;
-			try {
-				await navigator.clipboard.writeText(result.shareUrl);
-				copied = true;
-			} catch {
-				// Keep the URL visible in the toast when clipboard access is unavailable.
-			}
-			showToast({
-				kind: "success",
-				title: copied ? "Share link copied" : "Share link created",
-				message: copied
-					? `Anyone with the link can download this session until ${new Date(result.expiresAtUnixMs).toLocaleString()}.`
-					: result.shareUrl,
-				timeoutMs: 9_000,
-			});
-		} catch (error) {
-			showToast({ kind: "error", title: "Could not share session", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
-		} finally {
-			setSharingTrace(false);
-		}
-	}
-
 	useEffect(() => {
 		let active = true;
 		setSetupsState("loading");
@@ -269,8 +226,8 @@ export function SessionDetail({
 						<button
 							type="button"
 							aria-label={`Create a share link for ${session.track}`}
-							disabled={sharingTrace || !session.exportable}
-							onClick={() => void shareTrace()}
+							disabled={!session.exportable}
+							onClick={() => setPackageAction("share")}
 							className="grid size-9 place-items-center border border-trace-accent/50 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 						>
 							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
@@ -282,8 +239,8 @@ export function SessionDetail({
 						<button
 							type="button"
 							aria-label={`Save ${session.track} as a TRACE package`}
-							disabled={exportingTrace || !session.exportable}
-							onClick={() => void exportTrace()}
+							disabled={!session.exportable}
+							onClick={() => setPackageAction("export")}
 							className="grid size-9 place-items-center border border-trace-divider bg-trace-deep text-trace-soft hover:border-trace-accent/60 hover:text-trace-accent disabled:text-trace-dim"
 						>
 							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
@@ -361,6 +318,7 @@ export function SessionDetail({
 					}}
 				/>
 			)}
+			{packageAction && <LapPackageDialog session={session} action={packageAction} onClose={() => setPackageAction(null)} />}
 
 			{thisSessionIsLive && liveBroadcast && liveBroadcast.phase !== "idle" && (
 				<div className="mt-3 border border-trace-divider bg-trace-deep px-4 py-3">
