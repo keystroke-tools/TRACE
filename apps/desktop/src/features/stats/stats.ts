@@ -40,9 +40,38 @@ export interface DrivingStats {
 	combinations: CombinationStat[];
 }
 
+export type StatsTimeRange = "all" | "30" | "90" | "365";
+
+export interface StatsSessionFilters {
+	simulatorId?: string;
+	sessionType?: string;
+	timeRange?: StatsTimeRange;
+	focusKind?: "car" | "track";
+	focusKey?: string;
+}
+
 function isDrivenSession(session: RecordedSessionSummary) {
 	const source = session.source.toLocaleLowerCase();
 	return !source.includes("import") && !source.includes("replay");
+}
+
+export function filterStatsSessions(sessions: RecordedSessionSummary[], filters: StatsSessionFilters, nowMs = Date.now()) {
+	const cutoffDays = filters.timeRange === "all" || filters.timeRange == null ? null : Number(filters.timeRange);
+	const cutoffMs = cutoffDays == null ? null : nowMs - cutoffDays * 86_400_000;
+	return sessions.filter((session) => {
+		if (!isDrivenSession(session)) return false;
+		if (filters.simulatorId && session.simulatorId !== filters.simulatorId) return false;
+		if (filters.sessionType && session.sessionType !== filters.sessionType) return false;
+		if (cutoffMs != null) {
+			const startedAt = new Date(session.startedAt).getTime();
+			if (!Number.isFinite(startedAt) || startedAt < cutoffMs) return false;
+		}
+		if (filters.focusKind && filters.focusKey) {
+			const value = filters.focusKind === "car" ? session.car : session.track;
+			if (`${session.simulatorId}\u0000${value}` !== filters.focusKey) return false;
+		}
+		return true;
+	});
 }
 
 function completedLaps(session: RecordedSessionSummary) {

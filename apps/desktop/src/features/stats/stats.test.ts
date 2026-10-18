@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecordedSessionSummary } from "../../data-source";
-import { calculateDrivingStats } from "./stats";
+import { calculateDrivingStats, filterStatsSessions } from "./stats";
 
 function session(overrides: Partial<RecordedSessionSummary> & Pick<RecordedSessionSummary, "id" | "startedAt">): RecordedSessionSummary {
 	return {
@@ -74,5 +74,29 @@ describe("calculateDrivingStats", () => {
 
 		expect(stats.combinations[0].bestLapNs).toBe(132_000_000_000);
 		expect(stats.combinations[0].lapCount).toBe(3);
+	});
+});
+
+describe("filterStatsSessions", () => {
+	it("combines simulator, session type, time range, and ranking focus", () => {
+		const sessions = [
+			session({ id: "match", startedAt: "2026-10-10T12:00:00Z", sessionType: "RACE" }),
+			session({ id: "practice", startedAt: "2026-10-10T12:00:00Z", sessionType: "PRACTICE" }),
+			session({ id: "old", startedAt: "2026-01-01T12:00:00Z", sessionType: "RACE" }),
+			session({ id: "other-track", startedAt: "2026-10-10T12:00:00Z", sessionType: "RACE", track: "Le Mans" }),
+		];
+		const filtered = filterStatsSessions(
+			sessions,
+			{
+				simulatorId: "le-mans-ultimate",
+				sessionType: "RACE",
+				timeRange: "30",
+				focusKind: "track",
+				focusKey: "le-mans-ultimate\u0000Spa-Francorchamps",
+			},
+			new Date("2026-10-18T12:00:00Z").getTime(),
+		);
+
+		expect(filtered.map((item) => item.id)).toEqual(["match"]);
 	});
 });
