@@ -512,16 +512,16 @@ function SessionRow({
 						</svg>
 					</button>
 					<div className="flex shrink-0 items-stretch border-l border-trace-divider">
-						<Tooltip className="h-full" content="Create an expiring share link">
+						<Tooltip className="h-full" content="Save a local .trace package">
 							<button
 								type="button"
-								aria-label={`Create a share link for ${session.track}`}
+								aria-label={`Save ${session.track} as a TRACE package`}
 								disabled={!session.exportable}
-								onClick={() => setPackageAction("share")}
+								onClick={() => setPackageAction("export")}
 								className="grid h-full w-12 place-items-center border-0 border-r border-trace-divider bg-transparent text-trace-accent hover:bg-trace-accent-wash hover:text-trace-text disabled:text-trace-dim disabled:hover:bg-transparent"
 							>
 								<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-									<path d="M6.2 9.8 9.8 6.2M5.1 11.9l-1 .9a2.1 2.1 0 0 1-3-3l2.3-2.3a2.1 2.1 0 0 1 3 0M10.9 4.1l1-.9a2.1 2.1 0 0 1 3 3l-2.3 2.3a2.1 2.1 0 0 1-3 0" />
+									<path d="M8 2.5v8m0 0 2.8-2.8M8 10.5 5.2 7.7M3 12.5h10" />
 								</svg>
 							</button>
 						</Tooltip>
@@ -588,6 +588,17 @@ function SessionRow({
 											</button>
 											<button
 												type="button"
+												disabled={!session.exportable}
+												onClick={() => {
+													setActionsOpen(false);
+													setPackageAction("share");
+												}}
+												className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
+											>
+												Share to cloud…
+											</button>
+											<button
+												type="button"
 												aria-expanded={exportMenuOpen}
 												disabled={exporting || !session.exportable}
 												onClick={() => setExportMenuOpen((value) => !value)}
@@ -607,16 +618,6 @@ function SessionRow({
 													<span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">
 														DATA EXPORTS
 													</span>
-													<ExportOption
-														label="TRACE package"
-														detail=".trace · portable session"
-														disabled={exporting}
-														onClick={() => {
-															setExportMenuOpen(false);
-															setActionsOpen(false);
-															setPackageAction("export");
-														}}
-													/>
 													<ExportOption
 														label="Raw telemetry"
 														detail="Arrow IPC · all captured channels"

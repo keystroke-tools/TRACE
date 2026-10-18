@@ -74,7 +74,9 @@ export function SessionDetail({
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
 	const [packageAction, setPackageAction] = useState<LapPackageAction | null>(null);
+	const [actionsOpen, setActionsOpen] = useState(false);
 	const [compareOpen, setCompareOpen] = useState(false);
+	const actionsMenu = useRef<HTMLDivElement>(null);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
 	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
 	const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
@@ -85,6 +87,14 @@ export function SessionDetail({
 	const confirmedSetup = compatibleSetups.find((value) => value.confirmed) ?? null;
 	const thisSessionIsLive = liveBroadcast?.sourceSessionId === session.id;
 	const broadcastBusy = liveBroadcast?.phase === "ending";
+
+	useEffect(() => {
+		function dismiss(event: PointerEvent) {
+			if (actionsMenu.current && !actionsMenu.current.contains(event.target as Node)) setActionsOpen(false);
+		}
+		document.addEventListener("pointerdown", dismiss);
+		return () => document.removeEventListener("pointerdown", dismiss);
+	}, []);
 
 	useEffect(() => {
 		let active = true;
@@ -222,32 +232,52 @@ export function SessionDetail({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					<Tooltip content="Create an expiring share link">
-						<button
-							type="button"
-							aria-label={`Create a share link for ${session.track}`}
-							disabled={!session.exportable}
-							onClick={() => setPackageAction("share")}
-							className="grid size-9 place-items-center border border-trace-accent/50 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
-						>
-							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-								<path d="M6.2 9.8 9.8 6.2M5.1 11.9l-1 .9a2.1 2.1 0 0 1-3-3l2.3-2.3a2.1 2.1 0 0 1 3 0M10.9 4.1l1-.9a2.1 2.1 0 0 1 3 3l-2.3 2.3a2.1 2.1 0 0 1-3 0" />
-							</svg>
-						</button>
-					</Tooltip>
 					<Tooltip content="Save a local .trace package">
 						<button
 							type="button"
 							aria-label={`Save ${session.track} as a TRACE package`}
 							disabled={!session.exportable}
 							onClick={() => setPackageAction("export")}
-							className="grid size-9 place-items-center border border-trace-divider bg-trace-deep text-trace-soft hover:border-trace-accent/60 hover:text-trace-accent disabled:text-trace-dim"
+							className="grid size-9 place-items-center border border-trace-accent/50 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 						>
 							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
 								<path d="M8 2.5v8m0 0 2.8-2.8M8 10.5 5.2 7.7M3 12.5h10" />
 							</svg>
 						</button>
 					</Tooltip>
+					<div className="relative" ref={actionsMenu}>
+						<Tooltip content="Session actions">
+							<button
+								type="button"
+								aria-label={`More actions for ${session.track}`}
+								aria-expanded={actionsOpen}
+								onClick={() => setActionsOpen((value) => !value)}
+								className="grid size-9 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:bg-trace-raised hover:text-white"
+							>
+								<svg className="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true">
+									<circle cx="3" cy="8" r="1.2" />
+									<circle cx="8" cy="8" r="1.2" />
+									<circle cx="13" cy="8" r="1.2" />
+								</svg>
+							</button>
+						</Tooltip>
+						{actionsOpen && (
+							<div className="absolute right-0 top-[calc(100%+6px)] z-30 w-56 border border-trace-divider bg-trace-black p-2 shadow-[0_12px_30px_#000]">
+								<span className="block px-2 pb-2 pt-1 text-[12px] font-bold text-trace-soft">Session actions</span>
+								<button
+									type="button"
+									disabled={!session.exportable}
+									onClick={() => {
+										setActionsOpen(false);
+										setPackageAction("share");
+									}}
+									className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
+								>
+									Share to cloud…
+								</button>
+							</div>
+						)}
+					</div>
 					<button
 						type="button"
 						disabled={!bestLap}
