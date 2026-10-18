@@ -5149,6 +5149,7 @@ dependencies = [
 name = "trace-desktop"
 version = "0.7.2"
 dependencies = [
+ "bytes",
  "discord-rich-presence",
  "futures-util",
  "reqwest",
@@ -5244,11 +5245,14 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "tower",
+ "trace-domain",
  "trace-live",
  "trace-protocol",
+ "trace-storage",
  "uuid 1.24.1",
 ]
 

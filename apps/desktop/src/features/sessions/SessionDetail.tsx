@@ -73,6 +73,7 @@ export function SessionDetail({
 	const [setupComparison, setSetupComparison] = useState<SetupComparison | null>(null);
 	const [comparingSetupId, setComparingSetupId] = useState<string | null>(null);
 	const [exportingTrace, setExportingTrace] = useState(false);
+	const [sharingTrace, setSharingTrace] = useState(false);
 	const [compareOpen, setCompareOpen] = useState(false);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
 	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
@@ -202,6 +203,32 @@ export function SessionDetail({
 		}
 	}
 
+	async function shareTrace() {
+		setSharingTrace(true);
+		try {
+			const result = await telemetryDataSource.shareSession(session.id);
+			let copied = false;
+			try {
+				await navigator.clipboard.writeText(result.shareUrl);
+				copied = true;
+			} catch {
+				// Keep the URL visible in the toast when clipboard access is unavailable.
+			}
+			showToast({
+				kind: "success",
+				title: copied ? "Share link copied" : "Share link created",
+				message: copied
+					? `Anyone with the link can download this session until ${new Date(result.expiresAtUnixMs).toLocaleString()}.`
+					: result.shareUrl,
+				timeoutMs: 9_000,
+			});
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not share session", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		} finally {
+			setSharingTrace(false);
+		}
+	}
+
 	useEffect(() => {
 		let active = true;
 		setSetupsState("loading");
@@ -238,16 +265,29 @@ export function SessionDetail({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					<Tooltip content="Share as a .trace package">
+					<Tooltip content="Create an expiring share link">
 						<button
 							type="button"
-							aria-label={`Share ${session.track} session as a TRACE package`}
-							disabled={exportingTrace || !session.exportable}
-							onClick={() => void exportTrace()}
+							aria-label={`Create a share link for ${session.track}`}
+							disabled={sharingTrace || !session.exportable}
+							onClick={() => void shareTrace()}
 							className="grid size-9 place-items-center border border-trace-accent/50 bg-trace-accent-wash text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
 						>
 							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-								<path d="M8 10.5V2.5m0 0L5.2 5.3M8 2.5l2.8 2.8M3 9.5v3h10v-3" />
+								<path d="M6.2 9.8 9.8 6.2M5.1 11.9l-1 .9a2.1 2.1 0 0 1-3-3l2.3-2.3a2.1 2.1 0 0 1 3 0M10.9 4.1l1-.9a2.1 2.1 0 0 1 3 3l-2.3 2.3a2.1 2.1 0 0 1-3 0" />
+							</svg>
+						</button>
+					</Tooltip>
+					<Tooltip content="Save a local .trace package">
+						<button
+							type="button"
+							aria-label={`Save ${session.track} as a TRACE package`}
+							disabled={exportingTrace || !session.exportable}
+							onClick={() => void exportTrace()}
+							className="grid size-9 place-items-center border border-trace-divider bg-trace-deep text-trace-soft hover:border-trace-accent/60 hover:text-trace-accent disabled:text-trace-dim"
+						>
+							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
+								<path d="M8 2.5v8m0 0 2.8-2.8M8 10.5 5.2 7.7M3 12.5h10" />
 							</svg>
 						</button>
 					</Tooltip>

@@ -31,6 +31,23 @@ pub struct CreateLiveSessionResponse {
     pub spectator_url: String,
 }
 
+/// Public metadata returned after a completed TRACE package is shared.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedSessionSummary {
+    pub share_id: String,
+    pub share_url: String,
+    pub download_url: String,
+    pub expires_at_unix_ms: i64,
+    pub size_bytes: u64,
+    pub driver_name: Option<String>,
+    pub simulator: String,
+    pub car: String,
+    pub track: String,
+    pub session_type: String,
+    pub lap_count: u32,
+}
+
 /// Public metadata and retained sequence bounds for one live session.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LiveSessionSummary {

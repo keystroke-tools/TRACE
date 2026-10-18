@@ -68,3 +68,15 @@ readable because the setup field is optional and compact telemetry uses the same
 schema and package framing. Older readers ignore the additive setup field when the
 manifest remains within their legacy size limit; unusually large bundled setups require
 a current TRACE build.
+
+## Hosted sharing
+
+The share action builds this same compact package and uploads it to the configured
+TRACE service. The service authenticates the publisher, enforces its upload limit,
+parses the bounded package manifest, reads the Arrow stream, and verifies the declared
+sample count before publishing an unlisted link. A package is written atomically and
+remains available across server restarts until its configured expiry (seven days by
+default). The browser page exposes a normal `.trace` download, so recipients retain a
+self-contained file and can import it without access to the sender's database.
+
+Local `.trace` export remains separate and never contacts the hosted service.

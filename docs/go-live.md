@@ -69,9 +69,14 @@ at a reverse proxy that forwards HTTP and WebSocket upgrade requests to `TRACE_B
 For unattended provisioning, set `TRACE_INSTALL_NONINTERACTIVE=1`; missing options
 then use their documented defaults instead of opening the wizard.
 
-An update restarts the process and interrupts active streams. The current service
-keeps credentials and sessions in memory; durable state and zero-downtime deployment
-remain future work.
+Completed `.trace` shares are stored beneath `/var/lib/trace-server` and expire after
+seven days by default. Set `TRACE_SHARE_TTL_DAYS` in `/etc/trace-server.env` to retain
+them for 1–365 days. Uploads are validated before publication and limited to 128 MiB.
+
+An update restarts the process and interrupts active streams. Publisher credentials
+and live-session buffers remain in memory; completed `.trace` shares persist beneath
+the configured data directory. Durable live state and zero-downtime deployment remain
+future work.
 
 ## HTTP API
 
@@ -82,12 +87,16 @@ All implemented routes are versioned under `/api/v1`.
 | `GET`    | `/health`                             | none           | Process health probe; returns `204`                    |
 | `POST`   | `/api/v1/installations`               | none           | Bootstrap an installation ID and publishing token      |
 | `POST`   | `/api/v1/live-sessions`               | publisher      | Create an unlisted live session                        |
+| `POST`   | `/api/v1/shared-sessions`             | publisher      | Validate and publish an expiring `.trace` package      |
+| `GET`    | `/api/v1/shared-sessions/{id}`        | none           | Read metadata for a shared package                     |
+| `GET`    | `/api/v1/shared-sessions/{id}/download` | none         | Download the self-contained `.trace` package           |
 | `GET`    | `/api/v1/live-sessions/{id}`          | none           | Read public session state and retained sequence bounds |
 | `DELETE` | `/api/v1/live-sessions/{id}`          | publisher      | Explicitly end an owned session                        |
 | `GET`    | `/api/v1/live-sessions/{id}/publish`  | publisher      | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
+| `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
 
 The public landing, spectator, and missing-session pages are embedded in the server
 binary. They share the TRACE favicon and a hosted social card. Spectator documents

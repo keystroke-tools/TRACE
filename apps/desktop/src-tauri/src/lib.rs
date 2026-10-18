@@ -55,7 +55,7 @@ use discord_activity::{ReviewActivity, ReviewKind, SharedDiscordActivity};
 use live_broadcast::{
     LiveAutomationSettings, SharedLiveBroadcast, live_broadcast_status,
     load_live_automation_settings, save_live_automation_settings, start_active_live_broadcast,
-    start_recorded_live_broadcast, stop_live_broadcast,
+    start_recorded_live_broadcast, stop_live_broadcast, upload_shared_session,
 };
 use setup_analysis::compare_setups;
 use setup_editor::{save_setup_copy, setup_document};
@@ -64,6 +64,7 @@ use setup_import::{
     index_existing_setups, setup_importers, setup_library,
 };
 use startup::{set_launch_on_startup, startup_settings};
+use trace_protocol::SharedSessionSummary;
 use tray::CloseToTrayState;
 
 #[derive(Serialize)]
@@ -1934,6 +1935,48 @@ fn export_session(
     })
 }
 
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+async fn share_session(
+    app: tauri::AppHandle,
+    live: tauri::State<'_, SharedLiveBroadcast>,
+    session_id: String,
+) -> Result<SharedSessionSummary, String> {
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read service settings: {error:?}"))?
+        .filter(|value| value != LEGACY_SERVICE_ENDPOINT)
+        .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let contents = build_share_package(&data_directory, &store, &session_id)?;
+    upload_shared_session(&live, endpoint.trim_end_matches('/'), contents).await
+}
+
+fn build_share_package(
+    data_directory: &Path,
+    store: &MetadataStore,
+    session_id: &str,
+) -> Result<Vec<u8>, String> {
+    let locator = store
+        .session_telemetry(session_id)
+        .map_err(|error| format!("session is not ready to share or does not exist: {error:?}"))?;
+    let source_path = data_directory
+        .join("telemetry")
+        .join(locator.blob_path.as_str());
+    let mut source = File::open(source_path)
+        .map_err(|error| format!("failed to open session telemetry: {error}"))?;
+    let manifest = trace_package_manifest(store, session_id, locator.sample_count)?;
+    let mut destination = Vec::new();
+    write_compact_package(&mut destination, &mut source, &manifest)
+        .map_err(|error| format!("failed to prepare shared TRACE session: {error:?}"))?;
+    Ok(destination)
+}
+
 fn trace_package_manifest(
     store: &MetadataStore,
     session_id: &str,
@@ -2957,6 +3000,7 @@ pub fn run() {
             delete_saved_comparison,
             rename_saved_comparison,
             export_session,
+            share_session,
             preview_motec_import,
             import_session,
             delete_session,

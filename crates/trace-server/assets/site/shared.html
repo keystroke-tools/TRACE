@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#101010" />
+		<meta name="description" content="{{TRACE_DESCRIPTION}}" />
+		<meta property="og:title" content="{{TRACE_TITLE}}" />
+		<meta property="og:description" content="{{TRACE_DESCRIPTION}}" />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="{{TRACE_URL}}" />
+		<meta property="og:image" content="{{TRACE_OG_IMAGE}}" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<link rel="canonical" href="{{TRACE_URL}}" />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="stylesheet" href="/live-assets/site.css" />
+		<title>{{TRACE_TITLE}}</title>
+	</head>
+	<body class="error-page">
+		<main>
+			<div class="grid" aria-hidden="true"></div>
+			<section class="error-card">
+				<a class="brand" href="/"><span>TRACE</span><i>//</i><small>SHARED SESSION</small></a>
+				<strong>{{TRACE_LAPS}} LAPS</strong>
+				<h1>{{TRACE_DRIVER}} at {{TRACE_TRACK}}</h1>
+				<p>{{TRACE_SESSION_TYPE}} · {{TRACE_CAR}}</p>
+				<a class="button primary" href="{{TRACE_DOWNLOAD_URL}}">Download .trace <span>↓</span></a>
+				<p>Open the downloaded package in TRACE to review every included lap and telemetry channel. This unlisted link expires automatically.</p>
+			</section>
+		</main>
+	</body>
+</html>

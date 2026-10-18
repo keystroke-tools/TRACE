@@ -5,17 +5,20 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fs,
+    path::PathBuf,
     sync::{Arc, RwLock},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{
-        Path, State, WebSocketUpgrade,
+        DefaultBodyLimit, Path, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
@@ -28,19 +31,28 @@ use tokio::sync::oneshot;
 use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, Envelope, InstallationCredentials,
     LiveSessionSummary, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolLimits, SessionEnd,
-    SessionState,
+    SessionState, SharedSessionSummary,
 };
 use uuid::Uuid;
+
+mod shares;
+
+use shares::{ShareStore, ShareStoreError};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 2_400;
 const BROADCAST_CAPACITY: usize = 512;
 const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 512 * 1024;
+const DEFAULT_MAX_SHARED_SESSION_BYTES: u64 = 128 * 1024 * 1024;
+const DEFAULT_SHARED_SESSION_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Runtime settings supplied by the deployment environment.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     public_base_url: String,
     buffer_capacity: usize,
+    share_directory: Option<PathBuf>,
+    shared_session_ttl: Duration,
+    max_shared_session_bytes: u64,
 }
 
 impl ServerConfig {
@@ -50,7 +62,24 @@ impl ServerConfig {
         Self {
             public_base_url: public_base_url.into().trim_end_matches('/').to_owned(),
             buffer_capacity: DEFAULT_BUFFER_CAPACITY,
+            share_directory: None,
+            shared_session_ttl: DEFAULT_SHARED_SESSION_TTL,
+            max_shared_session_bytes: DEFAULT_MAX_SHARED_SESSION_BYTES,
         }
+    }
+
+    /// Enables durable completed-session sharing beneath this directory.
+    #[must_use]
+    pub fn with_share_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.share_directory = Some(directory.into());
+        self
+    }
+
+    /// Changes how long completed session packages remain downloadable.
+    #[must_use]
+    pub fn with_shared_session_ttl(mut self, ttl: Duration) -> Self {
+        self.shared_session_ttl = ttl;
+        self
     }
 
     #[cfg(test)]
@@ -65,6 +94,7 @@ impl ServerConfig {
 pub struct LiveService {
     inner: Arc<RwLock<ServiceState>>,
     config: ServerConfig,
+    shares: Option<ShareStore>,
 }
 
 /// Handle for a server embedded in the desktop process.
@@ -151,6 +181,9 @@ enum ServiceError {
     OutOfOrder,
     Ended,
     Unavailable,
+    SharingUnavailable,
+    InvalidPackage,
+    PackageTooLarge,
 }
 
 impl IntoResponse for ServiceError {
@@ -165,6 +198,15 @@ impl IntoResponse for ServiceError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "live service state unavailable",
             ),
+            Self::SharingUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "completed-session sharing is unavailable",
+            ),
+            Self::InvalidPackage => (StatusCode::BAD_REQUEST, "invalid TRACE session package"),
+            Self::PackageTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "TRACE session package is too large",
+            ),
         };
         (status, Json(ErrorBody { error })).into_response()
     }
@@ -174,10 +216,28 @@ impl LiveService {
     /// Creates an empty service state.
     #[must_use]
     pub fn new(config: ServerConfig) -> Self {
+        let shares = config.share_directory.as_ref().map(|directory| {
+            ShareStore::new(
+                directory.join("shares"),
+                config.public_base_url.clone(),
+                config.shared_session_ttl,
+                config.max_shared_session_bytes,
+            )
+        });
         Self {
             inner: Arc::new(RwLock::new(ServiceState::default())),
             config,
+            shares,
         }
+    }
+
+    fn authorize_installation(
+        &self,
+        installation_id: &str,
+        token: &str,
+    ) -> Result<(), ServiceError> {
+        let service = self.inner.read().map_err(|_| ServiceError::Unavailable)?;
+        authenticate(&service, installation_id, token)
     }
 
     fn bootstrap_installation(&self) -> Result<InstallationCredentials, ServiceError> {
@@ -356,6 +416,8 @@ impl LiveService {
 
 /// Builds the HTTP and WebSocket application.
 pub fn app(config: ServerConfig) -> Router {
+    let maximum_upload_bytes =
+        usize::try_from(config.max_shared_session_bytes).unwrap_or(usize::MAX);
     let state = LiveService::new(config);
     Router::new()
         .route("/health", get(health))
@@ -363,6 +425,15 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/favicon.svg", get(favicon))
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
+        .route("/api/v1/shared-sessions", post(create_shared_session))
+        .route(
+            "/api/v1/shared-sessions/{share_id}",
+            get(get_shared_session),
+        )
+        .route(
+            "/api/v1/shared-sessions/{share_id}/download",
+            get(download_shared_session),
+        )
         .route(
             "/api/v1/live-sessions/{session_id}",
             get(get_live_session).delete(end_live_session),
@@ -376,11 +447,13 @@ pub fn app(config: ServerConfig) -> Router {
             get(spectator_websocket),
         )
         .route("/live/{session_id}", get(spectator_page))
+        .route("/s/{share_id}", get(shared_session_page))
         .route("/live-assets/spectator.css", get(spectator_styles))
         .route("/live-assets/spectator.js", get(spectator_script))
         .route("/live-assets/site.css", get(site_styles))
         .route("/live-assets/trace-live-og.png", get(social_card))
         .fallback(not_found)
+        .layer(DefaultBodyLimit::max(maximum_upload_bytes))
         .with_state(state)
 }
 
@@ -409,6 +482,91 @@ async fn create_live_session(
     let (installation_id, token) = publisher_credentials(&headers)?;
     let response = service.create_session(installation_id, token, request.session)?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn create_shared_session(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+    contents: Bytes,
+) -> Result<(StatusCode, Json<SharedSessionSummary>), ServiceError> {
+    let (installation_id, token) = publisher_credentials(&headers)?;
+    service.authorize_installation(installation_id, token)?;
+    let store = service
+        .shares
+        .as_ref()
+        .ok_or(ServiceError::SharingUnavailable)?;
+    let summary = store
+        .publish(contents.to_vec())
+        .await
+        .map_err(map_share_error)?;
+    Ok((StatusCode::CREATED, Json(summary)))
+}
+
+async fn get_shared_session(
+    State(service): State<LiveService>,
+    Path(share_id): Path<String>,
+) -> Result<Json<SharedSessionSummary>, ServiceError> {
+    let store = service
+        .shares
+        .as_ref()
+        .ok_or(ServiceError::SharingUnavailable)?;
+    store
+        .find(share_id)
+        .await
+        .map(|share| Json(share.summary))
+        .map_err(map_share_error)
+}
+
+async fn download_shared_session(
+    State(service): State<LiveService>,
+    Path(share_id): Path<String>,
+) -> Result<Response, ServiceError> {
+    let store = service
+        .shares
+        .as_ref()
+        .ok_or(ServiceError::SharingUnavailable)?;
+    let share = store.find(share_id).await.map_err(map_share_error)?;
+    let path = share.path.clone();
+    let contents = tokio::task::spawn_blocking(move || fs::read(path))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(|_| ServiceError::Unavailable)?;
+    let disposition =
+        HeaderValue::from_str(&format!("attachment; filename=\"{}\"", share.download_name))
+            .map_err(|_| ServiceError::Unavailable)?;
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/vnd.simtrace.session"),
+            ),
+            (header::CONTENT_DISPOSITION, disposition),
+            (
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, max-age=300"),
+            ),
+        ],
+        contents,
+    )
+        .into_response())
+}
+
+async fn shared_session_page(
+    State(service): State<LiveService>,
+    Path(share_id): Path<String>,
+) -> Response {
+    let Some(store) = service.shares.as_ref() else {
+        return not_found_response(&service);
+    };
+    match store.find(share_id).await {
+        Ok(share) => Html(shared_session_html(
+            &share.summary,
+            &service.config.public_base_url,
+        ))
+        .into_response(),
+        Err(ShareStoreError::NotFound) => not_found_response(&service),
+        Err(error) => map_share_error(error).into_response(),
+    }
 }
 
 async fn get_live_session(
@@ -452,6 +610,36 @@ fn spectator_html(state: &SessionState, session_id: &str, public_base_url: &str)
         &description,
         &session_url,
         public_base_url,
+    )
+}
+
+fn shared_session_html(summary: &SharedSessionSummary, public_base_url: &str) -> String {
+    let driver = summary.driver_name.as_deref().unwrap_or("Shared driver");
+    let title = format!("{driver} at {} — TRACE session", summary.track);
+    let description = format!(
+        "Download {driver}'s {} session in {} at {} and open it in TRACE.",
+        format_session_type(&summary.session_type),
+        summary.car,
+        summary.track
+    );
+    render_page(
+        include_str!("../assets/site/shared.html"),
+        &title,
+        &description,
+        &summary.share_url,
+        public_base_url,
+    )
+    .replace("{{TRACE_DRIVER}}", &escape_html(driver))
+    .replace("{{TRACE_TRACK}}", &escape_html(&summary.track))
+    .replace("{{TRACE_CAR}}", &escape_html(&summary.car))
+    .replace(
+        "{{TRACE_SESSION_TYPE}}",
+        &escape_html(&format_session_type(&summary.session_type)),
+    )
+    .replace("{{TRACE_LAPS}}", &summary.lap_count.to_string())
+    .replace(
+        "{{TRACE_DOWNLOAD_URL}}",
+        &escape_html(&summary.download_url),
     )
 }
 
@@ -751,6 +939,18 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::OutOfOrder => "message sequence is not increasing",
         ServiceError::Ended => "live session has ended",
         ServiceError::Unavailable => "live service state unavailable",
+        ServiceError::SharingUnavailable => "completed-session sharing is unavailable",
+        ServiceError::InvalidPackage => "invalid TRACE session package",
+        ServiceError::PackageTooLarge => "TRACE session package is too large",
+    }
+}
+
+fn map_share_error(error: ShareStoreError) -> ServiceError {
+    match error {
+        ShareStoreError::Invalid => ServiceError::InvalidPackage,
+        ShareStoreError::NotFound => ServiceError::NotFound,
+        ShareStoreError::TooLarge => ServiceError::PackageTooLarge,
+        ShareStoreError::Unavailable => ServiceError::Unavailable,
     }
 }
 
@@ -773,8 +973,14 @@ mod tests {
         },
     };
     use tower::ServiceExt;
+    use trace_domain::{ElapsedNanoseconds, FrameSequence, TelemetryFrame};
     use trace_live::{LiveTelemetrySample, encode_recorded_session};
     use trace_protocol::{Hello, PROTOCOL_VERSION};
+    use trace_storage::{
+        ipc::{TELEMETRY_SCHEMA_VERSION, encode_frames},
+        metadata::{LapSummary, SessionConditions, SessionSummary},
+        package::{PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest, write_package},
+    };
 
     fn session_state() -> SessionState {
         SessionState {
@@ -802,6 +1008,58 @@ mod tests {
                 source: "recorded-session".to_owned(),
             }),
         }
+    }
+
+    fn shared_package() -> Vec<u8> {
+        let telemetry = encode_frames(&[TelemetryFrame {
+            sequence: FrameSequence(1),
+            elapsed: ElapsedNanoseconds(1),
+            ..TelemetryFrame::default()
+        }])
+        .expect("telemetry");
+        let lap = LapSummary {
+            id: "lap-1".into(),
+            index: 1,
+            duration_ns: Some(90_000_000_000),
+            validity: "valid".into(),
+            validity_reason: None,
+            max_tyres_out: Some(0),
+            is_personal_best: true,
+            sectors: Vec::new(),
+        };
+        let manifest = SessionPackageManifest {
+            format_version: PACKAGE_VERSION,
+            telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
+            session: SessionSummary {
+                id: "shared-session".into(),
+                simulator_key: "assetto-corsa".into(),
+                source_track_id: Some("zandvoort".into()),
+                layout_id: None,
+                source_car_id: Some("ks_mazda_mx5_cup".into()),
+                user_title: None,
+                user_driver: Some("Alex".into()),
+                ownership: "mine".into(),
+                tags: Vec::new(),
+                track: Some("Zandvoort".into()),
+                car: Some("Mazda MX-5 Cup".into()),
+                session_type: Some("hotlap".into()),
+                started_at: "2026-10-18T12:00:00Z".into(),
+                source_kind: "native_capture".into(),
+                conditions: SessionConditions::default(),
+                exportable: true,
+                laps: vec![lap.clone()],
+            },
+            laps: vec![SessionPackageLap {
+                summary: lap,
+                sample_start: 0,
+                sample_count: 1,
+            }],
+            sample_count: 1,
+            confirmed_setup: None,
+        };
+        let mut package = Vec::new();
+        write_package(&mut package, telemetry.as_slice(), &manifest).expect("package");
+        package
     }
 
     #[test]
@@ -1072,6 +1330,122 @@ mod tests {
         let created: CreateLiveSessionResponse =
             serde_json::from_slice(&body).expect("session JSON");
         assert!(created.spectator_url.ends_with(&created.session_id));
+    }
+
+    #[tokio::test]
+    async fn shared_packages_are_validated_downloadable_and_durable() {
+        let directory = tempfile::tempdir().expect("share directory");
+        let config =
+            ServerConfig::new("https://live.simtrace.run").with_share_directory(directory.path());
+        let application = app(config.clone());
+        let credentials_response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/installations")
+                    .body(Body::empty())
+                    .expect("credentials request"),
+            )
+            .await
+            .expect("credentials response");
+        let credentials = serde_json::from_slice::<InstallationCredentials>(
+            &to_bytes(credentials_response.into_body(), 64 * 1024)
+                .await
+                .expect("credentials body"),
+        )
+        .expect("credentials");
+
+        let unauthorized = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/shared-sessions")
+                    .body(Body::from(shared_package()))
+                    .expect("unauthorized request"),
+            )
+            .await
+            .expect("unauthorized response");
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let invalid = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/shared-sessions")
+                    .header("x-trace-installation-id", &credentials.installation_id)
+                    .header(
+                        "authorization",
+                        format!("Bearer {}", credentials.publishing_token),
+                    )
+                    .body(Body::from("not a package"))
+                    .expect("invalid request"),
+            )
+            .await
+            .expect("invalid response");
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+
+        let package = shared_package();
+        let created_response = application
+            .oneshot(
+                Request::post("/api/v1/shared-sessions")
+                    .header("x-trace-installation-id", &credentials.installation_id)
+                    .header(
+                        "authorization",
+                        format!("Bearer {}", credentials.publishing_token),
+                    )
+                    .body(Body::from(package.clone()))
+                    .expect("upload request"),
+            )
+            .await
+            .expect("upload response");
+        assert_eq!(created_response.status(), StatusCode::CREATED);
+        let created = serde_json::from_slice::<SharedSessionSummary>(
+            &to_bytes(created_response.into_body(), 64 * 1024)
+                .await
+                .expect("upload body"),
+        )
+        .expect("share summary");
+        assert_eq!(created.driver_name.as_deref(), Some("Alex"));
+        assert_eq!(created.track, "Zandvoort");
+        assert_eq!(created.lap_count, 1);
+
+        let restarted = app(config);
+        let page = restarted
+            .clone()
+            .oneshot(
+                Request::get(format!("/s/{}", created.share_id))
+                    .body(Body::empty())
+                    .expect("share page request"),
+            )
+            .await
+            .expect("share page response");
+        assert_eq!(page.status(), StatusCode::OK);
+        let page = to_bytes(page.into_body(), 128 * 1024)
+            .await
+            .expect("share page body");
+        let page = String::from_utf8(page.to_vec()).expect("share page HTML");
+        assert!(page.contains("Alex at Zandvoort"));
+        assert!(!page.contains("{{TRACE_"));
+
+        let download = restarted
+            .oneshot(
+                Request::get(format!(
+                    "/api/v1/shared-sessions/{}/download",
+                    created.share_id
+                ))
+                .body(Body::empty())
+                .expect("download request"),
+            )
+            .await
+            .expect("download response");
+        assert_eq!(download.status(), StatusCode::OK);
+        assert_eq!(
+            download.headers()["content-type"],
+            "application/vnd.simtrace.session"
+        );
+        assert_eq!(
+            to_bytes(download.into_body(), package.len())
+                .await
+                .expect("download body"),
+            package
+        );
     }
 
     #[tokio::test]

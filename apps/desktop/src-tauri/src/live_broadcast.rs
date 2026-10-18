@@ -24,7 +24,7 @@ use trace_domain::{Gear, SessionSeed, SourceDescriptor, TelemetryFrame};
 use trace_live::{LiveStreamEncoder, LiveTelemetrySample, encode_recorded_session_with_geometry};
 use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, InstallationCredentials, LiveStatus,
-    SessionState, TrackGeometry, TrackPoint,
+    SessionState, SharedSessionSummary, TrackGeometry, TrackPoint,
 };
 use trace_server::{LocalServer, ServerConfig, start_local_server};
 use trace_storage::{
@@ -984,6 +984,45 @@ async fn installation_credentials(
         .entry(endpoint.to_owned())
         .or_insert_with(|| credentials.clone());
     Ok(selected.clone())
+}
+
+pub(crate) async fn upload_shared_session(
+    shared: &SharedLiveBroadcast,
+    endpoint: &str,
+    contents: Vec<u8>,
+) -> Result<SharedSessionSummary, String> {
+    let client = reqwest::Client::new();
+    let contents = bytes::Bytes::from(contents);
+    let mut credentials = installation_credentials(shared, &client, endpoint).await?;
+    let mut response =
+        send_shared_session(&client, endpoint, &credentials, contents.clone()).await?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        invalidate_credentials(shared, endpoint);
+        credentials = installation_credentials(shared, &client, endpoint).await?;
+        response = send_shared_session(&client, endpoint, &credentials, contents).await?;
+    }
+    require_success(response, "session sharing")
+        .await?
+        .json::<SharedSessionSummary>()
+        .await
+        .map_err(|error| format!("sharing service returned an invalid response: {error}"))
+}
+
+async fn send_shared_session(
+    client: &reqwest::Client,
+    endpoint: &str,
+    credentials: &InstallationCredentials,
+    contents: bytes::Bytes,
+) -> Result<reqwest::Response, String> {
+    client
+        .post(format!("{endpoint}/api/v1/shared-sessions"))
+        .header("x-trace-installation-id", &credentials.installation_id)
+        .header("content-type", "application/vnd.simtrace.session")
+        .bearer_auth(&credentials.publishing_token)
+        .body(contents)
+        .send()
+        .await
+        .map_err(|error| format!("could not reach the sharing service: {error}"))
 }
 
 fn invalidate_credentials(shared: &SharedLiveBroadcast, endpoint: &str) {

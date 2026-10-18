@@ -375,6 +375,7 @@ function SessionRow({
 	const [draftOwnership, setDraftOwnership] = useState<RecordedSessionSummary["ownership"]>(session.ownership);
 	const [draftTags, setDraftTags] = useState(session.tags.join(", "));
 	const [exporting, setExporting] = useState(false);
+	const [sharing, setSharing] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [savingDetails, setSavingDetails] = useState(false);
 	const actionsMenu = useRef<HTMLDivElement>(null);
@@ -423,6 +424,32 @@ function SessionRow({
 			showToast({ kind: "error", title: "Export failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
 		} finally {
 			setExporting(false);
+		}
+	}
+
+	async function shareTelemetry() {
+		setSharing(true);
+		try {
+			const result = await telemetryDataSource.shareSession(session.id);
+			let copied = false;
+			try {
+				await navigator.clipboard.writeText(result.shareUrl);
+				copied = true;
+			} catch {
+				// The URL remains visible in the notification when clipboard access is unavailable.
+			}
+			showToast({
+				kind: "success",
+				title: copied ? "Share link copied" : "Share link created",
+				message: copied
+					? `Anyone with the link can download this session until ${new Date(result.expiresAtUnixMs).toLocaleString()}.`
+					: result.shareUrl,
+				timeoutMs: 9_000,
+			});
+		} catch (error) {
+			showToast({ kind: "error", title: "Could not share session", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		} finally {
+			setSharing(false);
 		}
 	}
 
@@ -509,16 +536,16 @@ function SessionRow({
 					</svg>
 				</button>
 				<div className="flex shrink-0 items-stretch border-l border-trace-divider">
-					<Tooltip className="h-full" content="Share as a .trace package">
+					<Tooltip className="h-full" content="Create an expiring share link">
 						<button
 							type="button"
-							aria-label={`Share ${session.track} session as a TRACE package`}
-							disabled={exporting || !session.exportable}
-							onClick={() => void exportTelemetry("trace")}
+							aria-label={`Create a share link for ${session.track}`}
+							disabled={sharing || !session.exportable}
+							onClick={() => void shareTelemetry()}
 							className="grid h-full w-12 place-items-center border-0 border-r border-trace-divider bg-transparent text-trace-accent hover:bg-trace-accent-wash hover:text-trace-text disabled:text-trace-dim disabled:hover:bg-transparent"
 						>
 							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-								<path d="M8 10.5V2.5m0 0L5.2 5.3M8 2.5l2.8 2.8M3 9.5v3h10v-3" />
+								<path d="M6.2 9.8 9.8 6.2M5.1 11.9l-1 .9a2.1 2.1 0 0 1-3-3l2.3-2.3a2.1 2.1 0 0 1 3 0M10.9 4.1l1-.9a2.1 2.1 0 0 1 3 3l-2.3 2.3a2.1 2.1 0 0 1-3 0" />
 							</svg>
 						</button>
 					</Tooltip>
@@ -604,6 +631,12 @@ function SessionRow({
 												<span className="block px-2 pb-1 font-mono text-[9px] font-bold tracking-[.12em] text-trace-dim">
 													DATA EXPORTS
 												</span>
+												<ExportOption
+													label="TRACE package"
+													detail=".trace · portable session"
+													disabled={exporting}
+													onClick={() => void exportTelemetry("trace")}
+												/>
 												<ExportOption
 													label="Raw telemetry"
 													detail="Arrow IPC · all captured channels"

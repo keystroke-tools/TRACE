@@ -288,6 +288,20 @@ export interface SessionExport {
 	sampleCount: number;
 }
 
+export interface SharedSession {
+	shareId: string;
+	shareUrl: string;
+	downloadUrl: string;
+	expiresAtUnixMs: number;
+	sizeBytes: number;
+	driverName?: string | null;
+	simulator: string;
+	car: string;
+	track: string;
+	sessionType: string;
+	lapCount: number;
+}
+
 export interface SessionDeletion {
 	sessionId: string;
 	cleanupWarning?: string | null;
@@ -582,6 +596,7 @@ export interface TelemetryDataSource {
 	deleteSavedComparison(comparisonId: string): Promise<SavedComparison[]>;
 	renameSavedComparison(comparisonId: string, name: string): Promise<SavedComparison[]>;
 	exportSession(sessionId: string, format: SessionExportFormat): Promise<SessionExport>;
+	shareSession(sessionId: string): Promise<SharedSession>;
 	previewMotecImport(path: string): Promise<MotecImportPreview>;
 	importSession(path: string, motecOptions?: MotecImportOptions): Promise<SessionImport>;
 	deleteSession(sessionId: string): Promise<SessionDeletion>;
@@ -861,6 +876,21 @@ export const fixtureDataSource: TelemetryDataSource = {
 			path: `Browser preview (${format.toUpperCase()})`,
 			format: format === "trace" ? "TRACE session" : format === "arrow" ? "Arrow IPC" : "CSV",
 			sampleCount: 0,
+		};
+	},
+	async shareSession(_sessionId) {
+		return {
+			shareId: "shared-fixture",
+			shareUrl: "https://live.simtrace.run/s/shared-fixture",
+			downloadUrl: "https://live.simtrace.run/api/v1/shared-sessions/shared-fixture/download",
+			expiresAtUnixMs: Date.now() + 7 * 24 * 60 * 60 * 1_000,
+			sizeBytes: 1_024_000,
+			driverName: "Alex Morgan",
+			simulator: "assetto-corsa",
+			car: "Mazda MX-5 Cup",
+			track: "Zandvoort",
+			sessionType: "Hotlap",
+			lapCount: 3,
 		};
 	},
 	async importSession(_path) {
@@ -1524,6 +1554,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	exportSession(sessionId, exportFormat) {
 		return invoke<SessionExport>("export_session", { sessionId, exportFormat });
+	},
+	shareSession(sessionId) {
+		return invoke<SharedSession>("share_session", { sessionId });
 	},
 	previewMotecImport(path) {
 		return invoke<MotecImportPreview>("preview_motec_import", { path });

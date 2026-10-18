@@ -23,6 +23,7 @@ tauri-build.workspace = true
 
 [dependencies]
 discord-rich-presence = "1.1.0"
+bytes.workspace = true
 futures-util.workspace = true
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde.workspace = true

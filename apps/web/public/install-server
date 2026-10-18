@@ -19,6 +19,7 @@ Optional environment variables:
   TRACE_SERVER_REPOSITORY    GitHub owner/repository (default: keystroke-tools/TRACE)
   TRACE_BIND                 Initial listen address (default: 127.0.0.1:8080)
   TRACE_PUBLIC_BASE_URL      Initial public URL (default: https://live.simtrace.run)
+  TRACE_SHARE_TTL_DAYS       Shared-session retention in days (default: 7)
   TRACE_INSTALL_NONINTERACTIVE=1
                              Accept defaults instead of opening the first-install wizard
 
@@ -175,10 +176,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/trace-server.env
+Environment=TRACE_DATA_DIR=/var/lib/trace-server
 ExecStart=/usr/local/bin/trace-server
 Restart=on-failure
 RestartSec=3
 DynamicUser=yes
+StateDirectory=trace-server
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
