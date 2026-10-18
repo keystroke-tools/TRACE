@@ -1460,6 +1460,7 @@ fn extend_projection(
             .skip(start)
             .take(length),
     );
+    let position_frames = optional_i8(batch, "position_frame")?;
     if let Ok(index) = batch.schema().index_of("native_schema")
         && let Some(schemas) = batch.column(index).as_any().downcast_ref::<StringArray>()
     {
@@ -1486,6 +1487,17 @@ fn extend_projection(
                 && schemas.value(source_row) == "motec.i2.ld/community-1"
                 && let Some(position_x) = decoded.position_x_m[projection_start + offset].as_mut()
             {
+                *position_x = -*position_x;
+            }
+            if !schemas.is_null(source_row)
+                && schemas.value(source_row) == "le-mans-ultimate.shared-memory/v01"
+                && position_frames.get(source_row)
+                    == Some(&Some(coordinate_frame(CoordinateFrame::SourceWorld)))
+                && let Some(position_x) = decoded.position_x_m[projection_start + offset].as_mut()
+            {
+                // LMU's source world is left-handed. Recordings created before the
+                // adapter normalized it retain the SourceWorld marker and need the
+                // same one-time X reflection applied while projecting canonical data.
                 *position_x = -*position_x;
             }
         }
@@ -2462,6 +2474,35 @@ mod tests {
 
         assert_eq!(decoded.position_x_m, vec![Some(-213.0)]);
         assert_eq!(decoded.position_z_m, vec![Some(-439.0)]);
+    }
+
+    #[test]
+    fn projection_normalizes_legacy_lmu_source_world_without_flipping_trace_world() {
+        let frame = |coordinate_frame| TelemetryFrame {
+            motion: MotionState {
+                position_m: Some(Vector3 {
+                    x: 213.0,
+                    y: 19.0,
+                    z: -439.0,
+                    frame: coordinate_frame,
+                }),
+                ..MotionState::default()
+            },
+            native: Some(Box::new(NativeTelemetrySample {
+                schema: "le-mans-ultimate.shared-memory/v01".into(),
+                ..NativeTelemetrySample::default()
+            })),
+            ..TelemetryFrame::default()
+        };
+        let bytes = encode_frames(&[
+            frame(CoordinateFrame::SourceWorld),
+            frame(CoordinateFrame::TraceWorld),
+        ])
+        .expect("encoded");
+        let decoded = read_columns_range(Cursor::new(bytes), 0, 2).expect("decoded");
+
+        assert_eq!(decoded.position_x_m, vec![Some(-213.0), Some(213.0)]);
+        assert_eq!(decoded.position_z_m, vec![Some(-439.0), Some(-439.0)]);
     }
 
     #[test]

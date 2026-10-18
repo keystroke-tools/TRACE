@@ -185,7 +185,7 @@ impl LmuSnapshot {
                 fuel_litres: nonnegative_f32(page.f64(telemetry + 524)?),
             },
             motion: MotionState {
-                position_m: Some(page.vector3(telemetry + 160, CoordinateFrame::SourceWorld)?),
+                position_m: Some(page.trace_world_position(telemetry + 160)?),
                 velocity_mps: Some(local_velocity),
                 acceleration_mps2: Some(page.vector3(telemetry + 208, CoordinateFrame::Vehicle)?),
             },
@@ -515,6 +515,19 @@ impl<'a> Page<'a> {
             .ok_or(LmuPageError::InvalidValue("vector"))
     }
 
+    fn trace_world_position(&self, offset: usize) -> Result<Vector3, LmuPageError> {
+        let source = self.vector3(offset, CoordinateFrame::SourceWorld)?;
+        // LMU's SDK documents a left-handed source world with Y pointing up.
+        // Reflect X once at the adapter boundary so the horizontal X/Z plane
+        // follows TRACE's map convention and is not mirrored in every consumer.
+        Ok(Vector3 {
+            x: -source.x,
+            y: source.y,
+            z: source.z,
+            frame: CoordinateFrame::TraceWorld,
+        })
+    }
+
     fn string(&self, offset: usize, length: usize) -> Option<String> {
         let bytes = self.bytes.get(offset..offset.checked_add(length)?)?;
         let end = bytes
@@ -717,6 +730,15 @@ mod tests {
         assert!((frame.inputs.throttle.expect("throttle") - 0.82).abs() < 0.000_1);
         assert_eq!(frame.vehicle.gear, Some(Gear::Forward(4)));
         assert_eq!(frame.vehicle.speed_mps, Some(70.0));
+        assert_eq!(
+            frame.motion.position_m,
+            Some(Vector3 {
+                x: -10.0,
+                y: 2.0,
+                z: -5.0,
+                frame: CoordinateFrame::TraceWorld,
+            })
+        );
         assert_eq!(frame.wheels.len(), 4);
         assert_eq!(
             frame.native.as_ref().map(|native| native.payload.len()),

@@ -82,6 +82,11 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | additional native values          | fuel capacity, best-lap delta, brake bias, steering ranges          |
 
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
+Its SDK world coordinates are left-handed with Y pointing up. The adapter reflects
+source X once and marks the result as TRACE-world coordinates so maps use the same
+horizontal orientation as other integrations. When reading older LMU recordings,
+TRACE applies that repair only to positions still marked as source-world; new
+recordings are therefore never reflected twice.
 Telemetry's `mCurrentSector` is already zero-based (`0`, `1`, `2`) and must not be
 confused with the separate scoring-sector byte whose documented numbering is unusual.
 Current-sector scoring values may arrive one scoring update after the sector changes,
