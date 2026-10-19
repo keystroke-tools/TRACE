@@ -165,6 +165,7 @@ struct TimingEventTracker {
     sector_index: Option<u32>,
     previous_lap_time_s: Option<f32>,
     completed_sector_time_s: f64,
+    wrapped_lap_duration_s: Option<f64>,
     pending_lap: Option<PendingLap>,
 }
 
@@ -189,6 +190,7 @@ impl TimingEventTracker {
             self.sector_index = sample.sector_index;
             self.previous_lap_time_s = sample.lap_time_s.filter(|value| value.is_finite());
             self.completed_sector_time_s = 0.0;
+            self.wrapped_lap_duration_s = None;
             self.completed_laps = Some(completed_laps);
             self.pending_lap = None;
             return events;
@@ -204,12 +206,21 @@ impl TimingEventTracker {
 
         if let Some(previous_completed) = self.completed_laps {
             if completed_laps > previous_completed {
-                self.pending_lap = Some(PendingLap {
-                    lap_index: previous_completed,
-                    fallback_duration_s: self.previous_lap_time_s.map(f64::from),
-                });
-                if sample.sector_index != self.sector_index || sample.sector_index.is_none() {
-                    events.extend(self.finish_pending_lap(sample));
+                if let Some(duration_s) = self.wrapped_lap_duration_s.take() {
+                    events.push(Payload::LapEvent(LapEvent {
+                        lap_index: previous_completed,
+                        duration_s: Some(duration_s),
+                        validity: LapValidity::Unknown,
+                    }));
+                    self.completed_sector_time_s = 0.0;
+                } else {
+                    self.pending_lap = Some(PendingLap {
+                        lap_index: previous_completed,
+                        fallback_duration_s: self.previous_lap_time_s.map(f64::from),
+                    });
+                    if sample.sector_index != self.sector_index || sample.sector_index.is_none() {
+                        events.extend(self.finish_pending_lap(sample));
+                    }
                 }
             } else if let (Some(previous_sector), Some(next_sector)) =
                 (self.sector_index, sample.sector_index)
@@ -232,6 +243,30 @@ impl TimingEventTracker {
                         duration_s,
                     }));
                     self.completed_sector_time_s += duration_s;
+                }
+            } else if let (Some(previous_sector), Some(next_sector)) =
+                (self.sector_index, sample.sector_index)
+                && next_sector < previous_sector
+                && self.completed_sector_time_s > 0.0
+            {
+                let duration_s = sample
+                    .last_sector_time_s
+                    .filter(|value| value.is_finite() && *value > 0.0)
+                    .map(f64::from)
+                    .or_else(|| {
+                        self.previous_lap_time_s
+                            .map(f64::from)
+                            .map(|lap_time| (lap_time - self.completed_sector_time_s).max(0.0))
+                    })
+                    .filter(|duration| *duration > 0.0);
+                if let Some(duration_s) = duration_s {
+                    events.push(Payload::SectorEvent(SectorEvent {
+                        lap_index: completed_laps,
+                        sector_index: previous_sector,
+                        duration_s,
+                    }));
+                    self.completed_sector_time_s += duration_s;
+                    self.wrapped_lap_duration_s = Some(self.completed_sector_time_s);
                 }
             }
         }
@@ -273,6 +308,7 @@ impl TimingEventTracker {
             validity: LapValidity::Unknown,
         }));
         self.completed_sector_time_s = 0.0;
+        self.wrapped_lap_duration_s = None;
         events
     }
 }
@@ -751,6 +787,53 @@ mod tests {
                 (1, 0, 29.0),
                 (1, 1, 39.0),
                 (1, 2, 49.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn retains_final_sector_when_lmu_wraps_before_incrementing_the_lap_counter() {
+        let mut tracker = TimingEventTracker::default();
+        let mut events = Vec::new();
+        for (completed_laps, sector_index, lap_time_s) in [
+            (0, 0, 10.0),
+            (0, 1, 30.0),
+            (0, 2, 70.0),
+            (0, 2, 100.0),
+            (0, 0, 0.02),
+            (1, 0, 0.10),
+        ] {
+            events.extend(tracker.observe(&LiveTelemetrySample {
+                completed_laps: Some(completed_laps),
+                sector_index: Some(sector_index),
+                lap_time_s: Some(lap_time_s),
+                ..LiveTelemetrySample::default()
+            }));
+        }
+
+        assert_eq!(
+            events,
+            vec![
+                Payload::SectorEvent(SectorEvent {
+                    lap_index: 0,
+                    sector_index: 0,
+                    duration_s: 30.0,
+                }),
+                Payload::SectorEvent(SectorEvent {
+                    lap_index: 0,
+                    sector_index: 1,
+                    duration_s: 40.0,
+                }),
+                Payload::SectorEvent(SectorEvent {
+                    lap_index: 0,
+                    sector_index: 2,
+                    duration_s: 30.0,
+                }),
+                Payload::LapEvent(LapEvent {
+                    lap_index: 0,
+                    duration_s: Some(100.0),
+                    validity: LapValidity::Unknown,
+                }),
             ]
         );
     }
