@@ -1785,6 +1785,20 @@ mod tests {
     }
 
     #[test]
+    fn session_creation_limits_are_scoped_by_address_and_installation() {
+        let service = LiveService::new(ServerConfig::new("http://localhost:8080"));
+        for scope in ["create-address", "create-installation"] {
+            service
+                .check_rate(scope, "subject", 1, 1, Duration::from_secs(60))
+                .expect("first creation request");
+            assert!(matches!(
+                service.check_rate(scope, "subject", 1, 1, Duration::from_secs(60)),
+                Err(ServiceError::RateLimited)
+            ));
+        }
+    }
+
+    #[test]
     fn durable_record_quotas_evict_only_unused_installations() {
         let limits = RateLimits {
             installation_records: 1,
@@ -2478,9 +2492,16 @@ mod tests {
 
     #[tokio::test]
     async fn publisher_reconnects_without_duplicating_the_ambiguous_message() {
-        let server = start_local_server(ServerConfig::new("http://127.0.0.1:0"), None)
-            .await
-            .expect("local server");
+        let limits = RateLimits {
+            publisher_upgrades_per_minute: 3,
+            ..RateLimits::default()
+        };
+        let server = start_local_server(
+            ServerConfig::new("http://127.0.0.1:0").with_rate_limits(limits),
+            None,
+        )
+        .await
+        .expect("local server");
         let client = reqwest::Client::new();
         let credentials = client
             .post(format!("{}/api/v1/installations", server.base_url()))
@@ -2548,6 +2569,10 @@ mod tests {
                 .expect("reconnected publish");
         }
         assert_eq!(next_test_envelope(&mut spectator).await.sequence, 1);
+        let limited = tokio_tungstenite::connect_async(&created.publish_websocket_url)
+            .await
+            .expect_err("publisher upgrade attempts must be limited");
+        assert!(limited.to_string().contains("429"));
         server.shutdown().await;
     }
 
