@@ -81,6 +81,27 @@ the publisher can authenticate again against the same session and spectators rec
 the retained window after reconnecting. Zero-downtime and multi-instance deployment
 remain future work.
 
+The service applies in-memory fixed-window limits with conservative defaults. A
+limited HTTP request receives `429 Too Many Requests` and `Retry-After: 60`; a
+publisher that exceeds its message or byte budget is closed with WebSocket policy
+code `1008`. Self-hosters can tune the limits in `/etc/trace-server.env`:
+
+| Variable                               | Default     |
+| -------------------------------------- | ----------- |
+| `TRACE_BOOTSTRAP_PER_MINUTE`           | `30`        |
+| `TRACE_SESSION_CREATIONS_PER_MINUTE`   | `20`        |
+| `TRACE_PUBLISHER_UPGRADES_PER_MINUTE`  | `60`        |
+| `TRACE_PUBLISH_MESSAGES_PER_SECOND`    | `120`       |
+| `TRACE_PUBLISH_BYTES_PER_SECOND`       | `8388608`   |
+| `TRACE_MAX_LIVE_SESSIONS`              | `4` per installation |
+| `TRACE_MAX_SPECTATORS_PER_SESSION`     | `64`        |
+| `TRACE_MAX_SPECTATORS_PER_ADDRESS`     | `16`        |
+
+Limits use the direct TCP peer address by default. Set
+`TRACE_TRUST_PROXY_HEADERS=true` only when TRACE is directly behind a trusted reverse
+proxy that replaces (rather than appends untrusted input to) `X-Forwarded-For`.
+These counters intentionally reset when the single server process restarts.
+
 ## HTTP API
 
 All implemented routes are versioned under `/api/v1`.

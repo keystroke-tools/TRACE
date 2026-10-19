@@ -5,20 +5,22 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    convert::Infallible,
     fs,
+    net::SocketAddr,
     path::PathBuf,
-    sync::{Arc, RwLock},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{Arc, Mutex, RwLock},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
     Json, Router,
     body::Bytes,
     extract::{
-        DefaultBodyLimit, Path, State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
+        ConnectInfo, DefaultBodyLimit, FromRequestParts, Path, State, WebSocketUpgrade,
+        ws::{CloseFrame, Message, WebSocket, close_code},
     },
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
@@ -48,6 +50,34 @@ const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 512 * 1024;
 const DEFAULT_MAX_SHARED_SESSION_BYTES: u64 = 128 * 1024 * 1024;
 const DEFAULT_SHARED_SESSION_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
+/// Configurable service-abuse limits. Spectator access remains unauthenticated.
+#[derive(Clone, Debug)]
+pub struct RateLimits {
+    pub bootstrap_per_minute: u64,
+    pub session_creations_per_minute: u64,
+    pub publisher_upgrades_per_minute: u64,
+    pub publisher_messages_per_second: u64,
+    pub publisher_bytes_per_second: u64,
+    pub live_sessions_per_installation: usize,
+    pub spectators_per_session: usize,
+    pub spectators_per_address: usize,
+}
+
+impl Default for RateLimits {
+    fn default() -> Self {
+        Self {
+            bootstrap_per_minute: 30,
+            session_creations_per_minute: 20,
+            publisher_upgrades_per_minute: 60,
+            publisher_messages_per_second: 120,
+            publisher_bytes_per_second: 8 * 1024 * 1024,
+            live_sessions_per_installation: 4,
+            spectators_per_session: 64,
+            spectators_per_address: 16,
+        }
+    }
+}
+
 /// Runtime settings supplied by the deployment environment.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -57,6 +87,8 @@ pub struct ServerConfig {
     share_directory: Option<PathBuf>,
     shared_session_ttl: Duration,
     max_shared_session_bytes: u64,
+    rate_limits: RateLimits,
+    trust_proxy_headers: bool,
 }
 
 impl ServerConfig {
@@ -70,6 +102,8 @@ impl ServerConfig {
             share_directory: None,
             shared_session_ttl: DEFAULT_SHARED_SESSION_TTL,
             max_shared_session_bytes: DEFAULT_MAX_SHARED_SESSION_BYTES,
+            rate_limits: RateLimits::default(),
+            trust_proxy_headers: false,
         }
     }
 
@@ -94,6 +128,20 @@ impl ServerConfig {
         self
     }
 
+    /// Replaces the public-service abuse limits.
+    #[must_use]
+    pub fn with_rate_limits(mut self, limits: RateLimits) -> Self {
+        self.rate_limits = limits;
+        self
+    }
+
+    /// Allows a trusted reverse proxy to supply the leftmost `X-Forwarded-For` address.
+    #[must_use]
+    pub fn with_trusted_proxy_headers(mut self, trust: bool) -> Self {
+        self.trust_proxy_headers = trust;
+        self
+    }
+
     #[cfg(test)]
     fn with_buffer_capacity(mut self, capacity: usize) -> Self {
         self.buffer_capacity = capacity;
@@ -108,6 +156,37 @@ pub struct LiveService {
     config: ServerConfig,
     shares: Option<ShareStore>,
     live_store: Option<LiveStore>,
+    abuse: Arc<Mutex<AbuseState>>,
+}
+
+#[derive(Default)]
+struct AbuseState {
+    windows: HashMap<String, WindowUsage>,
+    spectators_by_session: HashMap<String, usize>,
+    spectators_by_address: HashMap<String, usize>,
+}
+
+struct WindowUsage {
+    started: Instant,
+    used: u64,
+}
+
+struct PeerAddress(String);
+
+impl<S> FromRequestParts<S> for PeerAddress
+where
+    S: Send + Sync,
+{
+    type Rejection = Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self(
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map_or_else(|| "unknown".to_owned(), |peer| peer.0.ip().to_string()),
+        ))
+    }
 }
 
 /// Handle for a server embedded in the desktop process.
@@ -150,11 +229,14 @@ pub async fn start_local_server(
     config.public_base_url = format!("http://127.0.0.1:{port}");
     let (shutdown, receiver) = oneshot::channel();
     let task = tokio::spawn(async move {
-        let _ = axum::serve(listener, app(config))
-            .with_graceful_shutdown(async {
-                let _ = receiver.await;
-            })
-            .await;
+        let _ = axum::serve(
+            listener,
+            app(config).into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async {
+            let _ = receiver.await;
+        })
+        .await;
     });
     Ok(LocalServer {
         base_url: format!("http://127.0.0.1:{port}"),
@@ -205,6 +287,8 @@ enum ServiceError {
     InvalidPackage,
     PackageTooLarge,
     PublisherCredentialRequired,
+    RateLimited,
+    CapacityExceeded,
 }
 
 impl IntoResponse for ServiceError {
@@ -232,8 +316,16 @@ impl IntoResponse for ServiceError {
                 StatusCode::UPGRADE_REQUIRED,
                 "live session requires a session-scoped publishing credential",
             ),
+            Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "request rate limit exceeded"),
+            Self::CapacityExceeded => (StatusCode::TOO_MANY_REQUESTS, "connection limit exceeded"),
         };
-        (status, Json(ErrorBody { error })).into_response()
+        let mut response = (status, Json(ErrorBody { error })).into_response();
+        if matches!(self, Self::RateLimited | Self::CapacityExceeded) {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+        }
+        response
     }
 }
 
@@ -310,7 +402,39 @@ impl LiveService {
             config,
             shares,
             live_store,
+            abuse: Arc::new(Mutex::new(AbuseState::default())),
         }
+    }
+
+    fn check_rate(
+        &self,
+        scope: &str,
+        subject: &str,
+        cost: u64,
+        limit: u64,
+        window: Duration,
+    ) -> Result<(), ServiceError> {
+        let now = Instant::now();
+        let mut abuse = self.abuse.lock().map_err(|_| ServiceError::Unavailable)?;
+        let key = format!("{scope}:{subject}");
+        let usage = abuse.windows.entry(key).or_insert(WindowUsage {
+            started: now,
+            used: 0,
+        });
+        if now.duration_since(usage.started) >= window {
+            usage.started = now;
+            usage.used = 0;
+        }
+        if cost > limit.saturating_sub(usage.used) {
+            return Err(ServiceError::RateLimited);
+        }
+        usage.used = usage.used.saturating_add(cost);
+        if abuse.windows.len() > 10_000 {
+            abuse
+                .windows
+                .retain(|_, usage| now.duration_since(usage.started) < Duration::from_secs(120));
+        }
+        Ok(())
     }
 
     fn authorize_installation(
@@ -356,6 +480,16 @@ impl LiveService {
     ) -> Result<CreateLiveSessionResponse, ServiceError> {
         let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
         authenticate(&service, installation_id, token)?;
+        let active_sessions = service
+            .sessions
+            .values()
+            .filter(|session| {
+                session.owner_id == installation_id && session.state.status != LiveStatus::Ended
+            })
+            .count();
+        if active_sessions >= self.config.rate_limits.live_sessions_per_installation {
+            return Err(ServiceError::CapacityExceeded);
+        }
         let session_id = opaque_identifier();
         let publishing_token = format!("{}{}", opaque_identifier(), opaque_identifier());
         let publisher_token_hash = hash_token(&publishing_token);
@@ -538,6 +672,42 @@ impl LiveService {
         ))
     }
 
+    fn acquire_spectator(
+        &self,
+        session_id: &str,
+        source: &str,
+    ) -> Result<SpectatorPermit, ServiceError> {
+        let mut abuse = self.abuse.lock().map_err(|_| ServiceError::Unavailable)?;
+        let session_count = abuse
+            .spectators_by_session
+            .get(session_id)
+            .copied()
+            .unwrap_or_default();
+        let address_count = abuse
+            .spectators_by_address
+            .get(source)
+            .copied()
+            .unwrap_or_default();
+        if session_count >= self.config.rate_limits.spectators_per_session
+            || address_count >= self.config.rate_limits.spectators_per_address
+        {
+            return Err(ServiceError::CapacityExceeded);
+        }
+        *abuse
+            .spectators_by_session
+            .entry(session_id.to_owned())
+            .or_default() += 1;
+        *abuse
+            .spectators_by_address
+            .entry(source.to_owned())
+            .or_default() += 1;
+        Ok(SpectatorPermit {
+            abuse: Arc::clone(&self.abuse),
+            session_id: session_id.to_owned(),
+            source: source.to_owned(),
+        })
+    }
+
     fn end_session(
         &self,
         session_id: &str,
@@ -617,6 +787,31 @@ impl LiveService {
     }
 }
 
+struct SpectatorPermit {
+    abuse: Arc<Mutex<AbuseState>>,
+    session_id: String,
+    source: String,
+}
+
+impl Drop for SpectatorPermit {
+    fn drop(&mut self) {
+        let Ok(mut abuse) = self.abuse.lock() else {
+            return;
+        };
+        decrement_counter(&mut abuse.spectators_by_session, &self.session_id);
+        decrement_counter(&mut abuse.spectators_by_address, &self.source);
+    }
+}
+
+fn decrement_counter(counters: &mut HashMap<String, usize>, key: &str) {
+    if let Some(count) = counters.get_mut(key) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            counters.remove(key);
+        }
+    }
+}
+
 /// Builds the HTTP and WebSocket application.
 pub fn app(config: ServerConfig) -> Router {
     let maximum_upload_bytes =
@@ -676,16 +871,37 @@ async fn landing_page(State(service): State<LiveService>) -> Html<String> {
 
 async fn bootstrap_installation(
     State(service): State<LiveService>,
+    peer: PeerAddress,
+    headers: HeaderMap,
 ) -> Result<Json<InstallationCredentials>, ServiceError> {
+    let source = client_address(&service.config, &headers, &peer);
+    service.check_rate(
+        "bootstrap",
+        &source,
+        1,
+        service.config.rate_limits.bootstrap_per_minute,
+        Duration::from_secs(60),
+    )?;
     service.bootstrap_installation().map(Json)
 }
 
 async fn create_live_session(
     State(service): State<LiveService>,
+    peer: PeerAddress,
     headers: HeaderMap,
     Json(request): Json<CreateLiveSessionRequest>,
 ) -> Result<(StatusCode, Json<CreateLiveSessionResponse>), ServiceError> {
     let (installation_id, token) = publisher_credentials(&headers)?;
+    let source = client_address(&service.config, &headers, &peer);
+    let limit = service.config.rate_limits.session_creations_per_minute;
+    service.check_rate("create-address", &source, 1, limit, Duration::from_secs(60))?;
+    service.check_rate(
+        "create-installation",
+        installation_id,
+        1,
+        limit,
+        Duration::from_secs(60),
+    )?;
     let response = service.create_session(installation_id, token, request.session)?;
     Ok((StatusCode::CREATED, Json(response)))
 }
@@ -998,8 +1214,17 @@ async fn publisher_websocket(
     websocket: WebSocketUpgrade,
     State(service): State<LiveService>,
     Path(session_id): Path<String>,
+    peer: PeerAddress,
     headers: HeaderMap,
 ) -> Result<Response, ServiceError> {
+    let source = client_address(&service.config, &headers, &peer);
+    service.check_rate(
+        "publisher-upgrade",
+        &source,
+        1,
+        service.config.rate_limits.publisher_upgrades_per_minute,
+        Duration::from_secs(60),
+    )?;
     let publishing_token = bearer_token(&headers)?.to_owned();
     service.authorize_publisher(&session_id, &publishing_token)?;
     Ok(websocket
@@ -1011,11 +1236,15 @@ async fn spectator_websocket(
     websocket: WebSocketUpgrade,
     State(service): State<LiveService>,
     Path(session_id): Path<String>,
+    peer: PeerAddress,
+    headers: HeaderMap,
 ) -> Result<Response, ServiceError> {
     let subscription = service.subscribe(&session_id)?;
+    let source = client_address(&service.config, &headers, &peer);
+    let permit = service.acquire_spectator(&session_id, &source)?;
     Ok(websocket
         .max_message_size(MAX_WEBSOCKET_MESSAGE_BYTES)
-        .on_upgrade(move |socket| send_to_spectator(socket, subscription)))
+        .on_upgrade(move |socket| send_to_spectator(socket, subscription, permit)))
 }
 
 async fn receive_publisher(
@@ -1027,20 +1256,50 @@ async fn receive_publisher(
     while let Some(Ok(message)) = socket.next().await {
         match message {
             Message::Text(text) => {
-                let parsed = serde_json::from_str::<Envelope>(&text)
-                    .map_err(|_| ServiceError::InvalidMessage)
-                    .and_then(|envelope| service.publish(&session_id, &publishing_token, envelope));
+                let rate_check = service
+                    .check_rate(
+                        "publisher-messages",
+                        &session_id,
+                        1,
+                        service.config.rate_limits.publisher_messages_per_second,
+                        Duration::from_secs(1),
+                    )
+                    .and_then(|()| {
+                        service.check_rate(
+                            "publisher-bytes",
+                            &session_id,
+                            u64::try_from(text.len()).unwrap_or(u64::MAX),
+                            service.config.rate_limits.publisher_bytes_per_second,
+                            Duration::from_secs(1),
+                        )
+                    });
+                let parsed = rate_check.and_then(|()| {
+                    serde_json::from_str::<Envelope>(&text)
+                        .map_err(|_| ServiceError::InvalidMessage)
+                        .and_then(|envelope| {
+                            service.publish(&session_id, &publishing_token, envelope)
+                        })
+                });
                 if let Err(error) = parsed {
                     let reason = serde_json::to_string(&ErrorBody {
                         error: error_message(error),
                     })
                     .unwrap_or_else(|_| "{\"error\":\"invalid live protocol message\"}".to_owned());
                     let _ = socket.send(Message::Text(reason.into())).await;
+                    if matches!(error, ServiceError::RateLimited) {
+                        let _ = socket
+                            .send(Message::Close(Some(CloseFrame {
+                                code: close_code::POLICY,
+                                reason: "publisher rate limit exceeded".into(),
+                            })))
+                            .await;
+                    }
                     if matches!(
                         error,
                         ServiceError::Ended
                             | ServiceError::Unauthorized
                             | ServiceError::PublisherCredentialRequired
+                            | ServiceError::RateLimited
                     ) {
                         break;
                     }
@@ -1062,6 +1321,7 @@ async fn receive_publisher(
 async fn send_to_spectator(
     mut socket: WebSocket,
     (snapshot, mut receiver): (Vec<Envelope>, broadcast::Receiver<Envelope>),
+    _permit: SpectatorPermit,
 ) {
     for envelope in snapshot {
         if send_envelope(&mut socket, &envelope).await.is_err() {
@@ -1109,6 +1369,20 @@ fn bearer_token(headers: &HeaderMap) -> Result<&str, ServiceError> {
         .filter(|value| !value.is_empty())
         .ok_or(ServiceError::Unauthorized)?;
     Ok(token)
+}
+
+fn client_address(config: &ServerConfig, headers: &HeaderMap, peer: &PeerAddress) -> String {
+    if config.trust_proxy_headers
+        && let Some(forwarded) = headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(',').next())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    {
+        return forwarded.to_owned();
+    }
+    peer.0.clone()
 }
 
 fn authenticate_publisher(
@@ -1220,6 +1494,8 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::PublisherCredentialRequired => {
             "live session requires a session-scoped publishing credential"
         }
+        ServiceError::RateLimited => "request rate limit exceeded",
+        ServiceError::CapacityExceeded => "connection limit exceeded",
     }
 }
 
@@ -1272,6 +1548,95 @@ mod tests {
             session_type: Some("hotlap".to_owned()),
             status: LiveStatus::Live,
         }
+    }
+
+    #[tokio::test]
+    async fn rate_limits_return_retry_after_and_bound_service_capacity() {
+        let limits = RateLimits {
+            bootstrap_per_minute: 1,
+            publisher_messages_per_second: 1,
+            publisher_bytes_per_second: 8,
+            live_sessions_per_installation: 1,
+            spectators_per_session: 1,
+            spectators_per_address: 1,
+            ..RateLimits::default()
+        };
+        let application =
+            app(ServerConfig::new("http://localhost:8080").with_rate_limits(limits.clone()));
+        let first = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/installations")
+                    .body(Body::empty())
+                    .expect("bootstrap request"),
+            )
+            .await
+            .expect("bootstrap response");
+        assert_eq!(first.status(), StatusCode::OK);
+        let second = application
+            .oneshot(
+                Request::post("/api/v1/installations")
+                    .body(Body::empty())
+                    .expect("limited bootstrap request"),
+            )
+            .await
+            .expect("limited bootstrap response");
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(second.headers()[header::RETRY_AFTER], "60");
+
+        let service =
+            LiveService::new(ServerConfig::new("http://localhost:8080").with_rate_limits(limits));
+        service
+            .check_rate(
+                "publisher-messages",
+                "session",
+                1,
+                1,
+                Duration::from_secs(1),
+            )
+            .expect("first message");
+        assert!(matches!(
+            service.check_rate(
+                "publisher-messages",
+                "session",
+                1,
+                1,
+                Duration::from_secs(1),
+            ),
+            Err(ServiceError::RateLimited)
+        ));
+        assert!(matches!(
+            service.check_rate("publisher-bytes", "session", 9, 8, Duration::from_secs(1),),
+            Err(ServiceError::RateLimited)
+        ));
+
+        let credentials = service.bootstrap_installation().expect("credentials");
+        let created = service
+            .create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            )
+            .expect("session");
+        assert!(matches!(
+            service.create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            ),
+            Err(ServiceError::CapacityExceeded)
+        ));
+        let permit = service
+            .acquire_spectator(&created.session_id, "127.0.0.1")
+            .expect("spectator permit");
+        assert!(matches!(
+            service.acquire_spectator(&created.session_id, "127.0.0.1"),
+            Err(ServiceError::CapacityExceeded)
+        ));
+        drop(permit);
+        service
+            .acquire_spectator(&created.session_id, "127.0.0.1")
+            .expect("released spectator permit");
     }
 
     fn message(session_id: &str, sequence: u64) -> Envelope {

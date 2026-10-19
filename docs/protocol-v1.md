@@ -146,9 +146,11 @@ Protocol validation does not itself authenticate a publisher. The Go Live servic
 an installation credential to create and manage sessions, then issues a distinct
 session-scoped credential for the publisher WebSocket. Only credential digests are
 persisted, comparisons are constant-time, and ending or expiring a session revokes its
-publisher credential. The service also applies a 512 KiB WebSocket message limit and
-strictly increasing per-session sequences. Rate limiting, acknowledgements, durable
-resume negotiation, and binary encoding remain future work.
+publisher credential. The service also applies a 512 KiB WebSocket message limit,
+strictly increasing per-session sequences, configurable fixed-window request and
+publish-rate limits, and concurrent live-session/spectator caps. Acknowledgements,
+durable resume negotiation, distributed rate counters, and binary encoding remain
+future work.
 
 ## Service boundaries
 

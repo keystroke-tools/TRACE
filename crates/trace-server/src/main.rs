@@ -1,6 +1,6 @@
 use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
 
-use trace_server::{ServerConfig, app};
+use trace_server::{RateLimits, ServerConfig, app};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,6 +26,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| (1..=10).contains(value))
         .unwrap_or(10);
+    let rate_limits = RateLimits {
+        bootstrap_per_minute: env_limit("TRACE_BOOTSTRAP_PER_MINUTE", 30),
+        session_creations_per_minute: env_limit("TRACE_SESSION_CREATIONS_PER_MINUTE", 20),
+        publisher_upgrades_per_minute: env_limit("TRACE_PUBLISHER_UPGRADES_PER_MINUTE", 60),
+        publisher_messages_per_second: env_limit("TRACE_PUBLISH_MESSAGES_PER_SECOND", 120),
+        publisher_bytes_per_second: env_limit("TRACE_PUBLISH_BYTES_PER_SECOND", 8 * 1024 * 1024),
+        live_sessions_per_installation: env_limit("TRACE_MAX_LIVE_SESSIONS", 4),
+        spectators_per_session: env_limit("TRACE_MAX_SPECTATORS_PER_SESSION", 64),
+        spectators_per_address: env_limit("TRACE_MAX_SPECTATORS_PER_ADDRESS", 16),
+    };
+    let trust_proxy_headers = env::var("TRACE_TRUST_PROXY_HEADERS")
+        .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"));
     let address: SocketAddr = bind.parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
 
@@ -33,7 +45,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ServerConfig::new(public_base_url)
         .with_share_directory(data_directory)
         .with_live_retention(Duration::from_secs(live_retention_minutes * 60))
-        .with_shared_session_ttl(Duration::from_secs(share_ttl_days * 24 * 60 * 60));
-    axum::serve(listener, app(config)).await?;
+        .with_shared_session_ttl(Duration::from_secs(share_ttl_days * 24 * 60 * 60))
+        .with_rate_limits(rate_limits)
+        .with_trusted_proxy_headers(trust_proxy_headers);
+    axum::serve(
+        listener,
+        app(config).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
+}
+
+fn env_limit<T>(name: &str, default: T) -> T
+where
+    T: std::str::FromStr + Copy,
+{
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }
