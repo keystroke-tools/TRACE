@@ -33,6 +33,12 @@ pub struct CreateLiveSessionResponse {
     pub publishing_token: String,
 }
 
+/// Replacement publisher credential returned to the authenticated session owner.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RotatePublishingTokenResponse {
+    pub publishing_token: String,
+}
+
 /// Public metadata returned after a completed TRACE package is shared.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

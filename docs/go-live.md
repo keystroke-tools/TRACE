@@ -110,13 +110,15 @@ All implemented routes are versioned under `/api/v1`.
 | -------- | ------------------------------------- | -------------- | ------------------------------------------------------ |
 | `GET`    | `/health`                             | none           | Process health probe; returns `204` and version header |
 | `POST`   | `/api/v1/installations`               | none           | Bootstrap an installation ID and publishing token      |
-| `POST`   | `/api/v1/live-sessions`               | publisher      | Create an unlisted live session                        |
-| `POST`   | `/api/v1/shared-sessions`             | publisher      | Validate and publish an expiring `.trace` package      |
+| `POST`   | `/api/v1/live-sessions`               | installation   | Create an unlisted live session                        |
+| `POST`   | `/api/v1/shared-sessions`             | installation   | Validate and publish an expiring `.trace` package      |
 | `GET`    | `/api/v1/shared-sessions/{id}`        | none           | Read metadata for a shared package                     |
 | `GET`    | `/api/v1/shared-sessions/{id}/download` | none         | Download the self-contained `.trace` package           |
 | `GET`    | `/api/v1/live-sessions/{id}`          | none           | Read public session state and retained sequence bounds |
-| `DELETE` | `/api/v1/live-sessions/{id}`          | publisher      | Explicitly end an owned session                        |
-| `GET`    | `/api/v1/live-sessions/{id}/publish`  | publisher      | Upgrade to the publisher WebSocket                     |
+| `DELETE` | `/api/v1/live-sessions/{id}`          | installation   | Explicitly end an owned session                        |
+| `POST`   | `/api/v1/live-sessions/{id}/publisher-credential` | installation | Rotate the session publisher token         |
+| `DELETE` | `/api/v1/live-sessions/{id}/publisher-credential` | installation | Revoke the session publisher token         |
+| `GET`    | `/api/v1/live-sessions/{id}/publish`  | session token  | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
@@ -142,7 +144,10 @@ WebSocket upgrades send that token as `Authorization: Bearer <session_token>` wi
 the installation identifier. The server stores only SHA-256 digests and compares both
 credential types in constant time. A session token cannot publish to another session,
 survives a service restart for reconnects, and is revoked when its session ends or
-expires. Plain tokens must never appear in spectator URLs, logs, or page metadata.
+expires. An authenticated installation can rotate or revoke the publisher token
+without changing the session ID or spectator URL; rotation immediately invalidates
+the previous token. Plain tokens must never appear in spectator URLs, logs, or page
+metadata.
 
 Session IDs use 128 bits of operating-system randomness and are intentionally
 unguessable. Spectating is unlisted rather than authenticated: anyone with the share

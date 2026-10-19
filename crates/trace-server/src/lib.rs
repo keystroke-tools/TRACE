@@ -32,8 +32,8 @@ use tokio::sync::broadcast;
 use tokio::sync::oneshot;
 use trace_protocol::{
     CreateLiveSessionRequest, CreateLiveSessionResponse, Envelope, InstallationCredentials,
-    LiveSessionSummary, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolLimits, SessionEnd,
-    SessionState, SharedSessionSummary,
+    LiveSessionSummary, LiveStatus, PROTOCOL_VERSION, Payload, ProtocolLimits,
+    RotatePublishingTokenResponse, SessionEnd, SessionState, SharedSessionSummary,
 };
 use uuid::Uuid;
 
@@ -581,6 +581,53 @@ impl LiveService {
         authenticate_publisher(session, publishing_token)
     }
 
+    fn rotate_publisher_token(
+        &self,
+        session_id: &str,
+        installation_id: &str,
+        installation_token: &str,
+    ) -> Result<RotatePublishingTokenResponse, ServiceError> {
+        self.authorize_session(session_id, installation_id, installation_token)?;
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        let session = service
+            .sessions
+            .get_mut(session_id)
+            .ok_or(ServiceError::NotFound)?;
+        if session.state.status == LiveStatus::Ended {
+            return Err(ServiceError::Ended);
+        }
+        let publishing_token = format!("{}{}", opaque_identifier(), opaque_identifier());
+        let publisher_token_hash = hash_token(&publishing_token);
+        if let Some(store) = &self.live_store {
+            store
+                .set_publisher_token_hash(session_id, Some(&publisher_token_hash))
+                .map_err(|_| ServiceError::Unavailable)?;
+        }
+        session.publisher_token_hash = Some(publisher_token_hash);
+        Ok(RotatePublishingTokenResponse { publishing_token })
+    }
+
+    fn revoke_publisher_token(
+        &self,
+        session_id: &str,
+        installation_id: &str,
+        installation_token: &str,
+    ) -> Result<(), ServiceError> {
+        self.authorize_session(session_id, installation_id, installation_token)?;
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        let session = service
+            .sessions
+            .get_mut(session_id)
+            .ok_or(ServiceError::NotFound)?;
+        if let Some(store) = &self.live_store {
+            store
+                .set_publisher_token_hash(session_id, None)
+                .map_err(|_| ServiceError::Unavailable)?;
+        }
+        session.publisher_token_hash = None;
+        Ok(())
+    }
+
     fn publish(
         &self,
         session_id: &str,
@@ -839,6 +886,10 @@ pub fn app(config: ServerConfig) -> Router {
         .route(
             "/api/v1/live-sessions/{session_id}/publish",
             get(publisher_websocket),
+        )
+        .route(
+            "/api/v1/live-sessions/{session_id}/publisher-credential",
+            post(rotate_publisher_credential).delete(revoke_publisher_credential),
         )
         .route(
             "/api/v1/live-sessions/{session_id}/spectate",
@@ -1207,6 +1258,27 @@ async fn end_live_session(
 ) -> Result<StatusCode, ServiceError> {
     let (installation_id, token) = publisher_credentials(&headers)?;
     service.end_session(&session_id, installation_id, token)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn rotate_publisher_credential(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<RotatePublishingTokenResponse>, ServiceError> {
+    let (installation_id, token) = publisher_credentials(&headers)?;
+    service
+        .rotate_publisher_token(&session_id, installation_id, token)
+        .map(Json)
+}
+
+async fn revoke_publisher_credential(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ServiceError> {
+    let (installation_id, token) = publisher_credentials(&headers)?;
+    service.revoke_publisher_token(&session_id, installation_id, token)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1840,6 +1912,57 @@ mod tests {
     }
 
     #[test]
+    fn publisher_credentials_can_be_rotated_and_revoked() {
+        let service = LiveService::new(ServerConfig::new("http://localhost:8080"));
+        let credentials = service.bootstrap_installation().expect("credentials");
+        let created = service
+            .create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            )
+            .expect("session");
+        let rotated = service
+            .rotate_publisher_token(
+                &created.session_id,
+                &credentials.installation_id,
+                &credentials.publishing_token,
+            )
+            .expect("rotated credential");
+        assert_ne!(rotated.publishing_token, created.publishing_token);
+        assert!(matches!(
+            service.publish(
+                &created.session_id,
+                &created.publishing_token,
+                message(&created.session_id, 1),
+            ),
+            Err(ServiceError::Unauthorized)
+        ));
+        service
+            .publish(
+                &created.session_id,
+                &rotated.publishing_token,
+                message(&created.session_id, 1),
+            )
+            .expect("rotated token publishes");
+        service
+            .revoke_publisher_token(
+                &created.session_id,
+                &credentials.installation_id,
+                &credentials.publishing_token,
+            )
+            .expect("revoked credential");
+        assert!(matches!(
+            service.publish(
+                &created.session_id,
+                &rotated.publishing_token,
+                message(&created.session_id, 2),
+            ),
+            Err(ServiceError::PublisherCredentialRequired)
+        ));
+    }
+
+    #[test]
     fn retains_only_the_configured_tail_and_fans_out_messages() {
         let service =
             LiveService::new(ServerConfig::new("http://localhost:8080").with_buffer_capacity(2));
@@ -1944,6 +2067,13 @@ mod tests {
                 message(&created.session_id, 7),
             )
             .expect("publish");
+        let rotated = service
+            .rotate_publisher_token(
+                &created.session_id,
+                &credentials.installation_id,
+                &credentials.publishing_token,
+            )
+            .expect("rotate persisted credential");
         drop(service);
 
         let restarted = LiveService::new(config);
@@ -1957,10 +2087,10 @@ mod tests {
         restarted
             .publish(
                 &created.session_id,
-                &created.publishing_token,
+                &rotated.publishing_token,
                 message(&created.session_id, 8),
             )
-            .expect("persisted session publishing credential");
+            .expect("persisted rotated publishing credential");
         let summary = restarted.summary(&created.session_id).expect("summary");
         assert_eq!(summary.oldest_sequence, Some(7));
         assert_eq!(summary.newest_sequence, Some(8));

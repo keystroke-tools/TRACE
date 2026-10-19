@@ -259,6 +259,22 @@ impl LiveStore {
         Ok(())
     }
 
+    pub(crate) fn set_publisher_token_hash(
+        &self,
+        session_id: &str,
+        publisher_token_hash: Option<&[u8; 32]>,
+    ) -> Result<(), LiveStoreError> {
+        self.connection
+            .lock()
+            .map_err(|_| LiveStoreError::Database)?
+            .execute(
+                "UPDATE live_sessions SET publisher_token_hash = ?2 WHERE session_id = ?1",
+                params![session_id, publisher_token_hash.map(<[u8; 32]>::as_slice)],
+            )
+            .map_err(|_| LiveStoreError::Database)?;
+        Ok(())
+    }
+
     pub(crate) fn delete_session(&self, session_id: &str) -> Result<(), LiveStoreError> {
         self.connection
             .lock()
