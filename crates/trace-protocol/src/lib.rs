@@ -29,6 +29,8 @@ pub struct CreateLiveSessionResponse {
     pub session_id: String,
     pub publish_websocket_url: String,
     pub spectator_url: String,
+    /// One-session bearer secret used only for the publisher WebSocket.
+    pub publishing_token: String,
 }
 
 /// Public metadata returned after a completed TRACE package is shared.

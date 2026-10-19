@@ -175,6 +175,7 @@ struct Installation {
 
 struct LiveSession {
     owner_id: String,
+    publisher_token_hash: Option<[u8; 32]>,
     state: SessionState,
     last_sequence: Option<u64>,
     updated_at_unix_ms: i64,
@@ -203,6 +204,7 @@ enum ServiceError {
     SharingUnavailable,
     InvalidPackage,
     PackageTooLarge,
+    PublisherCredentialRequired,
 }
 
 impl IntoResponse for ServiceError {
@@ -225,6 +227,10 @@ impl IntoResponse for ServiceError {
             Self::PackageTooLarge => (
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "TRACE session package is too large",
+            ),
+            Self::PublisherCredentialRequired => (
+                StatusCode::UPGRADE_REQUIRED,
+                "live session requires a session-scoped publishing credential",
             ),
         };
         (status, Json(ErrorBody { error })).into_response()
@@ -288,6 +294,7 @@ impl LiveService {
                         session.session_id,
                         LiveSession {
                             owner_id: session.owner_id,
+                            publisher_token_hash: session.publisher_token_hash,
                             state: session.state,
                             last_sequence: session.last_sequence,
                             updated_at_unix_ms: session.updated_at_unix_ms,
@@ -350,19 +357,28 @@ impl LiveService {
         let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
         authenticate(&service, installation_id, token)?;
         let session_id = opaque_identifier();
+        let publishing_token = format!("{}{}", opaque_identifier(), opaque_identifier());
+        let publisher_token_hash = hash_token(&publishing_token);
         state.status = LiveStatus::Paused;
         validate_session_state(&session_id, &state)?;
         let (broadcast, _) = broadcast::channel(BROADCAST_CAPACITY);
         let now_unix_ms = unix_timestamp_ms();
         if let Some(store) = &self.live_store {
             store
-                .save_session(&session_id, installation_id, &state, now_unix_ms)
+                .save_session(
+                    &session_id,
+                    installation_id,
+                    &state,
+                    &publisher_token_hash,
+                    now_unix_ms,
+                )
                 .map_err(|_| ServiceError::Unavailable)?;
         }
         service.sessions.insert(
             session_id.clone(),
             LiveSession {
                 owner_id: installation_id.to_owned(),
+                publisher_token_hash: Some(publisher_token_hash),
                 state,
                 last_sequence: None,
                 updated_at_unix_ms: now_unix_ms,
@@ -378,6 +394,7 @@ impl LiveService {
             ),
             spectator_url: format!("{}/live/{session_id}", self.config.public_base_url),
             session_id,
+            publishing_token,
         })
     }
 
@@ -416,7 +433,26 @@ impl LiveService {
         }
     }
 
-    fn publish(&self, session_id: &str, message: Envelope) -> Result<(), ServiceError> {
+    fn authorize_publisher(
+        &self,
+        session_id: &str,
+        publishing_token: &str,
+    ) -> Result<(), ServiceError> {
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        self.expire_session(&mut service, session_id, unix_timestamp_ms())?;
+        let session = service
+            .sessions
+            .get(session_id)
+            .ok_or(ServiceError::NotFound)?;
+        authenticate_publisher(session, publishing_token)
+    }
+
+    fn publish(
+        &self,
+        session_id: &str,
+        publishing_token: &str,
+        message: Envelope,
+    ) -> Result<(), ServiceError> {
         message
             .validate(ProtocolLimits::default())
             .map_err(|_| ServiceError::InvalidMessage)?;
@@ -430,6 +466,7 @@ impl LiveService {
             .sessions
             .get_mut(session_id)
             .ok_or(ServiceError::NotFound)?;
+        authenticate_publisher(session, publishing_token)?;
         if session.state.status == LiveStatus::Ended {
             return Err(ServiceError::Ended);
         }
@@ -454,13 +491,23 @@ impl LiveService {
             session.state.status = LiveStatus::Ended;
         }
         let received_at_unix_ms = unix_timestamp_ms();
+        let ended = session.state.status == LiveStatus::Ended;
         if let Some(store) = &self.live_store {
             store
-                .save_message(session_id, &session.state, &message, received_at_unix_ms)
+                .save_message(
+                    session_id,
+                    &session.state,
+                    &message,
+                    received_at_unix_ms,
+                    ended,
+                )
                 .map_err(|_| ServiceError::Unavailable)?;
         }
         session.last_sequence = Some(message.sequence);
         session.updated_at_unix_ms = received_at_unix_ms;
+        if ended {
+            session.publisher_token_hash = None;
+        }
         push_buffered(
             session,
             message,
@@ -523,11 +570,18 @@ impl LiveService {
         let received_at_unix_ms = unix_timestamp_ms();
         if let Some(store) = &self.live_store {
             store
-                .save_message(session_id, &session.state, &message, received_at_unix_ms)
+                .save_message(
+                    session_id,
+                    &session.state,
+                    &message,
+                    received_at_unix_ms,
+                    true,
+                )
                 .map_err(|_| ServiceError::Unavailable)?;
         }
         session.last_sequence = Some(sequence);
         session.updated_at_unix_ms = received_at_unix_ms;
+        session.publisher_token_hash = None;
         push_buffered(
             session,
             message,
@@ -946,11 +1000,11 @@ async fn publisher_websocket(
     Path(session_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, ServiceError> {
-    let (installation_id, token) = publisher_credentials(&headers)?;
-    service.authorize_session(&session_id, installation_id, token)?;
+    let publishing_token = bearer_token(&headers)?.to_owned();
+    service.authorize_publisher(&session_id, &publishing_token)?;
     Ok(websocket
         .max_message_size(MAX_WEBSOCKET_MESSAGE_BYTES)
-        .on_upgrade(move |socket| receive_publisher(socket, service, session_id)))
+        .on_upgrade(move |socket| receive_publisher(socket, service, session_id, publishing_token)))
 }
 
 async fn spectator_websocket(
@@ -964,20 +1018,30 @@ async fn spectator_websocket(
         .on_upgrade(move |socket| send_to_spectator(socket, subscription)))
 }
 
-async fn receive_publisher(mut socket: WebSocket, service: LiveService, session_id: String) {
+async fn receive_publisher(
+    mut socket: WebSocket,
+    service: LiveService,
+    session_id: String,
+    publishing_token: String,
+) {
     while let Some(Ok(message)) = socket.next().await {
         match message {
             Message::Text(text) => {
                 let parsed = serde_json::from_str::<Envelope>(&text)
                     .map_err(|_| ServiceError::InvalidMessage)
-                    .and_then(|envelope| service.publish(&session_id, envelope));
+                    .and_then(|envelope| service.publish(&session_id, &publishing_token, envelope));
                 if let Err(error) = parsed {
                     let reason = serde_json::to_string(&ErrorBody {
                         error: error_message(error),
                     })
                     .unwrap_or_else(|_| "{\"error\":\"invalid live protocol message\"}".to_owned());
                     let _ = socket.send(Message::Text(reason.into())).await;
-                    if matches!(error, ServiceError::Ended) {
+                    if matches!(
+                        error,
+                        ServiceError::Ended
+                            | ServiceError::Unauthorized
+                            | ServiceError::PublisherCredentialRequired
+                    ) {
                         break;
                     }
                 }
@@ -1032,6 +1096,10 @@ fn publisher_credentials(headers: &HeaderMap) -> Result<(&str, &str), ServiceErr
         .get("x-trace-installation-id")
         .and_then(|value| value.to_str().ok())
         .ok_or(ServiceError::Unauthorized)?;
+    Ok((installation_id, bearer_token(headers)?))
+}
+
+fn bearer_token(headers: &HeaderMap) -> Result<&str, ServiceError> {
     let authorization = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
@@ -1040,7 +1108,22 @@ fn publisher_credentials(headers: &HeaderMap) -> Result<(&str, &str), ServiceErr
         .strip_prefix("Bearer ")
         .filter(|value| !value.is_empty())
         .ok_or(ServiceError::Unauthorized)?;
-    Ok((installation_id, token))
+    Ok(token)
+}
+
+fn authenticate_publisher(
+    session: &LiveSession,
+    publishing_token: &str,
+) -> Result<(), ServiceError> {
+    let token_hash = session
+        .publisher_token_hash
+        .as_ref()
+        .ok_or(ServiceError::PublisherCredentialRequired)?;
+    if bool::from(token_hash.ct_eq(&hash_token(publishing_token))) {
+        Ok(())
+    } else {
+        Err(ServiceError::Unauthorized)
+    }
 }
 
 fn authenticate(
@@ -1134,6 +1217,9 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::SharingUnavailable => "completed-session sharing is unavailable",
         ServiceError::InvalidPackage => "invalid TRACE session package",
         ServiceError::PackageTooLarge => "TRACE session package is too large",
+        ServiceError::PublisherCredentialRequired => {
+            "live session requires a session-scoped publishing credential"
+        }
     }
 }
 
@@ -1267,6 +1353,8 @@ mod tests {
             .expect("session");
 
         assert_eq!(created.session_id.len(), 32);
+        assert_eq!(created.publishing_token.len(), 64);
+        assert_ne!(created.publishing_token, credentials.publishing_token);
         assert_eq!(
             created.spectator_url,
             format!("https://live.simtrace.run/live/{}", created.session_id)
@@ -1341,16 +1429,47 @@ mod tests {
                 session_state(),
             )
             .expect("session");
+        assert!(matches!(
+            service.publish(
+                &created.session_id,
+                &credentials.publishing_token,
+                message(&created.session_id, 1),
+            ),
+            Err(ServiceError::Unauthorized)
+        ));
+        let other = service
+            .create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            )
+            .expect("other session");
+        assert!(matches!(
+            service.publish(
+                &other.session_id,
+                &created.publishing_token,
+                message(&other.session_id, 1),
+            ),
+            Err(ServiceError::Unauthorized)
+        ));
         service
-            .publish(&created.session_id, message(&created.session_id, 1))
+            .publish(
+                &created.session_id,
+                &created.publishing_token,
+                message(&created.session_id, 1),
+            )
             .expect("first message");
         service
-            .publish(&created.session_id, message(&created.session_id, 1))
+            .publish(
+                &created.session_id,
+                &created.publishing_token,
+                message(&created.session_id, 1),
+            )
             .expect("idempotent retry");
         let mut conflicting = message(&created.session_id, 1);
         conflicting.message_id = "different_message".to_owned();
         assert!(matches!(
-            service.publish(&created.session_id, conflicting),
+            service.publish(&created.session_id, &created.publishing_token, conflicting),
             Err(ServiceError::OutOfOrder)
         ));
     }
@@ -1373,7 +1492,11 @@ mod tests {
 
         for sequence in 1..=3 {
             service
-                .publish(&created.session_id, message(&created.session_id, sequence))
+                .publish(
+                    &created.session_id,
+                    &created.publishing_token,
+                    message(&created.session_id, sequence),
+                )
                 .expect("publish");
         }
         assert_eq!(receiver.try_recv().expect("broadcast").sequence, 1);
@@ -1424,6 +1547,14 @@ mod tests {
             ended_snapshot.last().map(|envelope| &envelope.payload),
             Some(Payload::End(_))
         ));
+        assert!(matches!(
+            service.publish(
+                &created.session_id,
+                &created.publishing_token,
+                message(&created.session_id, 4),
+            ),
+            Err(ServiceError::PublisherCredentialRequired)
+        ));
     }
 
     #[test]
@@ -1442,7 +1573,11 @@ mod tests {
             )
             .expect("session");
         service
-            .publish(&created.session_id, message(&created.session_id, 7))
+            .publish(
+                &created.session_id,
+                &created.publishing_token,
+                message(&created.session_id, 7),
+            )
             .expect("publish");
         drop(service);
 
@@ -1454,13 +1589,20 @@ mod tests {
                 &credentials.publishing_token,
             )
             .expect("persisted credentials and ownership");
+        restarted
+            .publish(
+                &created.session_id,
+                &created.publishing_token,
+                message(&created.session_id, 8),
+            )
+            .expect("persisted session publishing credential");
         let summary = restarted.summary(&created.session_id).expect("summary");
         assert_eq!(summary.oldest_sequence, Some(7));
-        assert_eq!(summary.newest_sequence, Some(7));
+        assert_eq!(summary.newest_sequence, Some(8));
         let (snapshot, _) = restarted
             .subscribe(&created.session_id)
             .expect("subscription");
-        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot.len(), 2);
         assert_eq!(snapshot[0].message_id, "message_7");
     }
 
@@ -1728,13 +1870,28 @@ mod tests {
             .await
             .expect("created session");
 
+        let mut installation_token_request = created
+            .publish_websocket_url
+            .as_str()
+            .into_client_request()
+            .expect("publisher request");
+        installation_token_request.headers_mut().insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
+                .expect("authorization header"),
+        );
+        let rejected = tokio_tungstenite::connect_async(installation_token_request)
+            .await
+            .expect_err("installation token must not open the publisher websocket");
+        assert!(rejected.to_string().contains("401"));
+
         let spectator_url = created
             .publish_websocket_url
             .replace("/publish", "/spectate");
         let (mut spectator, _) = tokio_tungstenite::connect_async(&spectator_url)
             .await
             .expect("spectator websocket");
-        let mut publisher = connect_test_publisher(&created, &credentials).await;
+        let mut publisher = connect_test_publisher(&created).await;
         let first = message(&created.session_id, 0);
         publisher
             .send(TestMessage::Text(
@@ -1745,7 +1902,7 @@ mod tests {
         assert_eq!(next_test_envelope(&mut spectator).await.sequence, 0);
         publisher.close(None).await.expect("disconnect publisher");
 
-        let mut reconnected = connect_test_publisher(&created, &credentials).await;
+        let mut reconnected = connect_test_publisher(&created).await;
         for envelope in [first, message(&created.session_id, 1)] {
             reconnected
                 .send(TestMessage::Text(
@@ -1762,7 +1919,6 @@ mod tests {
 
     async fn connect_test_publisher(
         created: &CreateLiveSessionResponse,
-        credentials: &InstallationCredentials,
     ) -> WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>> {
         let mut request = created
             .publish_websocket_url
@@ -1770,12 +1926,8 @@ mod tests {
             .into_client_request()
             .expect("publisher request");
         request.headers_mut().insert(
-            "x-trace-installation-id",
-            HeaderValue::from_str(&credentials.installation_id).expect("installation header"),
-        );
-        request.headers_mut().insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
+            HeaderValue::from_str(&format!("Bearer {}", created.publishing_token))
                 .expect("authorization header"),
         );
         tokio_tungstenite::connect_async(request)
@@ -1830,7 +1982,11 @@ mod tests {
         .expect("encoded replay");
         for message in messages {
             service
-                .publish(&created.session_id, message.envelope)
+                .publish(
+                    &created.session_id,
+                    &created.publishing_token,
+                    message.envelope,
+                )
                 .expect("accepted replay message");
         }
 

@@ -142,10 +142,13 @@ Receivers validate before publishing or retaining a message:
 6. numeric finiteness and lap timing validity
 7. transport encoded size, authentication, and sequence policy
 
-Protocol validation does not itself authenticate a publisher. The Go Live service
-wraps it with installation credentials, publisher ownership, a 512 KiB WebSocket
-message limit, and strictly increasing per-session sequences. Rate limiting,
-acknowledgements, durable resume state, and binary encoding remain future work.
+Protocol validation does not itself authenticate a publisher. The Go Live service uses
+an installation credential to create and manage sessions, then issues a distinct
+session-scoped credential for the publisher WebSocket. Only credential digests are
+persisted, comparisons are constant-time, and ending or expiring a session revokes its
+publisher credential. The service also applies a 512 KiB WebSocket message limit and
+strictly increasing per-session sequences. Rate limiting, acknowledgements, durable
+resume negotiation, and binary encoding remain future work.
 
 ## Service boundaries
 

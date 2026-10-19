@@ -25,6 +25,7 @@ pub(crate) struct StoredSession {
     pub(crate) state: SessionState,
     pub(crate) last_sequence: Option<u64>,
     pub(crate) updated_at_unix_ms: i64,
+    pub(crate) publisher_token_hash: Option<[u8; 32]>,
     pub(crate) messages: Vec<(Envelope, i64)>,
 }
 
@@ -55,6 +56,7 @@ impl LiveStore {
                      owner_id TEXT NOT NULL REFERENCES live_installations(installation_id),
                      state_json TEXT NOT NULL,
                      last_sequence INTEGER,
+                     publisher_token_hash BLOB,
                      updated_at_unix_ms INTEGER NOT NULL
                  );
                  CREATE TABLE IF NOT EXISTS live_messages (
@@ -68,6 +70,7 @@ impl LiveStore {
                      ON live_messages(received_at_unix_ms);",
             )
             .map_err(|_| LiveStoreError::Database)?;
+        ensure_publisher_token_column(&connection)?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             retention,
@@ -111,7 +114,8 @@ impl LiveStore {
         let sessions = {
             let mut statement = transaction
                 .prepare(
-                    "SELECT session_id, owner_id, state_json, last_sequence, updated_at_unix_ms
+                    "SELECT session_id, owner_id, state_json, last_sequence, updated_at_unix_ms,
+                            publisher_token_hash
                      FROM live_sessions ORDER BY updated_at_unix_ms",
                 )
                 .map_err(|_| LiveStoreError::Database)?;
@@ -123,24 +127,35 @@ impl LiveStore {
                         row.get::<_, String>(2)?,
                         row.get::<_, Option<i64>>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, Option<Vec<u8>>>(5)?,
                     ))
                 })
                 .map_err(|_| LiveStoreError::Database)?;
             rows.map(|row| {
-                let (session_id, owner_id, state_json, last_sequence, updated_at_unix_ms) =
-                    row.map_err(|_| LiveStoreError::Database)?;
+                let (
+                    session_id,
+                    owner_id,
+                    state_json,
+                    last_sequence,
+                    updated_at_unix_ms,
+                    publisher_token_hash,
+                ) = row.map_err(|_| LiveStoreError::Database)?;
                 let state =
                     serde_json::from_str(&state_json).map_err(|_| LiveStoreError::InvalidData)?;
                 let last_sequence = last_sequence
                     .map(|value| u64::try_from(value).map_err(|_| LiveStoreError::InvalidData))
                     .transpose()?;
                 let messages = load_messages(&transaction, &session_id)?;
+                let publisher_token_hash = publisher_token_hash
+                    .map(|hash| hash.try_into().map_err(|_| LiveStoreError::InvalidData))
+                    .transpose()?;
                 Ok(StoredSession {
                     session_id,
                     owner_id,
                     state,
                     last_sequence,
                     updated_at_unix_ms,
+                    publisher_token_hash,
                     messages,
                 })
             })
@@ -173,6 +188,7 @@ impl LiveStore {
         session_id: &str,
         owner_id: &str,
         state: &SessionState,
+        publisher_token_hash: &[u8; 32],
         now_unix_ms: i64,
     ) -> Result<(), LiveStoreError> {
         let state_json = serde_json::to_string(state).map_err(|_| LiveStoreError::InvalidData)?;
@@ -181,9 +197,16 @@ impl LiveStore {
             .map_err(|_| LiveStoreError::Database)?
             .execute(
                 "INSERT INTO live_sessions
-                 (session_id, owner_id, state_json, last_sequence, updated_at_unix_ms)
-                 VALUES (?1, ?2, ?3, NULL, ?4)",
-                params![session_id, owner_id, state_json, now_unix_ms],
+                 (session_id, owner_id, state_json, last_sequence, publisher_token_hash,
+                  updated_at_unix_ms)
+                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+                params![
+                    session_id,
+                    owner_id,
+                    state_json,
+                    publisher_token_hash.as_slice(),
+                    now_unix_ms
+                ],
             )
             .map_err(|_| LiveStoreError::Database)?;
         Ok(())
@@ -195,6 +218,7 @@ impl LiveStore {
         state: &SessionState,
         message: &Envelope,
         received_at_unix_ms: i64,
+        revoke_publisher: bool,
     ) -> Result<(), LiveStoreError> {
         let state_json = serde_json::to_string(state).map_err(|_| LiveStoreError::InvalidData)?;
         let envelope_json =
@@ -218,8 +242,16 @@ impl LiveStore {
         transaction
             .execute(
                 "UPDATE live_sessions SET state_json = ?2, last_sequence = ?3,
-                 updated_at_unix_ms = ?4 WHERE session_id = ?1",
-                params![session_id, state_json, sequence, received_at_unix_ms],
+                 updated_at_unix_ms = ?4,
+                 publisher_token_hash = CASE WHEN ?5 THEN NULL ELSE publisher_token_hash END
+                 WHERE session_id = ?1",
+                params![
+                    session_id,
+                    state_json,
+                    sequence,
+                    received_at_unix_ms,
+                    revoke_publisher
+                ],
             )
             .map_err(|_| LiveStoreError::Database)?;
         prune(&transaction, cutoff(received_at_unix_ms, self.retention))?;
@@ -238,6 +270,28 @@ impl LiveStore {
             .map_err(|_| LiveStoreError::Database)?;
         Ok(())
     }
+}
+
+fn ensure_publisher_token_column(connection: &Connection) -> Result<(), LiveStoreError> {
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM pragma_table_info('live_sessions')
+                WHERE name = 'publisher_token_hash'
+            )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|_| LiveStoreError::Database)?;
+    if !exists {
+        connection
+            .execute(
+                "ALTER TABLE live_sessions ADD COLUMN publisher_token_hash BLOB",
+                [],
+            )
+            .map_err(|_| LiveStoreError::Database)?;
+    }
+    Ok(())
 }
 
 fn load_messages(
@@ -286,6 +340,7 @@ fn cutoff(now_unix_ms: i64, retention: Duration) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::Connection;
     use trace_protocol::{Hello, LiveStatus, PROTOCOL_VERSION, Payload};
 
     use super::*;
@@ -311,7 +366,7 @@ mod tests {
             status: LiveStatus::Live,
         };
         store
-            .save_session("session", "installation", &state, 1_000)
+            .save_session("session", "installation", &state, &[9_u8; 32], 1_000)
             .expect("session");
         let envelope = Envelope {
             protocol_version: PROTOCOL_VERSION,
@@ -325,11 +380,45 @@ mod tests {
             }),
         };
         store
-            .save_message("session", &state, &envelope, 1_000)
+            .save_message("session", &state, &envelope, 1_000, false)
             .expect("message");
 
         let (installations, sessions) = store.load(1_011).expect("reload");
         assert_eq!(installations.len(), 1);
         assert!(sessions.is_empty());
+    }
+
+    #[test]
+    fn existing_database_gains_the_session_publisher_column() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("live.sqlite");
+        let connection = Connection::open(&path).expect("legacy database");
+        connection
+            .execute_batch(
+                "CREATE TABLE live_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
+                    last_sequence INTEGER,
+                    updated_at_unix_ms INTEGER NOT NULL
+                );",
+            )
+            .expect("legacy schema");
+        drop(connection);
+
+        let store = LiveStore::open(directory.path(), Duration::from_secs(600))
+            .expect("migrated live store");
+        let connection = store.connection.lock().expect("connection");
+        let exists = connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM pragma_table_info('live_sessions')
+                    WHERE name = 'publisher_token_hash'
+                )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("column query");
+        assert!(exists);
     }
 }

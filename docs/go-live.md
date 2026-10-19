@@ -107,16 +107,21 @@ derive their title, description, canonical URL, and Open Graph/Twitter metadata 
 the validated session state; all simulator-provided values are HTML-escaped before
 rendering. Unknown routes and expired spectator links return a branded HTML `404`.
 
-Publisher requests send both headers:
+Installation-managed requests, including session creation, ending, and completed-session
+sharing, send both headers:
 
 ```text
 X-TRACE-Installation-ID: <installation_id>
-Authorization: Bearer <publishing_token>
+Authorization: Bearer <installation_token>
 ```
 
-The token is returned only by installation bootstrap. The server stores its SHA-256
-digest and compares credentials in constant time. Desktop persistence must treat the
-plain token as a secret and must not place it in spectator URLs or logs.
+The installation token is returned only by installation bootstrap. Creating a live
+session returns a separate 256-bit publishing token scoped to that session. Publisher
+WebSocket upgrades send that token as `Authorization: Bearer <session_token>` without
+the installation identifier. The server stores only SHA-256 digests and compares both
+credential types in constant time. A session token cannot publish to another session,
+survives a service restart for reconnects, and is revoked when its session ends or
+expires. Plain tokens must never appear in spectator URLs, logs, or page metadata.
 
 Session IDs use 128 bits of operating-system randomness and are intentionally
 unguessable. Spectating is unlisted rather than authenticated: anyone with the share

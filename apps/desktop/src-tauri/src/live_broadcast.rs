@@ -673,7 +673,7 @@ async fn publish_active_broadcast(
     let (credentials, created) =
         create_authenticated_live_session(shared, &client, &source.endpoint, source.state.clone())
             .await?;
-    let mut websocket = connect_publisher(&created, &credentials).await?;
+    let mut websocket = connect_publisher(&created).await?;
     let (mut encoder, introduction) = LiveStreamEncoder::start(
         created.session_id.clone(),
         source.state.clone(),
@@ -681,29 +681,13 @@ async fn publish_active_broadcast(
     )
     .map_err(|error| format!("active telemetry cannot be published: {error:?}"))?;
     for envelope in introduction {
-        send_with_reconnect(
-            &mut websocket,
-            &created,
-            &credentials,
-            &envelope,
-            shared,
-            generation,
-        )
-        .await?;
+        send_with_reconnect(&mut websocket, &created, &envelope, shared, generation).await?;
     }
     if let Some(geometry) = source.track_geometry.take() {
         let envelope = encoder
             .track_geometry(geometry, unix_timestamp_ms())
             .map_err(|error| format!("track geometry cannot be published: {error:?}"))?;
-        send_with_reconnect(
-            &mut websocket,
-            &created,
-            &credentials,
-            &envelope,
-            shared,
-            generation,
-        )
-        .await?;
+        send_with_reconnect(&mut websocket, &created, &envelope, shared, generation).await?;
     }
     shared.update(generation, |status| {
         status.phase = LiveBroadcastPhase::Live;
@@ -729,7 +713,6 @@ async fn publish_active_broadcast(
                         send_with_reconnect(
                             &mut websocket,
                             &created,
-                            &credentials,
                             &envelope,
                             shared,
                             generation,
@@ -747,15 +730,7 @@ async fn publish_active_broadcast(
     let terminal = encoder
         .end("capture ended", unix_timestamp_ms())
         .map_err(|error| format!("active telemetry cannot be ended: {error:?}"))?;
-    let _ = send_with_reconnect(
-        &mut websocket,
-        &created,
-        &credentials,
-        &terminal,
-        shared,
-        generation,
-    )
-    .await;
+    let _ = send_with_reconnect(&mut websocket, &created, &terminal, shared, generation).await;
     let _ = websocket.close(None).await;
     end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await
 }
@@ -779,7 +754,7 @@ async fn publish_recorded_broadcast(
         end_live_session(&client, &source.endpoint, &credentials, &created.session_id).await?;
         return Ok(());
     }
-    let mut websocket = connect_publisher(&created, &credentials).await?;
+    let mut websocket = connect_publisher(&created).await?;
     let messages = encode_recorded_session_with_geometry(
         &created.session_id,
         source.state.clone(),
@@ -806,7 +781,6 @@ async fn publish_recorded_broadcast(
         send_with_reconnect(
             &mut websocket,
             &created,
-            &credentials,
             &message.envelope,
             shared,
             generation,
@@ -826,23 +800,15 @@ async fn publish_recorded_broadcast(
 type PublisherSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn connect_publisher(
-    created: &CreateLiveSessionResponse,
-    credentials: &InstallationCredentials,
-) -> Result<PublisherSocket, String> {
+async fn connect_publisher(created: &CreateLiveSessionResponse) -> Result<PublisherSocket, String> {
     let mut request = created
         .publish_websocket_url
         .as_str()
         .into_client_request()
         .map_err(|error| format!("live publisher URL is invalid: {error}"))?;
     request.headers_mut().insert(
-        "x-trace-installation-id",
-        HeaderValue::from_str(&credentials.installation_id)
-            .map_err(|_| "installation identifier is invalid".to_owned())?,
-    );
-    request.headers_mut().insert(
         AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", credentials.publishing_token))
+        HeaderValue::from_str(&format!("Bearer {}", created.publishing_token))
             .map_err(|_| "publishing credential is invalid".to_owned())?,
     );
     tokio::time::timeout(Duration::from_secs(15), connect_async(request))
@@ -867,7 +833,6 @@ async fn send_envelope(
 async fn send_with_reconnect(
     socket: &mut PublisherSocket,
     created: &CreateLiveSessionResponse,
-    credentials: &InstallationCredentials,
     envelope: &trace_protocol::Envelope,
     shared: &SharedLiveBroadcast,
     generation: u64,
@@ -885,7 +850,7 @@ async fn send_with_reconnect(
             return Err("live broadcast was cancelled while reconnecting".to_owned());
         }
         tokio::time::sleep(backoff).await;
-        match connect_publisher(created, credentials).await {
+        match connect_publisher(created).await {
             Ok(mut reconnected) => {
                 if send_envelope(&mut reconnected, envelope).await.is_ok() {
                     *socket = reconnected;
