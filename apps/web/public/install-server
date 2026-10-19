@@ -220,6 +220,7 @@ if [ "$service_started" != true ] || ! systemctl is-active --quiet trace-server.
 fi
 
 printf '\nTRACE server is installed and running.\n'
+printf '  Version: %s\n' "$("$BINARY_PATH" --version)"
 printf '  Binary: %s\n' "$BINARY_PATH"
 printf '  Config: %s\n' "$ENV_PATH"
 printf '  Status: systemctl status trace-server.service\n'

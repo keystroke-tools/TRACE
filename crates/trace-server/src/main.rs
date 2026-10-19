@@ -4,6 +4,13 @@ use trace_server::{ServerConfig, app};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if env::args_os()
+        .nth(1)
+        .is_some_and(|argument| matches!(argument.to_str(), Some("--version" | "-V")))
+    {
+        println!("trace-server {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let bind = env::var("TRACE_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_owned());
     let public_base_url =
         env::var("TRACE_PUBLIC_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_owned());

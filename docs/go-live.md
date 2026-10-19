@@ -87,7 +87,7 @@ All implemented routes are versioned under `/api/v1`.
 
 | Method   | Route                                 | Authentication | Purpose                                                |
 | -------- | ------------------------------------- | -------------- | ------------------------------------------------------ |
-| `GET`    | `/health`                             | none           | Process health probe; returns `204`                    |
+| `GET`    | `/health`                             | none           | Process health probe; returns `204` and version header |
 | `POST`   | `/api/v1/installations`               | none           | Bootstrap an installation ID and publishing token      |
 | `POST`   | `/api/v1/live-sessions`               | publisher      | Create an unlisted live session                        |
 | `POST`   | `/api/v1/shared-sessions`             | publisher      | Validate and publish an expiring `.trace` package      |

@@ -606,8 +606,11 @@ pub fn app(config: ServerConfig) -> Router {
         .with_state(state)
 }
 
-async fn health() -> StatusCode {
-    StatusCode::NO_CONTENT
+async fn health() -> impl IntoResponse {
+    (
+        [("x-trace-server-version", env!("CARGO_PKG_VERSION"))],
+        StatusCode::NO_CONTENT,
+    )
 }
 
 async fn landing_page(State(service): State<LiveService>) -> Html<String> {
@@ -871,10 +874,13 @@ fn not_found_response(service: &LiveService) -> Response {
 
 fn site_html(template: &str, public_base_url: &str) -> String {
     let base_url = escape_html(public_base_url);
-    template.replace("{{TRACE_URL}}", &base_url).replace(
-        "{{TRACE_OG_IMAGE}}",
-        &format!("{base_url}/live-assets/trace-live-og.png"),
-    )
+    template
+        .replace("{{TRACE_URL}}", &base_url)
+        .replace(
+            "{{TRACE_OG_IMAGE}}",
+            &format!("{base_url}/live-assets/trace-live-og.png"),
+        )
+        .replace("{{TRACE_VERSION}}", env!("CARGO_PKG_VERSION"))
 }
 
 fn render_page(
@@ -895,6 +901,7 @@ fn render_page(
                 escape_html(public_base_url)
             ),
         )
+        .replace("{{TRACE_VERSION}}", env!("CARGO_PKG_VERSION"))
 }
 
 fn format_session_type(value: &str) -> String {
@@ -1460,6 +1467,20 @@ mod tests {
     #[tokio::test]
     async fn http_api_bootstraps_credentials_and_creates_a_session() {
         let application = app(ServerConfig::new("https://live.simtrace.run"));
+        let health = application
+            .clone()
+            .oneshot(
+                Request::get("/health")
+                    .body(Body::empty())
+                    .expect("health request"),
+            )
+            .await
+            .expect("health response");
+        assert_eq!(health.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            health.headers()["x-trace-server-version"],
+            env!("CARGO_PKG_VERSION")
+        );
         for (path, content_type) in [
             ("/live-assets/spectator.css", "text/css; charset=utf-8"),
             (
@@ -1495,6 +1516,8 @@ mod tests {
         assert!(body.contains("The pit wall,"));
         assert!(body.contains("TRACE Go Live — The pit wall, in your browser"));
         assert!(body.contains("https://live.simtrace.run/live-assets/trace-live-og.png"));
+        assert!(body.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))));
+        assert!(!body.contains("{{TRACE_"));
 
         for path in ["/missing", "/live/missing"] {
             let response = application
