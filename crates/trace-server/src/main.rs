@@ -35,6 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         live_sessions_per_installation: env_limit("TRACE_MAX_LIVE_SESSIONS", 4),
         spectators_per_session: env_limit("TRACE_MAX_SPECTATORS_PER_SESSION", 64),
         spectators_per_address: env_limit("TRACE_MAX_SPECTATORS_PER_ADDRESS", 16),
+        installation_records: env_limit("TRACE_MAX_INSTALLATION_RECORDS", 100_000),
+        live_session_records: env_limit("TRACE_MAX_LIVE_SESSION_RECORDS", 10_000),
     };
     let trust_proxy_headers = env::var("TRACE_TRUST_PROXY_HEADERS")
         .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"));

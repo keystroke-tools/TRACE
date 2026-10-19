@@ -149,7 +149,8 @@ persisted, comparisons are constant-time, and ending or expiring a session revok
 publisher credential. The installation owner can also rotate or revoke that credential
 without changing the public spectator URL. The service applies a 512 KiB WebSocket message limit,
 strictly increasing per-session sequences, configurable fixed-window request and
-publish-rate limits, and concurrent live-session/spectator caps. Acknowledgements,
+publish-rate limits, concurrent live-session/spectator caps, and durable installation
+and session-record quotas. Acknowledgements,
 durable resume negotiation, distributed rate counters, and binary encoding remain
 future work.
 

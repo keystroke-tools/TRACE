@@ -96,11 +96,17 @@ code `1008`. Self-hosters can tune the limits in `/etc/trace-server.env`:
 | `TRACE_MAX_LIVE_SESSIONS`              | `4` per installation |
 | `TRACE_MAX_SPECTATORS_PER_SESSION`     | `64`        |
 | `TRACE_MAX_SPECTATORS_PER_ADDRESS`     | `16`        |
+| `TRACE_MAX_INSTALLATION_RECORDS`       | `100000`    |
+| `TRACE_MAX_LIVE_SESSION_RECORDS`       | `10000`     |
 
 Limits use the direct TCP peer address by default. Set
 `TRACE_TRUST_PROXY_HEADERS=true` only when TRACE is directly behind a trusted reverse
 proxy that replaces (rather than appends untrusted input to) `X-Forwarded-For`.
 These counters intentionally reset when the single server process restarts.
+Durable-record caps do not reset: expired live sessions are pruned before creating a
+new one, and unused installation credentials may be evicted at capacity.
+An evicted desktop installation transparently bootstraps a replacement credential on
+its next live-session request.
 
 ## HTTP API
 

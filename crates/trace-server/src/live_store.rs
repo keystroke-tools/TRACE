@@ -286,6 +286,18 @@ impl LiveStore {
             .map_err(|_| LiveStoreError::Database)?;
         Ok(())
     }
+
+    pub(crate) fn delete_installation(&self, installation_id: &str) -> Result<(), LiveStoreError> {
+        self.connection
+            .lock()
+            .map_err(|_| LiveStoreError::Database)?
+            .execute(
+                "DELETE FROM live_installations WHERE installation_id = ?1",
+                [installation_id],
+            )
+            .map_err(|_| LiveStoreError::Database)?;
+        Ok(())
+    }
 }
 
 fn ensure_publisher_token_column(connection: &Connection) -> Result<(), LiveStoreError> {

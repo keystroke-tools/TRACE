@@ -4,7 +4,7 @@
 //! data stays at the desktop adapter boundary.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     convert::Infallible,
     fs,
     net::SocketAddr,
@@ -61,6 +61,8 @@ pub struct RateLimits {
     pub live_sessions_per_installation: usize,
     pub spectators_per_session: usize,
     pub spectators_per_address: usize,
+    pub installation_records: usize,
+    pub live_session_records: usize,
 }
 
 impl Default for RateLimits {
@@ -74,6 +76,8 @@ impl Default for RateLimits {
             live_sessions_per_installation: 4,
             spectators_per_session: 64,
             spectators_per_address: 16,
+            installation_records: 100_000,
+            live_session_records: 10_000,
         }
     }
 }
@@ -447,6 +451,8 @@ impl LiveService {
     }
 
     fn bootstrap_installation(&self) -> Result<InstallationCredentials, ServiceError> {
+        let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
+        self.reserve_installation_capacity(&mut service)?;
         let installation_id = opaque_identifier();
         let publishing_token = format!("{}{}", opaque_identifier(), opaque_identifier());
         let installation = Installation {
@@ -461,9 +467,7 @@ impl LiveService {
                 )
                 .map_err(|_| ServiceError::Unavailable)?;
         }
-        self.inner
-            .write()
-            .map_err(|_| ServiceError::Unavailable)?
+        service
             .installations
             .insert(installation_id.clone(), installation);
         Ok(InstallationCredentials {
@@ -480,6 +484,10 @@ impl LiveService {
     ) -> Result<CreateLiveSessionResponse, ServiceError> {
         let mut service = self.inner.write().map_err(|_| ServiceError::Unavailable)?;
         authenticate(&service, installation_id, token)?;
+        self.prune_expired_sessions(&mut service, unix_timestamp_ms())?;
+        if service.sessions.len() >= self.config.rate_limits.live_session_records {
+            return Err(ServiceError::CapacityExceeded);
+        }
         let active_sessions = service
             .sessions
             .values()
@@ -815,9 +823,7 @@ impl LiveService {
         session_id: &str,
         now_unix_ms: i64,
     ) -> Result<(), ServiceError> {
-        let retention_ms =
-            i64::try_from(self.config.live_retention.as_millis()).unwrap_or(i64::MAX);
-        let cutoff = now_unix_ms.saturating_sub(retention_ms);
+        let cutoff = cutoff_unix_ms(now_unix_ms, self.config.live_retention);
         let expired = service
             .sessions
             .get(session_id)
@@ -829,6 +835,68 @@ impl LiveService {
                     .map_err(|_| ServiceError::Unavailable)?;
             }
             service.sessions.remove(session_id);
+        }
+        Ok(())
+    }
+
+    fn reserve_installation_capacity(
+        &self,
+        service: &mut ServiceState,
+    ) -> Result<(), ServiceError> {
+        let limit = self.config.rate_limits.installation_records;
+        if service.installations.len() < limit {
+            return Ok(());
+        }
+        let owners = service
+            .sessions
+            .values()
+            .map(|session| session.owner_id.as_str())
+            .collect::<HashSet<_>>();
+        let remove_count = service
+            .installations
+            .len()
+            .saturating_add(1)
+            .saturating_sub(limit);
+        let removable = service
+            .installations
+            .keys()
+            .filter(|installation_id| !owners.contains(installation_id.as_str()))
+            .take(remove_count)
+            .cloned()
+            .collect::<Vec<_>>();
+        if removable.len() < remove_count {
+            return Err(ServiceError::CapacityExceeded);
+        }
+        for installation_id in removable {
+            if let Some(store) = &self.live_store {
+                store
+                    .delete_installation(&installation_id)
+                    .map_err(|_| ServiceError::Unavailable)?;
+            }
+            service.installations.remove(&installation_id);
+        }
+        Ok(())
+    }
+
+    fn prune_expired_sessions(
+        &self,
+        service: &mut ServiceState,
+        now_unix_ms: i64,
+    ) -> Result<(), ServiceError> {
+        let cutoff = cutoff_unix_ms(now_unix_ms, self.config.live_retention);
+        let expired = service
+            .sessions
+            .iter()
+            .filter(|(_, session)| session.updated_at_unix_ms < cutoff)
+            .map(|(session_id, _)| session_id.clone())
+            .collect::<Vec<_>>();
+        for session_id in expired {
+            if let Some(store) = &self.live_store {
+                store
+                    .delete_session(&session_id)
+                    .map_err(|_| ServiceError::Unavailable)?;
+            }
+            service.sessions.remove(&session_id);
         }
         Ok(())
     }
@@ -1542,6 +1610,11 @@ fn unix_timestamp_ms() -> i64 {
     i64::try_from(millis).unwrap_or(i64::MAX)
 }
 
+fn cutoff_unix_ms(now_unix_ms: i64, retention: Duration) -> i64 {
+    let retention_ms = i64::try_from(retention.as_millis()).unwrap_or(i64::MAX);
+    now_unix_ms.saturating_sub(retention_ms)
+}
+
 fn websocket_base_url(public_base_url: &str) -> String {
     if let Some(rest) = public_base_url.strip_prefix("https://") {
         format!("wss://{rest}")
@@ -1709,6 +1782,72 @@ mod tests {
         service
             .acquire_spectator(&created.session_id, "127.0.0.1")
             .expect("released spectator permit");
+    }
+
+    #[test]
+    fn durable_record_quotas_evict_only_unused_installations() {
+        let limits = RateLimits {
+            installation_records: 1,
+            live_session_records: 1,
+            live_sessions_per_installation: 2,
+            ..RateLimits::default()
+        };
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let service = LiveService::new(
+            ServerConfig::new("http://localhost:8080")
+                .with_share_directory(directory.path())
+                .with_rate_limits(limits),
+        );
+        let evicted = service
+            .bootstrap_installation()
+            .expect("first installation");
+        let credentials = service
+            .bootstrap_installation()
+            .expect("replacement installation");
+        assert!(matches!(
+            service.authorize_installation(&evicted.installation_id, &evicted.publishing_token,),
+            Err(ServiceError::Unauthorized)
+        ));
+        let created = service
+            .create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            )
+            .expect("bounded session record");
+        assert!(matches!(
+            service.create_session(
+                &credentials.installation_id,
+                &credentials.publishing_token,
+                session_state(),
+            ),
+            Err(ServiceError::CapacityExceeded)
+        ));
+        assert!(matches!(
+            service.bootstrap_installation(),
+            Err(ServiceError::CapacityExceeded)
+        ));
+        service
+            .end_session(
+                &created.session_id,
+                &credentials.installation_id,
+                &credentials.publishing_token,
+            )
+            .expect("end bounded session");
+        let connection = rusqlite::Connection::open(directory.path().join("live.sqlite"))
+            .expect("durable database");
+        let installation_count = connection
+            .query_row("SELECT COUNT(*) FROM live_installations", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("installation count");
+        let session_count = connection
+            .query_row("SELECT COUNT(*) FROM live_sessions", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("session count");
+        assert_eq!(installation_count, 1);
+        assert_eq!(session_count, 1);
     }
 
     fn message(session_id: &str, sequence: u64) -> Envelope {
