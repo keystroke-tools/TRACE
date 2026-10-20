@@ -2,7 +2,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -384,7 +387,7 @@ struct GameInstallDirectory {
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle as an owned command argument.
-fn recent_sessions(
+async fn recent_sessions(
     app: tauri::AppHandle,
     status: tauri::State<'_, SharedCaptureStatus>,
     limit: Option<usize>,
@@ -393,20 +396,32 @@ fn recent_sessions(
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
-    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    let store = MetadataStore::open(&directory.join("trace.sqlite"))
-        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let mut sessions = store
-        .recent_sessions(limit.unwrap_or(100).clamp(1, 10_000))
-        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
-    enrich_legacy_motec_sectors(&directory, &store, &mut sessions);
-    let profile_name = store
-        .driver_profile_name()
-        .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
     let active_session_id = status
         .lock()
         .ok()
         .and_then(|value| value.active_session_id.clone());
+    tokio::task::spawn_blocking(move || {
+        load_recent_sessions(&directory, active_session_id.as_deref(), limit)
+    })
+    .await
+    .map_err(|error| format!("session library worker failed: {error}"))?
+}
+
+fn load_recent_sessions(
+    directory: &Path,
+    active_session_id: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<RecordedSessionSummary>, String> {
+    std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let mut sessions = store
+        .recent_sessions(limit.unwrap_or(100).clamp(1, 10_000))
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    enrich_legacy_motec_sectors(directory, &mut store, &mut sessions);
+    let profile_name = store
+        .driver_profile_name()
+        .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
     let configured_ac_path = store
         .simulator_install_path("assetto-corsa")
         .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
@@ -426,7 +441,7 @@ fn recent_sessions(
                 }
             }
             let replay = session.source_kind == "simulator_replay";
-            let deletable = active_session_id.as_deref() != Some(session.id.as_str());
+            let deletable = active_session_id != Some(session.id.as_str());
             let (track, car) = resolved_session_content_names(&session, Some(&content_names));
             RecordedSessionSummary {
                 id: session.id,
@@ -479,9 +494,13 @@ fn recent_sessions(
 
 fn enrich_legacy_motec_sectors(
     directory: &Path,
-    store: &MetadataStore,
+    store: &mut MetadataStore,
     sessions: &mut [SessionSummary],
 ) {
+    static BACKFILL_STARTED: AtomicBool = AtomicBool::new(false);
+    if BACKFILL_STARTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
     for session in sessions.iter_mut().filter(|session| {
         session.source_kind == "imported" && session.tags.iter().any(|tag| tag == "MoTeC")
     }) {
@@ -492,12 +511,22 @@ fn enrich_legacy_motec_sectors(
             let Ok(columns) = read_recorded_lap(directory, store, &lap.id, None) else {
                 continue;
             };
-            lap.sectors = derive_sector_durations(&columns, duration_ns)
+            let sectors = derive_sector_durations(&columns, duration_ns)
                 .into_iter()
                 .enumerate()
-                .map(|(index, duration_ns)| SectorSummary {
+                .map(|(index, duration_ns)| trace_storage::metadata::NewSector {
                     index: u32::try_from(index + 1).unwrap_or(u32::MAX),
                     duration_ns,
+                })
+                .collect::<Vec<_>>();
+            if sectors.is_empty() || store.replace_lap_sectors(&lap.id, &sectors).is_err() {
+                continue;
+            }
+            lap.sectors = sectors
+                .into_iter()
+                .map(|sector| SectorSummary {
+                    index: sector.index,
+                    duration_ns: sector.duration_ns,
                 })
                 .collect();
         }
@@ -2127,25 +2156,41 @@ fn package_confirmed_setup(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn preview_motec_import(path: String) -> Result<MotecImportPreview, String> {
-    motec_import::preview_motec_session(Path::new(&path), MAX_SESSION_BYTES)
+async fn preview_motec_import(path: String) -> Result<MotecImportPreview, String> {
+    tokio::task::spawn_blocking(move || {
+        motec_import::preview_motec_session(Path::new(&path), MAX_SESSION_BYTES)
+    })
+    .await
+    .map_err(|error| format!("MoTeC preview worker failed: {error}"))?
 }
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-fn import_session(
+async fn import_session(
     app: tauri::AppHandle,
     path: String,
     motec_options: Option<MotecImportOptions>,
 ) -> Result<SessionImport, String> {
-    let source_path = PathBuf::from(&path);
+    tokio::task::spawn_blocking(move || {
+        import_session_blocking(&app, &path, motec_options.as_ref())
+    })
+    .await
+    .map_err(|error| format!("session import worker failed: {error}"))?
+}
+
+fn import_session_blocking(
+    app: &tauri::AppHandle,
+    path: &str,
+    motec_options: Option<&MotecImportOptions>,
+) -> Result<SessionImport, String> {
+    let source_path = PathBuf::from(path);
     match source_path
         .extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .as_deref()
     {
-        Some("trace") => import_trace_session(&app, &source_path),
+        Some("trace") => import_trace_session(app, &source_path),
         Some("ld") => {
             let data_directory = app
                 .path()
@@ -2157,7 +2202,7 @@ fn import_session(
                 &source_path,
                 &session_id,
                 MAX_SESSION_BYTES,
-                motec_options.as_ref(),
+                motec_options,
             )?;
             Ok(SessionImport {
                 session_id,

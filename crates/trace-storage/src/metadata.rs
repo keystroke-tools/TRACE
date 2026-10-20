@@ -1318,6 +1318,47 @@ impl MetadataStore {
         transaction.commit().map_err(MetadataError::from)
     }
 
+    /// Replaces the persisted sector timing for one existing lap.
+    ///
+    /// This is used by bounded compatibility backfills after older telemetry has
+    /// been decoded. Persisting the result prevents every session-list refresh
+    /// from reopening and analysing the same telemetry blob.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the lap does not exist, values cannot be
+    /// represented, or `SQLite` cannot commit the replacement atomically.
+    pub fn replace_lap_sectors(
+        &mut self,
+        lap_id: &str,
+        sectors: &[NewSector],
+    ) -> Result<(), MetadataError> {
+        let transaction = self.connection.transaction().map_err(MetadataError::from)?;
+        let lap_exists = transaction
+            .query_row("SELECT 1 FROM laps WHERE id = ?1", [lap_id], |_| Ok(()))
+            .optional()
+            .map_err(MetadataError::from)?
+            .is_some();
+        if !lap_exists {
+            return Err(MetadataError::InvalidRecord(format!(
+                "lap {lap_id:?} does not exist"
+            )));
+        }
+        transaction
+            .execute("DELETE FROM lap_sectors WHERE lap_id = ?1", [lap_id])
+            .map_err(MetadataError::from)?;
+        for sector in sectors {
+            transaction
+                .execute(
+                    "INSERT INTO lap_sectors (lap_id, sector_index, duration_ns)
+                     VALUES (?1, ?2, ?3)",
+                    params![lap_id, i64::from(sector.index), to_i64(sector.duration_ns)?],
+                )
+                .map_err(MetadataError::from)?;
+        }
+        transaction.commit().map_err(MetadataError::from)
+    }
+
     /// Returns newest sessions and their laps for the local session browser.
     ///
     /// # Errors
@@ -2423,6 +2464,58 @@ mod tests {
             store.session_telemetry("missing"),
             Err(MetadataError::RecordNotFound)
         );
+    }
+
+    #[test]
+    fn replacing_lap_sectors_persists_a_compatibility_backfill() {
+        let mut store = MetadataStore::open_in_memory().expect("migrated store");
+        store
+            .create_session(&session("session-1"))
+            .expect("session");
+        store
+            .complete_session(
+                "session-1",
+                "2026-08-21T15:00:00Z",
+                &blob(),
+                &[NewLap {
+                    id: "lap-1".into(),
+                    lap_index: 1,
+                    started_offset_ns: Some(0),
+                    duration_ns: Some(90_000_000_000),
+                    validity: "unknown".into(),
+                    validity_reason: None,
+                    max_tyres_out: None,
+                    sample_start: 0,
+                    sample_count: 100,
+                    is_personal_best: true,
+                    sectors: Vec::new(),
+                }],
+            )
+            .expect("completed session");
+
+        store
+            .replace_lap_sectors(
+                "lap-1",
+                &[
+                    NewSector {
+                        index: 1,
+                        duration_ns: 30_000_000_000,
+                    },
+                    NewSector {
+                        index: 2,
+                        duration_ns: 29_000_000_000,
+                    },
+                    NewSector {
+                        index: 3,
+                        duration_ns: 31_000_000_000,
+                    },
+                ],
+            )
+            .expect("backfilled sectors");
+
+        let sessions = store.recent_sessions(1).expect("sessions");
+        assert_eq!(sessions[0].laps[0].sectors.len(), 3);
+        assert_eq!(sessions[0].laps[0].sectors[2].duration_ns, 31_000_000_000);
     }
 
     #[test]

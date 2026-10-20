@@ -1140,10 +1140,46 @@ pub fn derive_sector_durations(columns: &TelemetryColumns, lap_duration_ns: u64)
     }
     let completed = durations.iter().copied().sum::<u64>();
     if completed >= lap_duration_ns {
-        return Vec::new();
+        return stable_sector_durations(columns, lap_duration_ns);
     }
     durations.push(lap_duration_ns - completed);
     durations
+}
+
+fn stable_sector_durations(columns: &TelemetryColumns, lap_duration_ns: u64) -> Vec<u64> {
+    const MINIMUM_STABLE_NS: u64 = 2_000_000_000;
+    let mut runs = Vec::<(u64, u64, u64)>::new();
+    for (elapsed_ns, duration_ns) in columns
+        .elapsed_ns
+        .iter()
+        .copied()
+        .zip(columns.last_sector_time_ns.iter().copied())
+    {
+        let Some(duration_ns) = duration_ns else {
+            continue;
+        };
+        if let Some((value, _, end_ns)) = runs.last_mut()
+            && *value == duration_ns
+        {
+            *end_ns = elapsed_ns;
+        } else {
+            runs.push((duration_ns, elapsed_ns, elapsed_ns));
+        }
+    }
+    let durations = runs
+        .into_iter()
+        .filter(|(_, start_ns, end_ns)| end_ns.saturating_sub(*start_ns) >= MINIMUM_STABLE_NS)
+        .map(|(duration_ns, _, _)| duration_ns)
+        .skip(1)
+        .collect::<Vec<_>>();
+    let completed = durations.iter().copied().sum::<u64>();
+    if durations.is_empty() || completed >= lap_duration_ns {
+        return Vec::new();
+    }
+    durations
+        .into_iter()
+        .chain(std::iter::once(lap_duration_ns - completed))
+        .collect()
 }
 
 fn derive_missing_sector_indices(columns: &mut TelemetryColumns) {
@@ -2225,6 +2261,26 @@ mod tests {
         );
         let metrics = read_lap_metrics(Cursor::new(bytes), 0, 5).expect("metrics");
         assert_eq!(metrics.fuel_capacity_litres, Some(45.0));
+    }
+
+    #[test]
+    fn motec_split_backfill_ignores_short_logger_transients() {
+        let values = [
+            195_u64, 195, 195, 180, 170, 125, 125, 125, 125, 140, 167, 167, 167, 167,
+        ];
+        let mut columns = TelemetryColumns::empty();
+        columns.elapsed_ns = (0..values.len())
+            .map(|index| u64::try_from(index).unwrap() * 1_000_000_000)
+            .collect();
+        columns.last_sector_time_ns = values
+            .into_iter()
+            .map(|seconds| Some(seconds * 1_000_000_000))
+            .collect();
+
+        assert_eq!(
+            derive_sector_durations(&columns, 486_000_000_000),
+            vec![125_000_000_000, 167_000_000_000, 194_000_000_000]
+        );
     }
 
     #[test]

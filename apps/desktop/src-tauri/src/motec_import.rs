@@ -45,7 +45,7 @@ pub(crate) fn preview_motec_session(
     source_path: &Path,
     maximum_session_bytes: u64,
 ) -> Result<MotecImportPreview, String> {
-    let (metadata, frames) = read_source(source_path, maximum_session_bytes)?;
+    let (metadata, _) = open_source(source_path, maximum_session_bytes)?;
     let inferred = inferred_options(source_path, &metadata);
     Ok(MotecImportPreview {
         simulator_key: inferred.simulator_key,
@@ -55,7 +55,7 @@ pub(crate) fn preview_motec_session(
         session_type: inferred.session_type,
         title: inferred.title,
         complete_lap_count: metadata.lap_boundaries.len().saturating_sub(1),
-        sample_count: u64::try_from(frames.len()).unwrap_or(u64::MAX),
+        sample_count: metadata.frame_count,
     })
 }
 
@@ -93,10 +93,6 @@ pub(crate) fn import_motec_session_with_options(
     let sample_count = u64::try_from(frames.len())
         .map_err(|_| "MoTeC sample count does not fit TRACE storage".to_owned())?;
     let laps = build_laps(session_id, &source_metadata, &frames)?;
-    let estimated_sectors = !frames
-        .iter()
-        .any(|frame| frame.lap.last_sector_time_ns.is_some())
-        && laps.iter().any(|lap| lap.sectors.len() == 3);
     let arrow = encode_frames(&frames)
         .map_err(|error| format!("failed to encode imported MoTeC telemetry: {error:?}"))?;
     if u64::try_from(arrow.len()).unwrap_or(u64::MAX) > maximum_session_bytes {
@@ -144,11 +140,7 @@ pub(crate) fn import_motec_session_with_options(
         metadata
             .complete_session(session_id, &imported_at, &blob, &laps)
             .map_err(|error| format!("failed to index imported laps: {error:?}"))?;
-        let tags = if estimated_sectors {
-            vec!["MoTeC".into(), "Estimated sectors".into()]
-        } else {
-            vec!["MoTeC".into()]
-        };
+        let tags = vec!["MoTeC".into()];
         metadata
             .update_session_details(
                 session_id,
@@ -180,6 +172,30 @@ fn read_source(
     source_path: &Path,
     maximum_session_bytes: u64,
 ) -> Result<(LdImportMetadata, Vec<TelemetryFrame>), String> {
+    let (source_metadata, mut reader) = open_source(source_path, maximum_session_bytes)?;
+    let capacity = usize::try_from(source_metadata.frame_count)
+        .map_err(|_| "MoTeC sample count does not fit this system".to_owned())?;
+    let mut frames = Vec::with_capacity(capacity);
+    while let Some(frame) = reader.next_frame() {
+        frames.push(frame);
+    }
+    normalize_lap_positions(&source_metadata, &mut frames);
+    if let Some(track_length_m) = derive_track_length(&source_metadata, &frames) {
+        for frame in &mut frames {
+            if let Some(native) = frame.native.as_deref_mut() {
+                native
+                    .float_fields
+                    .insert("trace.derived_track_length_m".into(), track_length_m);
+            }
+        }
+    }
+    Ok((source_metadata, frames))
+}
+
+fn open_source(
+    source_path: &Path,
+    maximum_session_bytes: u64,
+) -> Result<(LdImportMetadata, MotecLdReader), String> {
     let source_size = fs::metadata(source_path)
         .map_err(|error| format!("failed to inspect MoTeC log: {error}"))?
         .len();
@@ -200,7 +216,7 @@ fn read_source(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(format!("failed to read matching MoTeC sidecar: {error}")),
     };
-    let mut reader = MotecLdReader::new(source, sidecar.as_deref(), limits)
+    let reader = MotecLdReader::new(source, sidecar.as_deref(), limits)
         .map_err(|error| format!("invalid or unsupported MoTeC log: {error:?}"))?;
     let source_metadata = reader.metadata().clone();
     if source_metadata.lap_boundaries.is_empty() {
@@ -212,23 +228,7 @@ fn read_source(
                 .unwrap_or(".ldx file")
         ));
     }
-    let capacity = usize::try_from(source_metadata.frame_count)
-        .map_err(|_| "MoTeC sample count does not fit this system".to_owned())?;
-    let mut frames = Vec::with_capacity(capacity);
-    while let Some(frame) = reader.next_frame() {
-        frames.push(frame);
-    }
-    normalize_lap_positions(&source_metadata, &mut frames);
-    if let Some(track_length_m) = derive_track_length(&source_metadata, &frames) {
-        for frame in &mut frames {
-            if let Some(native) = frame.native.as_deref_mut() {
-                native
-                    .float_fields
-                    .insert("trace.derived_track_length_m".into(), track_length_m);
-            }
-        }
-    }
-    Ok((source_metadata, frames))
+    Ok((source_metadata, reader))
 }
 
 fn derive_track_length(metadata: &LdImportMetadata, frames: &[TelemetryFrame]) -> Option<f64> {
@@ -480,8 +480,9 @@ fn build_laps(
         .filter_map(|(index, window)| {
             let (start_ns, sample_start) = window[0];
             let (end_ns, sample_end) = window[1];
-            (sample_end > sample_start).then(|| {
-                let partial = index == 0 || index + 2 == starts.len();
+            let partial = index == 0 || index + 2 == starts.len();
+            let duration_ns = end_ns.saturating_sub(start_ns);
+            (sample_end > sample_start && (!partial || duration_ns >= 1_000_000_000)).then(|| {
                 let samples = &frames[sample_start..sample_end];
                 let invalidated = samples.iter().any(|frame| {
                     native_value(frame, "Lap Invalidated").is_some_and(|value| value > 0.5)
@@ -506,7 +507,7 @@ fn build_laps(
                     id: format!("{session_id}-lap-{}", index + 1),
                     lap_index: u32::try_from(index + 1).unwrap_or(u32::MAX),
                     started_offset_ns: Some(start_ns),
-                    duration_ns: (!partial).then_some(end_ns.saturating_sub(start_ns)),
+                    duration_ns: (!partial).then_some(duration_ns),
                     validity: validity.into(),
                     validity_reason: Some(validity_reason.into()),
                     max_tyres_out,
@@ -538,7 +539,7 @@ fn derive_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<
         .iter()
         .find_map(|frame| frame.lap.last_sector_time_ns)
     else {
-        return derive_estimated_sector_times(samples, lap_duration_ns);
+        return Vec::new();
     };
     let mut durations = Vec::new();
     for duration in samples
@@ -553,7 +554,7 @@ fn derive_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<
     }
     let completed_duration = durations.iter().copied().sum::<u64>();
     if completed_duration >= lap_duration_ns {
-        return Vec::new();
+        return stable_sector_times(samples, lap_duration_ns);
     }
     durations.push(lap_duration_ns - completed_duration);
     durations
@@ -567,62 +568,40 @@ fn derive_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<
         .collect()
 }
 
-fn derive_estimated_sector_times(
-    samples: &[TelemetryFrame],
-    lap_duration_ns: u64,
-) -> Vec<NewSector> {
-    let positions = samples
-        .iter()
-        .filter_map(|frame| {
-            frame
-                .lap
-                .normalized_position
-                .filter(|position| position.is_finite())
-                .map(|position| (f64::from(position), frame.elapsed.0))
-        })
+fn stable_sector_times(samples: &[TelemetryFrame], lap_duration_ns: u64) -> Vec<NewSector> {
+    const MINIMUM_STABLE_NS: u64 = 2_000_000_000;
+    let mut runs = Vec::<(u64, u64, u64)>::new();
+    for frame in samples {
+        let Some(duration_ns) = frame.lap.last_sector_time_ns else {
+            continue;
+        };
+        if let Some((value, _, end_ns)) = runs.last_mut()
+            && *value == duration_ns
+        {
+            *end_ns = frame.elapsed.0;
+        } else {
+            runs.push((duration_ns, frame.elapsed.0, frame.elapsed.0));
+        }
+    }
+    let durations = runs
+        .into_iter()
+        .filter(|(_, start_ns, end_ns)| end_ns.saturating_sub(*start_ns) >= MINIMUM_STABLE_NS)
+        .map(|(duration_ns, _, _)| duration_ns)
+        .skip(1)
         .collect::<Vec<_>>();
-    if positions.first().is_none_or(|sample| sample.0 > 0.05)
-        || positions.last().is_none_or(|sample| sample.0 < 0.95)
-    {
+    let completed = durations.iter().copied().sum::<u64>();
+    if durations.is_empty() || completed >= lap_duration_ns {
         return Vec::new();
     }
-    let origin = positions[0].1;
-    let crossings = [1.0 / 3.0, 2.0 / 3.0]
+    durations
         .into_iter()
-        .filter_map(|target| interpolated_crossing_time(&positions, target, origin))
-        .collect::<Vec<_>>();
-    let [first, second] = crossings.as_slice() else {
-        return Vec::new();
-    };
-    if *first == 0 || second <= first || *second >= lap_duration_ns {
-        return Vec::new();
-    }
-    [*first, *second - *first, lap_duration_ns - *second]
-        .into_iter()
+        .chain(std::iter::once(lap_duration_ns - completed))
         .enumerate()
         .map(|(index, duration_ns)| NewSector {
             index: u32::try_from(index + 1).unwrap_or(u32::MAX),
             duration_ns,
         })
         .collect()
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn interpolated_crossing_time(
-    positions: &[(f64, u64)],
-    target: f64,
-    origin_ns: u64,
-) -> Option<u64> {
-    let pair = positions
-        .windows(2)
-        .find(|pair| pair[0].0 <= target && pair[1].0 >= target && pair[1].0 > pair[0].0)?;
-    let fraction = (target - pair[0].0) / (pair[1].0 - pair[0].0);
-    let elapsed = pair[0].1 as f64 + fraction * pair[1].1.saturating_sub(pair[0].1) as f64;
-    if !elapsed.is_finite() || elapsed < origin_ns as f64 || elapsed >= u64::MAX as f64 {
-        return None;
-    }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    Some((elapsed.round() as u64).saturating_sub(origin_ns))
 }
 
 fn boundary_sample(elapsed_ns: u64, rate_hz: u16) -> u64 {
@@ -751,31 +730,60 @@ mod tests {
     }
 
     #[test]
-    fn estimates_three_equal_distance_sectors_when_source_splits_are_missing() {
-        let samples = [0.0_f32, 1.0 / 3.0, 2.0 / 3.0, 1.0]
+    fn drops_a_subsecond_partial_lap_after_the_final_crossing() {
+        let mut source = source_metadata();
+        source.output_rate_hz = 2;
+        source.lap_boundaries = vec![
+            trace_motec::LapBoundary {
+                name: "Lap 1".into(),
+                elapsed_ns: 10_000_000_000,
+            },
+            trace_motec::LapBoundary {
+                name: "Lap 2".into(),
+                elapsed_ns: 20_000_000_000,
+            },
+        ];
+        let frames = (0..42)
+            .map(|sequence| TelemetryFrame {
+                sequence: trace_domain::FrameSequence(sequence),
+                elapsed: trace_domain::ElapsedNanoseconds(sequence * 500_000_000),
+                ..TelemetryFrame::default()
+            })
+            .collect::<Vec<_>>();
+
+        let laps = build_laps("long-track", &source, &frames).expect("laps");
+
+        assert_eq!(laps.len(), 2);
+        assert_eq!(laps[0].validity, "invalid");
+        assert_eq!(laps[1].duration_ns, Some(10_000_000_000));
+    }
+
+    #[test]
+    fn sector_import_ignores_short_logger_transients() {
+        let values = [
+            195_u64, 195, 195, 180, 170, 125, 125, 125, 125, 140, 167, 167, 167, 167,
+        ];
+        let samples = values
             .into_iter()
             .enumerate()
-            .map(|(index, position)| TelemetryFrame {
+            .map(|(index, seconds)| TelemetryFrame {
                 elapsed: trace_domain::ElapsedNanoseconds(
-                    u64::try_from(index).unwrap() * 10_000_000_000,
+                    u64::try_from(index).unwrap() * 1_000_000_000,
                 ),
                 lap: trace_domain::LapObservation {
-                    normalized_position: Some(position),
+                    last_sector_time_ns: Some(seconds * 1_000_000_000),
                     ..trace_domain::LapObservation::default()
                 },
                 ..TelemetryFrame::default()
             })
             .collect::<Vec<_>>();
-        let sectors = derive_sector_times(&samples, 30_000_000_000);
-        assert_eq!(sectors.len(), 3);
+
         assert_eq!(
-            sectors.iter().map(|sector| sector.duration_ns).sum::<u64>(),
-            30_000_000_000
-        );
-        assert!(
-            sectors
-                .iter()
-                .all(|sector| sector.duration_ns.abs_diff(10_000_000_000) <= 1_000)
+            derive_sector_times(&samples, 486_000_000_000)
+                .into_iter()
+                .map(|sector| sector.duration_ns)
+                .collect::<Vec<_>>(),
+            vec![125_000_000_000, 167_000_000_000, 194_000_000_000]
         );
     }
 
