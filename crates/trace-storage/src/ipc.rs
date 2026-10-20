@@ -1115,6 +1115,7 @@ pub fn read_columns_range<R: Read + Seek>(
         decoded.track_length_m = derived_recorded_path_length(&decoded);
     }
     derive_missing_sector_indices(&mut decoded);
+    repair_motec_sector_indices(&mut decoded);
     Ok(decoded)
 }
 
@@ -1199,6 +1200,57 @@ fn derive_missing_sector_indices(columns: &mut TelemetryColumns) {
             previous = duration;
         }
         columns.sector_index[index] = Some(sector);
+    }
+}
+
+fn repair_motec_sector_indices(columns: &mut TelemetryColumns) {
+    const MINIMUM_STABLE_NS: u64 = 2_000_000_000;
+    if !columns
+        .native_schema
+        .as_deref()
+        .is_some_and(|schema| schema.starts_with("motec.i2.ld/"))
+    {
+        return;
+    }
+    let mut runs = Vec::<(u64, usize, u64, u64)>::new();
+    for (index, (elapsed_ns, duration_ns)) in columns
+        .elapsed_ns
+        .iter()
+        .copied()
+        .zip(columns.last_sector_time_ns.iter().copied())
+        .enumerate()
+    {
+        let Some(duration_ns) = duration_ns else {
+            continue;
+        };
+        if let Some((value, _, _, end_ns)) = runs.last_mut()
+            && *value == duration_ns
+        {
+            *end_ns = elapsed_ns;
+        } else {
+            runs.push((duration_ns, index, elapsed_ns, elapsed_ns));
+        }
+    }
+    let boundaries = runs
+        .into_iter()
+        .filter(|(_, _, start_ns, end_ns)| end_ns.saturating_sub(*start_ns) >= MINIMUM_STABLE_NS)
+        .filter(|(_, index, _, _)| *index > 0)
+        .map(|(_, index, _, _)| index)
+        .collect::<Vec<_>>();
+    if boundaries.is_empty() {
+        return;
+    }
+    let mut sector = 0_u32;
+    let mut next_boundary = 0_usize;
+    for (index, value) in columns.sector_index.iter_mut().enumerate() {
+        while boundaries
+            .get(next_boundary)
+            .is_some_and(|boundary| index >= *boundary)
+        {
+            sector = sector.saturating_add(1);
+            next_boundary += 1;
+        }
+        *value = Some(sector);
     }
 }
 
@@ -2276,10 +2328,32 @@ mod tests {
             .into_iter()
             .map(|seconds| Some(seconds * 1_000_000_000))
             .collect();
+        columns.sector_index = vec![Some(99); values.len()];
+        columns.native_schema = Some("motec.i2.ld/community-4".into());
 
         assert_eq!(
             derive_sector_durations(&columns, 486_000_000_000),
             vec![125_000_000_000, 167_000_000_000, 194_000_000_000]
+        );
+        repair_motec_sector_indices(&mut columns);
+        assert_eq!(
+            columns.sector_index,
+            vec![
+                Some(0),
+                Some(0),
+                Some(0),
+                Some(0),
+                Some(0),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(2),
+                Some(2),
+                Some(2),
+                Some(2),
+            ]
         );
     }
 

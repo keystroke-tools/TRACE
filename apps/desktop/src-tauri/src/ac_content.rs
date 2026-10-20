@@ -107,6 +107,26 @@ impl AcContentNames {
         }
     }
 
+    pub(crate) fn resolve_track_identity(&self, reported: &str) -> (String, Option<String>) {
+        let Some(tracks) = self.root.as_deref().map(|root| root.join("content/tracks")) else {
+            return (reported.to_owned(), None);
+        };
+        if safe_content_id(reported) && tracks.join(reported).is_dir() {
+            return (reported.to_owned(), None);
+        }
+        for (separator, _) in reported.rmatch_indices('-') {
+            let source_id = &reported[..separator];
+            let layout_id = &reported[separator + 1..];
+            if safe_content_id(source_id)
+                && safe_content_id(layout_id)
+                && tracks.join(source_id).join(layout_id).is_dir()
+            {
+                return (source_id.to_owned(), Some(layout_id.to_owned()));
+            }
+        }
+        (reported.to_owned(), None)
+    }
+
     pub(crate) fn track_geometry(
         &self,
         source_id: &str,
@@ -392,6 +412,24 @@ mod tests {
         assert_eq!(
             names.car_label("ks_mazda_mx5_cup", Some("Old imported name")),
             "Mazda MX5 Cup"
+        );
+        fs::remove_dir_all(root).expect("fixture cleanup");
+    }
+
+    #[test]
+    fn composite_motec_venue_resolves_to_installed_track_and_layout() {
+        let root = env::temp_dir().join(format!("trace-ac-layout-{}", std::process::id()));
+        fs::create_dir_all(root.join("content/tracks/ks_nordschleife/nordschleife"))
+            .expect("fixture layout");
+        let names = AcContentNames::from_root(root.clone());
+
+        assert_eq!(
+            names.resolve_track_identity("ks_nordschleife-nordschleife"),
+            ("ks_nordschleife".into(), Some("nordschleife".into()))
+        );
+        assert_eq!(
+            names.resolve_track_identity("zandvoort2023"),
+            ("zandvoort2023".into(), None)
         );
         fs::remove_dir_all(root).expect("fixture cleanup");
     }

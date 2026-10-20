@@ -1402,12 +1402,15 @@ fn track_map_for_session(
         .simulator_install_path("assetto-corsa")
         .map_err(|error| format!("failed to read simulator settings: {error:?}"))?
         .map(PathBuf::from);
-    Ok(
-        AcContentNames::discover(configured_path.as_deref()).track_geometry(
-            source_track_id,
-            recorded_layout.or(session.layout_id.as_deref()),
-        ),
-    )
+    let names = AcContentNames::discover(configured_path.as_deref());
+    let (resolved_source_track_id, inferred_layout_id) =
+        names.resolve_track_identity(source_track_id);
+    Ok(names.track_geometry(
+        &resolved_source_track_id,
+        recorded_layout
+            .or(session.layout_id.as_deref())
+            .or(inferred_layout_id.as_deref()),
+    ))
 }
 
 fn ac_content_names(store: &MetadataStore) -> Result<AcContentNames, String> {
@@ -1452,9 +1455,14 @@ fn resolved_session_content_names(
             .source_track_id
             .as_deref()
             .map_or(track, |source_id| {
+                let (resolved_source_id, inferred_layout_id) =
+                    names.resolve_track_identity(source_id);
                 names.track_label(
-                    source_id,
-                    session.layout_id.as_deref(),
+                    &resolved_source_id,
+                    session
+                        .layout_id
+                        .as_deref()
+                        .or(inferred_layout_id.as_deref()),
                     session.track.as_deref(),
                 )
             }),

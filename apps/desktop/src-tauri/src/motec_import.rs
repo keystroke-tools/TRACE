@@ -1,4 +1,10 @@
-use std::{fs, io::Write, path::Path};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
+
+use crate::ac_content::AcContentNames;
 
 use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -109,8 +115,16 @@ pub(crate) fn import_motec_session_with_options(
     let imported_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .map_err(|error| format!("failed to timestamp imported session: {error}"))?;
+    let (source_track_id, layout_id) = resolve_track_identity(&metadata, options)?;
     metadata
-        .create_session(&new_session(session_id, &frames, &imported_at, options))
+        .create_session(&new_session(
+            session_id,
+            &frames,
+            &imported_at,
+            options,
+            source_track_id.as_deref(),
+            layout_id.as_deref(),
+        ))
         .map_err(|error| format!("failed to create imported session: {error:?}"))?;
 
     let relative_path = RelativeBlobPath::parse(format!("sessions/{session_id}.arrow"))
@@ -283,10 +297,15 @@ fn new_session(
     frames: &[TelemetryFrame],
     imported_at: &str,
     options: &MotecImportOptions,
+    resolved_source_track_id: Option<&str>,
+    resolved_layout_id: Option<&str>,
 ) -> NewSession {
     let simulator_key =
         nonempty(&options.simulator_key).unwrap_or_else(|| "unknown-simulator".into());
     let track = nonempty(&options.track);
+    let source_track_id = resolved_source_track_id
+        .map(identity_key)
+        .or_else(|| track.as_deref().map(identity_key));
     let car = nonempty(&options.car);
     let environment = frames.first().and_then(|frame| frame.environment);
     NewSession {
@@ -294,11 +313,11 @@ fn new_session(
         simulator_id: format!("sim-{simulator_key}"),
         simulator_key,
         simulator_version: None,
-        track_id: track
+        track_id: source_track_id
             .as_ref()
-            .map(|value| format!("track-{}", hex_identity(&identity_key(value)))),
-        source_track_id: track.as_deref().map(identity_key),
-        layout_id: None,
+            .map(|value| format!("track-{}", hex_identity(value))),
+        source_track_id,
+        layout_id: resolved_layout_id.map(identity_key),
         track_display_name: track,
         car_id: car
             .as_ref()
@@ -322,6 +341,25 @@ fn new_session(
                 .and_then(float_to_u8),
         },
     }
+}
+
+fn resolve_track_identity(
+    metadata: &MetadataStore,
+    options: &MotecImportOptions,
+) -> Result<(Option<String>, Option<String>), String> {
+    let Some(reported) = nonempty(&options.track) else {
+        return Ok((None, None));
+    };
+    if options.simulator_key != "assetto-corsa" {
+        return Ok((Some(reported), None));
+    }
+    let configured_path = metadata
+        .simulator_install_path("assetto-corsa")
+        .map_err(|error| format!("failed to read Assetto Corsa settings: {error:?}"))?
+        .map(PathBuf::from);
+    let names = AcContentNames::discover(configured_path.as_deref());
+    let (source_track_id, layout_id) = names.resolve_track_identity(&reported);
+    Ok((Some(source_track_id), layout_id))
 }
 
 fn inferred_options(source_path: &Path, source: &LdImportMetadata) -> MotecImportOptions {
