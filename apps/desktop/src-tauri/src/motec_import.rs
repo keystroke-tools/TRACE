@@ -234,15 +234,28 @@ fn open_source(
         .map_err(|error| format!("invalid or unsupported MoTeC log: {error:?}"))?;
     let source_metadata = reader.metadata().clone();
     if source_metadata.lap_boundaries.is_empty() {
-        return Err(format!(
-            "No usable lap boundaries were found. Add the matching {}, or export a MoTeC log with a Lap Number channel.",
-            sidecar_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(".ldx file")
+        return Err(missing_lap_boundaries_error(
+            &sidecar_path,
+            sidecar.is_some(),
         ));
     }
     Ok((source_metadata, reader))
+}
+
+fn missing_lap_boundaries_error(sidecar_path: &Path, sidecar_present: bool) -> String {
+    let sidecar_name = sidecar_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(".ldx file");
+    if sidecar_present {
+        format!(
+            "This MoTeC log contains no completed laps. TRACE read the matching {sidecar_name}, but it contains no lap markers; the outing may have ended before the first lap was completed."
+        )
+    } else {
+        format!(
+            "No completed lap markers were found. Add the matching {sidecar_name}, or export a MoTeC log with a Lap Number channel."
+        )
+    }
 }
 
 fn derive_track_length(metadata: &LdImportMetadata, frames: &[TelemetryFrame]) -> Option<f64> {
@@ -721,6 +734,19 @@ mod tests {
         assert_eq!(options.track, "Algarve International Circuit");
         assert_eq!(options.car, "LMP2_ELMS");
         assert_eq!(options.session_type, "Practice");
+    }
+
+    #[test]
+    fn distinguishes_incomplete_logs_from_missing_sidecars() {
+        let sidecar = Path::new("nordschleife.ldx");
+        assert_eq!(
+            missing_lap_boundaries_error(sidecar, true),
+            "This MoTeC log contains no completed laps. TRACE read the matching nordschleife.ldx, but it contains no lap markers; the outing may have ended before the first lap was completed."
+        );
+        assert_eq!(
+            missing_lap_boundaries_error(sidecar, false),
+            "No completed lap markers were found. Add the matching nordschleife.ldx, or export a MoTeC log with a Lap Number channel."
+        );
     }
 
     #[test]
