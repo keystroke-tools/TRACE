@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use trace_adapter::{
     AdapterError, AdapterEvent, AdapterIdentity, DisconnectReason, SimulatorAdapter,
@@ -12,8 +12,34 @@ use trace_windows_shmem::MappingError;
 use crate::{LmuAvailability, LmuCaptureError, LmuSharedMemory, LmuSnapshot};
 
 const PHASE_BEFORE_SESSION: u8 = 0;
+const PHASE_SESSION_STOPPED: u8 = 7;
 const PHASE_SESSION_OVER: u8 = 8;
 const PHASE_PAUSED: u8 = 9;
+const SOURCE_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Debug)]
+struct SourceHeartbeat {
+    elapsed_seconds: f64,
+    last_change: Instant,
+}
+
+impl SourceHeartbeat {
+    fn new(elapsed_seconds: f64, now: Instant) -> Self {
+        Self {
+            elapsed_seconds,
+            last_change: now,
+        }
+    }
+
+    fn is_stale(&mut self, elapsed_seconds: f64, now: Instant, paused: bool) -> bool {
+        if paused || elapsed_seconds.to_bits() != self.elapsed_seconds.to_bits() {
+            self.elapsed_seconds = elapsed_seconds;
+            self.last_change = now;
+            return false;
+        }
+        now.saturating_duration_since(self.last_change) >= SOURCE_HEARTBEAT_TIMEOUT
+    }
+}
 
 /// Injectable acquisition seam for production shared memory and regression fixtures.
 pub trait LmuSource {
@@ -77,6 +103,7 @@ enum ConnectionState {
         session: SessionSeed,
         paused: bool,
         replay: bool,
+        heartbeat: SourceHeartbeat,
     },
 }
 
@@ -145,8 +172,10 @@ impl<S: LmuSource> LmuAdapter<S> {
                 let player_finished = snapshot.player_finish_status().map_err(page_error)? != 0;
                 let session = snapshot.map_session().map_err(page_error)?;
                 if phase == PHASE_BEFORE_SESSION
+                    || phase == PHASE_SESSION_STOPPED
                     || (phase == PHASE_SESSION_OVER
                         && (player_finished || (!replay && !in_realtime)))
+                    || (!replay && !in_realtime && phase != PHASE_PAUSED)
                     || !complete_identity(&session)
                 {
                     self.disconnect();
@@ -159,6 +188,10 @@ impl<S: LmuSource> LmuAdapter<S> {
                     session: session.clone(),
                     paused,
                     replay,
+                    heartbeat: SourceHeartbeat::new(
+                        snapshot.session_elapsed_seconds().map_err(page_error)?,
+                        Instant::now(),
+                    ),
                 };
                 let mut events = vec![
                     AdapterEvent::Detected(source_descriptor(
@@ -194,8 +227,24 @@ impl<S: LmuSource> LmuAdapter<S> {
         let in_realtime = snapshot.in_realtime().map_err(page_error)?;
         let player_finished = snapshot.player_finish_status().map_err(page_error)? != 0;
         let replay = matches!(&self.state, ConnectionState::Running { replay: true, .. });
+        let phase_paused = phase == PHASE_PAUSED;
+        let source_elapsed = snapshot.session_elapsed_seconds().map_err(page_error)?;
+        let source_stale = match &mut self.state {
+            ConnectionState::Running { heartbeat, .. } => {
+                heartbeat.is_stale(source_elapsed, Instant::now(), phase_paused)
+            }
+            ConnectionState::Disconnected => false,
+        };
+        if source_stale {
+            self.disconnect();
+            return Ok(vec![AdapterEvent::Disconnected(
+                DisconnectReason::DataUnavailable,
+            )]);
+        }
         if phase == PHASE_BEFORE_SESSION
+            || phase == PHASE_SESSION_STOPPED
             || (phase == PHASE_SESSION_OVER && (player_finished || (!replay && !in_realtime)))
+            || (!replay && !in_realtime && !phase_paused)
         {
             let frame = self.map_next_frame(&snapshot)?;
             self.disconnect();
@@ -225,7 +274,7 @@ impl<S: LmuSource> LmuAdapter<S> {
             *previous = session.clone();
             events.push(AdapterEvent::SessionChanged(session));
         }
-        let now_paused = phase == PHASE_PAUSED || (!replay && !in_realtime);
+        let now_paused = phase_paused;
         if *paused != now_paused {
             events.push(if now_paused {
                 AdapterEvent::Paused
@@ -592,6 +641,51 @@ mod tests {
             ended.last(),
             Some(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
         ));
+    }
+
+    #[test]
+    fn returning_to_the_monitor_ends_a_native_recording() {
+        let source = ScriptedSource {
+            availability: VecDeque::from([LmuAvailability::Available]),
+            snapshots: VecDeque::from([Ok(snapshot(5, true)), Ok(snapshot(5, false))]),
+            connects: 0,
+            disconnects: 0,
+        };
+        let mut adapter = LmuAdapter::with_source(source);
+
+        adapter.poll().expect("connect poll");
+        let ended = adapter.poll().expect("monitor poll");
+        assert!(matches!(ended.first(), Some(AdapterEvent::Frame(_))));
+        assert!(matches!(
+            ended.last(),
+            Some(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+        ));
+        assert_eq!(adapter.source.disconnects, 1);
+    }
+
+    #[test]
+    fn stale_shared_memory_disconnects_after_lmu_closes() {
+        let source = ScriptedSource {
+            availability: VecDeque::from([LmuAvailability::Available]),
+            snapshots: VecDeque::from([Ok(snapshot(5, true)), Ok(snapshot(5, true))]),
+            connects: 0,
+            disconnects: 0,
+        };
+        let mut adapter = LmuAdapter::with_source(source);
+
+        adapter.poll().expect("connect poll");
+        let ConnectionState::Running { heartbeat, .. } = &mut adapter.state else {
+            panic!("adapter should be running")
+        };
+        heartbeat.last_change = Instant::now() - SOURCE_HEARTBEAT_TIMEOUT;
+
+        assert_eq!(
+            adapter.poll().expect("stale poll"),
+            vec![AdapterEvent::Disconnected(
+                DisconnectReason::DataUnavailable
+            )]
+        );
+        assert_eq!(adapter.source.disconnects, 1);
     }
 
     #[test]

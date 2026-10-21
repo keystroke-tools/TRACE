@@ -100,6 +100,12 @@ overall winner finishes while the player is still completing a final lap. TRACE 
 recording in that state until LMU marks the player finished or removes them from
 realtime driving, so a later-class chequered-flag lap is not truncated.
 
+Returning from a live drive to LMU's monitor or main menu ends the current TRACE
+recording. LMU's explicit paused phase remains a pause and does not split the session.
+The adapter also watches the player telemetry session clock: if LMU closes while TRACE
+still holds readable shared-memory handles, five seconds without a source-time update
+is treated as a lost connection so the completed laps are finalized and saved.
+
 ## Replay capture and recovery
 
 LMU keeps publishing the selected car through shared memory while a saved replay is

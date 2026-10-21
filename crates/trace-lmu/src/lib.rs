@@ -256,6 +256,24 @@ impl LmuSnapshot {
         Ok(Page::new(&self.bytes).u8(SCORING_OFFSET + 115)? != 0)
     }
 
+    /// Simulator session time published with the player's telemetry heartbeat.
+    ///
+    /// LMU can leave its named shared-memory objects readable after the game has
+    /// stopped publishing. Consumers can use this value to distinguish a live
+    /// feed from a stale final snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the player telemetry record is truncated or the
+    /// reported time is not finite.
+    pub fn session_elapsed_seconds(&self) -> Result<f64, LmuPageError> {
+        let elapsed = Page::new(&self.bytes).f64(self.player_telemetry_offset + 12)?;
+        elapsed
+            .is_finite()
+            .then_some(elapsed)
+            .ok_or(LmuPageError::InvalidValue("session elapsed time"))
+    }
+
     /// Player result state reported by LMU scoring.
     ///
     /// `0` means the player is still running, `1` finished, `2` DNF, and `3`
@@ -719,6 +737,7 @@ mod tests {
         assert_eq!(snapshot.driver_name().as_deref(), Some("TRACE DRIVER"));
         assert_eq!(snapshot.player_finish_status(), Ok(0));
         assert_eq!(snapshot.player_control(), Ok(0));
+        assert_eq!(snapshot.session_elapsed_seconds(), Ok(700.0));
 
         let frame = snapshot
             .map_frame(FrameSequence(7), ElapsedNanoseconds(123))
