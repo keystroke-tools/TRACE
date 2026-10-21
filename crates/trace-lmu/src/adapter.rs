@@ -677,7 +677,9 @@ mod tests {
         let ConnectionState::Running { heartbeat, .. } = &mut adapter.state else {
             panic!("adapter should be running")
         };
-        heartbeat.last_change = Instant::now() - SOURCE_HEARTBEAT_TIMEOUT;
+        heartbeat.last_change = Instant::now()
+            .checked_sub(SOURCE_HEARTBEAT_TIMEOUT)
+            .expect("five seconds fits within the monotonic clock range");
 
         assert_eq!(
             adapter.poll().expect("stale poll"),
