@@ -172,10 +172,13 @@ ownership and searchable summary metadata live in `live.sqlite`. Library lookups
 always scoped to the authenticated account and return `404` rather than revealing that
 another account owns an identifier. The embedded `/app` UI supports account access,
 upload, search, download, deletion, lap and sector inspection, and per-lap driving-line,
-speed, and pedal visualisation. Telemetry responses decode only the selected lap and
-are downsampled to a bounded point count (1,800 by default and at most 4,000), so opening
-a lap never sends an entire race to the browser. Cross-session comparison remains a
-later layer over this storage boundary.
+speed, and pedal visualisation. Its custom comparison picker can choose a compatible lap
+from any owned session, normalises the faster lap as the purple reference, and overlays
+driving lines, speed, throttle, brake, and the analysed lap's time delta. Comparison uses
+recorded lap position for distance alignment and labels its normalized-time fallback when
+position is unavailable. Telemetry responses decode only the selected laps and are
+downsampled to a bounded point count (1,800 by default and at most 4,000), so opening a
+comparison never sends an entire race to the browser.
 
 Installation-managed requests, including session creation, ending, and completed-session
 sharing, send both headers:

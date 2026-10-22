@@ -463,6 +463,11 @@ button.primary:hover {
 	margin-bottom: 34px;
 }
 
+.review-actions {
+	display: flex;
+	gap: 8px;
+}
+
 .back-button,
 .button-link {
 	display: inline-flex;
@@ -517,6 +522,226 @@ button.primary:hover {
 	color: #b49cff;
 	font-size: clamp(24px, 3vw, 36px);
 	font-variant-numeric: tabular-nums;
+}
+
+.comparison-summary {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 24px;
+	margin-top: 14px;
+	padding: 14px 16px;
+	border: 1px solid #34303c;
+	background: #17151a;
+}
+
+.comparison-driver,
+.comparison-delta {
+	display: grid;
+	gap: 3px;
+	min-width: 0;
+}
+
+.comparison-driver.analysed {
+	justify-items: end;
+	text-align: right;
+}
+
+.comparison-driver small,
+.comparison-delta small,
+.comparison-delta span {
+	color: #797979;
+	font-size: 9px;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+}
+
+.comparison-driver.reference small,
+.comparison-driver.reference strong {
+	color: #b49cff;
+}
+
+.comparison-driver strong {
+	overflow: hidden;
+	font-size: 14px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.comparison-driver span {
+	color: #8a8a8a;
+	font-size: 11px;
+}
+
+.comparison-delta {
+	justify-items: center;
+	min-width: 150px;
+}
+
+.comparison-delta strong {
+	font-size: 22px;
+	font-variant-numeric: tabular-nums;
+}
+
+.comparison-delta span {
+	font-size: 8px;
+}
+
+.compare-picker {
+	margin-top: 14px;
+	border: 1px solid #343434;
+	background: #151515;
+}
+
+.picker-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+	padding: 16px;
+	border-bottom: 1px solid #2c2c2c;
+}
+
+.picker-head .eyebrow {
+	margin-bottom: 4px;
+}
+
+.picker-head strong {
+	font-size: 15px;
+}
+
+.picker-search {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 14px;
+	padding: 12px 16px;
+	border-bottom: 1px solid #2c2c2c;
+}
+
+.picker-search input {
+	min-height: 38px;
+}
+
+.picker-layout {
+	display: grid;
+	grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.8fr);
+	min-height: 280px;
+	max-height: 440px;
+}
+
+.picker-sessions,
+.picker-laps {
+	overflow: auto;
+}
+
+.picker-sessions {
+	border-right: 1px solid #2c2c2c;
+}
+
+.picker-sessions > p,
+.picker-laps > p {
+	padding: 24px 16px;
+	color: #777;
+	font-size: 12px;
+}
+
+.picker-session,
+.picker-lap {
+	display: grid;
+	width: 100%;
+	min-height: 72px;
+	padding: 12px 16px;
+	border: 0;
+	border-bottom: 1px solid #292929;
+	border-radius: 0;
+	background: transparent;
+	text-align: left;
+}
+
+.picker-session:hover,
+.picker-session.active,
+.picker-lap:hover:not(:disabled) {
+	background: #1d1d1d;
+}
+
+.picker-session.active {
+	box-shadow: inset 3px 0 #68e997;
+}
+
+.picker-session > span:first-child {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.picker-session strong {
+	overflow: hidden;
+	font-size: 13px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.picker-session small,
+.picker-lap small {
+	color: #68e997;
+	font-size: 8px;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+}
+
+.picker-session > span:nth-child(2),
+.picker-session time {
+	overflow: hidden;
+	color: #888;
+	font-size: 10px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.picker-lap {
+	grid-template-columns: 1fr auto;
+	align-items: center;
+	gap: 3px 12px;
+	min-height: 62px;
+}
+
+.picker-lap strong {
+	color: #b49cff;
+	font-size: 14px;
+	font-variant-numeric: tabular-nums;
+}
+
+.picker-lap small {
+	grid-column: 1 / -1;
+	color: #777;
+}
+
+.picker-lap:disabled {
+	opacity: 0.38;
+}
+
+.picker-compatibility {
+	padding: 10px 16px;
+	border-bottom: 1px solid #292929;
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.picker-compatibility.compatible {
+	color: #68e997;
+}
+
+.picker-compatibility.warning {
+	color: #ef9a69;
+}
+
+.picker-laps.loading {
+	pointer-events: none;
+	opacity: 0.55;
 }
 
 .review-layout {
@@ -676,7 +901,7 @@ button.primary:hover {
 	background: #111;
 }
 
-.visual-card.inputs-card {
+.visual-card.delta-card {
 	grid-column: 1 / -1;
 	height: 190px;
 }
@@ -775,6 +1000,39 @@ button.primary:hover {
 		display: grid;
 	}
 
+	.review-head {
+		align-items: flex-start;
+	}
+
+	.review-actions {
+		flex-wrap: wrap;
+		justify-content: flex-end;
+	}
+
+	.comparison-summary {
+		grid-template-columns: 1fr 1fr;
+	}
+
+	.comparison-delta {
+		grid-column: 1 / -1;
+		grid-row: 2;
+	}
+
+	.comparison-summary > button {
+		grid-column: 1 / -1;
+	}
+
+	.picker-layout {
+		grid-template-columns: 1fr;
+		max-height: 580px;
+	}
+
+	.picker-sessions {
+		max-height: 260px;
+		border-right: 0;
+		border-bottom: 1px solid #2c2c2c;
+	}
+
 	.best-lap {
 		justify-items: start;
 	}
@@ -797,7 +1055,7 @@ button.primary:hover {
 		grid-template-columns: 1fr;
 	}
 
-	.visual-card.inputs-card {
+	.visual-card.delta-card {
 		grid-column: auto;
 	}
 }

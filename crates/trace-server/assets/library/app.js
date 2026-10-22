@@ -4,6 +4,9 @@ const state = {
 	sessions: [],
 	review: null,
 	telemetry: null,
+	selectedLap: null,
+	comparison: null,
+	pickerReview: null,
 };
 
 const elements = {
@@ -29,6 +32,15 @@ const elements = {
 	empty: document.querySelector("#empty-library"),
 	reviewBack: document.querySelector("#review-back"),
 	reviewDownload: document.querySelector("#review-download"),
+	compareOpen: document.querySelector("#compare-open"),
+	compareClose: document.querySelector("#compare-close"),
+	comparePicker: document.querySelector("#compare-picker"),
+	compareSearch: document.querySelector("#compare-search"),
+	compareSessions: document.querySelector("#compare-sessions"),
+	compareLaps: document.querySelector("#compare-laps"),
+	comparisonSummary: document.querySelector("#comparison-summary"),
+	comparisonClear: document.querySelector("#comparison-clear"),
+	alignmentLabel: document.querySelector("#alignment-label"),
 	reviewKicker: document.querySelector("#review-kicker"),
 	reviewName: document.querySelector("#review-name"),
 	reviewContext: document.querySelector("#review-context"),
@@ -42,7 +54,10 @@ const elements = {
 	telemetryStats: document.querySelector("#telemetry-stats"),
 	trackCanvas: document.querySelector("#track-canvas"),
 	speedCanvas: document.querySelector("#speed-canvas"),
-	inputCanvas: document.querySelector("#input-canvas"),
+	throttleCanvas: document.querySelector("#throttle-canvas"),
+	brakeCanvas: document.querySelector("#brake-canvas"),
+	deltaCanvas: document.querySelector("#delta-canvas"),
+	deltaCard: document.querySelector("#delta-card"),
 	toasts: document.querySelector("#toast-region"),
 };
 
@@ -198,6 +213,8 @@ async function openReview(sessionId) {
 	try {
 		state.review = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/review`);
 		state.telemetry = null;
+		state.selectedLap = null;
+		clearComparison(false);
 		renderReview();
 		const preferred = [...state.review.laps].filter((lap) => lap.duration_ns != null).sort((left, right) => left.duration_ns - right.duration_ns)[0];
 		if (preferred) await loadLap(preferred.id);
@@ -210,6 +227,9 @@ async function openReview(sessionId) {
 function closeReview() {
 	state.review = null;
 	state.telemetry = null;
+	state.selectedLap = null;
+	clearComparison(false);
+	closeComparePicker();
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
 }
@@ -261,6 +281,7 @@ function lapRow(lap, bestId) {
 
 async function loadLap(lapId) {
 	if (!state.review) return;
+	clearComparison(false);
 	for (const button of elements.reviewLaps.querySelectorAll(".lap-row")) button.classList.toggle("active", button.dataset.lapId === lapId);
 	elements.telemetryContent.hidden = true;
 	elements.telemetryEmpty.hidden = false;
@@ -271,11 +292,226 @@ async function loadLap(lapId) {
 			`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/laps/${encodeURIComponent(lapId)}/telemetry?max_points=1800`,
 		);
 		const lap = state.review.laps.find((candidate) => candidate.id === lapId);
+		state.selectedLap = lap;
 		renderTelemetry(lap);
 	} catch (error) {
 		elements.telemetryEmpty.textContent = error.message;
 		toast(error.message, "error");
 	}
+}
+
+function openComparePicker() {
+	if (!state.selectedLap || !state.telemetry) {
+		toast("Select a timed lap first.", "error");
+		return;
+	}
+	elements.comparePicker.hidden = false;
+	elements.compareSearch.value = "";
+	state.pickerReview = null;
+	renderCompareSessions();
+	elements.compareLaps.replaceChildren(message("Select a session to see its laps."));
+	elements.compareSearch.focus();
+}
+
+function closeComparePicker() {
+	elements.comparePicker.hidden = true;
+	state.pickerReview = null;
+}
+
+function message(text) {
+	const paragraph = document.createElement("p");
+	paragraph.textContent = text;
+	return paragraph;
+}
+
+function summaryCompatible(summary) {
+	const current = state.review?.summary;
+	if (!current) return false;
+	return (
+		summary.simulator === current.simulator &&
+		readable(summary.track, "").toLocaleLowerCase() === readable(current.track, "").toLocaleLowerCase() &&
+		readable(summary.car, "").toLocaleLowerCase() === readable(current.car, "").toLocaleLowerCase()
+	);
+}
+
+function renderCompareSessions() {
+	const query = elements.compareSearch.value.trim().toLocaleLowerCase();
+	const sessions = [...state.sessions]
+		.filter((session) => sessionSearchText(session).includes(query))
+		.sort((left, right) => Number(summaryCompatible(right)) - Number(summaryCompatible(left)));
+	elements.compareSessions.replaceChildren(...sessions.map(compareSessionRow));
+	if (!sessions.length) elements.compareSessions.append(message("No matching sessions."));
+}
+
+function compareSessionRow(session) {
+	const button = document.createElement("button");
+	button.type = "button";
+	button.className = "picker-session";
+	if (state.pickerReview?.summary.session_id === session.session_id) button.classList.add("active");
+	const heading = document.createElement("span");
+	const driver = document.createElement("strong");
+	driver.textContent = readable(session.driver_name, readable(session.title, "Recorded session"));
+	const badge = document.createElement("small");
+	badge.textContent = summaryCompatible(session) ? "MATCH" : readable(session.simulator, "OTHER");
+	heading.append(driver, badge);
+	const context = document.createElement("span");
+	context.textContent = `${readable(session.track, "Unknown track")} · ${readable(session.car, "Unknown car")}`;
+	const date = document.createElement("time");
+	date.textContent = formatDate(session.started_at);
+	button.append(heading, context, date);
+	button.addEventListener("click", () => loadPickerSession(session.session_id));
+	return button;
+}
+
+async function loadPickerSession(sessionId) {
+	elements.compareLaps.replaceChildren(message("Loading laps…"));
+	try {
+		state.pickerReview = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/review`);
+		renderCompareSessions();
+		renderPickerLaps();
+	} catch (error) {
+		elements.compareLaps.replaceChildren(message(error.message));
+	}
+}
+
+function detailsCompatible(left, right) {
+	const sameIdentity = (sourceLeft, sourceRight, labelLeft, labelRight) =>
+		sourceLeft && sourceRight ? sourceLeft === sourceRight : readable(labelLeft, "").toLocaleLowerCase() === readable(labelRight, "").toLocaleLowerCase();
+	return (
+		left.summary.simulator === right.summary.simulator &&
+		sameIdentity(left.source_track_id, right.source_track_id, left.summary.track, right.summary.track) &&
+		sameIdentity(left.source_car_id, right.source_car_id, left.summary.car, right.summary.car) &&
+		readable(left.summary.layout, "") === readable(right.summary.layout, "")
+	);
+}
+
+function renderPickerLaps() {
+	const compatible = detailsCompatible(state.review, state.pickerReview);
+	const heading = document.createElement("div");
+	heading.className = `picker-compatibility ${compatible ? "compatible" : "warning"}`;
+	heading.textContent = compatible ? "Compatible car and track" : "Different car, track, layout, or simulator";
+	const laps = state.pickerReview.laps.map((lap) => pickerLapRow(lap, compatible));
+	elements.compareLaps.replaceChildren(heading, ...laps);
+	if (!laps.length) elements.compareLaps.append(message("This session has no laps."));
+}
+
+function pickerLapRow(lap, compatible) {
+	const sameLap = state.pickerReview.summary.session_id === state.review.summary.session_id && lap.id === state.selectedLap.id;
+	const unavailable = lap.duration_ns == null || lap.validity === "invalid" || (lap.max_tyres_out ?? 0) >= 3;
+	const button = document.createElement("button");
+	button.type = "button";
+	button.className = "picker-lap";
+	button.disabled = sameLap || unavailable || !compatible;
+	const label = document.createElement("span");
+	label.textContent = `Lap ${lap.index}`;
+	const duration = document.createElement("strong");
+	duration.textContent = formatDuration(lap.duration_ns);
+	const status = document.createElement("small");
+	status.textContent = sameLap ? "CURRENT" : unavailable ? "UNAVAILABLE" : `${lap.sectors.length} SECTORS`;
+	button.append(label, duration, status);
+	button.addEventListener("click", () => createComparison(lap));
+	return button;
+}
+
+async function createComparison(candidateLap) {
+	elements.compareLaps.classList.add("loading");
+	try {
+		const candidateSession = state.pickerReview;
+		const candidateTelemetry = await request(
+			`/api/v1/library/sessions/${encodeURIComponent(candidateSession.summary.session_id)}/laps/${encodeURIComponent(candidateLap.id)}/telemetry?max_points=1800`,
+		);
+		const current = { detail: state.review, lap: state.selectedLap, telemetry: state.telemetry };
+		const candidate = { detail: candidateSession, lap: candidateLap, telemetry: candidateTelemetry };
+		const reference = candidateLap.duration_ns < state.selectedLap.duration_ns ? candidate : current;
+		const analysed = reference === candidate ? current : candidate;
+		state.comparison = { reference, analysed, ...alignLaps(reference.telemetry.points, analysed.telemetry.points) };
+		closeComparePicker();
+		renderComparison();
+		requestAnimationFrame(drawTelemetry);
+	} catch (error) {
+		toast(error.message, "error");
+	} finally {
+		elements.compareLaps.classList.remove("loading");
+	}
+}
+
+function progressSeries(points) {
+	const positioned = points.filter((point) => Number.isFinite(point.lap_position));
+	const minimum = Math.min(...positioned.map((point) => point.lap_position));
+	const maximum = Math.max(...positioned.map((point) => point.lap_position));
+	if (positioned.length >= points.length * 0.65 && maximum - minimum > 0.5) {
+		return {
+			mode: "distance",
+			points: positioned
+				.map((point) => ({ ...point, progress: (point.lap_position - minimum) / (maximum - minimum) }))
+				.sort((left, right) => left.progress - right.progress),
+		};
+	}
+	const start = points[0]?.elapsed_seconds ?? 0;
+	const end = points.at(-1)?.elapsed_seconds ?? start + 1;
+	const duration = Math.max(end - start, 0.001);
+	return { mode: "time", points: points.map((point) => ({ ...point, progress: (point.elapsed_seconds - start) / duration })) };
+}
+
+function interpolate(points, progress, key) {
+	if (!points.length) return null;
+	let upper = points.findIndex((point) => point.progress >= progress);
+	if (upper < 0) upper = points.length - 1;
+	const lower = Math.max(0, upper - 1);
+	const before = points[lower];
+	const after = points[upper];
+	const left = before[key];
+	const right = after[key];
+	if (!Number.isFinite(left)) return Number.isFinite(right) ? right : null;
+	if (!Number.isFinite(right) || after.progress === before.progress) return left;
+	const fraction = (progress - before.progress) / (after.progress - before.progress);
+	return left + (right - left) * Math.max(0, Math.min(1, fraction));
+}
+
+function alignLaps(referencePoints, analysedPoints) {
+	const reference = progressSeries(referencePoints);
+	const analysed = progressSeries(analysedPoints);
+	const keys = ["elapsed_seconds", "speed_kph", "throttle", "brake", "position_x_m", "position_z_m"];
+	const samples = Array.from({ length: 600 }, (_, index) => {
+		const progress = index / 599;
+		const sample = { progress };
+		for (const key of keys) {
+			sample[`reference_${key}`] = interpolate(reference.points, progress, key);
+			sample[`analysed_${key}`] = interpolate(analysed.points, progress, key);
+		}
+		sample.delta_seconds =
+			Number.isFinite(sample.reference_elapsed_seconds) && Number.isFinite(sample.analysed_elapsed_seconds)
+				? sample.analysed_elapsed_seconds - sample.reference_elapsed_seconds
+				: null;
+		return sample;
+	});
+	return { samples, alignment: reference.mode === "distance" && analysed.mode === "distance" ? "distance" : "time" };
+}
+
+function comparisonName(entry) {
+	return readable(entry.detail.summary.driver_name, readable(entry.detail.summary.title, `Lap ${entry.lap.index}`));
+}
+
+function renderComparison() {
+	const { reference, analysed, alignment } = state.comparison;
+	const referenceElement = elements.comparisonSummary.querySelector(".reference");
+	const analysedElement = elements.comparisonSummary.querySelector(".analysed");
+	referenceElement.querySelector("strong").textContent = comparisonName(reference);
+	referenceElement.querySelector("span").textContent = `Lap ${reference.lap.index} · ${formatDuration(reference.lap.duration_ns)}`;
+	analysedElement.querySelector("strong").textContent = comparisonName(analysed);
+	analysedElement.querySelector("span").textContent = `Lap ${analysed.lap.index} · ${formatDuration(analysed.lap.duration_ns)}`;
+	const deltaSeconds = (analysed.lap.duration_ns - reference.lap.duration_ns) / 1_000_000_000;
+	elements.comparisonSummary.querySelector(".comparison-delta strong").textContent = `+${deltaSeconds.toFixed(3)}`;
+	elements.alignmentLabel.textContent = alignment === "distance" ? "DISTANCE ALIGNED" : "NORMALISED TIME · DISTANCE UNAVAILABLE";
+	elements.comparisonSummary.hidden = false;
+	elements.deltaCard.hidden = false;
+}
+
+function clearComparison(redraw = true) {
+	state.comparison = null;
+	elements.comparisonSummary.hidden = true;
+	elements.deltaCard.hidden = true;
+	if (redraw) requestAnimationFrame(drawTelemetry);
 }
 
 function renderTelemetry(lap) {
@@ -314,17 +550,40 @@ function canvasContext(canvas) {
 
 function drawTelemetry() {
 	if (!state.telemetry || elements.telemetryContent.hidden) return;
-	drawTrack(elements.trackCanvas, state.telemetry.points);
-	drawGraph(elements.speedCanvas, state.telemetry.points, [{ key: "speed_kph", color: "#65a9ff" }]);
-	drawGraph(elements.inputCanvas, state.telemetry.points, [
-		{ key: "throttle", color: "#68e997", maximum: 1 },
-		{ key: "brake", color: "#ef6969", maximum: 1 },
-	]);
+	if (state.comparison) {
+		const { reference, analysed, samples } = state.comparison;
+		drawTrack(elements.trackCanvas, [
+			{ points: analysed.telemetry.points, color: "#68e997", width: 2 },
+			{ points: reference.telemetry.points, color: "#b49cff", width: 3 },
+		]);
+		drawSeriesGraph(elements.speedCanvas, [
+			{ values: samples.map((sample) => sample.analysed_speed_kph), color: "#65a9ff" },
+			{ values: samples.map((sample) => sample.reference_speed_kph), color: "#b49cff" },
+		]);
+		drawSeriesGraph(elements.throttleCanvas, [
+			{ values: samples.map((sample) => sample.analysed_throttle), color: "#68e997", maximum: 1 },
+			{ values: samples.map((sample) => sample.reference_throttle), color: "#b49cff", maximum: 1 },
+		]);
+		drawSeriesGraph(elements.brakeCanvas, [
+			{ values: samples.map((sample) => sample.analysed_brake), color: "#ef6969", maximum: 1 },
+			{ values: samples.map((sample) => sample.reference_brake), color: "#b49cff", maximum: 1 },
+		]);
+		drawSeriesGraph(elements.deltaCanvas, [{ values: samples.map((sample) => sample.delta_seconds), color: "#e8e8e8" }], true);
+		return;
+	}
+	drawTrack(elements.trackCanvas, [{ points: state.telemetry.points, color: "#d5d5d5", width: 3 }]);
+	drawSeriesGraph(elements.speedCanvas, [{ values: state.telemetry.points.map((point) => point.speed_kph), color: "#65a9ff" }]);
+	drawSeriesGraph(elements.throttleCanvas, [{ values: state.telemetry.points.map((point) => point.throttle), color: "#68e997", maximum: 1 }]);
+	drawSeriesGraph(elements.brakeCanvas, [{ values: state.telemetry.points.map((point) => point.brake), color: "#ef6969", maximum: 1 }]);
 }
 
-function drawTrack(canvas, points) {
+function drawTrack(canvas, traces) {
 	const { context, width, height } = canvasContext(canvas);
-	const positions = points.filter((point) => Number.isFinite(point.position_x_m) && Number.isFinite(point.position_z_m));
+	const positionedTraces = traces.map((trace) => ({
+		...trace,
+		points: trace.points.filter((point) => Number.isFinite(point.position_x_m) && Number.isFinite(point.position_z_m)),
+	}));
+	const positions = positionedTraces.flatMap((trace) => trace.points);
 	if (positions.length < 2) {
 		context.fillStyle = "#777";
 		context.font = "12px system-ui";
@@ -342,19 +601,21 @@ function drawTrack(canvas, points) {
 	const scale = Math.min((width - padding * 2) / Math.max(maxX - minX, 1), (height - padding * 2) / Math.max(maxZ - minZ, 1));
 	const offsetX = (width - (maxX - minX) * scale) / 2;
 	const offsetZ = (height - (maxZ - minZ) * scale) / 2;
-	context.strokeStyle = "#d5d5d5";
-	context.lineWidth = 3;
-	context.beginPath();
-	positions.forEach((point, index) => {
-		const x = offsetX + (point.position_x_m - minX) * scale;
-		const y = offsetZ + (point.position_z_m - minZ) * scale;
-		if (index === 0) context.moveTo(x, y);
-		else context.lineTo(x, y);
-	});
-	context.stroke();
+	for (const trace of positionedTraces) {
+		context.strokeStyle = trace.color;
+		context.lineWidth = trace.width;
+		context.beginPath();
+		trace.points.forEach((point, index) => {
+			const x = offsetX + (point.position_x_m - minX) * scale;
+			const y = offsetZ + (point.position_z_m - minZ) * scale;
+			if (index === 0) context.moveTo(x, y);
+			else context.lineTo(x, y);
+		});
+		context.stroke();
+	}
 }
 
-function drawGraph(canvas, points, series) {
+function drawSeriesGraph(canvas, series, zeroCentered = false) {
 	const { context, width, height } = canvasContext(canvas);
 	const padding = 12;
 	context.strokeStyle = "#292929";
@@ -366,17 +627,27 @@ function drawGraph(canvas, points, series) {
 		context.lineTo(width, y);
 		context.stroke();
 	}
+	const allValues = series.flatMap((item) => item.values.filter(Number.isFinite));
+	const absoluteMaximum = Math.max(0.01, ...allValues.map(Math.abs));
+	const sharedMaximum = zeroCentered ? absoluteMaximum : Math.max(1, ...allValues);
+	if (zeroCentered) {
+		context.strokeStyle = "#555";
+		context.beginPath();
+		context.moveTo(0, height / 2);
+		context.lineTo(width, height / 2);
+		context.stroke();
+	}
 	for (const item of series) {
-		const maximum = item.maximum || Math.max(1, ...points.map((point) => point[item.key] || 0));
+		const maximum = item.maximum || sharedMaximum;
 		context.strokeStyle = item.color;
 		context.lineWidth = 2;
 		context.beginPath();
 		let started = false;
-		points.forEach((point, index) => {
-			const value = point[item.key];
+		item.values.forEach((value, index) => {
 			if (!Number.isFinite(value)) return;
-			const x = points.length === 1 ? 0 : (index / (points.length - 1)) * width;
-			const y = height - padding - (Math.max(0, value) / maximum) * (height - padding * 2);
+			const x = item.values.length === 1 ? 0 : (index / (item.values.length - 1)) * width;
+			const normalized = zeroCentered ? (value + maximum) / (maximum * 2) : Math.max(0, value) / maximum;
+			const y = height - padding - normalized * (height - padding * 2);
 			if (started) context.lineTo(x, y);
 			else context.moveTo(x, y);
 			started = true;
@@ -434,6 +705,10 @@ async function upload(file) {
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.reviewBack.addEventListener("click", closeReview);
+elements.compareOpen.addEventListener("click", openComparePicker);
+elements.compareClose.addEventListener("click", closeComparePicker);
+elements.comparisonClear.addEventListener("click", () => clearComparison());
+elements.compareSearch.addEventListener("input", renderCompareSessions);
 elements.search.addEventListener("input", renderSessions);
 elements.input.addEventListener("change", () => upload(elements.input.files[0]));
 elements.uploadZone.addEventListener("dragover", (event) => {
@@ -507,7 +782,9 @@ elements.logout.addEventListener("click", async () => {
 const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
 telemetryResizeObserver.observe(elements.trackCanvas);
 telemetryResizeObserver.observe(elements.speedCanvas);
-telemetryResizeObserver.observe(elements.inputCanvas);
+telemetryResizeObserver.observe(elements.throttleCanvas);
+telemetryResizeObserver.observe(elements.brakeCanvas);
+telemetryResizeObserver.observe(elements.deltaCanvas);
 
 async function start() {
 	show("loading");

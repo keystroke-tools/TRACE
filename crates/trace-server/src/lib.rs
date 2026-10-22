@@ -3209,6 +3209,8 @@ mod tests {
             .expect("library page body");
         let body = String::from_utf8(body.to_vec()).expect("library HTML");
         assert!(body.contains("Your private, self-hosted TRACE telemetry library."));
+        assert!(body.contains("Compare against your library"));
+        assert!(body.contains("TIME DELTA · ANALYSED VS REFERENCE"));
         assert!(body.contains("/app-assets/library.js"));
         assert!(!body.contains("<script>"));
     }
