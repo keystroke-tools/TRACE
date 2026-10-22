@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#151515" />
+		<meta name="description" content="Your private, self-hosted TRACE telemetry library." />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="stylesheet" href="/app-assets/library.css" />
+		<title>TRACE Library</title>
+	</head>
+	<body>
+		<header class="topbar">
+			<a class="brand" href="/"><strong>TRACE</strong><span>//</span><small>LIBRARY</small></a>
+			<div class="instance"><span id="instance-name">Connecting…</span><small id="instance-version"></small></div>
+		</header>
+
+		<main>
+			<section id="loading-view" class="state-panel">
+				<span class="spinner" aria-hidden="true"></span>
+				<p>Connecting to this TRACE instance…</p>
+			</section>
+
+			<section id="auth-view" class="auth-layout" hidden>
+				<div class="auth-intro">
+					<p class="eyebrow">SELF-HOSTED TELEMETRY</p>
+					<h1>Your laps,<br /><em>where you put them.</em></h1>
+					<p>Upload portable <code>.trace</code> sessions to this instance. Your library remains private to your account.</p>
+				</div>
+				<div class="auth-card">
+					<div class="auth-tabs" role="tablist">
+						<button id="login-tab" class="active" type="button" role="tab">Sign in</button>
+						<button id="register-tab" type="button" role="tab" hidden>Create account</button>
+					</div>
+					<form id="login-form">
+						<label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" /></label>
+						<label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256" /></label>
+						<button class="primary" type="submit">Sign in</button>
+					</form>
+					<form id="register-form" hidden>
+						<label>Display name<input name="display_name" autocomplete="name" required maxlength="80" /></label>
+						<label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" /></label>
+						<label>Password<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256" /></label>
+						<p class="field-note">Use at least 12 characters.</p>
+						<button class="primary" type="submit">Create account</button>
+					</form>
+				</div>
+			</section>
+
+			<section id="library-view" hidden>
+				<div class="library-head">
+					<div>
+						<p class="eyebrow">PRIVATE LIBRARY</p>
+						<h1>Welcome, <span id="account-name"></span>.</h1>
+						<p>Your uploaded sessions stay on this TRACE instance.</p>
+					</div>
+					<button id="logout-button" class="quiet" type="button">Sign out</button>
+				</div>
+
+				<div class="library-tools">
+					<label id="upload-zone" class="upload-zone">
+						<input id="package-input" type="file" accept=".trace,application/vnd.simtrace.session" />
+						<span class="upload-mark">+</span>
+						<strong>Upload a TRACE session</strong>
+						<small>Choose or drop a .trace package · <span id="upload-limit"></span></small>
+					</label>
+					<label class="search-field"
+						><span>Search library</span><input id="session-search" type="search" placeholder="Driver, car, track, tag…"
+					/></label>
+				</div>
+
+				<div class="list-head"><strong>SESSIONS</strong><span id="session-count">0</span></div>
+				<div id="session-list" class="session-list"></div>
+				<div id="empty-library" class="empty-state" hidden>
+					<strong>No sessions here yet.</strong>
+					<p>Export a session from TRACE and upload the resulting package.</p>
+				</div>
+			</section>
+		</main>
+
+		<div id="toast-region" class="toast-region" aria-live="polite"></div>
+		<script src="/app-assets/library.js" defer></script>
+	</body>
+</html>

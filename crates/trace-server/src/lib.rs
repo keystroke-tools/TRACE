@@ -1086,6 +1086,9 @@ pub fn app(config: ServerConfig) -> Router {
         )
         .route("/live/{session_id}", get(spectator_page))
         .route("/s/{share_id}", get(shared_session_page))
+        .route("/app", get(library_page))
+        .route("/app-assets/library.css", get(library_styles))
+        .route("/app-assets/library.js", get(library_script))
         .route("/live-assets/spectator.css", get(spectator_styles))
         .route("/live-assets/spectator.js", get(spectator_script))
         .route("/live-assets/site.css", get(site_styles))
@@ -1586,6 +1589,40 @@ async fn spectator_styles() -> impl IntoResponse {
     (
         [("content-type", "text/css; charset=utf-8")],
         include_str!("../assets/spectator/styles.css"),
+    )
+}
+
+async fn library_page() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'self'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self'; script-src 'self'; style-src 'self'",
+            ),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        include_str!("../assets/library/index.html"),
+    )
+}
+
+async fn library_styles() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        include_str!("../assets/library/styles.css"),
+    )
+}
+
+async fn library_script() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        include_str!("../assets/library/app.js"),
     )
 }
 
@@ -2933,6 +2970,8 @@ mod tests {
                 "text/javascript; charset=utf-8",
             ),
             ("/live-assets/site.css", "text/css; charset=utf-8"),
+            ("/app-assets/library.css", "text/css; charset=utf-8"),
+            ("/app-assets/library.js", "text/javascript; charset=utf-8"),
             ("/favicon.svg", "image/svg+xml"),
             ("/live-assets/trace-live-og.png", "image/png"),
         ] {
@@ -3021,6 +3060,32 @@ mod tests {
         let created: CreateLiveSessionResponse =
             serde_json::from_slice(&body).expect("session JSON");
         assert!(created.spectator_url.ends_with(&created.session_id));
+    }
+
+    #[tokio::test]
+    async fn embedded_library_page_uses_external_assets_and_a_strict_policy() {
+        let application = app(ServerConfig::new("https://telemetry.example.test"));
+        let response = application
+            .oneshot(
+                Request::get("/app")
+                    .body(Body::empty())
+                    .expect("library page request"),
+            )
+            .await
+            .expect("library page response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response
+                .headers()
+                .contains_key(header::CONTENT_SECURITY_POLICY)
+        );
+        let body = to_bytes(response.into_body(), 128 * 1024)
+            .await
+            .expect("library page body");
+        let body = String::from_utf8(body.to_vec()).expect("library HTML");
+        assert!(body.contains("Your private, self-hosted TRACE telemetry library."));
+        assert!(body.contains("/app-assets/library.js"));
+        assert!(!body.contains("<script>"));
     }
 
     #[tokio::test]
