@@ -38,6 +38,7 @@ pub(crate) struct LibrarySessionSummary {
     pub(crate) lap_count: u32,
     pub(crate) size_bytes: u64,
     pub(crate) created_at_unix_ms: i64,
+    pub(crate) share_id: Option<String>,
 }
 
 pub(crate) struct StoredLibrarySession {
@@ -118,7 +119,15 @@ impl LibraryStore {
                      created_at_unix_ms INTEGER NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS web_library_sessions_owner_created
-                     ON web_library_sessions(account_id, created_at_unix_ms DESC);",
+                     ON web_library_sessions(account_id, created_at_unix_ms DESC);
+                 CREATE TABLE IF NOT EXISTS web_library_shares (
+                     share_id TEXT PRIMARY KEY,
+                     session_id TEXT NOT NULL UNIQUE
+                         REFERENCES web_library_sessions(session_id) ON DELETE CASCADE,
+                     account_id TEXT NOT NULL
+                         REFERENCES web_accounts(account_id) ON DELETE CASCADE,
+                     created_at_unix_ms INTEGER NOT NULL
+                 );",
             )
             .map_err(|_| LibraryStoreError::Database)?;
         Ok(Self {
@@ -218,7 +227,9 @@ impl LibraryStore {
             .prepare(
                 "SELECT session_id, title, driver_name, simulator, track, layout, car,
                         session_type, started_at, tags_json, lap_count, size_bytes,
-                        created_at_unix_ms
+                        created_at_unix_ms,
+                        (SELECT share_id FROM web_library_shares
+                         WHERE web_library_shares.session_id = web_library_sessions.session_id)
                  FROM web_library_sessions WHERE account_id = ?1
                  ORDER BY created_at_unix_ms DESC, session_id DESC",
             )
@@ -245,10 +256,13 @@ impl LibraryStore {
             .query_row(
                 "SELECT session_id, title, driver_name, simulator, track, layout, car,
                         session_type, started_at, tags_json, lap_count, size_bytes,
-                        created_at_unix_ms, download_name
+                        created_at_unix_ms,
+                        (SELECT share_id FROM web_library_shares
+                         WHERE web_library_shares.session_id = web_library_sessions.session_id),
+                        download_name
                  FROM web_library_sessions WHERE account_id = ?1 AND session_id = ?2",
                 [account_id, session_id],
-                |row| Ok((summary_from_row(row)?, row.get::<_, String>(13)?)),
+                |row| Ok((summary_from_row(row)?, row.get::<_, String>(14)?)),
             )
             .optional()
             .map_err(|_| LibraryStoreError::Database)?
@@ -351,6 +365,101 @@ impl LibraryStore {
             points,
         })
     }
+
+    pub(crate) fn share(
+        &self,
+        account_id: &str,
+        session_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<String, LibraryStoreError> {
+        self.find(account_id, session_id)?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| LibraryStoreError::Database)?;
+        if let Some(share_id) = connection
+            .query_row(
+                "SELECT share_id FROM web_library_shares
+                 WHERE account_id = ?1 AND session_id = ?2",
+                [account_id, session_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|_| LibraryStoreError::Database)?
+        {
+            return Ok(share_id);
+        }
+        let share_id = Uuid::new_v4().simple().to_string();
+        connection
+            .execute(
+                "INSERT INTO web_library_shares
+                 (share_id, session_id, account_id, created_at_unix_ms)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![share_id, session_id, account_id, now_unix_ms],
+            )
+            .map_err(|_| LibraryStoreError::Database)?;
+        Ok(share_id)
+    }
+
+    pub(crate) fn revoke_share(
+        &self,
+        account_id: &str,
+        session_id: &str,
+    ) -> Result<(), LibraryStoreError> {
+        self.find(account_id, session_id)?;
+        self.connection
+            .lock()
+            .map_err(|_| LibraryStoreError::Database)?
+            .execute(
+                "DELETE FROM web_library_shares WHERE account_id = ?1 AND session_id = ?2",
+                [account_id, session_id],
+            )
+            .map_err(|_| LibraryStoreError::Database)?;
+        Ok(())
+    }
+
+    pub(crate) fn public_detail(
+        &self,
+        share_id: &str,
+    ) -> Result<LibrarySessionDetail, LibraryStoreError> {
+        let (account_id, session_id) = self.public_owner(share_id)?;
+        self.detail(&account_id, &session_id)
+    }
+
+    pub(crate) fn public_lap_telemetry(
+        &self,
+        share_id: &str,
+        lap_id: &str,
+        maximum_points: usize,
+    ) -> Result<LibraryLapTelemetry, LibraryStoreError> {
+        let (account_id, session_id) = self.public_owner(share_id)?;
+        self.lap_telemetry(&account_id, &session_id, lap_id, maximum_points)
+    }
+
+    pub(crate) fn public_session(
+        &self,
+        share_id: &str,
+    ) -> Result<StoredLibrarySession, LibraryStoreError> {
+        let (account_id, session_id) = self.public_owner(share_id)?;
+        self.find(&account_id, &session_id)
+    }
+
+    fn public_owner(&self, share_id: &str) -> Result<(String, String), LibraryStoreError> {
+        if !valid_identifier(share_id) {
+            return Err(LibraryStoreError::NotFound);
+        }
+        self.connection
+            .lock()
+            .map_err(|_| LibraryStoreError::Database)?
+            .query_row(
+                "SELECT account_id, session_id FROM web_library_shares WHERE share_id = ?1",
+                [share_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| LibraryStoreError::Database)?
+            .ok_or(LibraryStoreError::NotFound)
+    }
 }
 
 fn open_package(
@@ -420,6 +529,7 @@ fn summary_from_manifest(
         lap_count: u32::try_from(manifest.laps.len()).unwrap_or(u32::MAX),
         size_bytes,
         created_at_unix_ms,
+        share_id: None,
     }
 }
 
@@ -456,6 +566,7 @@ fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibrarySessionS
         lap_count,
         size_bytes,
         created_at_unix_ms: row.get(12)?,
+        share_id: row.get(13)?,
     })
 }
 

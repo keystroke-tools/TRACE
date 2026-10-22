@@ -4,6 +4,7 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="theme-color" content="#151515" />
+		<meta name="robots" content="noindex, nofollow" />
 		<meta name="description" content="Your private, self-hosted TRACE telemetry library." />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="stylesheet" href="/app-assets/library.css" />
@@ -83,9 +84,22 @@
 						<button id="review-back" class="back-button" type="button">← Library</button>
 						<div class="review-actions">
 							<button id="compare-open" type="button">Compare a lap</button>
+							<button id="share-open" type="button">Share</button>
 							<a id="review-download" class="button-link" href="#">Download</a>
 						</div>
 					</div>
+					<section id="share-panel" class="share-panel" hidden>
+						<div>
+							<p class="eyebrow">UNLISTED LINK</p>
+							<strong>Anyone with this link can review and download the session.</strong>
+							<small>The link remains active until you revoke it or delete the session.</small>
+						</div>
+						<div class="share-link-row">
+							<input id="share-url" type="text" readonly />
+							<button id="share-copy" type="button">Copy link</button>
+							<button id="share-revoke" class="danger" type="button">Revoke</button>
+						</div>
+					</section>
 					<div class="review-title">
 						<div>
 							<p id="review-kicker" class="eyebrow"></p>

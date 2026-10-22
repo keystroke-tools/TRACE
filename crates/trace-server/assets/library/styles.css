@@ -468,6 +468,54 @@ button.primary:hover {
 	gap: 8px;
 }
 
+.share-panel {
+	display: grid;
+	grid-template-columns: minmax(240px, 0.9fr) minmax(360px, 1.1fr);
+	align-items: end;
+	gap: 24px;
+	margin-bottom: 14px;
+	padding: 16px;
+	border: 1px solid #34433a;
+	background: #151b17;
+}
+
+.share-panel .eyebrow {
+	margin-bottom: 5px;
+}
+
+.share-panel strong,
+.share-panel small {
+	display: block;
+}
+
+.share-panel strong {
+	font-size: 13px;
+}
+
+.share-panel small {
+	margin-top: 5px;
+	color: #858585;
+	font-size: 11px;
+	line-height: 1.5;
+}
+
+.share-link-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	gap: 7px;
+}
+
+.share-link-row input {
+	min-width: 0;
+	font-size: 11px;
+}
+
+.share-link-row .danger:hover {
+	border-color: #713f3f;
+	background: #291919;
+	color: #ffaaaa;
+}
+
 .back-button,
 .button-link {
 	display: inline-flex;
@@ -1007,6 +1055,11 @@ button.primary:hover {
 	.review-actions {
 		flex-wrap: wrap;
 		justify-content: flex-end;
+	}
+
+	.share-panel,
+	.share-link-row {
+		grid-template-columns: 1fr;
 	}
 
 	.comparison-summary {

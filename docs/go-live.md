@@ -138,10 +138,16 @@ All implemented routes are versioned under `/api/v1`.
 | `GET`    | `/api/v1/library/sessions/{id}`       | account cookie | Read owned session metadata                             |
 | `GET`    | `/api/v1/library/sessions/{id}/review` | account cookie | Read owned lap, sector, and condition metadata          |
 | `GET`    | `/api/v1/library/sessions/{id}/laps/{lap_id}/telemetry` | account cookie | Read bounded telemetry for one owned lap |
+| `POST`   | `/api/v1/library/sessions/{id}/share` | account cookie | Create or recover a durable unlisted link               |
+| `DELETE` | `/api/v1/library/sessions/{id}/share` | account cookie | Revoke public access without deleting the session       |
 | `GET`    | `/api/v1/library/sessions/{id}/download` | account cookie | Download an owned package                           |
 | `DELETE` | `/api/v1/library/sessions/{id}`       | account cookie | Permanently delete an owned package                     |
+| `GET`    | `/api/v1/public-sessions/{share_id}`  | none           | Review metadata for an unlisted library session         |
+| `GET`    | `/api/v1/public-sessions/{share_id}/laps/{lap_id}/telemetry` | none | Read bounded telemetry for a shared lap |
+| `GET`    | `/api/v1/public-sessions/{share_id}/download` | none     | Download an unlisted library session package            |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/app`                                | none           | Open the account and private-library browser UI         |
+| `GET`    | `/p/{share_id}`                       | none           | Review an unlisted library session without an account   |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
 | `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
 
@@ -179,6 +185,13 @@ recorded lap position for distance alignment and labels its normalized-time fall
 position is unavailable. Telemetry responses decode only the selected laps and are
 downsampled to a bounded point count (1,800 by default and at most 4,000), so opening a
 comparison never sends an entire race to the browser.
+
+An owner can create one stable unlisted link per library session. The link points to the
+existing package rather than copying it, does not expire automatically, and is never
+included in a public directory. Anyone holding it can review telemetry and download the
+portable package without an account. Revoking the link immediately removes anonymous
+access while retaining the private session; deleting the session or account removes the
+share through SQLite foreign-key cascades.
 
 Installation-managed requests, including session creation, ending, and completed-session
 sharing, send both headers:

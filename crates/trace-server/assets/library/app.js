@@ -7,6 +7,8 @@ const state = {
 	selectedLap: null,
 	comparison: null,
 	pickerReview: null,
+	publicShareId: null,
+	shareUrl: null,
 };
 
 const elements = {
@@ -32,6 +34,11 @@ const elements = {
 	empty: document.querySelector("#empty-library"),
 	reviewBack: document.querySelector("#review-back"),
 	reviewDownload: document.querySelector("#review-download"),
+	shareOpen: document.querySelector("#share-open"),
+	sharePanel: document.querySelector("#share-panel"),
+	shareUrl: document.querySelector("#share-url"),
+	shareCopy: document.querySelector("#share-copy"),
+	shareRevoke: document.querySelector("#share-revoke"),
 	compareOpen: document.querySelector("#compare-open"),
 	compareClose: document.querySelector("#compare-close"),
 	comparePicker: document.querySelector("#compare-picker"),
@@ -169,7 +176,7 @@ function sessionRow(session) {
 	primary.className = "session-primary";
 	const meta = document.createElement("div");
 	meta.className = "session-meta";
-	meta.textContent = `${readable(session.session_type, "Session")} · ${session.lap_count} ${session.lap_count === 1 ? "lap" : "laps"}`;
+	meta.textContent = `${session.share_id ? "UNLISTED · " : ""}${readable(session.session_type, "Session")} · ${session.lap_count} ${session.lap_count === 1 ? "lap" : "laps"}`;
 	const title = document.createElement("strong");
 	title.textContent = readable(session.title, readable(session.driver_name, "Unnamed driver"));
 	const date = document.createElement("small");
@@ -205,6 +212,7 @@ function sessionRow(session) {
 }
 
 async function openReview(sessionId) {
+	state.publicShareId = null;
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	elements.telemetryContent.hidden = true;
@@ -224,22 +232,134 @@ async function openReview(sessionId) {
 	}
 }
 
+async function openPublicReview(shareId) {
+	state.publicShareId = shareId;
+	elements.libraryHome.hidden = true;
+	elements.reviewView.hidden = false;
+	elements.reviewBack.hidden = true;
+	elements.compareOpen.hidden = true;
+	elements.shareOpen.hidden = true;
+	elements.sharePanel.hidden = true;
+	elements.telemetryContent.hidden = true;
+	elements.telemetryEmpty.hidden = false;
+	elements.telemetryEmpty.textContent = "Loading shared session…";
+	try {
+		state.review = await request(`/api/v1/public-sessions/${encodeURIComponent(shareId)}`);
+		state.telemetry = null;
+		state.selectedLap = null;
+		clearComparison(false);
+		renderReview();
+		const preferred = [...state.review.laps].filter((lap) => lap.duration_ns != null).sort((left, right) => left.duration_ns - right.duration_ns)[0];
+		if (preferred) await loadLap(preferred.id);
+		show("library");
+	} catch (error) {
+		elements.telemetryEmpty.textContent = "This shared session is unavailable or its owner revoked the link.";
+		show("library");
+		toast(error.message, "error");
+	}
+}
+
 function closeReview() {
 	state.review = null;
 	state.telemetry = null;
 	state.selectedLap = null;
+	state.publicShareId = null;
+	state.shareUrl = null;
 	clearComparison(false);
 	closeComparePicker();
+	elements.reviewBack.hidden = false;
+	elements.compareOpen.hidden = false;
+	elements.shareOpen.hidden = false;
+	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
 }
 
+function updateOwnedShare(shareId, shareUrl = null) {
+	if (!state.review) return;
+	state.review.summary.share_id = shareId;
+	state.shareUrl = shareUrl;
+	const summary = state.sessions.find((session) => session.session_id === state.review.summary.session_id);
+	if (summary) summary.share_id = shareId;
+	renderSessions();
+	renderShareState();
+}
+
+function renderShareState() {
+	const shareId = state.review?.summary.share_id;
+	elements.shareOpen.textContent = shareId ? "Shared" : "Share";
+	if (!shareId) {
+		elements.sharePanel.hidden = true;
+		elements.shareUrl.value = "";
+		return;
+	}
+	elements.shareUrl.value = state.shareUrl || new URL(`/p/${shareId}`, window.location.origin).href;
+}
+
+async function toggleSharePanel() {
+	if (!state.review || state.publicShareId) return;
+	if (state.review.summary.share_id) {
+		elements.sharePanel.hidden = !elements.sharePanel.hidden;
+		return;
+	}
+	elements.shareOpen.disabled = true;
+	try {
+		const sessionId = state.review.summary.session_id;
+		const share = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/share`, { method: "POST" });
+		updateOwnedShare(share.share_id, share.share_url);
+		elements.sharePanel.hidden = false;
+		toast("Unlisted session link created.");
+	} catch (error) {
+		toast(error.message, "error");
+	} finally {
+		elements.shareOpen.disabled = false;
+	}
+}
+
+async function copyShareLink() {
+	const value = elements.shareUrl.value;
+	try {
+		await navigator.clipboard.writeText(value);
+		toast("Share link copied.");
+	} catch {
+		elements.shareUrl.select();
+		toast("Press Ctrl+C to copy the selected link.");
+	}
+}
+
+async function revokeShare() {
+	if (elements.shareRevoke.textContent !== "Confirm revoke") {
+		elements.shareRevoke.textContent = "Confirm revoke";
+		setTimeout(() => {
+			if (elements.shareRevoke.textContent === "Confirm revoke") elements.shareRevoke.textContent = "Revoke";
+		}, 3000);
+		return;
+	}
+	elements.shareRevoke.disabled = true;
+	try {
+		const sessionId = state.review.summary.session_id;
+		await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/share`, { method: "DELETE" });
+		updateOwnedShare(null);
+		toast("Public access revoked.");
+	} catch (error) {
+		toast(error.message, "error");
+	} finally {
+		elements.shareRevoke.disabled = false;
+		elements.shareRevoke.textContent = "Revoke";
+	}
+}
+
 function renderReview() {
 	const { summary, laps } = state.review;
-	elements.reviewDownload.href = `/api/v1/library/sessions/${encodeURIComponent(summary.session_id)}/download`;
-	elements.reviewKicker.textContent = `${readable(summary.session_type, "Session")} · ${readable(summary.simulator, "Unknown simulator")}`;
+	elements.reviewDownload.href = state.publicShareId
+		? `/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`
+		: `/api/v1/library/sessions/${encodeURIComponent(summary.session_id)}/download`;
+	elements.reviewKicker.textContent = `${state.publicShareId ? "Shared session · " : ""}${readable(summary.session_type, "Session")} · ${readable(summary.simulator, "Unknown simulator")}`;
 	elements.reviewName.textContent = readable(summary.title, readable(summary.driver_name, "Recorded session"));
 	elements.reviewContext.textContent = `${readable(summary.track, "Unknown track")} · ${readable(summary.car, "Unknown car")} · ${formatDate(summary.started_at)}`;
+	if (state.publicShareId) {
+		document.title = `${readable(summary.driver_name, "Shared session")} at ${readable(summary.track, "Unknown track")} · TRACE`;
+	}
 	elements.reviewLapCount.textContent = `${laps.length} ${laps.length === 1 ? "lap" : "laps"}`;
 	const timed = laps.filter((lap) => lap.duration_ns != null);
 	const best = timed.length ? timed.reduce((fastest, lap) => (lap.duration_ns < fastest.duration_ns ? lap : fastest)) : null;
@@ -247,6 +367,7 @@ function renderReview() {
 	if (best) elements.reviewBest.querySelector("strong").textContent = formatDuration(best.duration_ns);
 	elements.reviewLaps.replaceChildren(...laps.map((lap) => lapRow(lap, best?.id)));
 	elements.telemetryEmpty.textContent = laps.length ? "Select a recorded lap to review its telemetry." : "This package contains no recorded laps.";
+	if (!state.publicShareId) renderShareState();
 }
 
 function lapRow(lap, bestId) {
@@ -288,9 +409,10 @@ async function loadLap(lapId) {
 	elements.telemetryEmpty.textContent = "Loading lap telemetry…";
 	try {
 		const sessionId = state.review.summary.session_id;
-		state.telemetry = await request(
-			`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/laps/${encodeURIComponent(lapId)}/telemetry?max_points=1800`,
-		);
+		const endpoint = state.publicShareId
+			? `/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/laps/${encodeURIComponent(lapId)}/telemetry?max_points=1800`
+			: `/api/v1/library/sessions/${encodeURIComponent(sessionId)}/laps/${encodeURIComponent(lapId)}/telemetry?max_points=1800`;
+		state.telemetry = await request(endpoint);
 		const lap = state.review.laps.find((candidate) => candidate.id === lapId);
 		state.selectedLap = lap;
 		renderTelemetry(lap);
@@ -705,6 +827,9 @@ async function upload(file) {
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.reviewBack.addEventListener("click", closeReview);
+elements.shareOpen.addEventListener("click", toggleSharePanel);
+elements.shareCopy.addEventListener("click", copyShareLink);
+elements.shareRevoke.addEventListener("click", revokeShare);
 elements.compareOpen.addEventListener("click", openComparePicker);
 elements.compareClose.addEventListener("click", closeComparePicker);
 elements.comparisonClear.addEventListener("click", () => clearComparison());
@@ -796,7 +921,13 @@ async function start() {
 		elements.uploadLimit.textContent = `up to ${formatBytes(state.instance.limits.maximum_upload_bytes)}`;
 		const registrationOpen = state.instance.registration_policy === "open";
 		elements.registerTab.hidden = !registrationOpen;
-		await loadAccount();
+		const publicMatch = window.location.pathname.match(/^\/p\/([0-9a-f]{32})$/i);
+		if (publicMatch) {
+			document.title = `Shared session · ${state.instance.name}`;
+			await openPublicReview(publicMatch[1]);
+		} else {
+			await loadAccount();
+		}
 	} catch (error) {
 		elements.loading.querySelector("p").textContent = error.message;
 		toast("Could not connect to this TRACE instance.", "error");

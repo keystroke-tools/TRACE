@@ -45,7 +45,7 @@ mod shares;
 use accounts::{AccountStore, AccountStoreError, AccountSummary};
 use library::{
     LibraryLapTelemetry, LibrarySessionDetail, LibrarySessionSummary, LibraryStore,
-    LibraryStoreError,
+    LibraryStoreError, StoredLibrarySession,
 };
 use live_store::LiveStore;
 use shares::{ShareStore, ShareStoreError};
@@ -1070,6 +1070,22 @@ pub fn app(config: ServerConfig) -> Router {
             "/api/v1/library/sessions/{session_id}/laps/{lap_id}/telemetry",
             get(get_library_lap_telemetry),
         )
+        .route(
+            "/api/v1/library/sessions/{session_id}/share",
+            post(share_library_session).delete(revoke_library_share),
+        )
+        .route(
+            "/api/v1/public-sessions/{share_id}",
+            get(get_public_library_session),
+        )
+        .route(
+            "/api/v1/public-sessions/{share_id}/laps/{lap_id}/telemetry",
+            get(get_public_library_lap_telemetry),
+        )
+        .route(
+            "/api/v1/public-sessions/{share_id}/download",
+            get(download_public_library_session),
+        )
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
         .route("/api/v1/shared-sessions", post(create_shared_session))
@@ -1100,6 +1116,7 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/live/{session_id}", get(spectator_page))
         .route("/s/{share_id}", get(shared_session_page))
         .route("/app", get(library_page))
+        .route("/p/{share_id}", get(library_page))
         .route("/app-assets/library.css", get(library_styles))
         .route("/app-assets/library.js", get(library_script))
         .route("/live-assets/spectator.css", get(spectator_styles))
@@ -1324,6 +1341,14 @@ struct LibraryTelemetryQuery {
     max_points: Option<usize>,
 }
 
+#[derive(Serialize)]
+struct LibraryShareSummary {
+    share_id: String,
+    share_url: String,
+    download_url: String,
+    visibility: &'static str,
+}
+
 async fn get_library_lap_telemetry(
     State(service): State<LiveService>,
     Path((session_id, lap_id)): Path<(String, String)>,
@@ -1348,6 +1373,109 @@ async fn get_library_lap_telemetry(
     .map_err(map_library_error)
 }
 
+async fn share_library_session(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<LibraryShareSummary>), ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    let share_id = tokio::task::spawn_blocking(move || {
+        store.share(&account.account_id, &session_id, unix_timestamp_ms())
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map_err(map_library_error)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(library_share_summary(
+            &service.config.public_base_url,
+            share_id,
+        )),
+    ))
+}
+
+async fn revoke_library_share(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || store.revoke_share(&account.account_id, &session_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_library_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_public_library_session(
+    State(service): State<LiveService>,
+    Path(share_id): Path<String>,
+) -> Result<Json<LibrarySessionDetail>, ServiceError> {
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || store.public_detail(&share_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(Json)
+        .map_err(map_library_error)
+}
+
+async fn get_public_library_lap_telemetry(
+    State(service): State<LiveService>,
+    Path((share_id, lap_id)): Path<(String, String)>,
+    Query(query): Query<LibraryTelemetryQuery>,
+) -> Result<Json<LibraryLapTelemetry>, ServiceError> {
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    let maximum_points = query
+        .max_points
+        .unwrap_or(DEFAULT_LIBRARY_TELEMETRY_POINTS)
+        .clamp(100, MAX_LIBRARY_TELEMETRY_POINTS);
+    tokio::task::spawn_blocking(move || {
+        store.public_lap_telemetry(&share_id, &lap_id, maximum_points)
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map(Json)
+    .map_err(map_library_error)
+}
+
+async fn download_public_library_session(
+    State(service): State<LiveService>,
+    Path(share_id): Path<String>,
+) -> Result<Response, ServiceError> {
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    let stored = tokio::task::spawn_blocking(move || store.public_session(&share_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_library_error)?;
+    library_download_response(stored, "no-store").await
+}
+
+fn library_share_summary(public_base_url: &str, share_id: String) -> LibraryShareSummary {
+    LibraryShareSummary {
+        share_url: format!("{public_base_url}/p/{share_id}"),
+        download_url: format!("{public_base_url}/api/v1/public-sessions/{share_id}/download"),
+        share_id,
+        visibility: "unlisted",
+    }
+}
+
 async fn download_library_session(
     State(service): State<LiveService>,
     Path(session_id): Path<String>,
@@ -1362,6 +1490,13 @@ async fn download_library_session(
         .await
         .map_err(|_| ServiceError::Unavailable)?
         .map_err(map_library_error)?;
+    library_download_response(stored, "private, no-store").await
+}
+
+async fn library_download_response(
+    stored: StoredLibrarySession,
+    cache_control: &'static str,
+) -> Result<Response, ServiceError> {
     let path = stored.path;
     let contents = tokio::task::spawn_blocking(move || fs::read(path))
         .await
@@ -1381,7 +1516,7 @@ async fn download_library_session(
             (header::CONTENT_DISPOSITION, disposition),
             (
                 header::CACHE_CONTROL,
-                HeaderValue::from_static("private, no-store"),
+                HeaderValue::from_static(cache_control),
             ),
         ],
         contents,
@@ -2597,6 +2732,112 @@ mod tests {
         assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
     }
 
+    async fn assert_revocable_library_share(
+        application: &Router,
+        session_id: &str,
+        owner_cookie: &str,
+        other_cookie: &str,
+        package: &[u8],
+    ) {
+        let hidden = application
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/v1/library/sessions/{session_id}/share"))
+                    .header(header::COOKIE, other_cookie)
+                    .body(Body::empty())
+                    .expect("other account share request"),
+            )
+            .await
+            .expect("other account share response");
+        assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+
+        let created = application
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/v1/library/sessions/{session_id}/share"))
+                    .header(header::COOKIE, owner_cookie)
+                    .body(Body::empty())
+                    .expect("create library share request"),
+            )
+            .await
+            .expect("create library share response");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let created: serde_json::Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), 64 * 1024)
+                .await
+                .expect("library share body"),
+        )
+        .expect("library share");
+        let share_id = created["share_id"].as_str().expect("share ID");
+        assert_eq!(created["visibility"], "unlisted");
+        assert!(
+            created["share_url"]
+                .as_str()
+                .is_some_and(|url| url.ends_with(share_id))
+        );
+
+        let review = application
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/public-sessions/{share_id}"))
+                    .body(Body::empty())
+                    .expect("public review request"),
+            )
+            .await
+            .expect("public review response");
+        assert_eq!(review.status(), StatusCode::OK);
+        let telemetry = application
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/api/v1/public-sessions/{share_id}/laps/lap-1/telemetry"
+                ))
+                .body(Body::empty())
+                .expect("public telemetry request"),
+            )
+            .await
+            .expect("public telemetry response");
+        assert_eq!(telemetry.status(), StatusCode::OK);
+        let download = application
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/public-sessions/{share_id}/download"))
+                    .body(Body::empty())
+                    .expect("public download request"),
+            )
+            .await
+            .expect("public download response");
+        assert_eq!(download.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(download.into_body(), package.len())
+                .await
+                .expect("public download body"),
+            package
+        );
+
+        let revoked = application
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/v1/library/sessions/{session_id}/share"))
+                    .header(header::COOKIE, owner_cookie)
+                    .body(Body::empty())
+                    .expect("revoke library share request"),
+            )
+            .await
+            .expect("revoke library share response");
+        assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
+        let missing = application
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/public-sessions/{share_id}"))
+                    .body(Body::empty())
+                    .expect("revoked public review request"),
+            )
+            .await
+            .expect("revoked public review response");
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
     #[test]
     fn credentials_create_an_unlisted_session() {
         let service = LiveService::new(ServerConfig::new("https://live.simtrace.run"));
@@ -3406,6 +3647,14 @@ mod tests {
         assert_eq!(listed.as_array().map(Vec::len), Some(1));
 
         assert_private_library_review(&restarted, &session_id, &owner_cookie, &other_cookie).await;
+        assert_revocable_library_share(
+            &restarted,
+            &session_id,
+            &owner_cookie,
+            &other_cookie,
+            &package,
+        )
+        .await;
 
         let downloaded = restarted
             .clone()
