@@ -38,10 +38,12 @@ use trace_protocol::{
 use uuid::Uuid;
 
 mod accounts;
+mod library;
 mod live_store;
 mod shares;
 
 use accounts::{AccountStore, AccountStoreError, AccountSummary};
+use library::{LibrarySessionSummary, LibraryStore, LibraryStoreError};
 use live_store::LiveStore;
 use shares::{ShareStore, ShareStoreError};
 
@@ -185,6 +187,7 @@ pub struct LiveService {
     config: ServerConfig,
     shares: Option<ShareStore>,
     accounts: Option<AccountStore>,
+    library: Option<LibraryStore>,
     live_store: Option<LiveStore>,
     abuse: Arc<Mutex<AbuseState>>,
 }
@@ -362,6 +365,8 @@ enum ServiceError {
     InvalidAccount,
     UsernameTaken,
     AccountUnauthorized,
+    LibraryUnavailable,
+    LibrarySessionNotFound,
 }
 
 impl IntoResponse for ServiceError {
@@ -402,6 +407,11 @@ impl IntoResponse for ServiceError {
             Self::InvalidAccount => (StatusCode::BAD_REQUEST, "invalid account details"),
             Self::UsernameTaken => (StatusCode::CONFLICT, "username is already registered"),
             Self::AccountUnauthorized => (StatusCode::UNAUTHORIZED, "authentication required"),
+            Self::LibraryUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "web session library is unavailable",
+            ),
+            Self::LibrarySessionNotFound => (StatusCode::NOT_FOUND, "library session not found"),
         };
         let mut response = (status, Json(ErrorBody { error })).into_response();
         if matches!(self, Self::RateLimited | Self::CapacityExceeded) {
@@ -425,6 +435,10 @@ impl LiveService {
     pub fn new(config: ServerConfig) -> Self {
         let accounts = config.share_directory.as_ref().map(|directory| {
             AccountStore::open(directory).expect("TRACE account persistence could not be opened")
+        });
+        let library = config.share_directory.as_ref().map(|directory| {
+            LibraryStore::open(directory, config.max_shared_session_bytes)
+                .expect("TRACE web library persistence could not be opened")
         });
         let shares = config.share_directory.as_ref().map(|directory| {
             ShareStore::new(
@@ -489,6 +503,7 @@ impl LiveService {
             config,
             shares,
             accounts,
+            library,
             live_store,
             abuse: Arc::new(Mutex::new(AbuseState::default())),
         }
@@ -1030,6 +1045,18 @@ pub fn app(config: ServerConfig) -> Router {
             post(login).layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
         )
         .route("/api/v1/auth/session", get(current_account).delete(logout))
+        .route(
+            "/api/v1/library/sessions",
+            get(list_library_sessions).post(upload_library_session),
+        )
+        .route(
+            "/api/v1/library/sessions/{session_id}",
+            get(get_library_session).delete(delete_library_session),
+        )
+        .route(
+            "/api/v1/library/sessions/{session_id}/download",
+            get(download_library_session),
+        )
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
         .route("/api/v1/shared-sessions", post(create_shared_session))
@@ -1086,6 +1113,9 @@ async fn instance_description(State(service): State<LiveService>) -> Json<Instan
     }
     if service.accounts.is_some() {
         features.push("accounts");
+    }
+    if service.library.is_some() {
+        features.push("web_library");
     }
     Json(InstanceDescription {
         name: service.config.instance_name.clone(),
@@ -1200,6 +1230,135 @@ async fn logout(
     }
     let cookie = expired_session_cookie(&service.config.public_base_url)?;
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
+}
+
+async fn upload_library_session(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+    contents: Bytes,
+) -> Result<(StatusCode, Json<LibrarySessionSummary>), ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    let account_id = account.account_id;
+    let contents = contents.to_vec();
+    let summary = tokio::task::spawn_blocking(move || {
+        store.upload(&account_id, &contents, unix_timestamp_ms())
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map_err(map_library_error)?;
+    Ok((StatusCode::CREATED, Json(summary)))
+}
+
+async fn list_library_sessions(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<LibrarySessionSummary>>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || store.list(&account.account_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(Json)
+        .map_err(map_library_error)
+}
+
+async fn get_library_session(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<LibrarySessionSummary>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || store.find(&account.account_id, &session_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(|stored| Json(stored.summary))
+        .map_err(map_library_error)
+}
+
+async fn download_library_session(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    let stored = tokio::task::spawn_blocking(move || store.find(&account.account_id, &session_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_library_error)?;
+    let path = stored.path;
+    let contents = tokio::task::spawn_blocking(move || fs::read(path))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(|_| ServiceError::Unavailable)?;
+    let disposition = HeaderValue::from_str(&format!(
+        "attachment; filename=\"{}\"",
+        stored.download_name
+    ))
+    .map_err(|_| ServiceError::Unavailable)?;
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/vnd.simtrace.session"),
+            ),
+            (header::CONTENT_DISPOSITION, disposition),
+            (
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            ),
+        ],
+        contents,
+    )
+        .into_response())
+}
+
+async fn delete_library_session(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || store.delete(&account.account_id, &session_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_library_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn authenticated_account(
+    service: &LiveService,
+    headers: &HeaderMap,
+) -> Result<AccountSummary, ServiceError> {
+    let token = account_session_token(headers)
+        .ok_or(ServiceError::AccountUnauthorized)?
+        .to_owned();
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    tokio::task::spawn_blocking(move || store.find_session(&token, unix_timestamp_ms()))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_account_error)
 }
 
 async fn landing_page(State(service): State<LiveService>) -> Html<String> {
@@ -1927,6 +2086,8 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::InvalidAccount => "invalid account details",
         ServiceError::UsernameTaken => "username is already registered",
         ServiceError::AccountUnauthorized => "authentication required",
+        ServiceError::LibraryUnavailable => "web session library is unavailable",
+        ServiceError::LibrarySessionNotFound => "library session not found",
     }
 }
 
@@ -1935,6 +2096,15 @@ fn map_account_error(error: AccountStoreError) -> ServiceError {
         AccountStoreError::Database => ServiceError::Unavailable,
         AccountStoreError::InvalidCredentials => ServiceError::AccountUnauthorized,
         AccountStoreError::UsernameTaken => ServiceError::UsernameTaken,
+    }
+}
+
+fn map_library_error(error: LibraryStoreError) -> ServiceError {
+    match error {
+        LibraryStoreError::Database | LibraryStoreError::Unavailable => ServiceError::Unavailable,
+        LibraryStoreError::Invalid => ServiceError::InvalidPackage,
+        LibraryStoreError::NotFound => ServiceError::LibrarySessionNotFound,
+        LibraryStoreError::TooLarge => ServiceError::PackageTooLarge,
     }
 }
 
@@ -2222,6 +2392,47 @@ mod tests {
         let mut package = Vec::new();
         write_package(&mut package, telemetry.as_slice(), &manifest).expect("package");
         package
+    }
+
+    async fn registered_account_cookie(application: &Router, username: &str) -> String {
+        let registration = serde_json::json!({
+            "username": username,
+            "display_name": username,
+            "password": "correct horse battery"
+        });
+        let response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/accounts")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(registration.to_string()))
+                    .expect("registration request"),
+            )
+            .await
+            .expect("registration response");
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let login = serde_json::json!({
+            "username": username,
+            "password": "correct horse battery"
+        });
+        let response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/auth/sessions")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(login.to_string()))
+                    .expect("login request"),
+            )
+            .await
+            .expect("login response");
+        assert_eq!(response.status(), StatusCode::OK);
+        response.headers()[header::SET_COOKIE]
+            .to_str()
+            .expect("session cookie")
+            .split(';')
+            .next()
+            .expect("cookie value")
+            .to_owned()
     }
 
     #[test]
@@ -2932,6 +3143,115 @@ mod tests {
                 .expect("download body"),
             package
         );
+    }
+
+    #[tokio::test]
+    async fn account_library_uploads_are_private_durable_and_deletable() {
+        let directory = tempfile::tempdir().expect("library directory");
+        let config = ServerConfig::new("https://telemetry.example.test")
+            .with_share_directory(directory.path())
+            .with_registration_policy(RegistrationPolicy::Open);
+        let application = app(config.clone());
+        let owner_cookie = registered_account_cookie(&application, "owner").await;
+        let other_cookie = registered_account_cookie(&application, "other").await;
+        let package = shared_package();
+
+        let response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/library/sessions")
+                    .header(header::COOKIE, &owner_cookie)
+                    .body(Body::from(package.clone()))
+                    .expect("library upload request"),
+            )
+            .await
+            .expect("library upload response");
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let created: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("library upload body"),
+        )
+        .expect("library summary");
+        assert_eq!(created["driver_name"], "Alex");
+        assert_eq!(created["track"], "Zandvoort");
+        assert_eq!(created["lap_count"], 1);
+        let session_id = created["session_id"]
+            .as_str()
+            .expect("library session ID")
+            .to_owned();
+
+        let hidden = application
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/library/sessions/{session_id}"))
+                    .header(header::COOKIE, other_cookie)
+                    .body(Body::empty())
+                    .expect("other account request"),
+            )
+            .await
+            .expect("other account response");
+        assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+
+        let restarted = app(config);
+        let listed = restarted
+            .clone()
+            .oneshot(
+                Request::get("/api/v1/library/sessions")
+                    .header(header::COOKIE, &owner_cookie)
+                    .body(Body::empty())
+                    .expect("library list request"),
+            )
+            .await
+            .expect("library list response");
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed: serde_json::Value = serde_json::from_slice(
+            &to_bytes(listed.into_body(), 64 * 1024)
+                .await
+                .expect("library list body"),
+        )
+        .expect("library list");
+        assert_eq!(listed.as_array().map(Vec::len), Some(1));
+
+        let downloaded = restarted
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/library/sessions/{session_id}/download"))
+                    .header(header::COOKIE, &owner_cookie)
+                    .body(Body::empty())
+                    .expect("library download request"),
+            )
+            .await
+            .expect("library download response");
+        assert_eq!(downloaded.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(downloaded.into_body(), 128 * 1024)
+                .await
+                .expect("library download body"),
+            package
+        );
+
+        let deleted = restarted
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/v1/library/sessions/{session_id}"))
+                    .header(header::COOKIE, &owner_cookie)
+                    .body(Body::empty())
+                    .expect("library delete request"),
+            )
+            .await
+            .expect("library delete response");
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+        let missing = restarted
+            .oneshot(
+                Request::get(format!("/api/v1/library/sessions/{session_id}"))
+                    .header(header::COOKIE, owner_cookie)
+                    .body(Body::empty())
+                    .expect("missing library request"),
+            )
+            .await
+            .expect("missing library response");
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

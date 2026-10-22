@@ -200,7 +200,7 @@ impl ShareStore {
     }
 }
 
-fn validate_package(
+pub(crate) fn validate_package(
     contents: &[u8],
     maximum_bytes: u64,
 ) -> Result<SessionPackageManifest, ShareStoreError> {
@@ -231,7 +231,7 @@ fn valid_identifier(value: &str) -> bool {
     value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn package_filename(manifest: &SessionPackageManifest) -> String {
+pub(crate) fn package_filename(manifest: &SessionPackageManifest) -> String {
     let parts = [
         manifest.session.user_driver.as_deref(),
         manifest.session.track.as_deref(),

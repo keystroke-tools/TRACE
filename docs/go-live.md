@@ -133,6 +133,11 @@ All implemented routes are versioned under `/api/v1`.
 | `POST`   | `/api/v1/auth/sessions`               | none           | Start an HTTP-only browser login session                |
 | `GET`    | `/api/v1/auth/session`                | account cookie | Read the currently authenticated account                |
 | `DELETE` | `/api/v1/auth/session`                | account cookie | Revoke the current browser login session                |
+| `POST`   | `/api/v1/library/sessions`            | account cookie | Validate and add a private `.trace` package             |
+| `GET`    | `/api/v1/library/sessions`            | account cookie | List the account's uploaded sessions                    |
+| `GET`    | `/api/v1/library/sessions/{id}`       | account cookie | Read owned session metadata                             |
+| `GET`    | `/api/v1/library/sessions/{id}/download` | account cookie | Download an owned package                           |
+| `DELETE` | `/api/v1/library/sessions/{id}`       | account cookie | Permanently delete an owned package                     |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
 | `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
@@ -156,6 +161,15 @@ when the instance should accept new users, then return it to `disabled` after cr
 the intended accounts on a private deployment. Passwords use Argon2id hashes and login
 sessions use hashed, revocable, HTTP-only cookies. The first account created on an
 instance is its administrator; this role does not yet expose administrative routes.
+
+Authenticated uploads form a private, durable session library. Packages pass the same
+bounded manifest and telemetry validation as temporary shares, but they do not inherit
+the temporary-share expiry. Package files live beneath `TRACE_DATA_DIR/library`, while
+ownership and searchable summary metadata live in `live.sqlite`. Library lookups are
+always scoped to the authenticated account and return `404` rather than revealing that
+another account owns an identifier. The initial API supports upload, list, inspect,
+download, and permanent deletion; browser visualisation and comparison are the next
+layer over this storage boundary.
 
 Installation-managed requests, including session creation, ending, and completed-session
 sharing, send both headers:
