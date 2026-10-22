@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -7,7 +7,11 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
-use trace_storage::package::SessionPackageManifest;
+use trace_storage::{
+    ipc::{TelemetryColumns, read_columns_range},
+    metadata::{LapSummary, SessionConditions},
+    package::{SessionPackageManifest, read_package},
+};
 use uuid::Uuid;
 
 use crate::shares::{package_filename, validate_package};
@@ -40,6 +44,40 @@ pub(crate) struct StoredLibrarySession {
     pub(crate) summary: LibrarySessionSummary,
     pub(crate) path: PathBuf,
     pub(crate) download_name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LibrarySessionDetail {
+    pub(crate) summary: LibrarySessionSummary,
+    pub(crate) source_track_id: Option<String>,
+    pub(crate) source_car_id: Option<String>,
+    pub(crate) source_kind: String,
+    pub(crate) conditions: SessionConditions,
+    pub(crate) laps: Vec<LapSummary>,
+    pub(crate) setup_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LibraryLapTelemetry {
+    pub(crate) lap_id: String,
+    pub(crate) source_samples: u64,
+    pub(crate) returned_samples: usize,
+    pub(crate) points: Vec<LibraryTelemetryPoint>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub(crate) struct LibraryTelemetryPoint {
+    pub(crate) elapsed_seconds: f64,
+    pub(crate) lap_position: Option<f32>,
+    pub(crate) throttle: Option<f32>,
+    pub(crate) brake: Option<f32>,
+    pub(crate) clutch: Option<f32>,
+    pub(crate) speed_kph: Option<f32>,
+    pub(crate) engine_rpm: Option<f32>,
+    pub(crate) steering_angle_rad: Option<f32>,
+    pub(crate) gear: Option<i16>,
+    pub(crate) position_x_m: Option<f64>,
+    pub(crate) position_z_m: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -250,6 +288,115 @@ impl LibraryStore {
             return Err(LibraryStoreError::Database);
         }
         fs::remove_file(deleting).map_err(|_| LibraryStoreError::Unavailable)
+    }
+
+    pub(crate) fn detail(
+        &self,
+        account_id: &str,
+        session_id: &str,
+    ) -> Result<LibrarySessionDetail, LibraryStoreError> {
+        let stored = self.find(account_id, session_id)?;
+        let package = open_package(&stored.path, self.maximum_bytes)?;
+        let setup_name = package
+            .manifest
+            .confirmed_setup
+            .as_ref()
+            .map(|setup| setup.name.clone());
+        Ok(LibrarySessionDetail {
+            summary: stored.summary,
+            source_track_id: package.manifest.session.source_track_id.clone(),
+            source_car_id: package.manifest.session.source_car_id.clone(),
+            source_kind: package.manifest.session.source_kind.clone(),
+            conditions: package.manifest.session.conditions.clone(),
+            laps: package
+                .manifest
+                .laps
+                .iter()
+                .map(|lap| lap.summary.clone())
+                .collect(),
+            setup_name,
+        })
+    }
+
+    pub(crate) fn lap_telemetry(
+        &self,
+        account_id: &str,
+        session_id: &str,
+        lap_id: &str,
+        maximum_points: usize,
+    ) -> Result<LibraryLapTelemetry, LibraryStoreError> {
+        let stored = self.find(account_id, session_id)?;
+        let package = open_package(&stored.path, self.maximum_bytes)?;
+        let lap = package
+            .manifest
+            .laps
+            .iter()
+            .find(|lap| lap.summary.id == lap_id)
+            .ok_or(LibraryStoreError::NotFound)?;
+        let sample_start = lap.sample_start;
+        let sample_count = lap.sample_count;
+        let lap_id = lap.summary.id.clone();
+        let columns = read_columns_range(package.telemetry, sample_start, sample_count)
+            .map_err(|_| LibraryStoreError::Invalid)?;
+        let indices = sampled_indices(columns.len(), maximum_points);
+        let elapsed_start = columns.elapsed_ns.first().copied().unwrap_or_default();
+        let points = indices
+            .into_iter()
+            .map(|index| telemetry_point(&columns, index, elapsed_start))
+            .collect::<Vec<_>>();
+        Ok(LibraryLapTelemetry {
+            lap_id,
+            source_samples: sample_count,
+            returned_samples: points.len(),
+            points,
+        })
+    }
+}
+
+fn open_package(
+    path: &Path,
+    maximum_bytes: u64,
+) -> Result<trace_storage::package::SessionPackage<File>, LibraryStoreError> {
+    let file = File::open(path).map_err(|_| LibraryStoreError::Unavailable)?;
+    let length = file
+        .metadata()
+        .map_err(|_| LibraryStoreError::Unavailable)?
+        .len();
+    read_package(file, length, maximum_bytes).map_err(|_| LibraryStoreError::Invalid)
+}
+
+fn sampled_indices(sample_count: usize, maximum_points: usize) -> Vec<usize> {
+    let maximum_points = maximum_points.max(2);
+    if sample_count <= maximum_points {
+        return (0..sample_count).collect();
+    }
+    let last = sample_count.saturating_sub(1);
+    let denominator = maximum_points.saturating_sub(1);
+    (0..maximum_points)
+        .map(|index| index.saturating_mul(last) / denominator)
+        .collect()
+}
+
+fn telemetry_point(
+    columns: &TelemetryColumns,
+    index: usize,
+    elapsed_start: u64,
+) -> LibraryTelemetryPoint {
+    LibraryTelemetryPoint {
+        elapsed_seconds: std::time::Duration::from_nanos(
+            columns.elapsed_ns[index].saturating_sub(elapsed_start),
+        )
+        .as_secs_f64(),
+        lap_position: columns.lap_position[index],
+        throttle: columns.throttle[index],
+        brake: columns.brake[index],
+        clutch: columns.clutch[index],
+        speed_kph: columns.speed_mps[index].map(|speed| speed * 3.6),
+        engine_rpm: columns.engine_rpm[index],
+        steering_angle_rad: columns.steering_angle_rad[index],
+        gear: columns.gear_value[index],
+        position_x_m: columns.position_x_m[index],
+        position_z_m: columns.position_z_m[index],
     }
 }
 

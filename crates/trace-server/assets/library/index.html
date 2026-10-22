@@ -48,32 +48,81 @@
 			</section>
 
 			<section id="library-view" hidden>
-				<div class="library-head">
-					<div>
-						<p class="eyebrow">PRIVATE LIBRARY</p>
-						<h1>Welcome, <span id="account-name"></span>.</h1>
-						<p>Your uploaded sessions stay on this TRACE instance.</p>
+				<div id="library-home">
+					<div class="library-head">
+						<div>
+							<p class="eyebrow">PRIVATE LIBRARY</p>
+							<h1>Welcome, <span id="account-name"></span>.</h1>
+							<p>Your uploaded sessions stay on this TRACE instance.</p>
+						</div>
+						<button id="logout-button" class="quiet" type="button">Sign out</button>
 					</div>
-					<button id="logout-button" class="quiet" type="button">Sign out</button>
+
+					<div class="library-tools">
+						<label id="upload-zone" class="upload-zone">
+							<input id="package-input" type="file" accept=".trace,application/vnd.simtrace.session" />
+							<span class="upload-mark">+</span>
+							<strong>Upload a TRACE session</strong>
+							<small>Choose or drop a .trace package · <span id="upload-limit"></span></small>
+						</label>
+						<label class="search-field"
+							><span>Search library</span><input id="session-search" type="search" placeholder="Driver, car, track, tag…"
+						/></label>
+					</div>
+
+					<div class="list-head"><strong>SESSIONS</strong><span id="session-count">0</span></div>
+					<div id="session-list" class="session-list"></div>
+					<div id="empty-library" class="empty-state" hidden>
+						<strong>No sessions here yet.</strong>
+						<p>Export a session from TRACE and upload the resulting package.</p>
+					</div>
 				</div>
 
-				<div class="library-tools">
-					<label id="upload-zone" class="upload-zone">
-						<input id="package-input" type="file" accept=".trace,application/vnd.simtrace.session" />
-						<span class="upload-mark">+</span>
-						<strong>Upload a TRACE session</strong>
-						<small>Choose or drop a .trace package · <span id="upload-limit"></span></small>
-					</label>
-					<label class="search-field"
-						><span>Search library</span><input id="session-search" type="search" placeholder="Driver, car, track, tag…"
-					/></label>
-				</div>
+				<div id="review-view" hidden>
+					<div class="review-head">
+						<button id="review-back" class="back-button" type="button">← Library</button>
+						<div class="review-actions">
+							<a id="review-download" class="button-link" href="#">Download</a>
+						</div>
+					</div>
+					<div class="review-title">
+						<div>
+							<p id="review-kicker" class="eyebrow"></p>
+							<h1 id="review-name"></h1>
+							<p id="review-context"></p>
+						</div>
+						<div id="review-best" class="best-lap" hidden><small>BEST LAP</small><strong></strong></div>
+					</div>
 
-				<div class="list-head"><strong>SESSIONS</strong><span id="session-count">0</span></div>
-				<div id="session-list" class="session-list"></div>
-				<div id="empty-library" class="empty-state" hidden>
-					<strong>No sessions here yet.</strong>
-					<p>Export a session from TRACE and upload the resulting package.</p>
+					<div class="review-layout">
+						<aside class="lap-panel">
+							<div class="panel-heading"><strong>LAPS</strong><span id="review-lap-count"></span></div>
+							<div id="review-laps" class="lap-list"></div>
+						</aside>
+						<section class="telemetry-panel">
+							<div id="telemetry-empty" class="telemetry-empty">Select a recorded lap to review its telemetry.</div>
+							<div id="telemetry-content" hidden>
+								<div class="telemetry-head">
+									<div><span id="telemetry-lap-label"></span><strong id="telemetry-lap-time"></strong></div>
+									<div id="telemetry-stats" class="telemetry-stats"></div>
+								</div>
+								<div class="visual-grid">
+									<div class="visual-card map-card">
+										<div class="visual-label">DRIVING LINE</div>
+										<canvas id="track-canvas"></canvas>
+									</div>
+									<div class="visual-card">
+										<div class="visual-label">SPEED</div>
+										<canvas id="speed-canvas"></canvas>
+									</div>
+									<div class="visual-card inputs-card">
+										<div class="visual-label">PEDAL INPUT</div>
+										<canvas id="input-canvas"></canvas>
+									</div>
+								</div>
+							</div>
+						</section>
+					</div>
 				</div>
 			</section>
 		</main>

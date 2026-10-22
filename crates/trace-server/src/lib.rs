@@ -17,7 +17,7 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{
-        ConnectInfo, DefaultBodyLimit, FromRequestParts, Path, State, WebSocketUpgrade,
+        ConnectInfo, DefaultBodyLimit, FromRequestParts, Path, Query, State, WebSocketUpgrade,
         ws::{CloseFrame, Message, WebSocket, close_code},
     },
     http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
@@ -43,7 +43,10 @@ mod live_store;
 mod shares;
 
 use accounts::{AccountStore, AccountStoreError, AccountSummary};
-use library::{LibrarySessionSummary, LibraryStore, LibraryStoreError};
+use library::{
+    LibraryLapTelemetry, LibrarySessionDetail, LibrarySessionSummary, LibraryStore,
+    LibraryStoreError,
+};
 use live_store::LiveStore;
 use shares::{ShareStore, ShareStoreError};
 
@@ -54,6 +57,8 @@ const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 512 * 1024;
 const DEFAULT_MAX_SHARED_SESSION_BYTES: u64 = 128 * 1024 * 1024;
 const DEFAULT_SHARED_SESSION_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_ACCOUNT_REQUEST_BYTES: usize = 8 * 1024;
+const DEFAULT_LIBRARY_TELEMETRY_POINTS: usize = 1_800;
+const MAX_LIBRARY_TELEMETRY_POINTS: usize = 4_000;
 
 /// Configurable service-abuse limits. Spectator access remains unauthenticated.
 #[derive(Clone, Debug)]
@@ -1057,6 +1062,14 @@ pub fn app(config: ServerConfig) -> Router {
             "/api/v1/library/sessions/{session_id}/download",
             get(download_library_session),
         )
+        .route(
+            "/api/v1/library/sessions/{session_id}/review",
+            get(review_library_session),
+        )
+        .route(
+            "/api/v1/library/sessions/{session_id}/laps/{lap_id}/telemetry",
+            get(get_library_lap_telemetry),
+        )
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
         .route("/api/v1/shared-sessions", post(create_shared_session))
@@ -1287,6 +1300,52 @@ async fn get_library_session(
         .map_err(|_| ServiceError::Unavailable)?
         .map(|stored| Json(stored.summary))
         .map_err(map_library_error)
+}
+
+async fn review_library_session(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<LibrarySessionDetail>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || store.detail(&account.account_id, &session_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(Json)
+        .map_err(map_library_error)
+}
+
+#[derive(Deserialize)]
+struct LibraryTelemetryQuery {
+    max_points: Option<usize>,
+}
+
+async fn get_library_lap_telemetry(
+    State(service): State<LiveService>,
+    Path((session_id, lap_id)): Path<(String, String)>,
+    Query(query): Query<LibraryTelemetryQuery>,
+    headers: HeaderMap,
+) -> Result<Json<LibraryLapTelemetry>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    let maximum_points = query
+        .max_points
+        .unwrap_or(DEFAULT_LIBRARY_TELEMETRY_POINTS)
+        .clamp(100, MAX_LIBRARY_TELEMETRY_POINTS);
+    tokio::task::spawn_blocking(move || {
+        store.lap_telemetry(&account.account_id, &session_id, &lap_id, maximum_points)
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map(Json)
+    .map_err(map_library_error)
 }
 
 async fn download_library_session(
@@ -2472,6 +2531,72 @@ mod tests {
             .to_owned()
     }
 
+    async fn assert_private_library_review(
+        application: &Router,
+        session_id: &str,
+        owner_cookie: &str,
+        other_cookie: &str,
+    ) {
+        let review = application
+            .clone()
+            .oneshot(
+                Request::get(format!("/api/v1/library/sessions/{session_id}/review"))
+                    .header(header::COOKIE, owner_cookie)
+                    .body(Body::empty())
+                    .expect("library review request"),
+            )
+            .await
+            .expect("library review response");
+        assert_eq!(review.status(), StatusCode::OK);
+        let review: serde_json::Value = serde_json::from_slice(
+            &to_bytes(review.into_body(), 64 * 1024)
+                .await
+                .expect("library review body"),
+        )
+        .expect("library review");
+        assert_eq!(review["source_track_id"], "zandvoort");
+        assert_eq!(review["laps"][0]["id"], "lap-1");
+        assert_eq!(review["laps"][0]["duration_ns"], 90_000_000_000_u64);
+
+        let telemetry = application
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/api/v1/library/sessions/{session_id}/laps/lap-1/telemetry?max_points=1"
+                ))
+                .header(header::COOKIE, owner_cookie)
+                .body(Body::empty())
+                .expect("lap telemetry request"),
+            )
+            .await
+            .expect("lap telemetry response");
+        assert_eq!(telemetry.status(), StatusCode::OK);
+        let telemetry: serde_json::Value = serde_json::from_slice(
+            &to_bytes(telemetry.into_body(), 256 * 1024)
+                .await
+                .expect("lap telemetry body"),
+        )
+        .expect("lap telemetry");
+        assert_eq!(telemetry["lap_id"], "lap-1");
+        assert_eq!(telemetry["source_samples"], 1);
+        assert_eq!(telemetry["returned_samples"], 1);
+        assert_eq!(telemetry["points"].as_array().map(Vec::len), Some(1));
+
+        let hidden = application
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/api/v1/library/sessions/{session_id}/laps/lap-1/telemetry"
+                ))
+                .header(header::COOKIE, other_cookie)
+                .body(Body::empty())
+                .expect("other account telemetry request"),
+            )
+            .await
+            .expect("other account telemetry response");
+        assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+    }
+
     #[test]
     fn credentials_create_an_unlisted_session() {
         let service = LiveService::new(ServerConfig::new("https://live.simtrace.run"));
@@ -3250,7 +3375,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::get(format!("/api/v1/library/sessions/{session_id}"))
-                    .header(header::COOKIE, other_cookie)
+                    .header(header::COOKIE, &other_cookie)
                     .body(Body::empty())
                     .expect("other account request"),
             )
@@ -3277,6 +3402,8 @@ mod tests {
         )
         .expect("library list");
         assert_eq!(listed.as_array().map(Vec::len), Some(1));
+
+        assert_private_library_review(&restarted, &session_id, &owner_cookie, &other_cookie).await;
 
         let downloaded = restarted
             .clone()

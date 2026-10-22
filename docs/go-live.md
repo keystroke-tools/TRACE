@@ -136,9 +136,12 @@ All implemented routes are versioned under `/api/v1`.
 | `POST`   | `/api/v1/library/sessions`            | account cookie | Validate and add a private `.trace` package             |
 | `GET`    | `/api/v1/library/sessions`            | account cookie | List the account's uploaded sessions                    |
 | `GET`    | `/api/v1/library/sessions/{id}`       | account cookie | Read owned session metadata                             |
+| `GET`    | `/api/v1/library/sessions/{id}/review` | account cookie | Read owned lap, sector, and condition metadata          |
+| `GET`    | `/api/v1/library/sessions/{id}/laps/{lap_id}/telemetry` | account cookie | Read bounded telemetry for one owned lap |
 | `GET`    | `/api/v1/library/sessions/{id}/download` | account cookie | Download an owned package                           |
 | `DELETE` | `/api/v1/library/sessions/{id}`       | account cookie | Permanently delete an owned package                     |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
+| `GET`    | `/app`                                | none           | Open the account and private-library browser UI         |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
 | `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
 
@@ -167,9 +170,12 @@ bounded manifest and telemetry validation as temporary shares, but they do not i
 the temporary-share expiry. Package files live beneath `TRACE_DATA_DIR/library`, while
 ownership and searchable summary metadata live in `live.sqlite`. Library lookups are
 always scoped to the authenticated account and return `404` rather than revealing that
-another account owns an identifier. The initial API supports upload, list, inspect,
-download, and permanent deletion; browser visualisation and comparison are the next
-layer over this storage boundary.
+another account owns an identifier. The embedded `/app` UI supports account access,
+upload, search, download, deletion, lap and sector inspection, and per-lap driving-line,
+speed, and pedal visualisation. Telemetry responses decode only the selected lap and
+are downsampled to a bounded point count (1,800 by default and at most 4,000), so opening
+a lap never sends an entire race to the browser. Cross-session comparison remains a
+later layer over this storage boundary.
 
 Installation-managed requests, including session creation, ending, and completed-session
 sharing, send both headers:
