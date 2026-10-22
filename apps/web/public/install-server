@@ -19,6 +19,8 @@ Optional environment variables:
   TRACE_SERVER_REPOSITORY    GitHub owner/repository (default: keystroke-tools/TRACE)
   TRACE_BIND                 Initial listen address (default: 127.0.0.1:8080)
   TRACE_PUBLIC_BASE_URL      Initial public URL (default: https://live.simtrace.run)
+  TRACE_INSTANCE_NAME        Name shown to clients (default: TRACE)
+  TRACE_REGISTRATION_POLICY  Account registration: disabled or open (default: disabled)
   TRACE_LIVE_RETENTION_MINUTES
                              Rolling live history, from 1 to 10 minutes (default: 10)
   TRACE_SHARE_TTL_DAYS       Shared-session retention in days (default: 7)
@@ -65,7 +67,7 @@ fi
 [ "$(uname -s)" = "Linux" ] || fail "Linux is required"
 [ "$(id -u)" -eq 0 ] || fail "run this installer as root (pipe it to 'sudo sh')"
 
-for command in curl tar sha256sum install systemctl mktemp; do
+for command in curl grep tar sha256sum install systemctl mktemp; do
     command -v "$command" >/dev/null 2>&1 || fail "required command '$command' was not found"
 done
 
@@ -79,6 +81,8 @@ if [ ! -f "$ENV_PATH" ]; then
     new_configuration=true
     bind="${TRACE_BIND:-}"
     public_base_url="${TRACE_PUBLIC_BASE_URL:-}"
+    instance_name="${TRACE_INSTANCE_NAME:-}"
+    registration_policy="${TRACE_REGISTRATION_POLICY:-}"
     live_retention_minutes="${TRACE_LIVE_RETENTION_MINUTES:-}"
 
     if [ "$interactive" = true ]; then
@@ -90,12 +94,20 @@ if [ ! -f "$ENV_PATH" ]; then
         if [ -z "$public_base_url" ]; then
             public_base_url="$(prompt_value "Public URL" "https://live.simtrace.run")"
         fi
+        if [ -z "$instance_name" ]; then
+            instance_name="$(prompt_value "Instance name" "TRACE")"
+        fi
+        if [ -z "$registration_policy" ]; then
+            registration_policy="$(prompt_value "Account registration (disabled/open)" "disabled")"
+        fi
         if [ -z "$live_retention_minutes" ]; then
             live_retention_minutes="$(prompt_value "Live playback history in minutes (1-10)" "10")"
         fi
     else
         bind="${bind:-127.0.0.1:8080}"
         public_base_url="${public_base_url:-https://live.simtrace.run}"
+        instance_name="${instance_name:-TRACE}"
+        registration_policy="${registration_policy:-disabled}"
         live_retention_minutes="${live_retention_minutes:-10}"
         printf 'No interactive terminal detected; using supplied values or first-install defaults.\n'
     fi
@@ -103,11 +115,15 @@ if [ ! -f "$ENV_PATH" ]; then
     case "$bind" in *[!A-Za-z0-9.:_-]*) fail "TRACE_BIND contains unsupported characters" ;; esac
     case "$public_base_url" in http://* | https://*) ;; *) fail "TRACE_PUBLIC_BASE_URL must use HTTP or HTTPS" ;; esac
     case "$public_base_url" in *[!A-Za-z0-9.:/_-]*) fail "TRACE_PUBLIC_BASE_URL contains unsupported characters" ;; esac
+    printf '%s' "$instance_name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$' || fail "TRACE_INSTANCE_NAME contains unsupported characters"
+    case "$registration_policy" in disabled | open) ;; *) fail "TRACE_REGISTRATION_POLICY must be disabled or open" ;; esac
     case "$live_retention_minutes" in 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) ;; *) fail "TRACE_LIVE_RETENTION_MINUTES must be between 1 and 10" ;; esac
 
     printf '\nConfiguration:\n'
     printf '  Listen address: %s\n' "$bind"
     printf '  Public URL:     %s\n' "$public_base_url"
+    printf '  Instance name:  %s\n' "$instance_name"
+    printf '  Registration:   %s\n' "$registration_policy"
     printf '  Live history:   %s minutes\n' "$live_retention_minutes"
     if [ "$interactive" = true ] && ! confirm_install; then
         printf 'Installation cancelled.\n'
@@ -163,7 +179,7 @@ tar -xzf "${temporary_directory}/${archive}" -C "$temporary_directory"
 
 if [ "$new_configuration" = true ]; then
     install -m 0600 /dev/null "$ENV_PATH"
-    printf 'TRACE_BIND=%s\nTRACE_PUBLIC_BASE_URL=%s\nTRACE_LIVE_RETENTION_MINUTES=%s\n' "$bind" "$public_base_url" "$live_retention_minutes" > "$ENV_PATH"
+    printf 'TRACE_BIND=%s\nTRACE_PUBLIC_BASE_URL=%s\nTRACE_INSTANCE_NAME=%s\nTRACE_REGISTRATION_POLICY=%s\nTRACE_LIVE_RETENTION_MINUTES=%s\n' "$bind" "$public_base_url" "$instance_name" "$registration_policy" "$live_retention_minutes" > "$ENV_PATH"
     printf 'Created %s\n' "$ENV_PATH"
 fi
 

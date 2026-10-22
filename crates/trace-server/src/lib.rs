@@ -25,7 +25,7 @@ use axum::{
     routing::{get, post},
 };
 use futures_util::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
@@ -37,9 +37,11 @@ use trace_protocol::{
 };
 use uuid::Uuid;
 
+mod accounts;
 mod live_store;
 mod shares;
 
+use accounts::{AccountStore, AccountStoreError, AccountSummary};
 use live_store::LiveStore;
 use shares::{ShareStore, ShareStoreError};
 
@@ -49,6 +51,7 @@ const BROADCAST_CAPACITY: usize = 512;
 const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 512 * 1024;
 const DEFAULT_MAX_SHARED_SESSION_BYTES: u64 = 128 * 1024 * 1024;
 const DEFAULT_SHARED_SESSION_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const MAX_ACCOUNT_REQUEST_BYTES: usize = 8 * 1024;
 
 /// Configurable service-abuse limits. Spectator access remains unauthenticated.
 #[derive(Clone, Debug)]
@@ -87,6 +90,7 @@ impl Default for RateLimits {
 pub struct ServerConfig {
     instance_name: String,
     public_base_url: String,
+    registration_policy: RegistrationPolicy,
     buffer_capacity: usize,
     live_retention: Duration,
     share_directory: Option<PathBuf>,
@@ -103,6 +107,7 @@ impl ServerConfig {
         Self {
             instance_name: "TRACE".to_owned(),
             public_base_url: public_base_url.into().trim_end_matches('/').to_owned(),
+            registration_policy: RegistrationPolicy::Disabled,
             buffer_capacity: DEFAULT_BUFFER_CAPACITY,
             live_retention: DEFAULT_LIVE_RETENTION,
             share_directory: None,
@@ -121,6 +126,13 @@ impl ServerConfig {
         if !name.is_empty() {
             self.instance_name = name.chars().take(80).collect();
         }
+        self
+    }
+
+    /// Changes whether this instance accepts account registrations.
+    #[must_use]
+    pub fn with_registration_policy(mut self, policy: RegistrationPolicy) -> Self {
+        self.registration_policy = policy;
         self
     }
 
@@ -172,6 +184,7 @@ pub struct LiveService {
     inner: Arc<RwLock<ServiceState>>,
     config: ServerConfig,
     shares: Option<ShareStore>,
+    accounts: Option<AccountStore>,
     live_store: Option<LiveStore>,
     abuse: Arc<Mutex<AbuseState>>,
 }
@@ -297,8 +310,30 @@ struct InstanceDescription {
     name: String,
     version: &'static str,
     public_base_url: String,
+    registration_policy: RegistrationPolicy,
     features: Vec<&'static str>,
     limits: InstanceLimits,
+}
+
+/// Controls account creation independently for each deployment.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistrationPolicy {
+    Disabled,
+    Open,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateAccountRequest {
+    username: String,
+    display_name: String,
+    password: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -322,6 +357,11 @@ enum ServiceError {
     PublisherCredentialRequired,
     RateLimited,
     CapacityExceeded,
+    AccountsUnavailable,
+    RegistrationDisabled,
+    InvalidAccount,
+    UsernameTaken,
+    AccountUnauthorized,
 }
 
 impl IntoResponse for ServiceError {
@@ -351,6 +391,17 @@ impl IntoResponse for ServiceError {
             ),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "request rate limit exceeded"),
             Self::CapacityExceeded => (StatusCode::TOO_MANY_REQUESTS, "connection limit exceeded"),
+            Self::AccountsUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "account service is unavailable",
+            ),
+            Self::RegistrationDisabled => (
+                StatusCode::FORBIDDEN,
+                "account registration is disabled on this instance",
+            ),
+            Self::InvalidAccount => (StatusCode::BAD_REQUEST, "invalid account details"),
+            Self::UsernameTaken => (StatusCode::CONFLICT, "username is already registered"),
+            Self::AccountUnauthorized => (StatusCode::UNAUTHORIZED, "authentication required"),
         };
         let mut response = (status, Json(ErrorBody { error })).into_response();
         if matches!(self, Self::RateLimited | Self::CapacityExceeded) {
@@ -372,6 +423,9 @@ impl LiveService {
     /// this as a fatal startup error instead of silently losing persistence.
     #[must_use]
     pub fn new(config: ServerConfig) -> Self {
+        let accounts = config.share_directory.as_ref().map(|directory| {
+            AccountStore::open(directory).expect("TRACE account persistence could not be opened")
+        });
         let shares = config.share_directory.as_ref().map(|directory| {
             ShareStore::new(
                 directory.join("shares"),
@@ -434,6 +488,7 @@ impl LiveService {
             inner: Arc::new(RwLock::new(state)),
             config,
             shares,
+            accounts,
             live_store,
             abuse: Arc::new(Mutex::new(AbuseState::default())),
         }
@@ -966,6 +1021,15 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/", get(landing_page))
         .route("/favicon.svg", get(favicon))
         .route("/api/v1/instance", get(instance_description))
+        .route(
+            "/api/v1/accounts",
+            post(create_account).layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
+        )
+        .route(
+            "/api/v1/auth/sessions",
+            post(login).layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
+        )
+        .route("/api/v1/auth/session", get(current_account).delete(logout))
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
         .route("/api/v1/shared-sessions", post(create_shared_session))
@@ -1020,10 +1084,14 @@ async fn instance_description(State(service): State<LiveService>) -> Json<Instan
     if durable_storage {
         features.push("durable_storage");
     }
+    if service.accounts.is_some() {
+        features.push("accounts");
+    }
     Json(InstanceDescription {
         name: service.config.instance_name.clone(),
         version: env!("CARGO_PKG_VERSION"),
         public_base_url: service.config.public_base_url.clone(),
+        registration_policy: service.config.registration_policy,
         features,
         limits: InstanceLimits {
             maximum_upload_bytes: service.config.max_shared_session_bytes,
@@ -1031,6 +1099,107 @@ async fn instance_description(State(service): State<LiveService>) -> Json<Instan
             live_retention_seconds: service.config.live_retention.as_secs(),
         },
     })
+}
+
+async fn create_account(
+    State(service): State<LiveService>,
+    peer: PeerAddress,
+    headers: HeaderMap,
+    Json(request): Json<CreateAccountRequest>,
+) -> Result<(StatusCode, Json<AccountSummary>), ServiceError> {
+    if !matches!(service.config.registration_policy, RegistrationPolicy::Open) {
+        return Err(ServiceError::RegistrationDisabled);
+    }
+    let (username, display_name) = validate_account_details(&request)?;
+    let source = client_address(&service.config, &headers, &peer);
+    service.check_rate(
+        "account-registration",
+        &source,
+        1,
+        service.config.rate_limits.bootstrap_per_minute,
+        Duration::from_secs(60),
+    )?;
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    let password = request.password;
+    let account = tokio::task::spawn_blocking(move || {
+        store.register(&username, &display_name, &password, unix_timestamp_ms())
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map_err(map_account_error)?;
+    Ok((StatusCode::CREATED, Json(account)))
+}
+
+async fn login(
+    State(service): State<LiveService>,
+    peer: PeerAddress,
+    headers: HeaderMap,
+    Json(request): Json<LoginRequest>,
+) -> Result<Response, ServiceError> {
+    if !valid_username(&request.username) || request.password.len() > 256 {
+        return Err(ServiceError::AccountUnauthorized);
+    }
+    let source = client_address(&service.config, &headers, &peer);
+    service.check_rate(
+        "account-login",
+        &source,
+        1,
+        service.config.rate_limits.bootstrap_per_minute,
+        Duration::from_secs(60),
+    )?;
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    let username = request.username;
+    let password = request.password;
+    let (account, token) =
+        tokio::task::spawn_blocking(move || store.login(&username, &password, unix_timestamp_ms()))
+            .await
+            .map_err(|_| ServiceError::Unavailable)?
+            .map_err(map_account_error)?;
+    let cookie = session_cookie(&token, &service.config.public_base_url)?;
+    Ok(([(header::SET_COOKIE, cookie)], Json(account)).into_response())
+}
+
+async fn current_account(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+) -> Result<Json<AccountSummary>, ServiceError> {
+    let token = account_session_token(&headers)
+        .ok_or(ServiceError::AccountUnauthorized)?
+        .to_owned();
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    tokio::task::spawn_blocking(move || store.find_session(&token, unix_timestamp_ms()))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(Json)
+        .map_err(map_account_error)
+}
+
+async fn logout(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+) -> Result<Response, ServiceError> {
+    if let Some(token) = account_session_token(&headers) {
+        let token = token.to_owned();
+        let store = service
+            .accounts
+            .clone()
+            .ok_or(ServiceError::AccountsUnavailable)?;
+        tokio::task::spawn_blocking(move || store.logout(&token))
+            .await
+            .map_err(|_| ServiceError::Unavailable)?
+            .map_err(map_account_error)?;
+    }
+    let cookie = expired_session_cookie(&service.config.public_base_url)?;
+    Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
 }
 
 async fn landing_page(State(service): State<LiveService>) -> Html<String> {
@@ -1616,6 +1785,66 @@ fn hash_token(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
 
+fn validate_account_details(
+    request: &CreateAccountRequest,
+) -> Result<(String, String), ServiceError> {
+    let username = request.username.trim().to_ascii_lowercase();
+    let display_name = request.display_name.trim().to_owned();
+    if !valid_username(&username)
+        || display_name.is_empty()
+        || display_name.chars().count() > 80
+        || display_name.chars().any(char::is_control)
+        || !(12..=256).contains(&request.password.len())
+    {
+        return Err(ServiceError::InvalidAccount);
+    }
+    Ok((username, display_name))
+}
+
+fn valid_username(username: &str) -> bool {
+    let bytes = username.as_bytes();
+    (3..=32).contains(&bytes.len())
+        && bytes.first().is_some_and(u8::is_ascii_alphanumeric)
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+}
+
+fn account_session_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .filter_map(|cookie| cookie.trim().split_once('='))
+        .find_map(|(name, value)| (name == "trace_session").then_some(value))
+        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
+fn session_cookie(token: &str, public_base_url: &str) -> Result<HeaderValue, ServiceError> {
+    let secure = if public_base_url.starts_with("https://") {
+        "; Secure"
+    } else {
+        ""
+    };
+    HeaderValue::from_str(&format!(
+        "trace_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000{secure}"
+    ))
+    .map_err(|_| ServiceError::Unavailable)
+}
+
+fn expired_session_cookie(public_base_url: &str) -> Result<HeaderValue, ServiceError> {
+    let secure = if public_base_url.starts_with("https://") {
+        "; Secure"
+    } else {
+        ""
+    };
+    HeaderValue::from_str(&format!(
+        "trace_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure}"
+    ))
+    .map_err(|_| ServiceError::Unavailable)
+}
+
 fn validate_session_state(session_id: &str, state: &SessionState) -> Result<(), ServiceError> {
     Envelope {
         protocol_version: PROTOCOL_VERSION,
@@ -1693,6 +1922,19 @@ fn error_message(error: ServiceError) -> &'static str {
         }
         ServiceError::RateLimited => "request rate limit exceeded",
         ServiceError::CapacityExceeded => "connection limit exceeded",
+        ServiceError::AccountsUnavailable => "account service is unavailable",
+        ServiceError::RegistrationDisabled => "account registration is disabled on this instance",
+        ServiceError::InvalidAccount => "invalid account details",
+        ServiceError::UsernameTaken => "username is already registered",
+        ServiceError::AccountUnauthorized => "authentication required",
+    }
+}
+
+fn map_account_error(error: AccountStoreError) -> ServiceError {
+    match error {
+        AccountStoreError::Database => ServiceError::Unavailable,
+        AccountStoreError::InvalidCredentials => ServiceError::AccountUnauthorized,
+        AccountStoreError::UsernameTaken => ServiceError::UsernameTaken,
     }
 }
 
@@ -2330,6 +2572,130 @@ mod tests {
         assert_eq!(instance["limits"]["maximum_upload_bytes"], 134_217_728);
         assert_eq!(instance["limits"]["shared_session_ttl_seconds"], 604_800);
         assert_eq!(instance["limits"]["live_retention_seconds"], 600);
+    }
+
+    #[tokio::test]
+    async fn instance_local_accounts_register_login_and_logout() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let application = app(ServerConfig::new("https://telemetry.example.test")
+            .with_share_directory(directory.path())
+            .with_registration_policy(RegistrationPolicy::Open));
+        let registration = serde_json::json!({
+            "username": "Local.Driver",
+            "display_name": "Local Driver",
+            "password": "correct horse battery"
+        });
+        let response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/accounts")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(registration.to_string()))
+                    .expect("registration request"),
+            )
+            .await
+            .expect("registration response");
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let account: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("registration body"),
+        )
+        .expect("account JSON");
+        assert_eq!(account["username"], "local.driver");
+        assert_eq!(account["administrator"], true);
+
+        let login = serde_json::json!({
+            "username": "LOCAL.DRIVER",
+            "password": "correct horse battery"
+        });
+        let response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/auth/sessions")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(login.to_string()))
+                    .expect("login request"),
+            )
+            .await
+            .expect("login response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let set_cookie = response.headers()[header::SET_COOKIE]
+            .to_str()
+            .expect("session cookie");
+        assert!(set_cookie.contains("HttpOnly"));
+        assert!(set_cookie.contains("SameSite=Lax"));
+        assert!(set_cookie.contains("Secure"));
+        let cookie = set_cookie
+            .split(';')
+            .next()
+            .expect("cookie value")
+            .to_owned();
+
+        let response = application
+            .clone()
+            .oneshot(
+                Request::get("/api/v1/auth/session")
+                    .header(header::COOKIE, &cookie)
+                    .body(Body::empty())
+                    .expect("current account request"),
+            )
+            .await
+            .expect("current account response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = application
+            .clone()
+            .oneshot(
+                Request::delete("/api/v1/auth/session")
+                    .header(header::COOKIE, &cookie)
+                    .body(Body::empty())
+                    .expect("logout request"),
+            )
+            .await
+            .expect("logout response");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert!(
+            response.headers()[header::SET_COOKIE]
+                .to_str()
+                .expect("expired cookie")
+                .contains("Max-Age=0")
+        );
+
+        let response = application
+            .oneshot(
+                Request::get("/api/v1/auth/session")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .expect("revoked account request"),
+            )
+            .await
+            .expect("revoked account response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn account_registration_is_disabled_by_default() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let application =
+            app(ServerConfig::new("http://localhost:8080").with_share_directory(directory.path()));
+        let response = application
+            .oneshot(
+                Request::post("/api/v1/accounts")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "username": "driver",
+                            "display_name": "Driver",
+                            "password": "correct horse battery"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("registration request"),
+            )
+            .await
+            .expect("registration response");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

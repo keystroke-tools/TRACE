@@ -28,6 +28,8 @@ The defaults are:
 ```text
 TRACE_BIND=127.0.0.1:8080
 TRACE_PUBLIC_BASE_URL=http://127.0.0.1:8080
+TRACE_INSTANCE_NAME=TRACE
+TRACE_REGISTRATION_POLICY=disabled
 ```
 
 Set both variables when the bind address and externally visible URL differ. The
@@ -127,6 +129,10 @@ All implemented routes are versioned under `/api/v1`.
 | `GET`    | `/api/v1/live-sessions/{id}/publish`  | session token  | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
 | `GET`    | `/api/v1/instance`                    | none           | Discover this deployment's identity, features, and limits |
+| `POST`   | `/api/v1/accounts`                    | none           | Register an instance-local account when enabled         |
+| `POST`   | `/api/v1/auth/sessions`               | none           | Start an HTTP-only browser login session                |
+| `GET`    | `/api/v1/auth/session`                | account cookie | Read the currently authenticated account                |
+| `DELETE` | `/api/v1/auth/session`                | account cookie | Revoke the current browser login session                |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
 | `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
@@ -143,6 +149,13 @@ version, currently available features, upload size, share lifetime, and live pla
 retention. Clients should use this response instead of assuming that every endpoint is
 hosted by `live.simtrace.run`. Set `TRACE_INSTANCE_NAME` to give a self-hosted instance
 a recognisable name; it defaults to `TRACE`.
+
+Web accounts are stored in the same instance-local SQLite database as live-service
+state. Registration is disabled by default. Set `TRACE_REGISTRATION_POLICY=open` only
+when the instance should accept new users, then return it to `disabled` after creating
+the intended accounts on a private deployment. Passwords use Argon2id hashes and login
+sessions use hashed, revocable, HTTP-only cookies. The first account created on an
+instance is its administrator; this role does not yet expose administrative routes.
 
 Installation-managed requests, including session creation, ending, and completed-session
 sharing, send both headers:
