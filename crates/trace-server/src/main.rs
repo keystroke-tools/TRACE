@@ -14,6 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind = env::var("TRACE_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_owned());
     let public_base_url =
         env::var("TRACE_PUBLIC_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_owned());
+    let instance_name = env::var("TRACE_INSTANCE_NAME").unwrap_or_else(|_| "TRACE".to_owned());
     let data_directory = env::var_os("TRACE_DATA_DIR")
         .map_or_else(|| PathBuf::from("trace-server-data"), PathBuf::from);
     let share_ttl_days = env::var("TRACE_SHARE_TTL_DAYS")
@@ -45,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("TRACE live service listening on {address}");
     let config = ServerConfig::new(public_base_url)
+        .with_instance_name(instance_name)
         .with_share_directory(data_directory)
         .with_live_retention(Duration::from_secs(live_retention_minutes * 60))
         .with_shared_session_ttl(Duration::from_secs(share_ttl_days * 24 * 60 * 60))

@@ -126,6 +126,7 @@ All implemented routes are versioned under `/api/v1`.
 | `DELETE` | `/api/v1/live-sessions/{id}/publisher-credential` | installation | Revoke the session publisher token         |
 | `GET`    | `/api/v1/live-sessions/{id}/publish`  | session token  | Upgrade to the publisher WebSocket                     |
 | `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
+| `GET`    | `/api/v1/instance`                    | none           | Discover this deployment's identity, features, and limits |
 | `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
 | `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
 | `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
@@ -135,6 +136,13 @@ binary. They share the TRACE favicon and a hosted social card. Spectator documen
 derive their title, description, canonical URL, and Open Graph/Twitter metadata from
 the validated session state; all simulator-provided values are HTML-escaped before
 rendering. Unknown routes and expired spectator links return a branded HTML `404`.
+
+`GET /api/v1/instance` describes the deployment rather than the TRACE project as a
+whole. It reports the configured instance name and public URL, the running server
+version, currently available features, upload size, share lifetime, and live playback
+retention. Clients should use this response instead of assuming that every endpoint is
+hosted by `live.simtrace.run`. Set `TRACE_INSTANCE_NAME` to give a self-hosted instance
+a recognisable name; it defaults to `TRACE`.
 
 Installation-managed requests, including session creation, ending, and completed-session
 sharing, send both headers:

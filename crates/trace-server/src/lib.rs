@@ -85,6 +85,7 @@ impl Default for RateLimits {
 /// Runtime settings supplied by the deployment environment.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
+    instance_name: String,
     public_base_url: String,
     buffer_capacity: usize,
     live_retention: Duration,
@@ -100,6 +101,7 @@ impl ServerConfig {
     #[must_use]
     pub fn new(public_base_url: impl Into<String>) -> Self {
         Self {
+            instance_name: "TRACE".to_owned(),
             public_base_url: public_base_url.into().trim_end_matches('/').to_owned(),
             buffer_capacity: DEFAULT_BUFFER_CAPACITY,
             live_retention: DEFAULT_LIVE_RETENTION,
@@ -109,6 +111,17 @@ impl ServerConfig {
             rate_limits: RateLimits::default(),
             trust_proxy_headers: false,
         }
+    }
+
+    /// Changes the human-readable name advertised by this deployment.
+    #[must_use]
+    pub fn with_instance_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        let name = name.trim();
+        if !name.is_empty() {
+            self.instance_name = name.chars().take(80).collect();
+        }
+        self
     }
 
     /// Enables durable completed-session sharing beneath this directory.
@@ -277,6 +290,22 @@ struct BufferedEnvelope {
 #[derive(Debug, Serialize)]
 struct ErrorBody {
     error: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct InstanceDescription {
+    name: String,
+    version: &'static str,
+    public_base_url: String,
+    features: Vec<&'static str>,
+    limits: InstanceLimits,
+}
+
+#[derive(Debug, Serialize)]
+struct InstanceLimits {
+    maximum_upload_bytes: u64,
+    shared_session_ttl_seconds: u64,
+    live_retention_seconds: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -936,6 +965,7 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/health", get(health))
         .route("/", get(landing_page))
         .route("/favicon.svg", get(favicon))
+        .route("/api/v1/instance", get(instance_description))
         .route("/api/v1/installations", post(bootstrap_installation))
         .route("/api/v1/live-sessions", post(create_live_session))
         .route("/api/v1/shared-sessions", post(create_shared_session))
@@ -979,6 +1009,28 @@ async fn health() -> impl IntoResponse {
         [("x-trace-server-version", env!("CARGO_PKG_VERSION"))],
         StatusCode::NO_CONTENT,
     )
+}
+
+async fn instance_description(State(service): State<LiveService>) -> Json<InstanceDescription> {
+    let durable_storage = service.config.share_directory.is_some();
+    let mut features = vec!["live_spectating"];
+    if service.shares.is_some() {
+        features.push("completed_session_sharing");
+    }
+    if durable_storage {
+        features.push("durable_storage");
+    }
+    Json(InstanceDescription {
+        name: service.config.instance_name.clone(),
+        version: env!("CARGO_PKG_VERSION"),
+        public_base_url: service.config.public_base_url.clone(),
+        features,
+        limits: InstanceLimits {
+            maximum_upload_bytes: service.config.max_shared_session_bytes,
+            shared_session_ttl_seconds: service.config.shared_session_ttl.as_secs(),
+            live_retention_seconds: service.config.live_retention.as_secs(),
+        },
+    })
 }
 
 async fn landing_page(State(service): State<LiveService>) -> Html<String> {
@@ -2252,6 +2304,32 @@ mod tests {
             .expect("subscription");
         assert_eq!(snapshot.len(), 2);
         assert_eq!(snapshot[0].message_id, "message_7");
+    }
+
+    #[tokio::test]
+    async fn instance_endpoint_describes_the_independent_deployment() {
+        let application =
+            app(ServerConfig::new("https://live.simtrace.run").with_instance_name("Club pit wall"));
+        let instance = application
+            .oneshot(
+                Request::get("/api/v1/instance")
+                    .body(Body::empty())
+                    .expect("instance request"),
+            )
+            .await
+            .expect("instance response");
+        assert_eq!(instance.status(), StatusCode::OK);
+        let body = to_bytes(instance.into_body(), 64 * 1024)
+            .await
+            .expect("instance body");
+        let instance: serde_json::Value = serde_json::from_slice(&body).expect("instance JSON");
+        assert_eq!(instance["name"], "Club pit wall");
+        assert_eq!(instance["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(instance["public_base_url"], "https://live.simtrace.run");
+        assert_eq!(instance["features"], serde_json::json!(["live_spectating"]));
+        assert_eq!(instance["limits"]["maximum_upload_bytes"], 134_217_728);
+        assert_eq!(instance["limits"]["shared_session_ttl_seconds"], 604_800);
+        assert_eq!(instance["limits"]["live_retention_seconds"], 600);
     }
 
     #[tokio::test]
