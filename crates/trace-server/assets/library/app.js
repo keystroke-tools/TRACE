@@ -85,8 +85,11 @@ async function request(path, options = {}) {
 	const response = await fetch(path, { credentials: "same-origin", ...options });
 	if (response.status === 204) return null;
 	const contentType = response.headers.get("content-type") || "";
-	const body = contentType.includes("application/json") ? await response.json() : null;
-	if (!response.ok) throw new Error(body?.error || `Request failed (${response.status})`);
+	const body = contentType.includes("application/json") ? await response.json() : await response.text();
+	if (!response.ok) {
+		const detail = typeof body === "string" ? body.trim() : body?.error;
+		throw new Error(detail || `Request failed (${response.status})`);
+	}
 	return body;
 }
 
@@ -975,8 +978,8 @@ elements.uploadZone.addEventListener("drop", (event) => {
 
 elements.loginForm.addEventListener("submit", async (event) => {
 	event.preventDefault();
-	setBusy(elements.loginForm, true);
 	const values = Object.fromEntries(new FormData(elements.loginForm));
+	setBusy(elements.loginForm, true);
 	try {
 		state.account = await request("/api/v1/auth/sessions", {
 			method: "POST",
@@ -995,8 +998,8 @@ elements.loginForm.addEventListener("submit", async (event) => {
 
 elements.registerForm.addEventListener("submit", async (event) => {
 	event.preventDefault();
-	setBusy(elements.registerForm, true);
 	const values = Object.fromEntries(new FormData(elements.registerForm));
+	setBusy(elements.registerForm, true);
 	try {
 		await request("/api/v1/accounts", {
 			method: "POST",

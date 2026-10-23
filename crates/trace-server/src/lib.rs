@@ -1987,7 +1987,7 @@ async fn library_styles() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/css; charset=utf-8"),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
+            (header::CACHE_CONTROL, "no-cache"),
         ],
         include_str!("../assets/library/styles.css"),
     )
@@ -1997,7 +1997,7 @@ async fn library_script() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
+            (header::CACHE_CONTROL, "no-cache"),
         ],
         include_str!("../assets/library/app.js"),
     )
@@ -3675,6 +3675,27 @@ mod tests {
         assert!(body.contains("TIME DELTA · ANALYSED VS REFERENCE"));
         assert!(body.contains("/app-assets/library.js"));
         assert!(!body.contains("<script>"));
+    }
+
+    #[test]
+    fn embedded_library_forms_capture_values_before_disabling_controls() {
+        let script = include_str!("../assets/library/app.js");
+        for form in ["loginForm", "registerForm"] {
+            let handler = script
+                .split_once(&format!("elements.{form}.addEventListener(\"submit\""))
+                .expect("form submit handler")
+                .1
+                .split_once("});")
+                .expect("end of form submit handler")
+                .0;
+            let capture = handler.find("new FormData").expect("form value capture");
+            let disable = handler.find("setBusy").expect("form busy state");
+            assert!(
+                capture < disable,
+                "{form} must be read before it is disabled"
+            );
+        }
+        assert!(include_str!("../assets/library/styles.css").contains("[hidden]"));
     }
 
     #[tokio::test]
