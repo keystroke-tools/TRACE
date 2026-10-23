@@ -45,6 +45,8 @@ pub(crate) struct CreatedAccountToken {
 pub(crate) enum AccountStoreError {
     Database,
     InvalidCredentials,
+    RegistrationDisabled,
+    AdministratorRequired,
     UsernameTaken,
 }
 
@@ -84,7 +86,11 @@ impl AccountStore {
                      last_used_at_unix_ms INTEGER
                  );
                  CREATE INDEX IF NOT EXISTS web_account_tokens_account
-                     ON web_account_tokens(account_id, created_at_unix_ms DESC);",
+                     ON web_account_tokens(account_id, created_at_unix_ms DESC);
+                 CREATE TABLE IF NOT EXISTS web_instance_settings (
+                     key TEXT PRIMARY KEY,
+                     value TEXT NOT NULL
+                 );",
             )
             .map_err(|_| AccountStoreError::Database)?;
         Ok(Self {
@@ -98,6 +104,7 @@ impl AccountStore {
         display_name: &str,
         password: &str,
         now_unix_ms: i64,
+        registration_open: bool,
     ) -> Result<AccountSummary, AccountStoreError> {
         let password_hash = hash_password(password)?;
         let account_id = Uuid::new_v4().simple().to_string();
@@ -113,6 +120,9 @@ impl AccountStore {
                 row.get::<_, bool>(0)
             })
             .map_err(|_| AccountStoreError::Database)?;
+        if !administrator && !registration_open {
+            return Err(AccountStoreError::RegistrationDisabled);
+        }
         let result = transaction.execute(
             "INSERT INTO web_accounts
              (account_id, username, display_name, password_hash, administrator, created_at_unix_ms)
@@ -142,6 +152,65 @@ impl AccountStore {
             display_name: display_name.to_owned(),
             administrator,
         })
+    }
+
+    pub(crate) fn initial_admin_required(&self) -> Result<bool, AccountStoreError> {
+        self.connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?
+            .query_row("SELECT COUNT(*) = 0 FROM web_accounts", [], |row| {
+                row.get(0)
+            })
+            .map_err(|_| AccountStoreError::Database)
+    }
+
+    pub(crate) fn registration_enabled(
+        &self,
+        configured_default: bool,
+    ) -> Result<bool, AccountStoreError> {
+        self.connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?
+            .query_row(
+                "SELECT value FROM web_instance_settings WHERE key = 'registration_enabled'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map(|value| value.map_or(configured_default, |value| value == "true"))
+            .map_err(|_| AccountStoreError::Database)
+    }
+
+    pub(crate) fn set_registration_enabled(
+        &self,
+        account_id: &str,
+        enabled: bool,
+    ) -> Result<(), AccountStoreError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?;
+        let administrator = connection
+            .query_row(
+                "SELECT administrator FROM web_accounts WHERE account_id = ?1",
+                [account_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()
+            .map_err(|_| AccountStoreError::Database)?
+            .unwrap_or(false);
+        if !administrator {
+            return Err(AccountStoreError::AdministratorRequired);
+        }
+        connection
+            .execute(
+                "INSERT INTO web_instance_settings (key, value)
+                 VALUES ('registration_enabled', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [if enabled { "true" } else { "false" }],
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        Ok(())
     }
 
     pub(crate) fn login(
@@ -407,11 +476,23 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let store = AccountStore::open(directory.path()).expect("account store");
         let account = store
-            .register("driver", "Local Driver", "correct horse battery", 1_000)
+            .register(
+                "driver",
+                "Local Driver",
+                "correct horse battery",
+                1_000,
+                false,
+            )
             .expect("account");
         assert!(account.administrator);
+        assert!(!store.initial_admin_required().expect("setup state"));
+        assert!(!store.registration_enabled(false).expect("registration"));
+        store
+            .set_registration_enabled(&account.account_id, true)
+            .expect("administrator enables registration");
+        assert!(store.registration_enabled(false).expect("registration"));
         assert!(matches!(
-            store.register("DRIVER", "Duplicate", "another safe password", 2_000),
+            store.register("DRIVER", "Duplicate", "another safe password", 2_000, true),
             Err(AccountStoreError::UsernameTaken)
         ));
         assert!(matches!(

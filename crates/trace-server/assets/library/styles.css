@@ -322,6 +322,28 @@ button.primary:hover {
 	border-top: 1px solid #2c2c2c;
 }
 
+.admin-toggle {
+	display: flex;
+	align-items: center;
+	align-self: center;
+	gap: 12px;
+	min-height: 48px;
+	padding: 0 14px;
+	border: 1px solid #303030;
+	background: #111;
+	color: #ddd;
+	text-transform: none;
+	cursor: pointer;
+}
+
+.admin-toggle input {
+	width: 18px;
+	height: 18px;
+	min-height: 0;
+	padding: 0;
+	accent-color: #68e997;
+}
+
 .token-row {
 	display: flex;
 	align-items: center;

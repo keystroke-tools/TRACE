@@ -321,6 +321,8 @@ struct InstanceDescription {
     version: &'static str,
     public_base_url: String,
     registration_policy: RegistrationPolicy,
+    initial_admin_required: bool,
+    registration_enabled: bool,
     features: Vec<&'static str>,
     limits: InstanceLimits,
 }
@@ -374,6 +376,7 @@ enum ServiceError {
     AccountUnauthorized,
     LibraryUnavailable,
     LibrarySessionNotFound,
+    AdministratorRequired,
 }
 
 impl IntoResponse for ServiceError {
@@ -419,6 +422,9 @@ impl IntoResponse for ServiceError {
                 "web session library is unavailable",
             ),
             Self::LibrarySessionNotFound => (StatusCode::NOT_FOUND, "library session not found"),
+            Self::AdministratorRequired => {
+                (StatusCode::FORBIDDEN, "administrator access is required")
+            }
         };
         let mut response = (status, Json(ErrorBody { error })).into_response();
         if matches!(self, Self::RateLimited | Self::CapacityExceeded) {
@@ -1053,6 +1059,12 @@ pub fn app(config: ServerConfig) -> Router {
         )
         .route("/api/v1/auth/session", get(current_account).delete(logout))
         .route(
+            "/api/v1/admin/settings",
+            get(admin_settings)
+                .put(set_admin_settings)
+                .layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
+        )
+        .route(
             "/api/v1/auth/tokens",
             get(list_account_tokens)
                 .post(create_account_token)
@@ -1162,11 +1174,24 @@ async fn instance_description(State(service): State<LiveService>) -> Json<Instan
     if service.library.is_some() {
         features.push("web_library");
     }
+    let configured_registration =
+        matches!(service.config.registration_policy, RegistrationPolicy::Open);
+    let initial_admin_required = service
+        .accounts
+        .as_ref()
+        .is_some_and(|store| store.initial_admin_required().unwrap_or(false));
+    let registration_enabled = service.accounts.as_ref().is_some_and(|store| {
+        store
+            .registration_enabled(configured_registration)
+            .unwrap_or(false)
+    });
     Json(InstanceDescription {
         name: service.config.instance_name.clone(),
         version: env!("CARGO_PKG_VERSION"),
         public_base_url: service.config.public_base_url.clone(),
         registration_policy: service.config.registration_policy,
+        initial_admin_required,
+        registration_enabled,
         features,
         limits: InstanceLimits {
             maximum_upload_bytes: service.config.max_shared_session_bytes,
@@ -1182,9 +1207,6 @@ async fn create_account(
     headers: HeaderMap,
     Json(request): Json<CreateAccountRequest>,
 ) -> Result<(StatusCode, Json<AccountSummary>), ServiceError> {
-    if !matches!(service.config.registration_policy, RegistrationPolicy::Open) {
-        return Err(ServiceError::RegistrationDisabled);
-    }
     let (username, display_name) = validate_account_details(&request)?;
     let source = client_address(&service.config, &headers, &peer);
     service.check_rate(
@@ -1198,14 +1220,80 @@ async fn create_account(
         .accounts
         .clone()
         .ok_or(ServiceError::AccountsUnavailable)?;
+    let configured_registration =
+        matches!(service.config.registration_policy, RegistrationPolicy::Open);
+    let registration_open = store
+        .registration_enabled(configured_registration)
+        .map_err(map_account_error)?;
     let password = request.password;
     let account = tokio::task::spawn_blocking(move || {
-        store.register(&username, &display_name, &password, unix_timestamp_ms())
+        store.register(
+            &username,
+            &display_name,
+            &password,
+            unix_timestamp_ms(),
+            registration_open,
+        )
     })
     .await
     .map_err(|_| ServiceError::Unavailable)?
     .map_err(map_account_error)?;
     Ok((StatusCode::CREATED, Json(account)))
+}
+
+#[derive(Deserialize, Serialize)]
+struct AdminSettings {
+    registration_enabled: bool,
+}
+
+async fn admin_settings(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+) -> Result<Json<AdminSettings>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    ensure_administrator(&account)?;
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    let configured = matches!(service.config.registration_policy, RegistrationPolicy::Open);
+    tokio::task::spawn_blocking(move || store.registration_enabled(configured))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(|registration_enabled| {
+            Json(AdminSettings {
+                registration_enabled,
+            })
+        })
+        .map_err(map_account_error)
+}
+
+async fn set_admin_settings(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+    Json(settings): Json<AdminSettings>,
+) -> Result<Json<AdminSettings>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    ensure_administrator(&account)?;
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    let account_id = account.account_id;
+    tokio::task::spawn_blocking(move || {
+        store.set_registration_enabled(&account_id, settings.registration_enabled)
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map_err(map_account_error)?;
+    Ok(Json(settings))
+}
+
+fn ensure_administrator(account: &AccountSummary) -> Result<(), ServiceError> {
+    account
+        .administrator
+        .then_some(())
+        .ok_or(ServiceError::AdministratorRequired)
 }
 
 async fn login(
@@ -2414,6 +2502,7 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::AccountUnauthorized => "authentication required",
         ServiceError::LibraryUnavailable => "web session library is unavailable",
         ServiceError::LibrarySessionNotFound => "library session not found",
+        ServiceError::AdministratorRequired => "administrator access is required",
     }
 }
 
@@ -2421,6 +2510,8 @@ fn map_account_error(error: AccountStoreError) -> ServiceError {
     match error {
         AccountStoreError::Database => ServiceError::Unavailable,
         AccountStoreError::InvalidCredentials => ServiceError::AccountUnauthorized,
+        AccountStoreError::RegistrationDisabled => ServiceError::RegistrationDisabled,
+        AccountStoreError::AdministratorRequired => ServiceError::AdministratorRequired,
         AccountStoreError::UsernameTaken => ServiceError::UsernameTaken,
     }
 }
@@ -3384,27 +3475,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn account_registration_is_disabled_by_default() {
+    async fn first_account_bootstraps_admin_then_registration_closes() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let application =
             app(ServerConfig::new("http://localhost:8080").with_share_directory(directory.path()));
+        let instance = application
+            .clone()
+            .oneshot(
+                Request::get("/api/v1/instance")
+                    .body(Body::empty())
+                    .expect("instance request"),
+            )
+            .await
+            .expect("instance response");
+        let instance: serde_json::Value = serde_json::from_slice(
+            &to_bytes(instance.into_body(), 64 * 1024)
+                .await
+                .expect("instance body"),
+        )
+        .expect("instance JSON");
+        assert_eq!(instance["initial_admin_required"], true);
+        assert_eq!(instance["registration_enabled"], false);
+
+        let registration = serde_json::json!({
+            "username": "driver",
+            "display_name": "Driver",
+            "password": "correct horse battery"
+        });
         let response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/accounts")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(registration.to_string()))
+                    .expect("registration request"),
+            )
+            .await
+            .expect("registration response");
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let second = application
             .oneshot(
                 Request::post("/api/v1/accounts")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(
                         serde_json::json!({
-                            "username": "driver",
-                            "display_name": "Driver",
-                            "password": "correct horse battery"
+                            "username": "other",
+                            "display_name": "Other Driver",
+                            "password": "another safe password"
                         })
                         .to_string(),
                     ))
-                    .expect("registration request"),
+                    .expect("second registration request"),
             )
             .await
-            .expect("registration response");
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            .expect("second registration response");
+        assert_eq!(second.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

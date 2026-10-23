@@ -57,6 +57,7 @@
 							<p>Your uploaded sessions stay on this TRACE instance.</p>
 						</div>
 						<div class="library-account-actions">
+							<button id="instance-settings" type="button" hidden>Instance settings</button>
 							<button id="connect-desktop" type="button">Connect desktop</button>
 							<button id="logout-button" class="quiet" type="button">Sign out</button>
 						</div>
@@ -76,6 +77,20 @@
 							<div><input id="token-value" readonly /><button id="token-copy" type="button">Copy</button></div>
 						</div>
 						<div id="token-list" class="token-list"></div>
+					</section>
+					<section id="admin-panel" class="token-panel" hidden>
+						<div>
+							<p class="eyebrow">INSTANCE ACCESS</p>
+							<strong>Account registration</strong>
+							<small
+								>Registration closes after the first administrator is created. Open it only when you want other people to create
+								accounts.</small
+							>
+						</div>
+						<label class="admin-toggle">
+							<input id="registration-enabled" type="checkbox" />
+							<span>Allow new account registrations</span>
+						</label>
 					</section>
 
 					<div class="library-tools">

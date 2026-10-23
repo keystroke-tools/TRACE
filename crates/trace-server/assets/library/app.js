@@ -27,6 +27,9 @@ const elements = {
 	registerForm: document.querySelector("#register-form"),
 	logout: document.querySelector("#logout-button"),
 	connectDesktop: document.querySelector("#connect-desktop"),
+	instanceSettings: document.querySelector("#instance-settings"),
+	adminPanel: document.querySelector("#admin-panel"),
+	registrationEnabled: document.querySelector("#registration-enabled"),
 	tokenPanel: document.querySelector("#token-panel"),
 	tokenLabel: document.querySelector("#token-label"),
 	tokenCreate: document.querySelector("#token-create"),
@@ -127,7 +130,37 @@ async function loadAccount() {
 async function loadLibrary() {
 	state.sessions = await request("/api/v1/library/sessions");
 	elements.accountName.textContent = state.account.display_name;
+	elements.instanceSettings.hidden = !state.account.administrator;
 	renderSessions();
+}
+
+async function toggleAdminPanel() {
+	elements.adminPanel.hidden = !elements.adminPanel.hidden;
+	if (elements.adminPanel.hidden) return;
+	try {
+		const settings = await request("/api/v1/admin/settings");
+		elements.registrationEnabled.checked = settings.registration_enabled;
+	} catch (error) {
+		toast(error.message, "error");
+	}
+}
+
+async function updateRegistration() {
+	elements.registrationEnabled.disabled = true;
+	try {
+		const settings = await request("/api/v1/admin/settings", {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ registration_enabled: elements.registrationEnabled.checked }),
+		});
+		elements.registrationEnabled.checked = settings.registration_enabled;
+		toast(settings.registration_enabled ? "Account registration opened." : "Account registration closed.");
+	} catch (error) {
+		elements.registrationEnabled.checked = !elements.registrationEnabled.checked;
+		toast(error.message, "error");
+	} finally {
+		elements.registrationEnabled.disabled = false;
+	}
 }
 
 async function toggleTokenPanel() {
@@ -997,6 +1030,8 @@ elements.logout.addEventListener("click", async () => {
 	}
 });
 elements.connectDesktop.addEventListener("click", toggleTokenPanel);
+elements.instanceSettings.addEventListener("click", toggleAdminPanel);
+elements.registrationEnabled.addEventListener("change", updateRegistration);
 elements.tokenCreate.addEventListener("click", createToken);
 elements.tokenCopy.addEventListener("click", copyToken);
 
@@ -1015,8 +1050,12 @@ async function start() {
 		elements.instanceVersion.textContent = `v${state.instance.version}`;
 		document.title = `${state.instance.name} · TRACE Library`;
 		elements.uploadLimit.textContent = `up to ${formatBytes(state.instance.limits.maximum_upload_bytes)}`;
-		const registrationOpen = state.instance.registration_policy === "open";
+		const registrationOpen = state.instance.registration_enabled || state.instance.initial_admin_required;
 		elements.registerTab.hidden = !registrationOpen;
+		if (state.instance.initial_admin_required) {
+			elements.registerTab.textContent = "Create administrator";
+			switchAuth("register");
+		}
 		const publicMatch = window.location.pathname.match(/^\/p\/([0-9a-f]{32})$/i);
 		if (publicMatch) {
 			document.title = `Shared session · ${state.instance.name}`;

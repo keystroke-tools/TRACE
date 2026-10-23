@@ -133,6 +133,8 @@ All implemented routes are versioned under `/api/v1`.
 | `POST`   | `/api/v1/auth/sessions`                                      | none            | Start an HTTP-only browser login session                  |
 | `GET`    | `/api/v1/auth/session`                                       | account cookie  | Read the currently authenticated account                  |
 | `DELETE` | `/api/v1/auth/session`                                       | account cookie  | Revoke the current browser login session                  |
+| `GET`    | `/api/v1/admin/settings`                                     | administrator   | Read account-registration settings                        |
+| `PUT`    | `/api/v1/admin/settings`                                     | administrator   | Open or close account registration                        |
 | `GET`    | `/api/v1/auth/tokens`                                        | account cookie  | List revocable desktop access tokens                      |
 | `POST`   | `/api/v1/auth/tokens`                                        | account cookie  | Create a desktop access token; secret is returned once    |
 | `DELETE` | `/api/v1/auth/tokens/{token_id}`                             | account cookie  | Revoke a desktop access token                             |
@@ -168,11 +170,13 @@ hosted by `live.simtrace.run`. Set `TRACE_INSTANCE_NAME` to give a self-hosted i
 a recognisable name; it defaults to `TRACE`.
 
 Web accounts are stored in the same instance-local SQLite database as live-service
-state. Registration is disabled by default. Set `TRACE_REGISTRATION_POLICY=open` only
-when the instance should accept new users, then return it to `disabled` after creating
-the intended accounts on a private deployment. Passwords use Argon2id hashes and login
-sessions use hashed, revocable, HTTP-only cookies. The first account created on an
-instance is its administrator; this role does not yet expose administrative routes.
+state. Registration is disabled by default. A new instance with no accounts opens
+`/app` directly on **Create administrator**; that one atomic signup becomes the first
+administrator and registration immediately remains closed. Administrators can open or
+close future account creation from **Instance settings** in the library. The
+`TRACE_REGISTRATION_POLICY=open` environment setting remains available as an initial
+operator default, but an administrator's saved choice takes precedence. Passwords use
+Argon2id hashes and login sessions use hashed, revocable, HTTP-only cookies.
 
 The library's **Connect desktop** panel creates personal access tokens for direct
 desktop uploads. TRACE stores the pasted token locally and uses it only with the
