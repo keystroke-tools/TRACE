@@ -1970,6 +1970,8 @@ async fn spectator_styles() -> impl IntoResponse {
 }
 
 async fn library_page() -> impl IntoResponse {
+    let page = include_str!("../assets/library/index.html")
+        .replace("__TRACE_VERSION__", env!("CARGO_PKG_VERSION"));
     (
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
@@ -1979,7 +1981,7 @@ async fn library_page() -> impl IntoResponse {
             ),
             (header::CACHE_CONTROL, "no-store"),
         ],
-        include_str!("../assets/library/index.html"),
+        page,
     )
 }
 
@@ -3673,7 +3675,15 @@ mod tests {
         assert!(body.contains("Your private, self-hosted TRACE telemetry library."));
         assert!(body.contains("Compare against your library"));
         assert!(body.contains("TIME DELTA · ANALYSED VS REFERENCE"));
-        assert!(body.contains("/app-assets/library.js"));
+        assert!(body.contains(&format!(
+            "/app-assets/library.js?v={}",
+            env!("CARGO_PKG_VERSION")
+        )));
+        assert!(body.contains(&format!(
+            "/app-assets/library.css?v={}",
+            env!("CARGO_PKG_VERSION")
+        )));
+        assert!(!body.contains("__TRACE_VERSION__"));
         assert!(!body.contains("<script>"));
     }
 
