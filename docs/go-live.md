@@ -88,18 +88,18 @@ limited HTTP request receives `429 Too Many Requests` and `Retry-After: 60`; a
 publisher that exceeds its message or byte budget is closed with WebSocket policy
 code `1008`. Self-hosters can tune the limits in `/etc/trace-server.env`:
 
-| Variable                               | Default     |
-| -------------------------------------- | ----------- |
-| `TRACE_BOOTSTRAP_PER_MINUTE`           | `30`        |
-| `TRACE_SESSION_CREATIONS_PER_MINUTE`   | `20`        |
-| `TRACE_PUBLISHER_UPGRADES_PER_MINUTE`  | `60`        |
-| `TRACE_PUBLISH_MESSAGES_PER_SECOND`    | `120`       |
-| `TRACE_PUBLISH_BYTES_PER_SECOND`       | `8388608`   |
-| `TRACE_MAX_LIVE_SESSIONS`              | `4` per installation |
-| `TRACE_MAX_SPECTATORS_PER_SESSION`     | `64`        |
-| `TRACE_MAX_SPECTATORS_PER_ADDRESS`     | `16`        |
-| `TRACE_MAX_INSTALLATION_RECORDS`       | `100000`    |
-| `TRACE_MAX_LIVE_SESSION_RECORDS`       | `10000`     |
+| Variable                              | Default              |
+| ------------------------------------- | -------------------- |
+| `TRACE_BOOTSTRAP_PER_MINUTE`          | `30`                 |
+| `TRACE_SESSION_CREATIONS_PER_MINUTE`  | `20`                 |
+| `TRACE_PUBLISHER_UPGRADES_PER_MINUTE` | `60`                 |
+| `TRACE_PUBLISH_MESSAGES_PER_SECOND`   | `120`                |
+| `TRACE_PUBLISH_BYTES_PER_SECOND`      | `8388608`            |
+| `TRACE_MAX_LIVE_SESSIONS`             | `4` per installation |
+| `TRACE_MAX_SPECTATORS_PER_SESSION`    | `64`                 |
+| `TRACE_MAX_SPECTATORS_PER_ADDRESS`    | `16`                 |
+| `TRACE_MAX_INSTALLATION_RECORDS`      | `100000`             |
+| `TRACE_MAX_LIVE_SESSION_RECORDS`      | `10000`              |
 
 Limits use the direct TCP peer address by default. Set
 `TRACE_TRUST_PROXY_HEADERS=true` only when TRACE is directly behind a trusted reverse
@@ -114,42 +114,45 @@ its next live-session request.
 
 All implemented routes are versioned under `/api/v1`.
 
-| Method   | Route                                 | Authentication | Purpose                                                |
-| -------- | ------------------------------------- | -------------- | ------------------------------------------------------ |
-| `GET`    | `/health`                             | none           | Process health probe; returns `204` and version header |
-| `POST`   | `/api/v1/installations`               | none           | Bootstrap an installation ID and publishing token      |
-| `POST`   | `/api/v1/live-sessions`               | installation   | Create an unlisted live session                        |
-| `POST`   | `/api/v1/shared-sessions`             | installation   | Validate and publish an expiring `.trace` package      |
-| `GET`    | `/api/v1/shared-sessions/{id}`        | none           | Read metadata for a shared package                     |
-| `GET`    | `/api/v1/shared-sessions/{id}/download` | none         | Download the self-contained `.trace` package           |
-| `GET`    | `/api/v1/live-sessions/{id}`          | none           | Read public session state and retained sequence bounds |
-| `DELETE` | `/api/v1/live-sessions/{id}`          | installation   | Explicitly end an owned session                        |
-| `POST`   | `/api/v1/live-sessions/{id}/publisher-credential` | installation | Rotate the session publisher token         |
-| `DELETE` | `/api/v1/live-sessions/{id}/publisher-credential` | installation | Revoke the session publisher token         |
-| `GET`    | `/api/v1/live-sessions/{id}/publish`  | session token  | Upgrade to the publisher WebSocket                     |
-| `GET`    | `/api/v1/live-sessions/{id}/spectate` | none           | Upgrade to the spectator WebSocket                     |
-| `GET`    | `/api/v1/instance`                    | none           | Discover this deployment's identity, features, and limits |
-| `POST`   | `/api/v1/accounts`                    | none           | Register an instance-local account when enabled         |
-| `POST`   | `/api/v1/auth/sessions`               | none           | Start an HTTP-only browser login session                |
-| `GET`    | `/api/v1/auth/session`                | account cookie | Read the currently authenticated account                |
-| `DELETE` | `/api/v1/auth/session`                | account cookie | Revoke the current browser login session                |
-| `POST`   | `/api/v1/library/sessions`            | account cookie | Validate and add a private `.trace` package             |
-| `GET`    | `/api/v1/library/sessions`            | account cookie | List the account's uploaded sessions                    |
-| `GET`    | `/api/v1/library/sessions/{id}`       | account cookie | Read owned session metadata                             |
-| `GET`    | `/api/v1/library/sessions/{id}/review` | account cookie | Read owned lap, sector, and condition metadata          |
-| `GET`    | `/api/v1/library/sessions/{id}/laps/{lap_id}/telemetry` | account cookie | Read bounded telemetry for one owned lap |
-| `POST`   | `/api/v1/library/sessions/{id}/share` | account cookie | Create or recover a durable unlisted link               |
-| `DELETE` | `/api/v1/library/sessions/{id}/share` | account cookie | Revoke public access without deleting the session       |
-| `GET`    | `/api/v1/library/sessions/{id}/download` | account cookie | Download an owned package                           |
-| `DELETE` | `/api/v1/library/sessions/{id}`       | account cookie | Permanently delete an owned package                     |
-| `GET`    | `/api/v1/public-sessions/{share_id}`  | none           | Review metadata for an unlisted library session         |
-| `GET`    | `/api/v1/public-sessions/{share_id}/laps/{lap_id}/telemetry` | none | Read bounded telemetry for a shared lap |
-| `GET`    | `/api/v1/public-sessions/{share_id}/download` | none     | Download an unlisted library session package            |
-| `GET`    | `/`                                   | none           | Open the TRACE Go Live service landing page            |
-| `GET`    | `/app`                                | none           | Open the account and private-library browser UI         |
-| `GET`    | `/p/{share_id}`                       | none           | Review an unlisted library session without an account   |
-| `GET`    | `/live/{id}`                          | none           | Open the built-in browser spectator page               |
-| `GET`    | `/s/{id}`                             | none           | Open the shared-session download page                  |
+| Method   | Route                                                        | Authentication  | Purpose                                                   |
+| -------- | ------------------------------------------------------------ | --------------- | --------------------------------------------------------- |
+| `GET`    | `/health`                                                    | none            | Process health probe; returns `204` and version header    |
+| `POST`   | `/api/v1/installations`                                      | none            | Bootstrap an installation ID and publishing token         |
+| `POST`   | `/api/v1/live-sessions`                                      | installation    | Create an unlisted live session                           |
+| `POST`   | `/api/v1/shared-sessions`                                    | installation    | Validate and publish an expiring `.trace` package         |
+| `GET`    | `/api/v1/shared-sessions/{id}`                               | none            | Read metadata for a shared package                        |
+| `GET`    | `/api/v1/shared-sessions/{id}/download`                      | none            | Download the self-contained `.trace` package              |
+| `GET`    | `/api/v1/live-sessions/{id}`                                 | none            | Read public session state and retained sequence bounds    |
+| `DELETE` | `/api/v1/live-sessions/{id}`                                 | installation    | Explicitly end an owned session                           |
+| `POST`   | `/api/v1/live-sessions/{id}/publisher-credential`            | installation    | Rotate the session publisher token                        |
+| `DELETE` | `/api/v1/live-sessions/{id}/publisher-credential`            | installation    | Revoke the session publisher token                        |
+| `GET`    | `/api/v1/live-sessions/{id}/publish`                         | session token   | Upgrade to the publisher WebSocket                        |
+| `GET`    | `/api/v1/live-sessions/{id}/spectate`                        | none            | Upgrade to the spectator WebSocket                        |
+| `GET`    | `/api/v1/instance`                                           | none            | Discover this deployment's identity, features, and limits |
+| `POST`   | `/api/v1/accounts`                                           | none            | Register an instance-local account when enabled           |
+| `POST`   | `/api/v1/auth/sessions`                                      | none            | Start an HTTP-only browser login session                  |
+| `GET`    | `/api/v1/auth/session`                                       | account cookie  | Read the currently authenticated account                  |
+| `DELETE` | `/api/v1/auth/session`                                       | account cookie  | Revoke the current browser login session                  |
+| `GET`    | `/api/v1/auth/tokens`                                        | account cookie  | List revocable desktop access tokens                      |
+| `POST`   | `/api/v1/auth/tokens`                                        | account cookie  | Create a desktop access token; secret is returned once    |
+| `DELETE` | `/api/v1/auth/tokens/{token_id}`                             | account cookie  | Revoke a desktop access token                             |
+| `POST`   | `/api/v1/library/sessions`                                   | cookie or token | Validate and add a private `.trace` package               |
+| `GET`    | `/api/v1/library/sessions`                                   | account cookie  | List the account's uploaded sessions                      |
+| `GET`    | `/api/v1/library/sessions/{id}`                              | account cookie  | Read owned session metadata                               |
+| `GET`    | `/api/v1/library/sessions/{id}/review`                       | account cookie  | Read owned lap, sector, and condition metadata            |
+| `GET`    | `/api/v1/library/sessions/{id}/laps/{lap_id}/telemetry`      | account cookie  | Read bounded telemetry for one owned lap                  |
+| `POST`   | `/api/v1/library/sessions/{id}/share`                        | account cookie  | Create or recover a durable unlisted link                 |
+| `DELETE` | `/api/v1/library/sessions/{id}/share`                        | account cookie  | Revoke public access without deleting the session         |
+| `GET`    | `/api/v1/library/sessions/{id}/download`                     | account cookie  | Download an owned package                                 |
+| `DELETE` | `/api/v1/library/sessions/{id}`                              | account cookie  | Permanently delete an owned package                       |
+| `GET`    | `/api/v1/public-sessions/{share_id}`                         | none            | Review metadata for an unlisted library session           |
+| `GET`    | `/api/v1/public-sessions/{share_id}/laps/{lap_id}/telemetry` | none            | Read bounded telemetry for a shared lap                   |
+| `GET`    | `/api/v1/public-sessions/{share_id}/download`                | none            | Download an unlisted library session package              |
+| `GET`    | `/`                                                          | none            | Open the TRACE Go Live service landing page               |
+| `GET`    | `/app`                                                       | none            | Open the account and private-library browser UI           |
+| `GET`    | `/p/{share_id}`                                              | none            | Review an unlisted library session without an account     |
+| `GET`    | `/live/{id}`                                                 | none            | Open the built-in browser spectator page                  |
+| `GET`    | `/s/{id}`                                                    | none            | Open the shared-session download page                     |
 
 The public landing, spectator, and missing-session pages are embedded in the server
 binary. They share the TRACE favicon and a hosted social card. Spectator documents
@@ -171,6 +174,13 @@ the intended accounts on a private deployment. Passwords use Argon2id hashes and
 sessions use hashed, revocable, HTTP-only cookies. The first account created on an
 instance is its administrator; this role does not yet expose administrative routes.
 
+The library's **Connect desktop** panel creates personal access tokens for direct
+desktop uploads. TRACE stores the pasted token locally and uses it only with the
+configured service endpoint; the server stores only its SHA-256 digest. Tokens can be
+named and revoked independently without signing browsers out. Their plaintext value is
+shown once at creation, begins with `trace_pat_`, and is sent as
+`Authorization: Bearer <token>` only to `POST /api/v1/library/sessions`.
+
 Authenticated uploads form a private, durable session library. Packages pass the same
 bounded manifest and telemetry validation as temporary shares, but they do not inherit
 the temporary-share expiry. Package files live beneath `TRACE_DATA_DIR/library`, while
@@ -185,6 +195,11 @@ recorded lap position for distance alignment and labels its normalized-time fall
 position is unavailable. Telemetry responses decode only the selected laps and are
 downsampled to a bounded point count (1,800 by default and at most 4,000), so opening a
 comparison never sends an entire race to the browser.
+
+After connecting an account in Settings → Connectivity, the desktop session menu can
+upload a chosen subset of laps directly to the private library. It builds the same
+compact, self-contained `.trace` package used by local export, so long races do not
+need to be uploaded in full.
 
 An owner can create one stable unlisted link per library session. The link points to the
 existing package rather than copying it, does not expire automatically, and is never

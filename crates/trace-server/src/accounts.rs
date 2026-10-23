@@ -25,6 +25,22 @@ pub(crate) struct AccountSummary {
     pub(crate) administrator: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct AccountTokenSummary {
+    pub(crate) token_id: String,
+    pub(crate) label: String,
+    pub(crate) token_prefix: String,
+    pub(crate) created_at_unix_ms: i64,
+    pub(crate) last_used_at_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CreatedAccountToken {
+    #[serde(flatten)]
+    pub(crate) summary: AccountTokenSummary,
+    pub(crate) token: String,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum AccountStoreError {
     Database,
@@ -57,7 +73,18 @@ impl AccountStore {
                      expires_at_unix_ms INTEGER NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS web_account_sessions_expiry
-                     ON web_account_sessions(expires_at_unix_ms);",
+                     ON web_account_sessions(expires_at_unix_ms);
+                 CREATE TABLE IF NOT EXISTS web_account_tokens (
+                     token_id TEXT PRIMARY KEY,
+                     token_hash BLOB NOT NULL UNIQUE,
+                     account_id TEXT NOT NULL REFERENCES web_accounts(account_id) ON DELETE CASCADE,
+                     label TEXT NOT NULL,
+                     token_prefix TEXT NOT NULL,
+                     created_at_unix_ms INTEGER NOT NULL,
+                     last_used_at_unix_ms INTEGER
+                 );
+                 CREATE INDEX IF NOT EXISTS web_account_tokens_account
+                     ON web_account_tokens(account_id, created_at_unix_ms DESC);",
             )
             .map_err(|_| AccountStoreError::Database)?;
         Ok(Self {
@@ -229,6 +256,126 @@ impl AccountStore {
             .map_err(|_| AccountStoreError::Database)?;
         Ok(())
     }
+
+    pub(crate) fn create_api_token(
+        &self,
+        account_id: &str,
+        label: &str,
+        now_unix_ms: i64,
+    ) -> Result<CreatedAccountToken, AccountStoreError> {
+        let token_id = Uuid::new_v4().simple().to_string();
+        let token = format!(
+            "trace_pat_{}{}",
+            Uuid::new_v4().simple(),
+            Uuid::new_v4().simple()
+        );
+        let summary = AccountTokenSummary {
+            token_id,
+            label: label.to_owned(),
+            token_prefix: token.chars().take(18).collect(),
+            created_at_unix_ms: now_unix_ms,
+            last_used_at_unix_ms: None,
+        };
+        self.connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?
+            .execute(
+                "INSERT INTO web_account_tokens
+                 (token_id, token_hash, account_id, label, token_prefix, created_at_unix_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    summary.token_id,
+                    hash_token(&token).as_slice(),
+                    account_id,
+                    summary.label,
+                    summary.token_prefix,
+                    now_unix_ms
+                ],
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        Ok(CreatedAccountToken { summary, token })
+    }
+
+    pub(crate) fn list_api_tokens(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<AccountTokenSummary>, AccountStoreError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT token_id, label, token_prefix, created_at_unix_ms, last_used_at_unix_ms
+                 FROM web_account_tokens WHERE account_id = ?1 ORDER BY created_at_unix_ms DESC",
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        statement
+            .query_map([account_id], |row| {
+                Ok(AccountTokenSummary {
+                    token_id: row.get(0)?,
+                    label: row.get(1)?,
+                    token_prefix: row.get(2)?,
+                    created_at_unix_ms: row.get(3)?,
+                    last_used_at_unix_ms: row.get(4)?,
+                })
+            })
+            .map_err(|_| AccountStoreError::Database)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| AccountStoreError::Database)
+    }
+
+    pub(crate) fn revoke_api_token(
+        &self,
+        account_id: &str,
+        token_id: &str,
+    ) -> Result<(), AccountStoreError> {
+        self.connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?
+            .execute(
+                "DELETE FROM web_account_tokens WHERE account_id = ?1 AND token_id = ?2",
+                params![account_id, token_id],
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        Ok(())
+    }
+
+    pub(crate) fn find_api_token(
+        &self,
+        token: &str,
+        now_unix_ms: i64,
+    ) -> Result<AccountSummary, AccountStoreError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?;
+        let account = connection
+            .query_row(
+                "SELECT account_id, username, display_name, administrator
+                 FROM web_accounts JOIN web_account_tokens USING (account_id)
+                 WHERE token_hash = ?1",
+                [hash_token(token).as_slice()],
+                |row| {
+                    Ok(AccountSummary {
+                        account_id: row.get(0)?,
+                        username: row.get(1)?,
+                        display_name: row.get(2)?,
+                        administrator: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|_| AccountStoreError::Database)?
+            .ok_or(AccountStoreError::InvalidCredentials)?;
+        connection
+            .execute(
+                "UPDATE web_account_tokens SET last_used_at_unix_ms = ?1 WHERE token_hash = ?2",
+                params![now_unix_ms, hash_token(token).as_slice()],
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        Ok(account)
+    }
 }
 
 fn hash_password(password: &str) -> Result<String, AccountStoreError> {
@@ -292,5 +439,28 @@ mod tests {
         reopened
             .login("driver", "correct horse battery", 4_000)
             .expect("persistent account");
+
+        let created = reopened
+            .create_api_token(&account.account_id, "TRACE desktop", 5_000)
+            .expect("API token");
+        assert!(created.token.starts_with("trace_pat_"));
+        assert_eq!(
+            reopened.list_api_tokens(&account.account_id).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            reopened
+                .find_api_token(&created.token, 6_000)
+                .unwrap()
+                .account_id,
+            account.account_id
+        );
+        reopened
+            .revoke_api_token(&account.account_id, &created.summary.token_id)
+            .expect("revoke API token");
+        assert!(matches!(
+            reopened.find_api_token(&created.token, 7_000),
+            Err(AccountStoreError::InvalidCredentials)
+        ));
     }
 }

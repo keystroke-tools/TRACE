@@ -506,6 +506,17 @@ export interface LiveSettings {
 	discordActivityEnabled: boolean;
 }
 
+export interface LibraryConnectionSettings {
+	endpoint: string;
+	tokenConfigured: boolean;
+}
+
+export interface LibraryUploadResult {
+	sessionId: string;
+	lapCount: number;
+	endpoint: string;
+}
+
 export interface DiscordReviewActivity {
 	kind: "sessions" | "session" | "lap" | "comparison";
 	simulator?: string | null;
@@ -593,6 +604,8 @@ export interface TelemetryDataSource {
 	quitApp(): Promise<void>;
 	getLiveSettings(): Promise<LiveSettings>;
 	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
+	getLibraryConnectionSettings(): Promise<LibraryConnectionSettings>;
+	setLibraryAccessToken(token: string | null): Promise<LibraryConnectionSettings>;
 	setDiscordReviewActivity(activity: DiscordReviewActivity | null): Promise<void>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
 	startActiveLiveBroadcast(options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
@@ -610,6 +623,7 @@ export interface TelemetryDataSource {
 	renameSavedComparison(comparisonId: string, name: string): Promise<SavedComparison[]>;
 	exportSession(sessionId: string, format: SessionExportFormat, lapIndices?: number[]): Promise<SessionExport>;
 	shareSession(sessionId: string, lapIndices: number[]): Promise<SharedSession>;
+	uploadLibrarySession(sessionId: string, lapIndices: number[]): Promise<LibraryUploadResult>;
 	previewMotecImport(path: string): Promise<MotecImportPreview>;
 	importSession(path: string, motecOptions?: MotecImportOptions): Promise<SessionImport>;
 	takeSharedSessionImportResult(): Promise<SharedSessionImportResult | null>;
@@ -907,6 +921,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 			sessionType: "Hotlap",
 			lapCount: lapIndices.length,
 		};
+	},
+	async uploadLibrarySession(_sessionId, lapIndices) {
+		return { sessionId: "library-fixture", lapCount: lapIndices.length, endpoint: "https://live.simtrace.run" };
 	},
 	async importSession(_path) {
 		return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600, setupName: "shared-race.ini" };
@@ -1356,6 +1373,12 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureLiveSettings = settings;
 		return fixtureLiveSettings;
 	},
+	async getLibraryConnectionSettings() {
+		return { endpoint: fixtureLiveSettings.endpoint, tokenConfigured: false };
+	},
+	async setLibraryAccessToken(token) {
+		return { endpoint: fixtureLiveSettings.endpoint, tokenConfigured: Boolean(token) };
+	},
 	async setDiscordReviewActivity(_activity) {},
 	async getLiveBroadcastStatus() {
 		return fixtureLiveBroadcastStatus;
@@ -1546,6 +1569,12 @@ export const tauriDataSource: TelemetryDataSource = {
 			discordActivityEnabled: settings.discordActivityEnabled,
 		});
 	},
+	getLibraryConnectionSettings() {
+		return invoke<LibraryConnectionSettings>("library_connection_settings");
+	},
+	setLibraryAccessToken(token) {
+		return invoke<LibraryConnectionSettings>("set_library_access_token", { token });
+	},
 	setDiscordReviewActivity(activity) {
 		return invoke<void>("set_discord_review_activity", { activity });
 	},
@@ -1578,6 +1607,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	shareSession(sessionId, lapIndices) {
 		return invoke<SharedSession>("share_session", { sessionId, lapIndices });
+	},
+	uploadLibrarySession(sessionId, lapIndices) {
+		return invoke<LibraryUploadResult>("upload_library_session", { sessionId, lapIndices });
 	},
 	previewMotecImport(path) {
 		return invoke<MotecImportPreview>("preview_motec_import", { path });

@@ -9,6 +9,7 @@ const state = {
 	pickerReview: null,
 	publicShareId: null,
 	shareUrl: null,
+	tokens: [],
 };
 
 const elements = {
@@ -25,6 +26,14 @@ const elements = {
 	loginForm: document.querySelector("#login-form"),
 	registerForm: document.querySelector("#register-form"),
 	logout: document.querySelector("#logout-button"),
+	connectDesktop: document.querySelector("#connect-desktop"),
+	tokenPanel: document.querySelector("#token-panel"),
+	tokenLabel: document.querySelector("#token-label"),
+	tokenCreate: document.querySelector("#token-create"),
+	tokenSecret: document.querySelector("#token-secret"),
+	tokenValue: document.querySelector("#token-value"),
+	tokenCopy: document.querySelector("#token-copy"),
+	tokenList: document.querySelector("#token-list"),
 	input: document.querySelector("#package-input"),
 	uploadZone: document.querySelector("#upload-zone"),
 	uploadLimit: document.querySelector("#upload-limit"),
@@ -34,6 +43,7 @@ const elements = {
 	empty: document.querySelector("#empty-library"),
 	reviewBack: document.querySelector("#review-back"),
 	reviewDownload: document.querySelector("#review-download"),
+	reviewOpenTrace: document.querySelector("#review-open-trace"),
 	shareOpen: document.querySelector("#share-open"),
 	sharePanel: document.querySelector("#share-panel"),
 	shareUrl: document.querySelector("#share-url"),
@@ -118,6 +128,83 @@ async function loadLibrary() {
 	state.sessions = await request("/api/v1/library/sessions");
 	elements.accountName.textContent = state.account.display_name;
 	renderSessions();
+}
+
+async function toggleTokenPanel() {
+	elements.tokenPanel.hidden = !elements.tokenPanel.hidden;
+	if (elements.tokenPanel.hidden) return;
+	try {
+		state.tokens = await request("/api/v1/auth/tokens");
+		renderTokens();
+	} catch (error) {
+		toast(error.message, "error");
+	}
+}
+
+function renderTokens() {
+	const rows = state.tokens.map((token) => {
+		const row = document.createElement("div");
+		row.className = "token-row";
+		const details = document.createElement("span");
+		const label = document.createElement("strong");
+		label.textContent = token.label;
+		const meta = document.createElement("small");
+		meta.textContent = `${token.token_prefix}… · Created ${formatDate(token.created_at_unix_ms)}`;
+		details.append(label, meta);
+		const revoke = document.createElement("button");
+		revoke.type = "button";
+		revoke.className = "danger";
+		revoke.textContent = "Revoke";
+		revoke.addEventListener("click", () => revokeToken(token, revoke));
+		row.append(details, revoke);
+		return row;
+	});
+	elements.tokenList.replaceChildren(...rows);
+}
+
+async function createToken() {
+	const label = elements.tokenLabel.value.trim();
+	if (!label) return;
+	elements.tokenCreate.disabled = true;
+	try {
+		const created = await request("/api/v1/auth/tokens", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ label }),
+		});
+		state.tokens.unshift(created);
+		elements.tokenValue.value = created.token;
+		elements.tokenSecret.hidden = false;
+		renderTokens();
+		toast("Desktop token created.");
+	} catch (error) {
+		toast(error.message, "error");
+	} finally {
+		elements.tokenCreate.disabled = false;
+	}
+}
+
+async function revokeToken(token, button) {
+	button.disabled = true;
+	try {
+		await request(`/api/v1/auth/tokens/${encodeURIComponent(token.token_id)}`, { method: "DELETE" });
+		state.tokens = state.tokens.filter((candidate) => candidate.token_id !== token.token_id);
+		renderTokens();
+		toast("Desktop token revoked.");
+	} catch (error) {
+		button.disabled = false;
+		toast(error.message, "error");
+	}
+}
+
+async function copyToken() {
+	try {
+		await navigator.clipboard.writeText(elements.tokenValue.value);
+		toast("Desktop token copied.");
+	} catch {
+		elements.tokenValue.select();
+		toast("Press Ctrl+C to copy the selected token.");
+	}
 }
 
 function formatBytes(bytes) {
@@ -270,6 +357,7 @@ function closeReview() {
 	elements.reviewBack.hidden = false;
 	elements.compareOpen.hidden = false;
 	elements.shareOpen.hidden = false;
+	elements.reviewOpenTrace.hidden = true;
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
@@ -354,6 +442,11 @@ function renderReview() {
 	elements.reviewDownload.href = state.publicShareId
 		? `/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`
 		: `/api/v1/library/sessions/${encodeURIComponent(summary.session_id)}/download`;
+	elements.reviewOpenTrace.hidden = !state.publicShareId;
+	if (state.publicShareId) {
+		const downloadUrl = new URL(`/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`, window.location.origin).href;
+		elements.reviewOpenTrace.href = `trace://shared-session?url=${encodeURIComponent(downloadUrl)}`;
+	}
 	elements.reviewKicker.textContent = `${state.publicShareId ? "Shared session · " : ""}${readable(summary.session_type, "Session")} · ${readable(summary.simulator, "Unknown simulator")}`;
 	elements.reviewName.textContent = readable(summary.title, readable(summary.driver_name, "Recorded session"));
 	elements.reviewContext.textContent = `${readable(summary.track, "Unknown track")} · ${readable(summary.car, "Unknown car")} · ${formatDate(summary.started_at)}`;
@@ -903,6 +996,9 @@ elements.logout.addEventListener("click", async () => {
 		toast(error.message, "error");
 	}
 });
+elements.connectDesktop.addEventListener("click", toggleTokenPanel);
+elements.tokenCreate.addEventListener("click", createToken);
+elements.tokenCopy.addEventListener("click", copyToken);
 
 const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
 telemetryResizeObserver.observe(elements.trackCanvas);

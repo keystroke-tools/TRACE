@@ -4,7 +4,7 @@ import { telemetryDataSource, type RecordedLapSummary, type RecordedSessionSumma
 import { useToast } from "../../Toast";
 import { rememberSharedSession, sharedSessionsFor, type StoredSharedSession } from "./share-history";
 
-export type LapPackageAction = "share" | "export";
+export type LapPackageAction = "share" | "export" | "upload";
 
 export function LapPackageDialog({ session, action, onClose }: { session: RecordedSessionSummary; action: LapPackageAction; onClose: () => void }) {
 	const showToast = useToast();
@@ -56,7 +56,7 @@ export function LapPackageDialog({ session, action, onClose }: { session: Record
 				const remembered = rememberSharedSession(session.id, lapIndices, result);
 				setHistory((current) => [remembered, ...current.filter((item) => item.shareId !== remembered.shareId)]);
 				await copyLink(result.shareUrl);
-			} else {
+			} else if (action === "export") {
 				const result = await telemetryDataSource.exportSession(session.id, "trace", lapIndices);
 				showToast({
 					kind: "success",
@@ -65,11 +65,20 @@ export function LapPackageDialog({ session, action, onClose }: { session: Record
 					timeoutMs: 8_000,
 				});
 				onClose();
+			} else {
+				const result = await telemetryDataSource.uploadLibrarySession(session.id, lapIndices);
+				showToast({
+					kind: "success",
+					title: "Session added to your library",
+					message: `${result.lapCount} ${result.lapCount === 1 ? "lap" : "laps"} uploaded to ${result.endpoint}.`,
+					timeoutMs: 7_000,
+				});
+				onClose();
 			}
 		} catch (error) {
 			showToast({
 				kind: "error",
-				title: action === "share" ? "Could not share session" : "Export failed",
+				title: action === "share" ? "Could not share session" : action === "upload" ? "Library upload failed" : "Export failed",
 				message: error instanceof Error ? error.message : String(error),
 				timeoutMs: 9_000,
 			});
@@ -86,13 +95,13 @@ export function LapPackageDialog({ session, action, onClose }: { session: Record
 			<section
 				role="dialog"
 				aria-modal="true"
-				aria-label={action === "share" ? "Share selected laps" : "Export selected laps"}
+				aria-label={action === "share" ? "Share selected laps" : action === "upload" ? "Upload selected laps" : "Export selected laps"}
 				className="flex max-h-[min(760px,calc(100vh-40px))] w-full max-w-2xl flex-col overflow-hidden border border-trace-divider bg-trace-black"
 			>
 				<header className="flex items-start justify-between gap-4 border-b border-trace-divider px-5 py-4">
 					<div>
 						<span className="font-mono text-[10px] font-bold tracking-[.14em] text-trace-accent">
-							{action === "share" ? "HOSTED SHARE" : "LOCAL PACKAGE"}
+							{action === "share" ? "HOSTED SHARE" : action === "upload" ? "PRIVATE LIBRARY" : "LOCAL PACKAGE"}
 						</span>
 						<h2 className="mt-1 text-lg font-black">Choose the laps to include</h2>
 						<p className="mt-1 text-[12px] leading-5 text-trace-muted">
@@ -174,14 +183,16 @@ export function LapPackageDialog({ session, action, onClose }: { session: Record
 						className="h-9 bg-trace-accent px-4 font-mono text-[10px] font-black tracking-[.08em] text-trace-black hover:bg-white disabled:bg-trace-raised disabled:text-trace-dim"
 					>
 						{submitting
-							? action === "share"
+							? action === "share" || action === "upload"
 								? "UPLOADING…"
 								: "EXPORTING…"
 							: matchingShare
 								? "COPY EXISTING LINK"
 								: action === "share"
 									? "CREATE LINK"
-									: "EXPORT .TRACE"}
+									: action === "upload"
+										? "UPLOAD TO LIBRARY"
+										: "EXPORT .TRACE"}
 					</button>
 				</footer>
 			</section>

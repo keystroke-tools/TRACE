@@ -262,6 +262,79 @@ button.primary:hover {
 	font-size: clamp(30px, 4vw, 48px);
 }
 
+.library-account-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.token-panel {
+	display: grid;
+	grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
+	gap: 20px 28px;
+	margin: -20px 0 32px;
+	padding: 20px;
+	border: 1px solid #303030;
+	background: #171717;
+}
+
+.token-panel[hidden] {
+	display: none;
+}
+
+.token-panel .eyebrow {
+	margin-bottom: 8px;
+}
+
+.token-panel small {
+	display: block;
+	margin-top: 6px;
+	color: #8d8d8d;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.token-create,
+.token-secret > div {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.token-secret {
+	grid-column: 1 / -1;
+	padding: 14px;
+	border-left: 3px solid #68e997;
+	background: #111;
+}
+
+.token-secret > div {
+	margin-top: 10px;
+}
+
+.token-secret input,
+.token-create input {
+	min-width: 0;
+}
+
+.token-list {
+	grid-column: 1 / -1;
+	display: grid;
+	border-top: 1px solid #2c2c2c;
+}
+
+.token-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 11px 0;
+	border-bottom: 1px solid #2c2c2c;
+}
+
+.token-row span {
+	min-width: 0;
+}
+
 .quiet {
 	background: transparent;
 }
@@ -1032,6 +1105,17 @@ button.primary:hover {
 	.session-row,
 	.review-title {
 		align-items: stretch;
+		grid-template-columns: 1fr;
+	}
+
+	.library-account-actions,
+	.token-create,
+	.token-secret > div {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.token-panel {
 		grid-template-columns: 1fr;
 	}
 

@@ -396,6 +396,52 @@ impl MetadataStore {
         self.set_service_endpoint("live_service_endpoint", "Go Live", endpoint)
     }
 
+    /// Returns the personal access token used for private library uploads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn library_access_token(&self) -> Result<Option<String>, MetadataError> {
+        self.service_endpoint("library_access_token")
+    }
+
+    /// Sets or clears the personal access token used for private library uploads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the token is malformed or `SQLite` cannot persist it.
+    pub fn set_library_access_token(&mut self, token: Option<&str>) -> Result<(), MetadataError> {
+        match token.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(value)
+                if value.starts_with("trace_pat_")
+                    && value.len() <= 128
+                    && !value.chars().any(char::is_whitespace) =>
+            {
+                self.connection
+                    .execute(
+                        "INSERT INTO app_settings (key, value) VALUES ('library_access_token', ?1)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        [value],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+            Some(_) => {
+                return Err(MetadataError::InvalidRecord(
+                    "library access token is invalid".into(),
+                ));
+            }
+            None => {
+                self.connection
+                    .execute(
+                        "DELETE FROM app_settings WHERE key = 'library_access_token'",
+                        [],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Returns the simulator-specific Go Live automation configuration as JSON.
     ///
     /// `None` means automation has never been configured.
@@ -2191,6 +2237,22 @@ mod tests {
         );
         assert!(store.set_live_service_endpoint("https://").is_err());
         assert!(store.set_live_service_endpoint("not a URL").is_err());
+    }
+
+    #[test]
+    fn library_access_token_is_persisted_and_can_be_cleared() {
+        let mut store = MetadataStore::open_in_memory().expect("metadata store");
+        assert_eq!(store.library_access_token().expect("token"), None);
+        store
+            .set_library_access_token(Some("trace_pat_0123456789abcdef"))
+            .expect("save token");
+        assert_eq!(
+            store.library_access_token().expect("token").as_deref(),
+            Some("trace_pat_0123456789abcdef")
+        );
+        assert!(store.set_library_access_token(Some("wrong-token")).is_err());
+        store.set_library_access_token(None).expect("clear token");
+        assert_eq!(store.library_access_token().expect("token"), None);
     }
 
     #[test]

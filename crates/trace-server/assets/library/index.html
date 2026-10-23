@@ -56,8 +56,27 @@
 							<h1>Welcome, <span id="account-name"></span>.</h1>
 							<p>Your uploaded sessions stay on this TRACE instance.</p>
 						</div>
-						<button id="logout-button" class="quiet" type="button">Sign out</button>
+						<div class="library-account-actions">
+							<button id="connect-desktop" type="button">Connect desktop</button>
+							<button id="logout-button" class="quiet" type="button">Sign out</button>
+						</div>
 					</div>
+					<section id="token-panel" class="token-panel" hidden>
+						<div>
+							<p class="eyebrow">DESKTOP ACCESS</p>
+							<strong>Upload directly from the TRACE desktop app.</strong>
+							<small>Create a revocable token, then paste it into Settings → Connectivity in TRACE.</small>
+						</div>
+						<div class="token-create">
+							<input id="token-label" maxlength="40" value="TRACE desktop" aria-label="Token label" />
+							<button id="token-create" class="primary" type="button">Create token</button>
+						</div>
+						<div id="token-secret" class="token-secret" hidden>
+							<strong>Copy this token now. It will not be shown again.</strong>
+							<div><input id="token-value" readonly /><button id="token-copy" type="button">Copy</button></div>
+						</div>
+						<div id="token-list" class="token-list"></div>
+					</section>
 
 					<div class="library-tools">
 						<label id="upload-zone" class="upload-zone">
@@ -85,6 +104,7 @@
 						<div class="review-actions">
 							<button id="compare-open" type="button">Compare a lap</button>
 							<button id="share-open" type="button">Share</button>
+							<a id="review-open-trace" class="button-link" href="#">Open in TRACE</a>
 							<a id="review-download" class="button-link" href="#">Download</a>
 						</div>
 					</div>

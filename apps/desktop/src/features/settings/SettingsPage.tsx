@@ -60,6 +60,9 @@ export function SettingsPage() {
 	const [liveEndpoint, setLiveEndpoint] = useState(DEFAULT_LIVE_SERVICE_ENDPOINT);
 	const [savedLiveSettings, setSavedLiveSettings] = useState<LiveSettings | null>(null);
 	const [savingLiveSettings, setSavingLiveSettings] = useState(false);
+	const [libraryToken, setLibraryToken] = useState("");
+	const [libraryTokenConfigured, setLibraryTokenConfigured] = useState(false);
+	const [savingLibraryToken, setSavingLibraryToken] = useState(false);
 	const [localSpectatorPort, setLocalSpectatorPort] = useState("0");
 	const [autoStreamEnabled, setAutoStreamEnabled] = useState(false);
 	const [discordActivityEnabled, setDiscordActivityEnabled] = useState(false);
@@ -147,8 +150,9 @@ export function SettingsPage() {
 			telemetryDataSource.getDriverProfile(),
 			telemetryDataSource.getLiveSettings(),
 			telemetryDataSource.getAppBehaviorSettings(),
+			telemetryDataSource.getLibraryConnectionSettings(),
 		])
-			.then(([values, profile, liveSettings, behaviorSettings]) => {
+			.then(([values, profile, liveSettings, behaviorSettings, librarySettings]) => {
 				if (!active) return;
 				setDirectories(values);
 				setDrafts(Object.fromEntries(values.map((value) => [value.simulatorId, value.path ?? ""])));
@@ -163,6 +167,7 @@ export function SettingsPage() {
 				setAcSessionTypes(liveSettings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
 				setCloseToTrayEnabled(behaviorSettings.closeToTrayEnabled);
 				setConfirmExitEnabled(behaviorSettings.confirmExitEnabled);
+				setLibraryTokenConfigured(librarySettings.tokenConfigured);
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -174,6 +179,32 @@ export function SettingsPage() {
 			active = false;
 		};
 	}, [showToast]);
+
+	async function saveLibraryToken(token: string | null) {
+		setSavingLibraryToken(true);
+		try {
+			const settings = await telemetryDataSource.setLibraryAccessToken(token);
+			setLibraryToken("");
+			setLibraryTokenConfigured(settings.tokenConfigured);
+			showToast({
+				kind: "success",
+				title: settings.tokenConfigured ? "Private library connected" : "Private library disconnected",
+				message: settings.tokenConfigured
+					? `Selected laps can now be uploaded to ${settings.endpoint}.`
+					: "TRACE will no longer upload sessions to your account.",
+				timeoutMs: 5_000,
+			});
+		} catch (error) {
+			showToast({
+				kind: "error",
+				title: "Could not update library access",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setSavingLibraryToken(false);
+		}
+	}
 
 	useEffect(() => {
 		let active = true;
@@ -581,6 +612,54 @@ export function SettingsPage() {
 							{DEFAULT_LIVE_SERVICE_ENDPOINT}
 						</span>
 					</label>
+					<section className="border-t border-trace-divider p-5" aria-labelledby="library-connection-heading">
+						<div className="flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<h3 id="library-connection-heading" className="text-[13px] font-black tracking-[.05em] text-trace-text">
+									PRIVATE SESSION LIBRARY
+								</h3>
+								<p className="mt-1 max-w-3xl text-[12px] leading-5 text-trace-dim">
+									Generate a desktop token from{" "}
+									<span className="font-mono text-trace-soft">{liveEndpoint.trim() || DEFAULT_LIVE_SERVICE_ENDPOINT}/app</span>, then paste it
+									here. The same self-hosted endpoint is used for Go Live and your private library.
+								</p>
+							</div>
+							<span
+								className={`font-mono text-[10px] font-bold tracking-[.08em] ${libraryTokenConfigured ? "text-trace-accent" : "text-trace-dim"}`}
+							>
+								{libraryTokenConfigured ? "CONNECTED" : "NOT CONNECTED"}
+							</span>
+						</div>
+						<div className="mt-4 flex max-w-3xl flex-wrap gap-2">
+							<input
+								type="password"
+								value={libraryToken}
+								onChange={(event) => setLibraryToken(event.target.value)}
+								placeholder={libraryTokenConfigured ? "Token configured · paste a replacement" : "trace_pat_…"}
+								autoComplete="off"
+								spellCheck={false}
+								className="h-10 min-w-64 flex-1 border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] text-trace-text outline-none focus:border-trace-accent"
+							/>
+							<button
+								type="button"
+								disabled={savingLibraryToken || !libraryToken.trim()}
+								onClick={() => void saveLibraryToken(libraryToken)}
+								className="h-10 border border-trace-accent bg-trace-accent-wash px-4 text-[11px] font-bold text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+							>
+								{savingLibraryToken ? "SAVING…" : "SAVE TOKEN"}
+							</button>
+							{libraryTokenConfigured && (
+								<button
+									type="button"
+									disabled={savingLibraryToken}
+									onClick={() => void saveLibraryToken(null)}
+									className="h-10 border border-trace-divider bg-transparent px-4 text-[11px] font-bold text-trace-muted hover:bg-trace-raised hover:text-white"
+								>
+									DISCONNECT
+								</button>
+							)}
+						</div>
+					</section>
 					<section className="border-t border-trace-divider p-5" aria-label="Automatic streaming">
 						<SettingSwitch
 							title="AUTOMATIC STREAMING"

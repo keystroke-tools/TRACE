@@ -275,6 +275,17 @@ export function SessionDetail({
 								>
 									Share to cloud…
 								</button>
+								<button
+									type="button"
+									disabled={!session.exportable}
+									onClick={() => {
+										setActionsOpen(false);
+										setPackageAction("upload");
+									}}
+									className="block w-full border-0 bg-transparent px-2 py-2.5 text-left text-[12px] font-bold text-trace-text hover:bg-trace-raised disabled:text-trace-dim disabled:hover:bg-transparent"
+								>
+									Add to private library…
+								</button>
 							</div>
 						)}
 					</div>

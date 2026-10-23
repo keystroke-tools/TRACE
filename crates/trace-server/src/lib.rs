@@ -42,7 +42,9 @@ mod library;
 mod live_store;
 mod shares;
 
-use accounts::{AccountStore, AccountStoreError, AccountSummary};
+use accounts::{
+    AccountStore, AccountStoreError, AccountSummary, AccountTokenSummary, CreatedAccountToken,
+};
 use library::{
     LibraryLapTelemetry, LibrarySessionDetail, LibrarySessionSummary, LibraryStore,
     LibraryStoreError, StoredLibrarySession,
@@ -1051,6 +1053,16 @@ pub fn app(config: ServerConfig) -> Router {
         )
         .route("/api/v1/auth/session", get(current_account).delete(logout))
         .route(
+            "/api/v1/auth/tokens",
+            get(list_account_tokens)
+                .post(create_account_token)
+                .layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
+        )
+        .route(
+            "/api/v1/auth/tokens/{token_id}",
+            axum::routing::delete(revoke_account_token),
+        )
+        .route(
             "/api/v1/library/sessions",
             get(list_library_sessions).post(upload_library_session),
         )
@@ -1265,12 +1277,75 @@ async fn logout(
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
 }
 
+#[derive(Deserialize)]
+struct CreateAccountTokenRequest {
+    label: String,
+}
+
+async fn create_account_token(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+    Json(request): Json<CreateAccountTokenRequest>,
+) -> Result<(StatusCode, Json<CreatedAccountToken>), ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let label = request.label.trim();
+    if label.is_empty() || label.chars().count() > 40 || label.chars().any(char::is_control) {
+        return Err(ServiceError::InvalidAccount);
+    }
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    let account_id = account.account_id;
+    let label = label.to_owned();
+    let token = tokio::task::spawn_blocking(move || {
+        store.create_api_token(&account_id, &label, unix_timestamp_ms())
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map_err(map_account_error)?;
+    Ok((StatusCode::CREATED, Json(token)))
+}
+
+async fn list_account_tokens(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AccountTokenSummary>>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    tokio::task::spawn_blocking(move || store.list_api_tokens(&account.account_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map(Json)
+        .map_err(map_account_error)
+}
+
+async fn revoke_account_token(
+    State(service): State<LiveService>,
+    Path(token_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    tokio::task::spawn_blocking(move || store.revoke_api_token(&account.account_id, &token_id))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_account_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn upload_library_session(
     State(service): State<LiveService>,
     headers: HeaderMap,
     contents: Bytes,
 ) -> Result<(StatusCode, Json<LibrarySessionSummary>), ServiceError> {
-    let account = authenticated_account(&service, &headers).await?;
+    let account = authenticated_upload_account(&service, &headers).await?;
     let store = service
         .library
         .clone()
@@ -1553,6 +1628,26 @@ async fn authenticated_account(
         .clone()
         .ok_or(ServiceError::AccountsUnavailable)?;
     tokio::task::spawn_blocking(move || store.find_session(&token, unix_timestamp_ms()))
+        .await
+        .map_err(|_| ServiceError::Unavailable)?
+        .map_err(map_account_error)
+}
+
+async fn authenticated_upload_account(
+    service: &LiveService,
+    headers: &HeaderMap,
+) -> Result<AccountSummary, ServiceError> {
+    if account_session_token(headers).is_some() {
+        return authenticated_account(service, headers).await;
+    }
+    let token = bearer_token(headers)
+        .map_err(|_| ServiceError::AccountUnauthorized)?
+        .to_owned();
+    let store = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    tokio::task::spawn_blocking(move || store.find_api_token(&token, unix_timestamp_ms()))
         .await
         .map_err(|_| ServiceError::Unavailable)?
         .map_err(map_account_error)
@@ -3579,6 +3674,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn account_library_uploads_are_private_durable_and_deletable() {
         let directory = tempfile::tempdir().expect("library directory");
         let config = ServerConfig::new("https://telemetry.example.test")
@@ -3589,11 +3685,31 @@ mod tests {
         let other_cookie = registered_account_cookie(&application, "other").await;
         let package = shared_package();
 
+        let token_response = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/auth/tokens")
+                    .header(header::COOKIE, &owner_cookie)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"label":"Test desktop"}"#))
+                    .expect("token request"),
+            )
+            .await
+            .expect("token response");
+        assert_eq!(token_response.status(), StatusCode::CREATED);
+        let token: serde_json::Value = serde_json::from_slice(
+            &to_bytes(token_response.into_body(), 64 * 1024)
+                .await
+                .expect("token body"),
+        )
+        .expect("token JSON");
+        let token = token["token"].as_str().expect("raw API token");
+
         let response = application
             .clone()
             .oneshot(
                 Request::post("/api/v1/library/sessions")
-                    .header(header::COOKIE, &owner_cookie)
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
                     .body(Body::from(package.clone()))
                     .expect("library upload request"),
             )

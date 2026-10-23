@@ -10,7 +10,7 @@ use std::{
 };
 
 use futures_util::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -105,6 +105,27 @@ struct LiveSettings {
     endpoint: String,
     auto_stream: LiveAutomationSettings,
     discord_activity_enabled: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryConnectionSettings {
+    endpoint: String,
+    token_configured: bool,
+}
+
+#[derive(Deserialize)]
+struct LibraryUploadResponse {
+    session_id: String,
+    lap_count: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryUploadResult {
+    session_id: String,
+    lap_count: u32,
+    endpoint: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -822,6 +843,49 @@ fn set_live_settings(
         auto_stream,
         discord_activity_enabled,
     })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn library_connection_settings(app: tauri::AppHandle) -> Result<LibraryConnectionSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read service settings: {error:?}"))?
+        .filter(|value| value != LEGACY_SERVICE_ENDPOINT)
+        .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let token_configured = store
+        .library_access_token()
+        .map_err(|error| format!("failed to read library access setting: {error:?}"))?
+        .is_some();
+    Ok(LibraryConnectionSettings {
+        endpoint,
+        token_configured,
+    })
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_library_access_token(
+    app: tauri::AppHandle,
+    token: Option<String>,
+) -> Result<LibraryConnectionSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    store
+        .set_library_access_token(token.as_deref())
+        .map_err(|error| format!("failed to save library access token: {error:?}"))?;
+    drop(store);
+    library_connection_settings(app)
 }
 
 #[tauri::command]
@@ -2028,6 +2092,58 @@ async fn share_session(
         .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
     let contents = build_share_package(&data_directory, &store, &session_id, &lap_indices)?;
     upload_shared_session(&live, endpoint.trim_end_matches('/'), contents).await
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+async fn upload_library_session(
+    app: tauri::AppHandle,
+    session_id: String,
+    lap_indices: Vec<u32>,
+) -> Result<LibraryUploadResult, String> {
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read service settings: {error:?}"))?
+        .filter(|value| value != LEGACY_SERVICE_ENDPOINT)
+        .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let token = store
+        .library_access_token()
+        .map_err(|error| format!("failed to read library access setting: {error:?}"))?
+        .ok_or_else(|| {
+            "Connect TRACE to your session library in Settings → Connectivity first".to_owned()
+        })?;
+    let contents = build_share_package(&data_directory, &store, &session_id, &lap_indices)?;
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/api/v1/library/sessions",
+            endpoint.trim_end_matches('/')
+        ))
+        .bearer_auth(token)
+        .header("content-type", "application/vnd.simtrace.session")
+        .body(contents)
+        .send()
+        .await
+        .map_err(|error| format!("library upload failed: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let detail = response.text().await.unwrap_or_default();
+        return Err(format!("library upload failed with {status}: {detail}"));
+    }
+    let uploaded = response
+        .json::<LibraryUploadResponse>()
+        .await
+        .map_err(|error| format!("library returned an invalid response: {error}"))?;
+    Ok(LibraryUploadResult {
+        session_id: uploaded.session_id,
+        lap_count: uploaded.lap_count,
+        endpoint,
+    })
 }
 
 fn build_share_package(
@@ -3309,6 +3425,8 @@ pub fn run() {
             set_driver_profile,
             live_settings,
             set_live_settings,
+            library_connection_settings,
+            set_library_access_token,
             set_discord_review_activity,
             live_broadcast_status,
             start_active_live_broadcast,
@@ -3320,6 +3438,7 @@ pub fn run() {
             rename_saved_comparison,
             export_session,
             share_session,
+            upload_library_session,
             preview_motec_import,
             import_session,
             take_shared_session_import_result,
