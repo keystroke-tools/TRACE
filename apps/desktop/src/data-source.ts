@@ -321,6 +321,12 @@ export interface SharedSessionImportResult {
 	message: string;
 }
 
+export interface SharedSessionImportProgress {
+	stage: "connecting" | "downloading" | "importing";
+	receivedBytes: number;
+	totalBytes?: number | null;
+}
+
 export interface MotecImportOptions {
 	simulatorKey: string;
 	track: string;
@@ -607,6 +613,7 @@ export interface TelemetryDataSource {
 	previewMotecImport(path: string): Promise<MotecImportPreview>;
 	importSession(path: string, motecOptions?: MotecImportOptions): Promise<SessionImport>;
 	takeSharedSessionImportResult(): Promise<SharedSessionImportResult | null>;
+	getSharedSessionImportProgress(): Promise<SharedSessionImportProgress | null>;
 	deleteSession(sessionId: string): Promise<SessionDeletion>;
 	updateSessionDetails(
 		sessionId: string,
@@ -905,6 +912,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 		return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600, setupName: "shared-race.ini" };
 	},
 	async takeSharedSessionImportResult() {
+		return null;
+	},
+	async getSharedSessionImportProgress() {
 		return null;
 	},
 	async previewMotecImport(_path) {
@@ -1577,6 +1587,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	takeSharedSessionImportResult() {
 		return invoke<SharedSessionImportResult | null>("take_shared_session_import_result");
+	},
+	getSharedSessionImportProgress() {
+		return invoke<SharedSessionImportProgress | null>("shared_session_import_progress");
 	},
 	deleteSession(sessionId) {
 		return invoke<SessionDeletion>("delete_session", { sessionId });

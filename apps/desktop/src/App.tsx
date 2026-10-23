@@ -9,6 +9,7 @@ import {
 	type LiveBroadcastStatus,
 	type LiveSettings,
 	type RecordedSessionSummary,
+	type SharedSessionImportProgress,
 	type SharedSessionImportResult,
 	type TelemetryStatus,
 } from "./data-source";
@@ -47,6 +48,7 @@ export function App() {
 	const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
 	const [summarySessionId, setSummarySessionId] = useState<string | null>(null);
 	const [comparisonSelection, setComparisonSelection] = useState<ComparisonSelection | null>(null);
+	const [sharedImportProgress, setSharedImportProgress] = useState<SharedSessionImportProgress | null>(null);
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
@@ -61,11 +63,13 @@ export function App() {
 	useEffect(() => {
 		if (!isTauri()) return undefined;
 		let disposed = false;
-		let unlisten: (() => void) | undefined;
+		let unlistenResult: (() => void) | undefined;
+		let unlistenProgress: (() => void) | undefined;
 		const handleImport = (result: SharedSessionImportResult) => {
 			const key = `${result.success}:${result.sessionId ?? ""}:${result.message}`;
 			if (disposed || handledSharedImport.current === key) return;
 			handledSharedImport.current = key;
+			setSharedImportProgress(null);
 			if (!result.success || !result.sessionId) {
 				showToast({ kind: "error", title: "Could not import shared session", message: result.message, timeoutMs: 9_000 });
 				return;
@@ -88,14 +92,25 @@ export function App() {
 				stop();
 				return;
 			}
-			unlisten = stop;
+			unlistenResult = stop;
 			void telemetryDataSource.takeSharedSessionImportResult().then((result) => {
 				if (result) handleImport(result);
 			});
 		});
+		void listen<SharedSessionImportProgress>("shared-session-import-progress", (event) => setSharedImportProgress(event.payload)).then((stop) => {
+			if (disposed) {
+				stop();
+				return;
+			}
+			unlistenProgress = stop;
+			void telemetryDataSource.getSharedSessionImportProgress().then((progress) => {
+				if (progress) setSharedImportProgress(progress);
+			});
+		});
 		return () => {
 			disposed = true;
-			unlisten?.();
+			unlistenResult?.();
+			unlistenProgress?.();
 		};
 	}, [showToast]);
 	const selectLiveMode = async (mode: LiveBroadcastOptions["mode"]) => {
@@ -373,6 +388,54 @@ export function App() {
 			</section>
 			<Footer status={status} />
 			{summarySession && <SessionSummaryModal session={summarySession} sessions={sessions} onClose={() => setSummarySessionId(null)} />}
+			{sharedImportProgress && <SharedSessionImportOverlay progress={sharedImportProgress} />}
 		</main>
 	);
+}
+
+function SharedSessionImportOverlay({ progress }: { progress: SharedSessionImportProgress }) {
+	const total = progress.totalBytes ?? 0;
+	const percentage = total > 0 ? Math.min(100, Math.round((progress.receivedBytes / total) * 100)) : null;
+	const title =
+		progress.stage === "connecting"
+			? "Connecting to shared session"
+			: progress.stage === "downloading"
+				? "Downloading telemetry"
+				: "Adding session to your library";
+	const detail =
+		progress.stage === "downloading"
+			? total > 0
+				? `${formatImportBytes(progress.receivedBytes)} of ${formatImportBytes(total)}`
+				: `${formatImportBytes(progress.receivedBytes)} downloaded`
+			: progress.stage === "importing"
+				? "Validating the package and writing its laps."
+				: "Preparing a secure download from the shared link.";
+	return (
+		<div className="fixed inset-0 z-[120] grid place-items-center bg-black/75 p-6" role="status" aria-live="polite">
+			<section className="w-full max-w-md border border-trace-divider bg-[#151515] p-6">
+				<div className="flex items-center gap-3">
+					<span className="size-2 animate-pulse rounded-full bg-trace-accent" aria-hidden="true" />
+					<span className="font-mono text-[10px] font-black tracking-[.14em] text-trace-accent">SHARED SESSION</span>
+				</div>
+				<h2 className="mt-4 text-xl font-black">{title}</h2>
+				<p className="mt-2 text-[13px] leading-5 text-trace-muted">{detail}</p>
+				<div className="mt-5 h-1.5 overflow-hidden bg-trace-raised">
+					<div
+						className={`h-full bg-trace-accent transition-[width] duration-200 ${percentage == null ? "w-1/3 animate-pulse" : ""}`}
+						style={percentage == null ? undefined : { width: `${percentage}%` }}
+					/>
+				</div>
+				<div className="mt-3 flex justify-between font-mono text-[10px] text-trace-dim">
+					<span>{progress.stage.toUpperCase()}</span>
+					<span>{percentage == null ? "PLEASE WAIT" : `${percentage}%`}</span>
+				</div>
+			</section>
+		</div>
+	);
+}
+
+function formatImportBytes(bytes: number) {
+	if (bytes === 0) return "0 KB";
+	if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

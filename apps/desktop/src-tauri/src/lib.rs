@@ -358,7 +358,13 @@ const MAX_SESSION_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_SHARED_SESSION_DOWNLOAD_BYTES: u64 = 128 * 1024 * 1024;
 
 #[derive(Clone, Default)]
-struct SharedSessionImportState(Arc<Mutex<Option<SharedSessionImportResult>>>);
+struct SharedSessionImportState(Arc<Mutex<SharedSessionImportStatus>>);
+
+#[derive(Default)]
+struct SharedSessionImportStatus {
+    result: Option<SharedSessionImportResult>,
+    progress: Option<SharedSessionImportProgress>,
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -367,6 +373,14 @@ struct SharedSessionImportResult {
     session_id: Option<String>,
     lap_count: Option<usize>,
     message: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedSessionImportProgress {
+    stage: &'static str,
+    received_bytes: u64,
+    total_bytes: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -2339,7 +2353,15 @@ fn import_trace_reader<R: Read + Seek>(
 fn take_shared_session_import_result(
     state: tauri::State<'_, SharedSessionImportState>,
 ) -> Option<SharedSessionImportResult> {
-    state.0.lock().ok()?.take()
+    state.0.lock().ok()?.result.take()
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri command state must implement CommandArg by value.
+fn shared_session_import_progress(
+    state: tauri::State<'_, SharedSessionImportState>,
+) -> Option<SharedSessionImportProgress> {
+    state.0.lock().ok()?.progress.clone()
 }
 
 fn shared_session_download_url(value: &str) -> Result<reqwest::Url, String> {
@@ -2368,6 +2390,7 @@ async fn download_shared_session(
     app: tauri::AppHandle,
     deep_link: String,
 ) -> Result<SessionImport, String> {
+    publish_shared_session_import_progress(&app, "connecting", 0, None);
     let download_url = shared_session_download_url(&deep_link)?;
     let response = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
@@ -2384,10 +2407,8 @@ async fn download_shared_session(
             response.status()
         ));
     }
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_SHARED_SESSION_DOWNLOAD_BYTES)
-    {
+    let total_bytes = response.content_length();
+    if total_bytes.is_some_and(|length| length > MAX_SHARED_SESSION_DOWNLOAD_BYTES) {
         return Err("shared TRACE session exceeds the 128 MiB download limit".into());
     }
     let mut body = Vec::with_capacity(
@@ -2396,7 +2417,9 @@ async fn download_shared_session(
             .and_then(|length| usize::try_from(length).ok())
             .unwrap_or(0),
     );
+    publish_shared_session_import_progress(&app, "downloading", 0, total_bytes);
     let mut stream = response.bytes_stream();
+    let mut last_reported_bytes = 0_u64;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| format!("shared-session download failed: {error}"))?;
         let next_length = body
@@ -2407,15 +2430,47 @@ async fn download_shared_session(
             return Err("shared TRACE session exceeds the 128 MiB download limit".into());
         }
         body.extend_from_slice(&chunk);
+        let received_bytes = u64::try_from(body.len()).unwrap_or(u64::MAX);
+        let report_threshold = total_bytes.map_or(1024 * 1024, |total| (total / 50).max(64 * 1024));
+        if received_bytes.saturating_sub(last_reported_bytes) >= report_threshold
+            || total_bytes.is_some_and(|total| received_bytes >= total)
+        {
+            publish_shared_session_import_progress(
+                &app,
+                "downloading",
+                received_bytes,
+                total_bytes,
+            );
+            last_reported_bytes = received_bytes;
+        }
     }
     let file_length =
         u64::try_from(body.len()).map_err(|_| "shared TRACE session size overflowed".to_owned())?;
+    publish_shared_session_import_progress(&app, "importing", file_length, total_bytes);
     import_trace_reader(&app, Cursor::new(body), file_length)
+}
+
+fn publish_shared_session_import_progress(
+    app: &tauri::AppHandle,
+    stage: &'static str,
+    received_bytes: u64,
+    total_bytes: Option<u64>,
+) {
+    let progress = SharedSessionImportProgress {
+        stage,
+        received_bytes,
+        total_bytes,
+    };
+    if let Ok(mut pending) = app.state::<SharedSessionImportState>().0.lock() {
+        pending.progress = Some(progress.clone());
+    }
+    let _ = app.emit("shared-session-import-progress", progress);
 }
 
 fn publish_shared_session_import(app: &tauri::AppHandle, result: SharedSessionImportResult) {
     if let Ok(mut pending) = app.state::<SharedSessionImportState>().0.lock() {
-        *pending = Some(result.clone());
+        pending.progress = None;
+        pending.result = Some(result.clone());
     }
     let _ = app.emit("shared-session-imported", result);
 }
@@ -3268,6 +3323,7 @@ pub fn run() {
             preview_motec_import,
             import_session,
             take_shared_session_import_result,
+            shared_session_import_progress,
             delete_session,
             update_session_details
         ])
