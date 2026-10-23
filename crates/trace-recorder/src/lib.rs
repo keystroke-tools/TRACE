@@ -285,7 +285,12 @@ impl ActiveSession {
                     self.laps.push(RecordedLap {
                         lap_index: open.index.saturating_add(1),
                         started_offset_ns: open.started_offset_ns,
-                        duration_ns: (!partial).then_some(frame.elapsed.0 - open.started_offset_ns),
+                        duration_ns: (!partial).then_some(
+                            frame
+                                .lap
+                                .last_lap_time_ns
+                                .unwrap_or(frame.elapsed.0 - open.started_offset_ns),
+                        ),
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
                         partial,
@@ -517,6 +522,7 @@ mod tests {
             lap: LapObservation {
                 completed_laps: Some(completed),
                 current_lap_time_ns: Some(lap_time),
+                last_lap_time_ns: None,
                 ..LapObservation::default()
             },
             ..TelemetryFrame::default()
@@ -593,6 +599,37 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn prefers_the_simulator_completed_lap_time_over_sample_clock_timing() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        let mut boundary = frame(7, 700, 2, 0);
+        boundary.lap.last_lap_time_ns = Some(273);
+        for value in [
+            frame(1, 100, 0, 0),
+            frame(2, 200, 0, 100),
+            frame(3, 300, 0, 200),
+            frame(4, 400, 1, 0),
+            frame(5, 500, 1, 100),
+            frame(6, 600, 1, 200),
+            boundary,
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps[1].duration_ns, Some(273));
     }
 
     #[test]

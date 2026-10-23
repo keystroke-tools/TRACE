@@ -112,6 +112,7 @@ fn synthetic_frame(sequence: u64, rate_hz: u32) -> TelemetryFrame {
             completed_laps: Some(u32::try_from(sequence / lap_samples).expect("lap count")),
             normalized_position: Some(lap_position as f32 / lap_denominator as f32),
             current_lap_time_ns: Some(lap_sample * 1_000_000_000 / u64::from(rate_hz)),
+            last_lap_time_ns: None,
             simulator_distance_m: Some(
                 f64::from(lap_position) * 5_400.0 / f64::from(lap_denominator),
             ),

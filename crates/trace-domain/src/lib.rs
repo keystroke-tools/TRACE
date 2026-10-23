@@ -236,6 +236,8 @@ pub struct LapObservation {
     pub completed_laps: Option<u32>,
     pub normalized_position: Option<f32>,
     pub current_lap_time_ns: Option<u64>,
+    /// Authoritative duration of the most recently completed lap, when exposed.
+    pub last_lap_time_ns: Option<u64>,
     pub simulator_distance_m: Option<f64>,
     pub current_sector_index: Option<u32>,
     pub last_sector_time_ns: Option<u64>,

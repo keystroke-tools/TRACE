@@ -75,6 +75,7 @@ pub fn map_frame(
             completed_laps: non_negative_i32(graphics.completed_laps()),
             normalized_position: ratio(graphics.normalized_car_position()),
             current_lap_time_ns: milliseconds_to_nanoseconds(graphics.current_time_ms()),
+            last_lap_time_ns: milliseconds_to_nanoseconds(graphics.last_time_ms()),
             // AC's distanceTraveled semantics are not treated as lap distance.
             simulator_distance_m: None,
             current_sector_index: non_negative_i32(graphics.current_sector_index()),

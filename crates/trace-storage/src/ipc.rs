@@ -2441,6 +2441,7 @@ mod tests {
                 completed_laps: Some(3),
                 normalized_position: Some(0.4),
                 current_lap_time_ns: Some(9),
+                last_lap_time_ns: None,
                 simulator_distance_m: Some(10.0),
                 current_sector_index: Some(1),
                 last_sector_time_ns: Some(11),

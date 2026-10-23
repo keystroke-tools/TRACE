@@ -103,6 +103,9 @@ impl<'a> GraphicsPage<'a> {
     pub(crate) fn current_time_ms(&self) -> i32 {
         read_i32(self.0, 140)
     }
+    pub(crate) fn last_time_ms(&self) -> i32 {
+        read_i32(self.0, 144)
+    }
     pub(crate) fn current_sector_index(&self) -> i32 {
         read_i32(self.0, 164)
     }

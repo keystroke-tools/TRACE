@@ -137,6 +137,18 @@ fn assert_recording_and_persistence(seed: &SessionSeed, frames: Vec<TelemetryFra
         "recorded laps: {:#?}",
         completed.laps
     );
+    for lap in &completed.laps[1..] {
+        let duration = lap.duration_ns.expect("authoritative lap duration");
+        let sector_total = lap
+            .sectors
+            .iter()
+            .map(|sector| sector.duration_ns)
+            .sum::<u64>();
+        assert!(
+            duration.abs_diff(sector_total) <= 3,
+            "lap duration {duration} did not match sector total {sector_total}"
+        );
+    }
 
     let mut metadata = MetadataStore::open_in_memory().unwrap();
     metadata

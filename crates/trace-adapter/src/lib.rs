@@ -23,6 +23,9 @@ pub enum DisconnectReason {
 
 /// Ordered output from a simulator or replay adapter.
 #[derive(Clone, Debug, PartialEq)]
+// Frames dominate this enum but are emitted on the high-frequency capture path; boxing every
+// frame to reduce the enum's stack size would add an allocation to every telemetry sample.
+#[allow(clippy::large_enum_variant)]
 pub enum AdapterEvent {
     Detected(SourceDescriptor),
     Connected(SessionSeed),
