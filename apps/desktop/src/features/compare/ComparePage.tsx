@@ -1268,6 +1268,7 @@ function CornerAnalysisPanel({
 function CornerBreakdownRow({ corner, selected, onSelect }: { corner: CornerAnalysis; selected: boolean; onSelect: () => void }) {
 	const [expanded, setExpanded] = useState(false);
 	const dominant = dominantCornerPhase(corner);
+	const hasBrakingMetrics = brakingFacts(corner, "reference") != null || brakingFacts(corner, "comparison") != null;
 	return (
 		<article className={`border-b border-trace-divider ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : ""}`}>
 			<div className="flex min-w-0 items-stretch">
@@ -1310,7 +1311,10 @@ function CornerBreakdownRow({ corner, selected, onSelect }: { corner: CornerAnal
 			{expanded && (
 				<div className="border-t border-trace-divider px-4 pb-3">
 					<CornerBrakingMetrics corner={corner} />
-					<div className="mt-3 grid grid-cols-3 gap-3 border-t border-trace-divider pt-2" aria-label={`${corner.label} time difference by phase`}>
+					<div
+						className={`grid grid-cols-3 gap-3 ${hasBrakingMetrics ? "mt-3 border-t border-trace-divider pt-2" : "pt-3"}`}
+						aria-label={`${corner.label} time difference by phase`}
+					>
 						{corner.phases.map((phase) => (
 							<span className="min-w-0" key={phase.phase}>
 								<span className="block truncate font-mono text-[9px] font-bold tracking-[.06em] text-trace-dim">
