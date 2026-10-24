@@ -3994,7 +3994,9 @@ mod tests {
         let script = include_str!("../assets/library/app.js");
         assert!(script.contains("async function copyText"));
         assert!(script.contains("document.execCommand(\"copy\")"));
-        assert!(script.contains("reviewCopyTrace"));
+        assert!(script.contains("async function copyTraceLink"));
+        assert!(script.contains("trace:copy-app-link"));
+        assert!(include_str!("../assets/library/index.html").contains("review-header-root"));
 
         let landing = site_html(
             include_str!("../assets/site/index.html"),

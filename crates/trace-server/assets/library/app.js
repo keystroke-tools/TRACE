@@ -36,22 +36,10 @@ const elements = {
 	tokenValue: document.querySelector("#token-value"),
 	tokenCopy: document.querySelector("#token-copy"),
 	tokenList: document.querySelector("#token-list"),
-	reviewBack: document.querySelector("#review-back"),
-	reviewDownload: document.querySelector("#review-download"),
-	reviewOpenTrace: document.querySelector("#review-open-trace"),
-	reviewCopyTrace: document.querySelector("#review-copy-trace"),
-	metadataOpen: document.querySelector("#metadata-open"),
-	metadataPanel: document.querySelector("#metadata-panel"),
-	metadataCancel: document.querySelector("#metadata-cancel"),
-	metadataTitle: document.querySelector("#metadata-title"),
-	metadataDriver: document.querySelector("#metadata-driver"),
-	metadataTags: document.querySelector("#metadata-tags"),
-	shareOpen: document.querySelector("#share-open"),
 	sharePanel: document.querySelector("#share-panel"),
 	shareUrl: document.querySelector("#share-url"),
 	shareCopy: document.querySelector("#share-copy"),
 	shareRevoke: document.querySelector("#share-revoke"),
-	compareOpen: document.querySelector("#compare-open"),
 	compareClose: document.querySelector("#compare-close"),
 	comparePicker: document.querySelector("#compare-picker"),
 	compareSearch: document.querySelector("#compare-search"),
@@ -60,10 +48,6 @@ const elements = {
 	comparisonSummary: document.querySelector("#comparison-summary"),
 	comparisonClear: document.querySelector("#comparison-clear"),
 	alignmentLabel: document.querySelector("#alignment-label"),
-	reviewKicker: document.querySelector("#review-kicker"),
-	reviewName: document.querySelector("#review-name"),
-	reviewContext: document.querySelector("#review-context"),
-	reviewBest: document.querySelector("#review-best"),
 	reviewLapCount: document.querySelector("#review-lap-count"),
 	reviewLaps: document.querySelector("#review-laps"),
 	telemetryEmpty: document.querySelector("#telemetry-empty"),
@@ -170,6 +154,18 @@ function syncSessionLibrary() {
 	};
 	window.traceLibrarySnapshot = snapshot;
 	window.dispatchEvent(new CustomEvent("trace:sessions-load", { detail: snapshot }));
+}
+
+function syncReviewHeader() {
+	const snapshot = state.review
+		? {
+				summary: state.review.summary,
+				laps: state.review.laps,
+				publicShareId: state.publicShareId,
+			}
+		: null;
+	window.traceReviewSnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:review-load", { detail: snapshot }));
 }
 
 function toggleAdminPanel() {
@@ -330,7 +326,8 @@ function sessionSearchText(session) {
 
 async function openReview(sessionId, navigate = true) {
 	state.publicShareId = null;
-	elements.metadataOpen.hidden = false;
+	state.review = null;
+	syncReviewHeader();
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	elements.telemetryContent.hidden = true;
@@ -354,13 +351,10 @@ async function openReview(sessionId, navigate = true) {
 
 async function openPublicReview(shareId) {
 	state.publicShareId = shareId;
+	state.review = null;
+	syncReviewHeader();
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
-	elements.reviewBack.hidden = true;
-	elements.compareOpen.hidden = true;
-	elements.metadataOpen.hidden = true;
-	elements.metadataPanel.hidden = true;
-	elements.shareOpen.hidden = true;
 	elements.sharePanel.hidden = true;
 	elements.telemetryContent.hidden = true;
 	elements.telemetryEmpty.hidden = false;
@@ -390,63 +384,12 @@ function closeReview(navigate = true) {
 	state.shareUrl = null;
 	clearComparison(false);
 	closeComparePicker();
-	elements.reviewBack.hidden = false;
-	elements.compareOpen.hidden = false;
-	elements.shareOpen.hidden = false;
-	elements.reviewOpenTrace.hidden = true;
-	elements.reviewCopyTrace.hidden = true;
-	elements.metadataPanel.hidden = true;
+	syncReviewHeader();
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
 	document.title = `${state.instance?.name || "TRACE"} · TRACE Library`;
 	if (navigate) setLocation("/app");
-}
-
-function toggleMetadataPanel() {
-	if (!state.review || state.publicShareId) return;
-	const opening = elements.metadataPanel.hidden;
-	elements.metadataPanel.hidden = !opening;
-	if (!opening) return;
-	const summary = state.review.summary;
-	elements.metadataTitle.value = summary.title || "";
-	elements.metadataDriver.value = summary.driver_name || "";
-	elements.metadataTags.value = (summary.tags || []).join(", ");
-	elements.metadataTitle.focus();
-}
-
-async function updateMetadata(event) {
-	event.preventDefault();
-	if (!state.review || state.publicShareId) return;
-	const tags = elements.metadataTags.value
-		.split(",")
-		.map((tag) => tag.trim())
-		.filter(Boolean);
-	setBusy(elements.metadataPanel, true);
-	try {
-		const sessionId = state.review.summary.session_id;
-		const summary = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}`, {
-			method: "PUT",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				title: elements.metadataTitle.value,
-				driver_name: elements.metadataDriver.value,
-				tags,
-			}),
-		});
-		state.review.summary = summary;
-		const index = state.sessions.findIndex((session) => session.session_id === sessionId);
-		if (index >= 0) state.sessions[index] = summary;
-		elements.metadataPanel.hidden = true;
-		syncSessionLibrary();
-		renderReview();
-		setLocation(sessionPath(summary), true);
-		toast("Session details updated.");
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		setBusy(elements.metadataPanel, false);
-	}
 }
 
 function updateOwnedShare(shareId, shareUrl = null) {
@@ -456,12 +399,12 @@ function updateOwnedShare(shareId, shareUrl = null) {
 	const summary = state.sessions.find((session) => session.session_id === state.review.summary.session_id);
 	if (summary) summary.share_id = shareId;
 	syncSessionLibrary();
+	syncReviewHeader();
 	renderShareState();
 }
 
 function renderShareState() {
 	const shareId = state.review?.summary.share_id;
-	elements.shareOpen.textContent = shareId ? "Shared" : "Share";
 	if (!shareId) {
 		elements.sharePanel.hidden = true;
 		elements.shareUrl.value = "";
@@ -476,7 +419,8 @@ async function toggleSharePanel() {
 		elements.sharePanel.hidden = !elements.sharePanel.hidden;
 		return;
 	}
-	elements.shareOpen.disabled = true;
+	const button = document.querySelector("#share-open");
+	if (button) button.disabled = true;
 	try {
 		const sessionId = state.review.summary.session_id;
 		const share = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/share`, { method: "POST" });
@@ -486,7 +430,7 @@ async function toggleSharePanel() {
 	} catch (error) {
 		toast(error.message, "error");
 	} finally {
-		elements.shareOpen.disabled = false;
+		if (button) button.disabled = false;
 	}
 }
 
@@ -495,7 +439,9 @@ async function copyShareLink() {
 }
 
 async function copyTraceLink() {
-	await copyText(elements.reviewOpenTrace.href, "TRACE app link copied.");
+	if (!state.publicShareId) return;
+	const downloadUrl = new URL(`/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`, window.location.origin).href;
+	await copyText(`trace://shared-session?url=${encodeURIComponent(downloadUrl)}`, "TRACE app link copied.");
 }
 
 async function revokeShare() {
@@ -522,24 +468,11 @@ async function revokeShare() {
 
 function renderReview() {
 	const { summary, laps } = state.review;
-	elements.reviewDownload.href = state.publicShareId
-		? `/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`
-		: `/api/v1/library/sessions/${encodeURIComponent(summary.session_id)}/download`;
-	elements.reviewOpenTrace.hidden = !state.publicShareId;
-	elements.reviewCopyTrace.hidden = !state.publicShareId;
-	if (state.publicShareId) {
-		const downloadUrl = new URL(`/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`, window.location.origin).href;
-		elements.reviewOpenTrace.href = `trace://shared-session?url=${encodeURIComponent(downloadUrl)}`;
-	}
-	elements.reviewKicker.textContent = `${state.publicShareId ? "Shared session · " : ""}${readable(summary.session_type, "Session")} · ${readable(summary.simulator, "Unknown simulator")}`;
-	elements.reviewName.textContent = readable(summary.title, readable(summary.driver_name, "Recorded session"));
-	elements.reviewContext.textContent = `${readable(summary.track, "Unknown track")} · ${readable(summary.car, "Unknown car")} · ${formatDate(summary.started_at)}`;
+	syncReviewHeader();
 	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
 	elements.reviewLapCount.textContent = `${laps.length} ${laps.length === 1 ? "lap" : "laps"}`;
 	const timed = laps.filter((lap) => lap.duration_ns != null);
 	const best = timed.length ? timed.reduce((fastest, lap) => (lap.duration_ns < fastest.duration_ns ? lap : fastest)) : null;
-	elements.reviewBest.hidden = !best;
-	if (best) elements.reviewBest.querySelector("strong").textContent = formatDuration(best.duration_ns);
 	elements.reviewLaps.replaceChildren(...laps.map((lap) => lapRow(lap, best?.id)));
 	elements.telemetryEmpty.textContent = laps.length ? "Select a recorded lap to review its telemetry." : "This package contains no recorded laps.";
 	if (!state.publicShareId) renderShareState();
@@ -955,17 +888,8 @@ function drawSeriesGraph(canvas, series, zeroCentered = false) {
 
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
-elements.reviewBack.addEventListener("click", () => closeReview());
-elements.metadataOpen.addEventListener("click", toggleMetadataPanel);
-elements.metadataCancel.addEventListener("click", () => {
-	elements.metadataPanel.hidden = true;
-});
-elements.metadataPanel.addEventListener("submit", updateMetadata);
-elements.shareOpen.addEventListener("click", toggleSharePanel);
 elements.shareCopy.addEventListener("click", copyShareLink);
-elements.reviewCopyTrace.addEventListener("click", copyTraceLink);
 elements.shareRevoke.addEventListener("click", revokeShare);
-elements.compareOpen.addEventListener("click", openComparePicker);
 elements.compareClose.addEventListener("click", closeComparePicker);
 elements.comparisonClear.addEventListener("click", () => clearComparison());
 elements.compareSearch.addEventListener("input", renderCompareSessions);
@@ -1047,6 +971,20 @@ window.addEventListener("trace:sessions-updated", (event) => {
 	state.sessions = event.detail.sessions;
 });
 window.addEventListener("trace:open-session", (event) => void openReview(event.detail.sessionId));
+window.addEventListener("trace:review-back", () => closeReview());
+window.addEventListener("trace:compare-open", openComparePicker);
+window.addEventListener("trace:share-open", toggleSharePanel);
+window.addEventListener("trace:copy-app-link", copyTraceLink);
+window.addEventListener("trace:review-summary-updated", (event) => {
+	if (!state.review) return;
+	const summary = event.detail.summary;
+	state.review.summary = summary;
+	const index = state.sessions.findIndex((session) => session.session_id === summary.session_id);
+	if (index >= 0) state.sessions[index] = summary;
+	syncSessionLibrary();
+	setLocation(sessionPath(summary), true);
+	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
+});
 
 const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
 telemetryResizeObserver.observe(elements.trackCanvas);
