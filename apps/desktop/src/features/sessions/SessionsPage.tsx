@@ -7,6 +7,7 @@ import {
 	telemetryDataSource,
 	type MotecImportOptions,
 	type MotecImportPreview,
+	type MotecFolderScan,
 	type RecordedSessionSummary,
 	type SessionExportFormat,
 } from "../../data-source";
@@ -37,6 +38,7 @@ import {
 	theoreticalBestLap,
 } from "./session-components";
 import { MotecImportModal } from "./MotecImportModal";
+import { MotecFolderImportModal } from "./MotecFolderImportModal";
 import { LapPackageDialog, type LapPackageAction } from "./LapPackageDialog";
 
 function extension(path: string) {
@@ -72,6 +74,7 @@ export function SessionsPage({
 	const [importing, setImporting] = useState(false);
 	const [draggingTelemetry, setDraggingTelemetry] = useState(false);
 	const [motecReview, setMotecReview] = useState<{ path: string; preview: MotecImportPreview } | null>(null);
+	const [motecFolderScan, setMotecFolderScan] = useState<MotecFolderScan | null>(null);
 	const visibleSessions = useMemo(() => {
 		const normalizedQuery = query.trim().toLocaleLowerCase();
 		return sessions
@@ -188,6 +191,19 @@ export function SessionsPage({
 		await importTelemetryPath(selected);
 	}
 
+	async function chooseMotecFolder() {
+		const selected = await open({ multiple: false, directory: true, title: "Import a folder of MoTeC logs" });
+		if (typeof selected !== "string") return;
+		setImporting(true);
+		try {
+			setMotecFolderScan(await telemetryDataSource.scanMotecFolder(selected));
+		} catch (error) {
+			showToast({ kind: "error", title: "Folder scan failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
+		} finally {
+			setImporting(false);
+		}
+	}
+
 	async function importDroppedTelemetry(paths: string[]) {
 		const tracePackages = paths.filter((path) => extension(path) === "trace");
 		const logs = paths.filter((path) => extension(path) === "ld");
@@ -245,6 +261,7 @@ export function SessionsPage({
 	return (
 		<>
 			{motecReview && <MotecImportModal preview={motecReview.preview} onCancel={() => setMotecReview(null)} onImport={confirmMotecImport} />}
+			{motecFolderScan && <MotecFolderImportModal scan={motecFolderScan} onClose={() => setMotecFolderScan(null)} onImported={onImported} />}
 			{draggingTelemetry && (
 				<div className="pointer-events-none fixed inset-3 z-[90] grid place-items-center border-2 border-dashed border-trace-accent bg-trace-deep/95">
 					<div className="text-center">
@@ -270,6 +287,14 @@ export function SessionsPage({
 						className="h-10 border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.08em] text-trace-accent hover:border-trace-accent hover:text-white disabled:border-trace-divider disabled:text-trace-dim"
 					>
 						{importing ? "IMPORTING…" : "IMPORT TELEMETRY"}
+					</button>
+					<button
+						type="button"
+						disabled={importing}
+						onClick={() => void chooseMotecFolder()}
+						className="h-10 border border-trace-divider bg-trace-surface px-4 font-mono text-[11px] font-bold tracking-[.08em] text-trace-soft hover:border-trace-accent/60 hover:text-white disabled:text-trace-dim"
+					>
+						{importing ? "SCANNING…" : "IMPORT FOLDER"}
 					</button>
 				</div>
 			</div>

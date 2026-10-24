@@ -341,6 +341,20 @@ export interface MotecImportPreview extends MotecImportOptions {
 	sampleCount: number;
 }
 
+export interface MotecFolderEntry {
+	path: string;
+	fileName: string;
+	sidecarPresent: boolean;
+	preview?: MotecImportPreview | null;
+	error?: string | null;
+}
+
+export interface MotecFolderScan {
+	folder: string;
+	entries: MotecFolderEntry[];
+	limited: boolean;
+}
+
 export interface GameInstallDirectory {
 	simulatorId: string;
 	simulatorName: string;
@@ -625,6 +639,7 @@ export interface TelemetryDataSource {
 	shareSession(sessionId: string, lapIndices: number[]): Promise<SharedSession>;
 	uploadLibrarySession(sessionId: string, lapIndices: number[]): Promise<LibraryUploadResult>;
 	previewMotecImport(path: string): Promise<MotecImportPreview>;
+	scanMotecFolder(path: string): Promise<MotecFolderScan>;
 	importSession(path: string, motecOptions?: MotecImportOptions): Promise<SessionImport>;
 	takeSharedSessionImportResult(): Promise<SharedSessionImportResult | null>;
 	getSharedSessionImportProgress(): Promise<SharedSessionImportProgress | null>;
@@ -944,6 +959,20 @@ export const fixtureDataSource: TelemetryDataSource = {
 			title: "",
 			completeLapCount: 1,
 			sampleCount: 4_900,
+		};
+	},
+	async scanMotecFolder(path) {
+		return {
+			folder: path,
+			limited: false,
+			entries: [
+				{
+					path: `${path}/fixture.ld`,
+					fileName: "fixture.ld",
+					sidecarPresent: true,
+					preview: await this.previewMotecImport(`${path}/fixture.ld`),
+				},
+			],
 		};
 	},
 	async getSessionLapMetrics(_sessionId) {
@@ -1613,6 +1642,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	previewMotecImport(path) {
 		return invoke<MotecImportPreview>("preview_motec_import", { path });
+	},
+	scanMotecFolder(path) {
+		return invoke<MotecFolderScan>("scan_motec_folder", { path });
 	},
 	importSession(path, motecOptions) {
 		return invoke<SessionImport>("import_session", { path, motecOptions });

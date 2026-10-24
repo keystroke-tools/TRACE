@@ -48,7 +48,7 @@ mod obs_overlay;
 mod setup_analysis;
 mod setup_editor;
 
-use motec_import::{MotecImportOptions, MotecImportPreview};
+use motec_import::{MotecFolderScan, MotecImportOptions, MotecImportPreview};
 mod setup_import;
 mod simulator_adapter;
 mod startup;
@@ -2304,6 +2304,16 @@ async fn preview_motec_import(path: String) -> Result<MotecImportPreview, String
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
+async fn scan_motec_folder(path: String) -> Result<MotecFolderScan, String> {
+    tokio::task::spawn_blocking(move || {
+        motec_import::scan_motec_folder(Path::new(&path), MAX_SESSION_BYTES)
+    })
+    .await
+    .map_err(|error| format!("MoTeC folder scan worker failed: {error}"))?
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 async fn import_session(
     app: tauri::AppHandle,
     path: String,
@@ -3440,6 +3450,7 @@ pub fn run() {
             share_session,
             upload_library_session,
             preview_motec_import,
+            scan_motec_folder,
             import_session,
             take_shared_session_import_result,
             shared_session_import_progress,

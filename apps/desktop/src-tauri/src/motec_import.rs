@@ -47,6 +47,109 @@ pub(crate) struct MotecImportPreview {
     pub sample_count: u64,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MotecFolderEntry {
+    pub path: String,
+    pub file_name: String,
+    pub sidecar_present: bool,
+    pub preview: Option<MotecImportPreview>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MotecFolderScan {
+    pub folder: String,
+    pub entries: Vec<MotecFolderEntry>,
+    pub limited: bool,
+}
+
+const MAX_FOLDER_LOGS: usize = 250;
+
+pub(crate) fn scan_motec_folder(
+    folder: &Path,
+    maximum_session_bytes: u64,
+) -> Result<MotecFolderScan, String> {
+    if !folder.is_dir() {
+        return Err("Choose a folder containing MoTeC .ld logs".into());
+    }
+    let (logs, limited) = find_motec_logs(folder, MAX_FOLDER_LOGS)?;
+    let entries = logs
+        .into_iter()
+        .map(|path| {
+            let sidecar_present = path.with_extension("ldx").is_file();
+            let file_name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |name| name.to_string_lossy().into(),
+            );
+            match preview_motec_session(&path, maximum_session_bytes) {
+                Ok(preview) => MotecFolderEntry {
+                    path: path.display().to_string(),
+                    file_name,
+                    sidecar_present,
+                    preview: Some(preview),
+                    error: None,
+                },
+                Err(error) => MotecFolderEntry {
+                    path: path.display().to_string(),
+                    file_name,
+                    sidecar_present,
+                    preview: None,
+                    error: Some(error),
+                },
+            }
+        })
+        .collect();
+    Ok(MotecFolderScan {
+        folder: folder.display().to_string(),
+        entries,
+        limited,
+    })
+}
+
+fn find_motec_logs(folder: &Path, limit: usize) -> Result<(Vec<PathBuf>, bool), String> {
+    let mut pending = vec![folder.to_path_buf()];
+    let mut logs = Vec::new();
+    let mut limited = false;
+    while let Some(directory) = pending.pop() {
+        let entries = fs::read_dir(&directory).map_err(|error| {
+            format!(
+                "failed to read MoTeC folder {}: {error}",
+                directory.display()
+            )
+        })?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| format!("failed to inspect MoTeC folder: {error}"))?;
+            let file_type = entry.file_type().map_err(|error| {
+                format!("failed to inspect {}: {error}", entry.path().display())
+            })?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let is_log = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("ld"));
+            if is_log {
+                if logs.len() == limit {
+                    limited = true;
+                    continue;
+                }
+                logs.push(path);
+            }
+        }
+    }
+    logs.sort_by(|left, right| left.as_os_str().cmp(right.as_os_str()));
+    Ok((logs, limited))
+}
+
 pub(crate) fn preview_motec_session(
     source_path: &Path,
     maximum_session_bytes: u64,
@@ -698,6 +801,23 @@ mod tests {
 
     use super::*;
     use trace_storage::ipc::{read_columns_range, read_lap_metrics};
+
+    #[test]
+    fn folder_scan_discovers_logs_recursively_and_reports_its_limit() {
+        let directory = tempfile::tempdir().expect("temporary folder");
+        let nested = directory.path().join("nested");
+        fs::create_dir(&nested).expect("nested folder");
+        fs::write(directory.path().join("first.ld"), b"invalid").expect("first log");
+        fs::write(nested.join("second.LD"), b"invalid").expect("second log");
+        fs::write(nested.join("ignored.txt"), b"invalid").expect("ignored file");
+
+        let (all, limited) = find_motec_logs(directory.path(), 10).expect("folder discovery");
+        assert_eq!(all.len(), 2);
+        assert!(!limited);
+        let (one, limited) = find_motec_logs(directory.path(), 1).expect("bounded discovery");
+        assert_eq!(one.len(), 1);
+        assert!(limited);
+    }
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
