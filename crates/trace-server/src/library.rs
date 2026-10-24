@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use trace_storage::{
     ipc::{TelemetryColumns, read_columns_range},
-    metadata::{LapSummary, SessionConditions},
+    metadata::{LapSummary, SectorSummary, SessionConditions},
     package::{SessionPackageManifest, read_package},
 };
 use uuid::Uuid;
@@ -70,6 +70,7 @@ pub(crate) struct LibraryLapTelemetry {
 #[derive(Clone, Copy, Debug, Serialize)]
 pub(crate) struct LibraryTelemetryPoint {
     pub(crate) elapsed_seconds: f64,
+    pub(crate) sector_index: Option<u32>,
     pub(crate) lap_position: Option<f32>,
     pub(crate) throttle: Option<f32>,
     pub(crate) brake: Option<f32>,
@@ -512,7 +513,7 @@ impl LibraryStore {
         let elapsed_start = columns.elapsed_ns.first().copied().unwrap_or_default();
         let points = indices
             .into_iter()
-            .map(|index| telemetry_point(&columns, index, elapsed_start))
+            .map(|index| telemetry_point(&columns, index, elapsed_start, &lap.summary.sectors))
             .collect::<Vec<_>>();
         Ok(LibraryLapTelemetry {
             lap_id,
@@ -679,12 +680,21 @@ fn telemetry_point(
     columns: &TelemetryColumns,
     index: usize,
     elapsed_start: u64,
+    sectors: &[SectorSummary],
 ) -> LibraryTelemetryPoint {
+    let elapsed_ns = columns.elapsed_ns[index].saturating_sub(elapsed_start);
+    let mut sector_end_ns = 0_u64;
+    let sector_index = sectors
+        .iter()
+        .find(|sector| {
+            sector_end_ns = sector_end_ns.saturating_add(sector.duration_ns);
+            elapsed_ns < sector_end_ns
+        })
+        .or_else(|| sectors.last())
+        .map(|sector| sector.index);
     LibraryTelemetryPoint {
-        elapsed_seconds: std::time::Duration::from_nanos(
-            columns.elapsed_ns[index].saturating_sub(elapsed_start),
-        )
-        .as_secs_f64(),
+        elapsed_seconds: std::time::Duration::from_nanos(elapsed_ns).as_secs_f64(),
+        sector_index,
         lap_position: columns.lap_position[index],
         throttle: columns.throttle[index],
         brake: columns.brake[index],

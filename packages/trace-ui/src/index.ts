@@ -17,6 +17,7 @@ export {
 } from "./telemetry-chart";
 export { filterSamplesByDistance, filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "./telemetry-window";
 export { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "./telemetry-playback";
+export { SectorPicker } from "./sector-picker";
 export {
 	FloatingTrackMap,
 	TrackMap,

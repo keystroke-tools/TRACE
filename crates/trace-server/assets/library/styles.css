@@ -1226,6 +1226,17 @@ button.primary:hover {
 	font-variant-numeric: tabular-nums;
 }
 
+.telemetry-range:empty {
+	display: none;
+}
+
+.telemetry-range {
+	margin-bottom: 10px;
+	padding: 9px 12px;
+	border: 1px solid var(--trace-divider);
+	background: var(--trace-black);
+}
+
 .telemetry-playback button,
 .telemetry-playback select {
 	height: 32px;

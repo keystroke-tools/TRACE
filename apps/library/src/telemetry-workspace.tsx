@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	ComparisonChart,
+	SectorPicker,
 	TrackMap,
 	channelColours,
 	comparisonSeries,
 	deltaRange,
 	filterSamplesByTelemetryWindow,
+	filterSamplesBySector,
 	formatGear,
 	telemetryPlaybackSpeeds,
 	telemetryPlaybackTimeline,
@@ -19,6 +21,7 @@ import {
 
 type Point = {
 	elapsed_seconds?: number | null;
+	sector_index?: number | null;
 	lap_position?: number | null;
 	speed_kph?: number | null;
 	throttle?: number | null;
@@ -37,6 +40,8 @@ type Entry = { detail: Detail; lap: Lap; telemetry: Telemetry };
 
 type Sample = {
 	progress: number;
+	reference_sector_index?: number | null;
+	analysed_sector_index?: number | null;
 	reference_position_x_m?: number | null;
 	reference_position_z_m?: number | null;
 	analysed_position_x_m?: number | null;
@@ -137,6 +142,7 @@ function lapSamples(points: Point[]): LapComparisonSample[] {
 	const last = Math.max(1, points.length - 1);
 	return points.map((point, index) => ({
 		distanceM: Number.isFinite(point.lap_position) ? (point.lap_position as number) * 100 : (index / last) * 100,
+		sectorIndex: point.sector_index,
 		referenceElapsedSeconds: point.elapsed_seconds,
 		referenceSpeedKmh: point.speed_kph,
 		referenceThrottlePercent: percentage(point.throttle),
@@ -152,6 +158,10 @@ function lapSamples(points: Point[]): LapComparisonSample[] {
 function alignedSamples(samples: Sample[]): LapComparisonSample[] {
 	return samples.map((sample) => ({
 		distanceM: sample.progress * 100,
+		sectorIndex:
+			sample.reference_sector_index == null && sample.analysed_sector_index == null
+				? null
+				: Math.round(sample.reference_sector_index ?? sample.analysed_sector_index ?? 0),
 		deltaSeconds: sample.delta_seconds,
 		referenceElapsedSeconds: sample.reference_elapsed_seconds,
 		comparisonElapsedSeconds: sample.analysed_elapsed_seconds,
@@ -171,6 +181,7 @@ function alignedSamples(samples: Sample[]): LapComparisonSample[] {
 function TelemetryWorkspace() {
 	const snapshot = useWorkspace();
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+	const [sector, setSector] = useState<number | null>(null);
 	const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
 	const [playing, setPlaying] = useState(false);
 	const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -180,9 +191,11 @@ function TelemetryWorkspace() {
 		() => (snapshot?.comparison ? alignedSamples(snapshot.comparison.samples) : snapshot?.telemetry ? lapSamples(snapshot.telemetry.points) : []),
 		[snapshot?.comparison, snapshot?.telemetry],
 	);
-	const samples = useMemo(() => filterSamplesByTelemetryWindow(baseSamples, telemetryWindow), [baseSamples, telemetryWindow]);
+	const sectorSamples = useMemo(() => filterSamplesBySector(baseSamples, sector), [baseSamples, sector]);
+	const samples = useMemo(() => filterSamplesByTelemetryWindow(sectorSamples, telemetryWindow), [sectorSamples, telemetryWindow]);
 	useEffect(() => {
 		setCursorIndex(null);
+		setSector(null);
 		setTelemetryWindow(null);
 		setPlaying(false);
 	}, [snapshot?.lap?.id, snapshot?.comparison]);
@@ -218,7 +231,7 @@ function TelemetryWorkspace() {
 	const maximumRpm = Math.max(0, ...telemetry.points.map((point) => point.engine_rpm || 0));
 	const zoomTelemetry = (anchor: number, direction: "in" | "out") => {
 		setPlaying(false);
-		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchor, direction, 2));
+		setTelemetryWindow((current) => nextTelemetryWindow(sectorSamples, current, anchor, direction, 2));
 		setCursorIndex(null);
 	};
 	const seek = (index: number | null) => {
@@ -282,6 +295,18 @@ function TelemetryWorkspace() {
 					</span>
 				</div>
 			</div>
+			<div className="telemetry-range">
+				<SectorPicker
+					samples={baseSamples}
+					value={sector}
+					onChange={(value) => {
+						setPlaying(false);
+						setSector(value);
+						setTelemetryWindow(null);
+						setCursorIndex(null);
+					}}
+				/>
+			</div>
 			<div className="telemetry-playback">
 				<button
 					type="button"
@@ -326,6 +351,8 @@ function TelemetryWorkspace() {
 						cursorIndex={cursorIndex}
 						comparison={Boolean(comparison)}
 						height={360}
+						focusSelection={sector != null || telemetryWindow != null}
+						rangeLabel={sector != null ? `SECTOR ${sector}` : undefined}
 						onRangeZoom={zoomTelemetry}
 						rangeZoomLinked={false}
 					/>

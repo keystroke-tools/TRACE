@@ -8,6 +8,7 @@ const lap = { id: "lap-one", index: 4, duration_ns: 91_250_000_000 };
 const points = [
 	{
 		elapsed_seconds: 0,
+		sector_index: 1,
 		lap_position: 0,
 		speed_kph: 100,
 		throttle: 0.5,
@@ -20,6 +21,7 @@ const points = [
 	},
 	{
 		elapsed_seconds: 1,
+		sector_index: 2,
 		lap_position: 1,
 		speed_kph: 210.4,
 		throttle: 1,
@@ -80,6 +82,8 @@ describe("telemetry workspace", () => {
 		expect(screen.getByRole("button", { name: "Zoom map out" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Reset map pan and spatial zoom" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Play telemetry playback" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "SECTOR 1" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "SECTOR 2" })).toBeTruthy();
 		expect(screen.getByRole("slider", { name: "Seek through lap distance" })).toBeTruthy();
 		expect((screen.getByRole("combobox", { name: "Telemetry playback speed" }) as HTMLSelectElement).value).toBe("1");
 		expect(screen.getByRole("img", { name: "SPEED telemetry by lap distance" })).toBeTruthy();

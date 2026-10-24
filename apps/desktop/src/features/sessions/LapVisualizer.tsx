@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { SectorPicker } from "@trace/ui";
 import { telemetryDataSource, type LapComparisonSample, type LapTrace, type RecordedSessionSummary } from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { channelColours, ComparisonChart, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import { filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "../telemetry/telemetry-window";
-import { SectorPicker, TelemetryHud } from "../compare/ComparePage";
+import { TelemetryHud } from "../compare/ComparePage";
 import { ConsistencyChart } from "./ConsistencyChart";
 
 export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary; lapIndex: number }) {

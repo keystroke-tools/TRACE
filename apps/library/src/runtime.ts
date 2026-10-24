@@ -452,7 +452,7 @@ function interpolate(points, progress, key) {
 function alignLaps(referencePoints, analysedPoints) {
 	const reference = progressSeries(referencePoints);
 	const analysed = progressSeries(analysedPoints);
-	const keys = ["elapsed_seconds", "speed_kph", "throttle", "brake", "position_x_m", "position_z_m"];
+	const keys = ["elapsed_seconds", "sector_index", "speed_kph", "throttle", "brake", "position_x_m", "position_z_m"];
 	const samples = Array.from({ length: 600 }, (_, index) => {
 		const progress = index / 599;
 		const sample = { progress };

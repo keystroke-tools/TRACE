@@ -1,6 +1,6 @@
 @import "tailwindcss/theme" layer(theme);
 @import "tailwindcss/utilities" layer(utilities);
-@source "../../../packages/trace-ui/src/track-map.tsx";
+@source "../../../packages/trace-ui/src/*.tsx";
 
 @theme {
 	--color-trace-base: var(--trace-base);

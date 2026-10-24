@@ -3006,7 +3006,10 @@ mod tests {
             validity_reason: None,
             max_tyres_out: Some(0),
             is_personal_best: true,
-            sectors: Vec::new(),
+            sectors: vec![trace_storage::metadata::SectorSummary {
+                index: 1,
+                duration_ns: 90_000_000_000,
+            }],
         };
         let manifest = SessionPackageManifest {
             format_version: PACKAGE_VERSION,
@@ -3136,6 +3139,7 @@ mod tests {
         assert_eq!(telemetry["source_samples"], 1);
         assert_eq!(telemetry["returned_samples"], 1);
         assert_eq!(telemetry["points"].as_array().map(Vec::len), Some(1));
+        assert_eq!(telemetry["points"][0]["sector_index"], 1);
 
         let hidden = application
             .clone()

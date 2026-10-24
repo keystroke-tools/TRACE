@@ -28,7 +28,7 @@ import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMa
 import { ComparisonSessionPicker } from "./ComparisonSessionPicker";
 import { fasterReferenceSuggestions, type ComparisonSelection, type ReferenceSuggestion, validComparisonLaps } from "./comparison-selection";
 import { FEATURE_FLAGS_CHANGED_EVENT, richComparisonPickerEnabled } from "../settings/feature-flags";
-import { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "@trace/ui";
+import { nearestTelemetryPlaybackIndex, SectorPicker, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "@trace/ui";
 import {
 	filterSamplesByDistance,
 	filterSamplesBySector,
@@ -1444,32 +1444,6 @@ function cornerSummary(corner: CornerAnalysis, dominantPhase: string) {
 			: null;
 	if (dominantPhase === "EXIT" && throttleDifference != null && throttleDifference > 3) return `Throttle applied ${Math.round(throttleDifference)} m later`;
 	return `Loss develops through ${dominantPhase.toLowerCase()}`;
-}
-
-export function SectorPicker({ samples, value, onChange }: { samples: LapComparisonSample[]; value: number | null; onChange: (value: number | null) => void }) {
-	const sectors = [...new Set(samples.flatMap((sample) => (sample.sectorIndex == null ? [] : [sample.sectorIndex])))].sort((left, right) => left - right);
-	return (
-		<div className="flex items-center gap-2" aria-label="Telemetry range">
-			<span className="mr-2 font-mono text-[12px] font-bold tracking-[.1em] text-trace-dim">VIEW</span>
-			<button
-				type="button"
-				onClick={() => onChange(null)}
-				className={`border px-3 py-2 font-mono text-[12px] font-bold ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}
-			>
-				FULL LAP
-			</button>
-			{sectors.map((item) => (
-				<button
-					type="button"
-					onClick={() => onChange(item)}
-					className={`border px-3 py-2 font-mono text-[12px] font-bold ${value === item ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}
-					key={item}
-				>
-					SECTOR {item}
-				</button>
-			))}
-		</div>
-	);
 }
 
 export function TelemetryHud({
