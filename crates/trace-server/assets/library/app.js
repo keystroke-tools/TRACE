@@ -151,6 +151,7 @@ async function loadAccount() {
 		state.account = await request("/api/v1/auth/session");
 		await loadLibrary();
 		show("library");
+		await openAuthenticatedRoute();
 	} catch {
 		state.account = null;
 		show("auth");
@@ -288,6 +289,59 @@ function readable(value, fallback) {
 	return value && value.trim() ? value : fallback;
 }
 
+function urlSlug(...parts) {
+	const slug = parts
+		.filter(Boolean)
+		.join(" ")
+		.normalize("NFKD")
+		.toLocaleLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 80)
+		.replace(/-$/, "");
+	return slug || "session";
+}
+
+function sessionPath(summary) {
+	const identity = readable(summary.driver_name, readable(summary.title, "session"));
+	return `/app/sessions/${urlSlug(identity, summary.track)}--${summary.session_id}`;
+}
+
+function sharedSessionPath(summary, shareId) {
+	const identity = readable(summary.driver_name, readable(summary.title, "session"));
+	return `/shared/${urlSlug(identity, summary.track)}--${shareId}`;
+}
+
+function routeIdentifier(pattern) {
+	return window.location.pathname.match(pattern)?.[1] || null;
+}
+
+function privateSessionId() {
+	return routeIdentifier(/^\/app\/sessions\/.+--([0-9a-f]{32})\/?$/i);
+}
+
+function publicShareId() {
+	return routeIdentifier(/^\/p\/([0-9a-f]{32})\/?$/i) || routeIdentifier(/^\/shared\/.+--([0-9a-f]{32})\/?$/i);
+}
+
+function setLocation(path, replace = false) {
+	if (window.location.pathname === path) return;
+	history[replace ? "replaceState" : "pushState"]({}, "", path);
+}
+
+async function openAuthenticatedRoute() {
+	const sessionId = privateSessionId();
+	if (sessionId) {
+		await openReview(sessionId, false);
+		return;
+	}
+	if (window.location.pathname === "/app") {
+		if (state.review) closeReview(false);
+		return;
+	}
+	if (window.location.pathname !== "/app") setLocation("/app", true);
+}
+
 function sessionSearchText(session) {
 	return [session.title, session.driver_name, session.simulator, session.track, session.layout, session.car, session.session_type, ...(session.tags || [])]
 		.filter(Boolean)
@@ -355,7 +409,7 @@ function sessionRow(session) {
 	return row;
 }
 
-async function openReview(sessionId) {
+async function openReview(sessionId, navigate = true) {
 	state.publicShareId = null;
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
@@ -368,10 +422,12 @@ async function openReview(sessionId) {
 		state.selectedLap = null;
 		clearComparison(false);
 		renderReview();
+		if (navigate) setLocation(sessionPath(state.review.summary));
 		const preferred = [...state.review.laps].filter((lap) => lap.duration_ns != null).sort((left, right) => left.duration_ns - right.duration_ns)[0];
 		if (preferred) await loadLap(preferred.id);
 	} catch (error) {
-		closeReview();
+		closeReview(false);
+		setLocation("/app", true);
 		toast(error.message, "error");
 	}
 }
@@ -393,6 +449,7 @@ async function openPublicReview(shareId) {
 		state.selectedLap = null;
 		clearComparison(false);
 		renderReview();
+		setLocation(sharedSessionPath(state.review.summary, shareId), true);
 		const preferred = [...state.review.laps].filter((lap) => lap.duration_ns != null).sort((left, right) => left.duration_ns - right.duration_ns)[0];
 		if (preferred) await loadLap(preferred.id);
 		show("library");
@@ -403,7 +460,7 @@ async function openPublicReview(shareId) {
 	}
 }
 
-function closeReview() {
+function closeReview(navigate = true) {
 	state.review = null;
 	state.telemetry = null;
 	state.selectedLap = null;
@@ -419,6 +476,8 @@ function closeReview() {
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
+	document.title = `${state.instance?.name || "TRACE"} · TRACE Library`;
+	if (navigate) setLocation("/app");
 }
 
 function updateOwnedShare(shareId, shareUrl = null) {
@@ -439,7 +498,7 @@ function renderShareState() {
 		elements.shareUrl.value = "";
 		return;
 	}
-	elements.shareUrl.value = state.shareUrl || new URL(`/p/${shareId}`, window.location.origin).href;
+	elements.shareUrl.value = state.shareUrl || new URL(sharedSessionPath(state.review.summary, shareId), window.location.origin).href;
 }
 
 async function toggleSharePanel() {
@@ -506,9 +565,7 @@ function renderReview() {
 	elements.reviewKicker.textContent = `${state.publicShareId ? "Shared session · " : ""}${readable(summary.session_type, "Session")} · ${readable(summary.simulator, "Unknown simulator")}`;
 	elements.reviewName.textContent = readable(summary.title, readable(summary.driver_name, "Recorded session"));
 	elements.reviewContext.textContent = `${readable(summary.track, "Unknown track")} · ${readable(summary.car, "Unknown car")} · ${formatDate(summary.started_at)}`;
-	if (state.publicShareId) {
-		document.title = `${readable(summary.driver_name, "Shared session")} at ${readable(summary.track, "Unknown track")} · TRACE`;
-	}
+	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
 	elements.reviewLapCount.textContent = `${laps.length} ${laps.length === 1 ? "lap" : "laps"}`;
 	const timed = laps.filter((lap) => lap.duration_ns != null);
 	const best = timed.length ? timed.reduce((fastest, lap) => (lap.duration_ns < fastest.duration_ns ? lap : fastest)) : null;
@@ -975,7 +1032,7 @@ async function upload(file) {
 
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
-elements.reviewBack.addEventListener("click", closeReview);
+elements.reviewBack.addEventListener("click", () => closeReview());
 elements.shareOpen.addEventListener("click", toggleSharePanel);
 elements.shareCopy.addEventListener("click", copyShareLink);
 elements.reviewCopyTrace.addEventListener("click", copyTraceLink);
@@ -1010,6 +1067,7 @@ elements.loginForm.addEventListener("submit", async (event) => {
 		elements.loginForm.reset();
 		await loadLibrary();
 		show("library");
+		await openAuthenticatedRoute();
 	} catch (error) {
 		toast(error.message, "error");
 	} finally {
@@ -1035,6 +1093,7 @@ elements.registerForm.addEventListener("submit", async (event) => {
 		elements.registerForm.reset();
 		await loadLibrary();
 		show("library");
+		await openAuthenticatedRoute();
 	} catch (error) {
 		toast(error.message, "error");
 	} finally {
@@ -1047,7 +1106,8 @@ elements.logout.addEventListener("click", async () => {
 		await request("/api/v1/auth/session", { method: "DELETE" });
 		state.account = null;
 		state.sessions = [];
-		closeReview();
+		closeReview(false);
+		setLocation("/app", true);
 		show("auth");
 	} catch (error) {
 		toast(error.message, "error");
@@ -1061,6 +1121,9 @@ elements.tokenCopy.addEventListener("click", copyToken);
 for (const field of [elements.tokenValue, elements.shareUrl]) {
 	field.addEventListener("click", () => field.select());
 }
+window.addEventListener("popstate", () => {
+	if (state.account) void openAuthenticatedRoute();
+});
 
 const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
 telemetryResizeObserver.observe(elements.trackCanvas);
@@ -1083,10 +1146,10 @@ async function start() {
 			elements.registerTab.textContent = "Create administrator";
 			switchAuth("register");
 		}
-		const publicMatch = window.location.pathname.match(/^\/p\/([0-9a-f]{32})$/i);
-		if (publicMatch) {
+		const shareId = publicShareId();
+		if (shareId) {
 			document.title = `Shared session · ${state.instance.name}`;
-			await openPublicReview(publicMatch[1]);
+			await openPublicReview(shareId);
 		} else {
 			await loadAccount();
 		}

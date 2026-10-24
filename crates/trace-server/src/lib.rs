@@ -1140,7 +1140,9 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/live/{session_id}", get(spectator_page))
         .route("/s/{share_id}", get(shared_session_page))
         .route("/app", get(library_page))
+        .route("/app/sessions/{session_ref}", get(library_page))
         .route("/p/{share_id}", get(library_page))
+        .route("/shared/{share_ref}", get(library_page))
         .route("/app-assets/library.css", get(library_styles))
         .route("/app-assets/library.js", get(library_script))
         .route("/live-assets/spectator.css", get(spectator_styles))
@@ -1546,7 +1548,7 @@ async fn share_library_session(
         .library
         .clone()
         .ok_or(ServiceError::LibraryUnavailable)?;
-    let share_id = tokio::task::spawn_blocking(move || {
+    let (share_id, summary) = tokio::task::spawn_blocking(move || {
         store.share(&account.account_id, &session_id, unix_timestamp_ms())
     })
     .await
@@ -1557,6 +1559,7 @@ async fn share_library_session(
         Json(library_share_summary(
             &service.config.public_base_url,
             share_id,
+            &summary,
         )),
     ))
 }
@@ -1630,12 +1633,49 @@ async fn download_public_library_session(
     library_download_response(stored, "no-store").await
 }
 
-fn library_share_summary(public_base_url: &str, share_id: String) -> LibraryShareSummary {
+fn library_share_summary(
+    public_base_url: &str,
+    share_id: String,
+    summary: &LibrarySessionSummary,
+) -> LibraryShareSummary {
+    let slug = session_url_slug(summary);
     LibraryShareSummary {
-        share_url: format!("{public_base_url}/p/{share_id}"),
+        share_url: format!("{public_base_url}/shared/{slug}--{share_id}"),
         download_url: format!("{public_base_url}/api/v1/public-sessions/{share_id}/download"),
         share_id,
         visibility: "unlisted",
+    }
+}
+
+fn session_url_slug(summary: &LibrarySessionSummary) -> String {
+    let identity = summary
+        .driver_name
+        .as_deref()
+        .or(summary.title.as_deref())
+        .unwrap_or("session");
+    let context = summary.track.as_deref().unwrap_or("unknown-track");
+    let raw = format!("{identity}-{context}");
+    let mut slug = String::with_capacity(raw.len().min(80));
+    let mut separator = false;
+    for character in raw.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_alphanumeric() {
+            if separator && !slug.is_empty() {
+                slug.push('-');
+            }
+            slug.push(character);
+            separator = false;
+        } else {
+            separator = true;
+        }
+        if slug.len() >= 80 {
+            break;
+        }
+    }
+    let slug = slug.trim_end_matches('-');
+    if slug.is_empty() {
+        "session".to_owned()
+    } else {
+        slug.to_owned()
     }
 }
 
@@ -2961,6 +3001,11 @@ mod tests {
         assert!(
             created["share_url"]
                 .as_str()
+                .is_some_and(|url| url.contains("/shared/") && url.contains("--"))
+        );
+        assert!(
+            created["share_url"]
+                .as_str()
                 .is_some_and(|url| url.ends_with(share_id))
         );
 
@@ -3655,6 +3700,7 @@ mod tests {
     async fn embedded_library_page_uses_external_assets_and_a_strict_policy() {
         let application = app(ServerConfig::new("https://telemetry.example.test"));
         let response = application
+            .clone()
             .oneshot(
                 Request::get("/app")
                     .body(Body::empty())
@@ -3685,6 +3731,22 @@ mod tests {
         )));
         assert!(!body.contains("__TRACE_VERSION__"));
         assert!(!body.contains("<script>"));
+
+        for path in [
+            "/app/sessions/driver-zandvoort--0123456789abcdef0123456789abcdef",
+            "/shared/driver-zandvoort--0123456789abcdef0123456789abcdef",
+        ] {
+            let response = application
+                .clone()
+                .oneshot(
+                    Request::get(path)
+                        .body(Body::empty())
+                        .expect("navigable library route request"),
+                )
+                .await
+                .expect("navigable library route response");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
     }
 
     #[test]

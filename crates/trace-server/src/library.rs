@@ -371,8 +371,8 @@ impl LibraryStore {
         account_id: &str,
         session_id: &str,
         now_unix_ms: i64,
-    ) -> Result<String, LibraryStoreError> {
-        self.find(account_id, session_id)?;
+    ) -> Result<(String, LibrarySessionSummary), LibraryStoreError> {
+        let summary = self.find(account_id, session_id)?.summary;
         let connection = self
             .connection
             .lock()
@@ -387,7 +387,7 @@ impl LibraryStore {
             .optional()
             .map_err(|_| LibraryStoreError::Database)?
         {
-            return Ok(share_id);
+            return Ok((share_id, summary));
         }
         let share_id = Uuid::new_v4().simple().to_string();
         connection
@@ -398,7 +398,7 @@ impl LibraryStore {
                 params![share_id, session_id, account_id, now_unix_ms],
             )
             .map_err(|_| LibraryStoreError::Database)?;
-        Ok(share_id)
+        Ok((share_id, summary))
     }
 
     pub(crate) fn revoke_share(

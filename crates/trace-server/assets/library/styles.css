@@ -271,12 +271,20 @@ button {
 	padding: 0 16px;
 	border: 1px solid #353535;
 	border-radius: 0;
-	background: #202020;
+	background: var(--trace-deep);
+	color: var(--trace-soft);
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 11px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
 	cursor: pointer;
 }
 
 button:hover {
-	background: #282828;
+	border-color: #555;
+	background: var(--trace-raised);
+	color: #fff;
 }
 
 button:disabled {
@@ -412,6 +420,34 @@ button.primary:hover {
 
 .quiet {
 	background: transparent;
+	color: var(--trace-muted);
+}
+
+#connect-desktop,
+#share-open {
+	border-color: #4b5d00;
+	background: var(--trace-accent-wash);
+	color: var(--trace-accent);
+}
+
+#connect-desktop:hover,
+#share-open:hover,
+#review-open-trace:hover {
+	border-color: var(--trace-accent);
+	background: var(--trace-accent);
+	color: var(--trace-black);
+}
+
+#compare-open {
+	border-color: #5b3d70;
+	background: #24182f;
+	color: var(--trace-purple);
+}
+
+#compare-open:hover {
+	border-color: var(--trace-purple);
+	background: var(--trace-purple);
+	color: var(--trace-black);
 }
 
 .library-tools {
@@ -575,6 +611,7 @@ button.primary:hover {
 	background: transparent;
 	color: #d6d6d6;
 	font-size: 12px;
+	font-weight: 700;
 	text-decoration: none;
 }
 
@@ -677,8 +714,18 @@ button.primary:hover {
 	border-radius: 0;
 	background: transparent;
 	color: #d6d6d6;
-	font-size: 12px;
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 11px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
 	text-decoration: none;
+}
+
+#review-open-trace {
+	border-color: #4b5d00;
+	background: var(--trace-accent-wash);
+	color: var(--trace-accent);
 }
 
 .back-button:hover,
