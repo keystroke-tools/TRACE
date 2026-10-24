@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	ComparisonChart,
+	TrackMap,
 	channelColours,
 	comparisonSeries,
 	deltaRange,
@@ -34,6 +35,10 @@ type Entry = { detail: Detail; lap: Lap; telemetry: Telemetry };
 
 type Sample = {
 	progress: number;
+	reference_position_x_m?: number | null;
+	reference_position_z_m?: number | null;
+	analysed_position_x_m?: number | null;
+	analysed_position_z_m?: number | null;
 	reference_speed_kph?: number | null;
 	analysed_speed_kph?: number | null;
 	reference_throttle?: number | null;
@@ -58,8 +63,6 @@ type WorkspaceSnapshot = {
 	comparison: Comparison | null;
 	message: string;
 };
-
-type Trace = { points: Point[]; color: string; width: number };
 
 declare global {
 	interface Window {
@@ -123,80 +126,6 @@ function ComparisonSummary() {
 	);
 }
 
-function canvasContext(canvas: HTMLCanvasElement) {
-	const rectangle = canvas.getBoundingClientRect();
-	const ratio = window.devicePixelRatio || 1;
-	canvas.width = Math.max(1, Math.round(rectangle.width * ratio));
-	canvas.height = Math.max(1, Math.round(rectangle.height * ratio));
-	const context = canvas.getContext("2d");
-	if (!context) return null;
-	context.scale(ratio, ratio);
-	context.lineJoin = "round";
-	context.lineCap = "round";
-	return { context, width: rectangle.width, height: rectangle.height };
-}
-
-function drawTrack(canvas: HTMLCanvasElement, traces: Trace[]) {
-	const surface = canvasContext(canvas);
-	if (!surface) return;
-	const { context, width, height } = surface;
-	const positionedTraces = traces.map((trace) => ({
-		...trace,
-		points: trace.points.filter((point) => Number.isFinite(point.position_x_m) && Number.isFinite(point.position_z_m)),
-	}));
-	const positions = positionedTraces.flatMap((trace) => trace.points);
-	if (positions.length < 2) {
-		context.fillStyle = "#777";
-		context.font = "12px system-ui";
-		context.textAlign = "center";
-		context.fillText("TRACK POSITION NOT RECORDED", width / 2, height / 2);
-		return;
-	}
-	const xs = positions.map((point) => point.position_x_m as number);
-	const zs = positions.map((point) => point.position_z_m as number);
-	const minX = Math.min(...xs);
-	const maxX = Math.max(...xs);
-	const minZ = Math.min(...zs);
-	const maxZ = Math.max(...zs);
-	const padding = 24;
-	const scale = Math.min((width - padding * 2) / Math.max(maxX - minX, 1), (height - padding * 2) / Math.max(maxZ - minZ, 1));
-	const offsetX = (width - (maxX - minX) * scale) / 2;
-	const offsetZ = (height - (maxZ - minZ) * scale) / 2;
-	for (const trace of positionedTraces) {
-		context.strokeStyle = trace.color;
-		context.lineWidth = trace.width;
-		context.beginPath();
-		trace.points.forEach((point, index) => {
-			const x = offsetX + ((point.position_x_m as number) - minX) * scale;
-			const y = offsetZ + ((point.position_z_m as number) - minZ) * scale;
-			if (index === 0) context.moveTo(x, y);
-			else context.lineTo(x, y);
-		});
-		context.stroke();
-	}
-}
-
-function useCanvas(draw: (canvas: HTMLCanvasElement) => void, dependencies: unknown[]): RefObject<HTMLCanvasElement | null> {
-	const canvas = useRef<HTMLCanvasElement>(null);
-	useLayoutEffect(() => {
-		const element = canvas.current;
-		if (!element) return;
-		const redraw = () => draw(element);
-		redraw();
-		const observer = new ResizeObserver(redraw);
-		observer.observe(element);
-		return () => observer.disconnect();
-		// The caller supplies the exact drawing dependencies.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, dependencies);
-	return canvas;
-}
-
-function TrackCanvas({ traces }: { traces: Trace[] }) {
-	const canvas = useCanvas((element) => drawTrack(element, traces), [traces]);
-	return <canvas ref={canvas} />;
-}
-
 function percentage(value?: number | null) {
 	if (value == null || !Number.isFinite(value)) return value;
 	return Math.abs(value) <= 1.001 ? value * 100 : value;
@@ -230,6 +159,10 @@ function alignedSamples(samples: Sample[]): LapComparisonSample[] {
 		comparisonThrottlePercent: percentage(sample.analysed_throttle),
 		referenceBrakePercent: percentage(sample.reference_brake),
 		comparisonBrakePercent: percentage(sample.analysed_brake),
+		referencePositionXM: sample.reference_position_x_m,
+		referencePositionZM: sample.reference_position_z_m,
+		comparisonPositionXM: sample.analysed_position_x_m,
+		comparisonPositionZM: sample.analysed_position_z_m,
 	}));
 }
 
@@ -246,12 +179,6 @@ function TelemetryWorkspace() {
 	const { lap, telemetry, comparison } = snapshot;
 	const maximumSpeed = Math.max(0, ...telemetry.points.map((point) => point.speed_kph || 0));
 	const maximumRpm = Math.max(0, ...telemetry.points.map((point) => point.engine_rpm || 0));
-	const traces: Trace[] = comparison
-		? [
-				{ points: comparison.analysed.telemetry.points, color: "#c9ff00", width: 2 },
-				{ points: comparison.reference.telemetry.points, color: "#b49cff", width: 3 },
-			]
-		: [{ points: telemetry.points, color: "#d5d5d5", width: 3 }];
 	const baseSamples = comparison ? alignedSamples(comparison.samples) : lapSamples(telemetry.points);
 	const samples = filterSamplesByTelemetryWindow(baseSamples, telemetryWindow);
 	const zoomTelemetry = (anchor: number, direction: "in" | "out") => {
@@ -300,9 +227,15 @@ function TelemetryWorkspace() {
 				</div>
 			</div>
 			<div className="visual-grid">
-				<div className="visual-card map-card">
-					<div className="visual-label">DRIVING LINE</div>
-					<TrackCanvas traces={traces} />
+				<div className="web-track-map">
+					<TrackMap
+						samples={samples}
+						cursorIndex={cursorIndex}
+						comparison={Boolean(comparison)}
+						height={360}
+						onRangeZoom={zoomTelemetry}
+						rangeZoomLinked={false}
+					/>
 				</div>
 				<ComparisonChart
 					label="SPEED"

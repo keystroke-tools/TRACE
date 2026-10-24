@@ -94,6 +94,9 @@ importers:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
     devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.2.2(jiti@2.7.0))
       '@testing-library/preact':
         specifier: ^3.2.4
         version: 3.2.6(preact@10.29.8)
@@ -112,6 +115,9 @@ importers:
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
       typescript:
         specifier: ^5.9.0
         version: 5.9.3

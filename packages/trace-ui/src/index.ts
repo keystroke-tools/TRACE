@@ -16,3 +16,12 @@ export {
 	type LapComparisonSample,
 } from "./telemetry-chart";
 export { filterSamplesByDistance, filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "./telemetry-window";
+export {
+	FloatingTrackMap,
+	TrackMap,
+	closestSampleAtElapsedTime,
+	useTrackMapPip,
+	type CornerAnalysis as TrackMapCornerAnalysis,
+	type TrackMapAsset,
+	type TrackMapPoint,
+} from "./track-map";

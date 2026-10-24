@@ -1,10 +1,11 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-	plugins: [react()],
+	plugins: [react(), tailwindcss()],
 	resolve: {
 		alias: [
 			{ find: "react-dom/client", replacement: fileURLToPath(import.meta.resolve("preact/compat/client")) },

@@ -1,0 +1,22 @@
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities);
+@source "../../../packages/trace-ui/src/track-map.tsx";
+
+@theme {
+	--color-trace-base: var(--trace-base);
+	--color-trace-surface: var(--trace-surface);
+	--color-trace-raised: var(--trace-raised);
+	--color-trace-divider: var(--trace-divider);
+	--color-trace-accent: var(--trace-accent);
+	--color-trace-accent-muted: var(--trace-accent-muted);
+	--color-trace-accent-wash: var(--trace-accent-wash);
+	--color-trace-text: var(--trace-text);
+	--color-trace-soft: var(--trace-soft);
+	--color-trace-muted: var(--trace-muted);
+	--color-trace-dim: var(--trace-dim);
+	--color-trace-deep: var(--trace-deep);
+	--color-trace-black: var(--trace-black);
+	--color-trace-warning: var(--trace-warning);
+	--color-trace-purple: var(--trace-purple);
+	--font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}

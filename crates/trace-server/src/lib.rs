@@ -1171,6 +1171,7 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/p/{share_id}", get(library_page))
         .route("/shared/{share_ref}", get(library_page))
         .route("/app-assets/library.css", get(library_styles))
+        .route("/app-assets/library-admin.css", get(library_admin_styles))
         .route("/app-assets/library-admin.js", get(library_admin_script))
         .route("/trace-assets/theme.css", get(trace_theme))
         .route("/live-assets/spectator.css", get(spectator_styles))
@@ -2209,6 +2210,16 @@ async fn library_admin_script() -> impl IntoResponse {
             (header::CACHE_CONTROL, "no-cache"),
         ],
         include_str!("../assets/library/library-admin.js"),
+    )
+}
+
+async fn library_admin_styles() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("../assets/library/library-admin.css"),
     )
 }
 
@@ -3793,6 +3804,7 @@ mod tests {
             ),
             ("/live-assets/site.css", "text/css; charset=utf-8"),
             ("/app-assets/library.css", "text/css; charset=utf-8"),
+            ("/app-assets/library-admin.css", "text/css; charset=utf-8"),
             (
                 "/app-assets/library-admin.js",
                 "text/javascript; charset=utf-8",
@@ -3928,6 +3940,10 @@ mod tests {
         )));
         assert!(body.contains(&format!(
             "/app-assets/library.css?v={}",
+            env!("CARGO_PKG_VERSION")
+        )));
+        assert!(body.contains(&format!(
+            "/app-assets/library-admin.css?v={}",
             env!("CARGO_PKG_VERSION")
         )));
         assert!(body.contains(&format!(

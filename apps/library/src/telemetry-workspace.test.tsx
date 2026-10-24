@@ -65,7 +65,9 @@ describe("telemetry workspace", () => {
 		expect(screen.getByText("1:31.250")).toBeTruthy();
 		expect(screen.getByText("210 km/h")).toBeTruthy();
 		expect(screen.getByText("7500 rpm")).toBeTruthy();
-		expect(screen.getByText("DRIVING LINE")).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Zoom map in" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Zoom map out" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Reset map pan and spatial zoom" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "SPEED telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "THROTTLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "BRAKE telemetry by lap distance" })).toBeTruthy();
