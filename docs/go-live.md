@@ -141,6 +141,7 @@ All implemented routes are versioned under `/api/v1`.
 | `POST`   | `/api/v1/library/sessions`                                   | cookie or token | Validate and add a private `.trace` package               |
 | `GET`    | `/api/v1/library/sessions`                                   | account cookie  | List the account's uploaded sessions                      |
 | `GET`    | `/api/v1/library/sessions/{id}`                              | account cookie  | Read owned session metadata                               |
+| `PUT`    | `/api/v1/library/sessions/{id}`                              | account cookie  | Update owned title, driver, and tags                      |
 | `GET`    | `/api/v1/library/sessions/{id}/review`                       | account cookie  | Read owned lap, sector, and condition metadata            |
 | `GET`    | `/api/v1/library/sessions/{id}/laps/{lap_id}/telemetry`      | account cookie  | Read bounded telemetry for one owned lap                  |
 | `POST`   | `/api/v1/library/sessions/{id}/share`                        | account cookie  | Create or recover a durable unlisted link                 |
@@ -152,7 +153,9 @@ All implemented routes are versioned under `/api/v1`.
 | `GET`    | `/api/v1/public-sessions/{share_id}/download`                | none            | Download an unlisted library session package              |
 | `GET`    | `/`                                                          | none            | Open the TRACE Go Live service landing page               |
 | `GET`    | `/app`                                                       | none            | Open the account and private-library browser UI           |
-| `GET`    | `/p/{share_id}`                                              | none            | Review an unlisted library session without an account     |
+| `GET`    | `/app/sessions/{slug}--{id}`                                 | account cookie  | Open an owned session at a stable browser URL             |
+| `GET`    | `/shared/{slug}--{share_id}`                                 | none            | Review an unlisted library session without an account     |
+| `GET`    | `/p/{share_id}`                                              | none            | Legacy unlisted-review URL; redirects in browser state    |
 | `GET`    | `/live/{id}`                                                 | none            | Open the built-in browser spectator page                  |
 | `GET`    | `/s/{id}`                                                    | none            | Open the shared-session download page                     |
 
@@ -199,6 +202,13 @@ recorded lap position for distance alignment and labels its normalized-time fall
 position is unavailable. Telemetry responses decode only the selected laps and are
 downsampled to a bounded point count (1,800 by default and at most 4,000), so opening a
 comparison never sends an entire race to the browser.
+
+Owners can edit a library session's title, driver attribution, and tags. The server
+trims and validates those values, scopes the update to the authenticated account, and
+uses the result in search, stable browser URLs, and unlisted review pages. These fields
+are library metadata: editing them does not silently rewrite the original uploaded
+`.trace` archive, so downloading it still produces the exact validated package that was
+uploaded.
 
 After connecting an account in Settings → Connectivity, the desktop session menu can
 upload a chosen subset of laps directly to the private library. It builds the same
