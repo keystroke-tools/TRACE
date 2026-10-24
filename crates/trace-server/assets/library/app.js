@@ -5,6 +5,7 @@ const state = {
 	review: null,
 	telemetry: null,
 	selectedLap: null,
+	selectedLapId: null,
 	comparison: null,
 	pickerReview: null,
 	publicShareId: null,
@@ -48,8 +49,6 @@ const elements = {
 	comparisonSummary: document.querySelector("#comparison-summary"),
 	comparisonClear: document.querySelector("#comparison-clear"),
 	alignmentLabel: document.querySelector("#alignment-label"),
-	reviewLapCount: document.querySelector("#review-lap-count"),
-	reviewLaps: document.querySelector("#review-laps"),
 	telemetryEmpty: document.querySelector("#telemetry-empty"),
 	telemetryContent: document.querySelector("#telemetry-content"),
 	telemetryLapLabel: document.querySelector("#telemetry-lap-label"),
@@ -166,6 +165,17 @@ function syncReviewHeader() {
 		: null;
 	window.traceReviewSnapshot = snapshot;
 	window.dispatchEvent(new CustomEvent("trace:review-load", { detail: snapshot }));
+}
+
+function syncLapList() {
+	const snapshot = state.review
+		? {
+				laps: state.review.laps,
+				selectedLapId: state.selectedLapId,
+			}
+		: null;
+	window.traceLapListSnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:laps-load", { detail: snapshot }));
 }
 
 function toggleAdminPanel() {
@@ -328,6 +338,7 @@ async function openReview(sessionId, navigate = true) {
 	state.publicShareId = null;
 	state.review = null;
 	syncReviewHeader();
+	syncLapList();
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	elements.telemetryContent.hidden = true;
@@ -337,6 +348,7 @@ async function openReview(sessionId, navigate = true) {
 		state.review = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/review`);
 		state.telemetry = null;
 		state.selectedLap = null;
+		state.selectedLapId = null;
 		clearComparison(false);
 		renderReview();
 		if (navigate) setLocation(sessionPath(state.review.summary));
@@ -353,6 +365,7 @@ async function openPublicReview(shareId) {
 	state.publicShareId = shareId;
 	state.review = null;
 	syncReviewHeader();
+	syncLapList();
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	elements.sharePanel.hidden = true;
@@ -363,6 +376,7 @@ async function openPublicReview(shareId) {
 		state.review = await request(`/api/v1/public-sessions/${encodeURIComponent(shareId)}`);
 		state.telemetry = null;
 		state.selectedLap = null;
+		state.selectedLapId = null;
 		clearComparison(false);
 		renderReview();
 		setLocation(sharedSessionPath(state.review.summary, shareId), true);
@@ -380,11 +394,13 @@ function closeReview(navigate = true) {
 	state.review = null;
 	state.telemetry = null;
 	state.selectedLap = null;
+	state.selectedLapId = null;
 	state.publicShareId = null;
 	state.shareUrl = null;
 	clearComparison(false);
 	closeComparePicker();
 	syncReviewHeader();
+	syncLapList();
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
@@ -469,49 +485,17 @@ async function revokeShare() {
 function renderReview() {
 	const { summary, laps } = state.review;
 	syncReviewHeader();
+	syncLapList();
 	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
-	elements.reviewLapCount.textContent = `${laps.length} ${laps.length === 1 ? "lap" : "laps"}`;
-	const timed = laps.filter((lap) => lap.duration_ns != null);
-	const best = timed.length ? timed.reduce((fastest, lap) => (lap.duration_ns < fastest.duration_ns ? lap : fastest)) : null;
-	elements.reviewLaps.replaceChildren(...laps.map((lap) => lapRow(lap, best?.id)));
 	elements.telemetryEmpty.textContent = laps.length ? "Select a recorded lap to review its telemetry." : "This package contains no recorded laps.";
 	if (!state.publicShareId) renderShareState();
-}
-
-function lapRow(lap, bestId) {
-	const button = document.createElement("button");
-	button.className = "lap-row";
-	button.type = "button";
-	button.dataset.lapId = lap.id;
-	const identity = document.createElement("span");
-	identity.className = "lap-identity";
-	const label = document.createElement("small");
-	label.textContent = `LAP ${lap.index}`;
-	const time = document.createElement("strong");
-	time.textContent = formatDuration(lap.duration_ns);
-	identity.append(label, time);
-	const sectors = document.createElement("span");
-	sectors.className = "sector-list";
-	if (lap.sectors.length) {
-		for (const sector of lap.sectors) {
-			const value = document.createElement("span");
-			value.textContent = `S${sector.index} ${formatDuration(sector.duration_ns)}`;
-			sectors.append(value);
-		}
-	} else {
-		sectors.textContent = "No sectors";
-	}
-	if (lap.id === bestId) button.classList.add("best");
-	if (lap.validity !== "valid") button.classList.add("invalid");
-	button.append(identity, sectors);
-	button.addEventListener("click", () => loadLap(lap.id));
-	return button;
 }
 
 async function loadLap(lapId) {
 	if (!state.review) return;
 	clearComparison(false);
-	for (const button of elements.reviewLaps.querySelectorAll(".lap-row")) button.classList.toggle("active", button.dataset.lapId === lapId);
+	state.selectedLapId = lapId;
+	syncLapList();
 	elements.telemetryContent.hidden = true;
 	elements.telemetryEmpty.hidden = false;
 	elements.telemetryEmpty.textContent = "Loading lap telemetry…";
@@ -971,6 +955,7 @@ window.addEventListener("trace:sessions-updated", (event) => {
 	state.sessions = event.detail.sessions;
 });
 window.addEventListener("trace:open-session", (event) => void openReview(event.detail.sessionId));
+window.addEventListener("trace:lap-open", (event) => void loadLap(event.detail.lapId));
 window.addEventListener("trace:review-back", () => closeReview());
 window.addEventListener("trace:compare-open", openComparePicker);
 window.addEventListener("trace:share-open", toggleSharePanel);
