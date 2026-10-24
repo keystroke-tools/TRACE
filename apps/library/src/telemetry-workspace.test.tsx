@@ -5,8 +5,30 @@ import { ComparisonSummary, TelemetryWorkspace } from "./telemetry-workspace";
 
 const lap = { id: "lap-one", index: 4, duration_ns: 91_250_000_000 };
 const points = [
-	{ elapsed_seconds: 0, speed_kph: 100, throttle: 0.5, brake: 0, engine_rpm: 5000, position_x_m: 0, position_z_m: 0 },
-	{ elapsed_seconds: 1, speed_kph: 210.4, throttle: 1, brake: 0.2, engine_rpm: 7499.6, position_x_m: 10, position_z_m: 5 },
+	{
+		elapsed_seconds: 0,
+		lap_position: 0,
+		speed_kph: 100,
+		throttle: 0.5,
+		brake: 0,
+		engine_rpm: 5000,
+		steering_angle_rad: 0,
+		gear: 3,
+		position_x_m: 0,
+		position_z_m: 0,
+	},
+	{
+		elapsed_seconds: 1,
+		lap_position: 1,
+		speed_kph: 210.4,
+		throttle: 1,
+		brake: 0.2,
+		engine_rpm: 7499.6,
+		steering_angle_rad: 0.2,
+		gear: 4,
+		position_x_m: 10,
+		position_z_m: 5,
+	},
 ];
 
 beforeEach(() => {
@@ -44,7 +66,11 @@ describe("telemetry workspace", () => {
 		expect(screen.getByText("210 km/h")).toBeTruthy();
 		expect(screen.getByText("7500 rpm")).toBeTruthy();
 		expect(screen.getByText("DRIVING LINE")).toBeTruthy();
-		expect(screen.getByText("THROTTLE")).toBeTruthy();
+		expect(screen.getByRole("img", { name: "SPEED telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByRole("img", { name: "THROTTLE telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByRole("img", { name: "BRAKE telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByRole("img", { name: "STEERING ANGLE telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByRole("img", { name: "GEAR telemetry by lap distance" })).toBeTruthy();
 		expect(screen.queryByText("TIME DELTA · ANALYSED VS REFERENCE")).toBeNull();
 	});
 

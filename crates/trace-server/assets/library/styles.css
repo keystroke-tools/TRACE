@@ -1238,6 +1238,10 @@ button.primary:hover {
 	height: 100%;
 }
 
+.telemetry-chart-wide {
+	grid-column: 1 / -1;
+}
+
 .toast-region {
 	position: fixed;
 	right: 20px;

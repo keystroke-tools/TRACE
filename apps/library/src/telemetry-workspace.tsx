@@ -1,12 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createRoot } from "react-dom/client";
+import {
+	ComparisonChart,
+	channelColours,
+	comparisonSeries,
+	deltaRange,
+	formatGear,
+	singleSeries,
+	steeringAngleRange,
+	type LapComparisonSample,
+} from "@trace/ui";
 
 type Point = {
 	elapsed_seconds?: number | null;
+	lap_position?: number | null;
 	speed_kph?: number | null;
 	throttle?: number | null;
 	brake?: number | null;
 	engine_rpm?: number | null;
+	steering_angle_rad?: number | null;
+	gear?: number | null;
 	position_x_m?: number | null;
 	position_z_m?: number | null;
 };
@@ -17,12 +30,15 @@ type Detail = { summary: { title: string | null; driver_name: string | null } };
 type Entry = { detail: Detail; lap: Lap; telemetry: Telemetry };
 
 type Sample = {
+	progress: number;
 	reference_speed_kph?: number | null;
 	analysed_speed_kph?: number | null;
 	reference_throttle?: number | null;
 	analysed_throttle?: number | null;
 	reference_brake?: number | null;
 	analysed_brake?: number | null;
+	reference_elapsed_seconds?: number | null;
+	analysed_elapsed_seconds?: number | null;
 	delta_seconds?: number | null;
 };
 
@@ -40,7 +56,6 @@ type WorkspaceSnapshot = {
 	message: string;
 };
 
-type Series = { values: Array<number | null | undefined>; color: string; maximum?: number };
 type Trace = { points: Point[]; color: string; width: number };
 
 declare global {
@@ -158,49 +173,6 @@ function drawTrack(canvas: HTMLCanvasElement, traces: Trace[]) {
 	}
 }
 
-function drawSeries(canvas: HTMLCanvasElement, series: Series[], zeroCentered = false) {
-	const surface = canvasContext(canvas);
-	if (!surface) return;
-	const { context, width, height } = surface;
-	const padding = 12;
-	context.strokeStyle = "#292929";
-	context.lineWidth = 1;
-	for (let line = 1; line < 4; line += 1) {
-		const y = padding + ((height - padding * 2) * line) / 4;
-		context.beginPath();
-		context.moveTo(0, y);
-		context.lineTo(width, y);
-		context.stroke();
-	}
-	const allValues = series.flatMap((item) => item.values.filter((value): value is number => Number.isFinite(value)));
-	const absoluteMaximum = Math.max(0.01, ...allValues.map(Math.abs));
-	const sharedMaximum = zeroCentered ? absoluteMaximum : Math.max(1, ...allValues);
-	if (zeroCentered) {
-		context.strokeStyle = "#555";
-		context.beginPath();
-		context.moveTo(0, height / 2);
-		context.lineTo(width, height / 2);
-		context.stroke();
-	}
-	for (const item of series) {
-		const maximum = item.maximum || sharedMaximum;
-		context.strokeStyle = item.color;
-		context.lineWidth = 2;
-		context.beginPath();
-		let started = false;
-		item.values.forEach((value, index) => {
-			if (!Number.isFinite(value)) return;
-			const x = item.values.length === 1 ? 0 : (index / (item.values.length - 1)) * width;
-			const normalized = zeroCentered ? ((value as number) + maximum) / (maximum * 2) : Math.max(0, value as number) / maximum;
-			const y = height - padding - normalized * (height - padding * 2);
-			if (started) context.lineTo(x, y);
-			else context.moveTo(x, y);
-			started = true;
-		});
-		context.stroke();
-	}
-}
-
 function useCanvas(draw: (canvas: HTMLCanvasElement) => void, dependencies: unknown[]): RefObject<HTMLCanvasElement | null> {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	useLayoutEffect(() => {
@@ -222,13 +194,45 @@ function TrackCanvas({ traces }: { traces: Trace[] }) {
 	return <canvas ref={canvas} />;
 }
 
-function SeriesCanvas({ series, zeroCentered = false }: { series: Series[]; zeroCentered?: boolean }) {
-	const canvas = useCanvas((element) => drawSeries(element, series, zeroCentered), [series, zeroCentered]);
-	return <canvas ref={canvas} />;
+function percentage(value?: number | null) {
+	if (value == null || !Number.isFinite(value)) return value;
+	return Math.abs(value) <= 1.001 ? value * 100 : value;
+}
+
+function lapSamples(points: Point[]): LapComparisonSample[] {
+	const last = Math.max(1, points.length - 1);
+	return points.map((point, index) => ({
+		distanceM: Number.isFinite(point.lap_position) ? (point.lap_position as number) * 100 : (index / last) * 100,
+		referenceElapsedSeconds: point.elapsed_seconds,
+		referenceSpeedKmh: point.speed_kph,
+		referenceThrottlePercent: percentage(point.throttle),
+		referenceBrakePercent: percentage(point.brake),
+		referenceSteeringDegrees: point.steering_angle_rad == null ? null : (point.steering_angle_rad * 180) / Math.PI,
+		referenceRpm: point.engine_rpm,
+		referenceGear: point.gear,
+		referencePositionXM: point.position_x_m,
+		referencePositionZM: point.position_z_m,
+	}));
+}
+
+function alignedSamples(samples: Sample[]): LapComparisonSample[] {
+	return samples.map((sample) => ({
+		distanceM: sample.progress * 100,
+		deltaSeconds: sample.delta_seconds,
+		referenceElapsedSeconds: sample.reference_elapsed_seconds,
+		comparisonElapsedSeconds: sample.analysed_elapsed_seconds,
+		referenceSpeedKmh: sample.reference_speed_kph,
+		comparisonSpeedKmh: sample.analysed_speed_kph,
+		referenceThrottlePercent: percentage(sample.reference_throttle),
+		comparisonThrottlePercent: percentage(sample.analysed_throttle),
+		referenceBrakePercent: percentage(sample.reference_brake),
+		comparisonBrakePercent: percentage(sample.analysed_brake),
+	}));
 }
 
 function TelemetryWorkspace() {
 	const snapshot = useWorkspace();
+	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
 	if (!snapshot?.lap || !snapshot.telemetry)
 		return <div className="telemetry-empty">{snapshot?.message || "Select a recorded lap to review its telemetry."}</div>;
 	const { lap, telemetry, comparison } = snapshot;
@@ -240,24 +244,17 @@ function TelemetryWorkspace() {
 				{ points: comparison.reference.telemetry.points, color: "#b49cff", width: 3 },
 			]
 		: [{ points: telemetry.points, color: "#d5d5d5", width: 3 }];
-	const speed: Series[] = comparison
-		? [
-				{ values: comparison.samples.map((sample) => sample.analysed_speed_kph), color: "#65a9ff" },
-				{ values: comparison.samples.map((sample) => sample.reference_speed_kph), color: "#b49cff" },
-			]
-		: [{ values: telemetry.points.map((point) => point.speed_kph), color: "#65a9ff" }];
-	const throttle: Series[] = comparison
-		? [
-				{ values: comparison.samples.map((sample) => sample.analysed_throttle), color: "#c9ff00", maximum: 1 },
-				{ values: comparison.samples.map((sample) => sample.reference_throttle), color: "#b49cff", maximum: 1 },
-			]
-		: [{ values: telemetry.points.map((point) => point.throttle), color: "#c9ff00", maximum: 1 }];
-	const brake: Series[] = comparison
-		? [
-				{ values: comparison.samples.map((sample) => sample.analysed_brake), color: "#ef6969", maximum: 1 },
-				{ values: comparison.samples.map((sample) => sample.reference_brake), color: "#b49cff", maximum: 1 },
-			]
-		: [{ values: telemetry.points.map((point) => point.brake), color: "#ef6969", maximum: 1 }];
+	const samples = comparison ? alignedSamples(comparison.samples) : lapSamples(telemetry.points);
+	const comparisonIsFaster = false;
+	const speedSeries = comparison
+		? comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed, comparisonIsFaster)
+		: singleSeries("referenceSpeedKmh", channelColours.speed);
+	const throttleSeries = comparison
+		? comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle, comparisonIsFaster)
+		: singleSeries("referenceThrottlePercent", channelColours.throttle);
+	const brakeSeries = comparison
+		? comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake, comparisonIsFaster)
+		: singleSeries("referenceBrakePercent", channelColours.brake);
 
 	return (
 		<>
@@ -282,22 +279,78 @@ function TelemetryWorkspace() {
 					<div className="visual-label">DRIVING LINE</div>
 					<TrackCanvas traces={traces} />
 				</div>
-				<div className="visual-card">
-					<div className="visual-label">SPEED</div>
-					<SeriesCanvas series={speed} />
+				<ComparisonChart
+					label="SPEED"
+					unit="km/h"
+					samples={samples}
+					series={speedSeries}
+					cursorIndex={cursorIndex}
+					onCursor={setCursorIndex}
+					distanceUnit="%"
+				/>
+				<div className="telemetry-chart-wide">
+					<ComparisonChart
+						label="THROTTLE"
+						unit="%"
+						samples={samples}
+						series={throttleSeries}
+						cursorIndex={cursorIndex}
+						onCursor={setCursorIndex}
+						fixedRange={[0, 100]}
+						distanceUnit="%"
+					/>
 				</div>
-				<div className="visual-card">
-					<div className="visual-label">THROTTLE</div>
-					<SeriesCanvas series={throttle} />
+				<div className="telemetry-chart-wide">
+					<ComparisonChart
+						label="BRAKE"
+						unit="%"
+						samples={samples}
+						series={brakeSeries}
+						cursorIndex={cursorIndex}
+						onCursor={setCursorIndex}
+						fixedRange={[0, 100]}
+						distanceUnit="%"
+					/>
 				</div>
-				<div className="visual-card">
-					<div className="visual-label">BRAKE</div>
-					<SeriesCanvas series={brake} />
-				</div>
+				{!comparison && (
+					<>
+						<ComparisonChart
+							label="STEERING ANGLE"
+							unit="°"
+							samples={samples}
+							series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
+							cursorIndex={cursorIndex}
+							onCursor={setCursorIndex}
+							fixedRange={steeringAngleRange(samples)}
+							zeroLine
+							distanceUnit="%"
+						/>
+						<ComparisonChart
+							label="GEAR"
+							unit=""
+							samples={samples}
+							series={singleSeries("referenceGear", channelColours.gear)}
+							cursorIndex={cursorIndex}
+							onCursor={setCursorIndex}
+							fixedRange={[-1, 8]}
+							formatValue={(value) => formatGear(value)}
+							distanceUnit="%"
+						/>
+					</>
+				)}
 				{comparison && (
-					<div className="visual-card delta-card">
-						<div className="visual-label">TIME DELTA · ANALYSED VS REFERENCE</div>
-						<SeriesCanvas series={[{ values: comparison.samples.map((sample) => sample.delta_seconds), color: "#e8e8e8" }]} zeroCentered />
+					<div className="telemetry-chart-wide">
+						<ComparisonChart
+							label="TIME DELTA · ANALYSED VS REFERENCE"
+							unit="s"
+							samples={samples}
+							series={singleSeries("deltaSeconds", channelColours.delta)}
+							cursorIndex={cursorIndex}
+							onCursor={setCursorIndex}
+							fixedRange={deltaRange(samples)}
+							zeroLine
+							distanceUnit="%"
+						/>
 					</div>
 				)}
 			</div>
