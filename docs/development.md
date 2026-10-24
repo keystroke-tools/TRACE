@@ -7,8 +7,12 @@ project dependency versions ad hoc when they belong in these files.
 The desktop frontend and static product site use Tailwind CSS 4 through the official
 Vite plugin. Desktop tokens are defined with Tailwind's CSS-first `@theme` directive
 in `apps/desktop/src/styles.css`; the website's standalone presentation lives in
-`apps/web/src/styles.css`. There is intentionally no legacy JavaScript Tailwind
-configuration file.
+`apps/web/src/styles.css`. Shared TRACE tokens and React components live in
+`packages/trace-ui`. The embedded server library is migrating incrementally to React
+islands in `apps/library`; its build emits fixed-name assets into `trace-server` so the
+standalone server remains a single self-contained binary. Browser islands use Preact's
+React-compatible runtime to avoid shipping a full React runtime for each incremental
+slice. There is intentionally no legacy JavaScript Tailwind configuration file.
 
 References: [Tailwind's Vite installation](https://tailwindcss.com/docs/installation/using-vite)
 and [theme-variable documentation](https://tailwindcss.com/docs/theme).
@@ -52,6 +56,7 @@ mise exec -- cargo test -p trace-adapter --test replay_pipeline
 mise exec -- cargo clippy -p trace-storage --all-targets -- -D warnings
 mise exec -- pnpm --filter @trace/desktop check
 mise exec -- pnpm --filter @trace/desktop dev
+mise exec -- pnpm --filter @trace/library build
 ```
 
 The storage benchmark uses an optimized build and defaults to a 60-second synthetic
@@ -107,7 +112,9 @@ the audited `trace-windows-shmem` platform boundary.
 
 ```text
 apps/desktop/             React UI and Tauri composition root
+apps/library/             embedded server-library React islands
 apps/web/                 static simtrace.run product and download site
+packages/trace-ui/        shared TRACE tokens and presentation components
 crates/trace-domain/      canonical simulator-independent types
 crates/trace-adapter/     acquisition lifecycle and deterministic replay
 crates/trace-core/        deterministic telemetry mathematics

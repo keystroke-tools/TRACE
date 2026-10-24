@@ -20,3 +20,16 @@
 	--trace-sector-yellow: #e3c64b;
 	--trace-danger: #c42b1c;
 }
+
+.trace-section-heading {
+	color: var(--trace-soft);
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+.trace-section-heading-index {
+	margin-right: 0.625rem;
+	color: var(--trace-accent);
+}

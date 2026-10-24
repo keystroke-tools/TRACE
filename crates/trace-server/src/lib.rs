@@ -1172,6 +1172,7 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/shared/{share_ref}", get(library_page))
         .route("/app-assets/library.css", get(library_styles))
         .route("/app-assets/library.js", get(library_script))
+        .route("/app-assets/library-admin.js", get(library_admin_script))
         .route("/trace-assets/theme.css", get(trace_theme))
         .route("/live-assets/spectator.css", get(spectator_styles))
         .route("/live-assets/spectator.js", get(spectator_script))
@@ -2209,6 +2210,16 @@ async fn library_script() -> impl IntoResponse {
             (header::CACHE_CONTROL, "no-cache"),
         ],
         include_str!("../assets/library/app.js"),
+    )
+}
+
+async fn library_admin_script() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("../assets/library/library-admin.js"),
     )
 }
 
@@ -3794,6 +3805,10 @@ mod tests {
             ("/live-assets/site.css", "text/css; charset=utf-8"),
             ("/app-assets/library.css", "text/css; charset=utf-8"),
             ("/app-assets/library.js", "text/javascript; charset=utf-8"),
+            (
+                "/app-assets/library-admin.js",
+                "text/javascript; charset=utf-8",
+            ),
             ("/trace-assets/theme.css", "text/css; charset=utf-8"),
             ("/favicon.svg", "image/svg+xml"),
             ("/live-assets/trace-live-og.png", "image/png"),
@@ -3912,6 +3927,10 @@ mod tests {
         assert!(body.contains("TIME DELTA · ANALYSED VS REFERENCE"));
         assert!(body.contains(&format!(
             "/app-assets/library.js?v={}",
+            env!("CARGO_PKG_VERSION")
+        )));
+        assert!(body.contains(&format!(
+            "/app-assets/library-admin.js?v={}",
             env!("CARGO_PKG_VERSION")
         )));
         assert!(body.contains(&format!(

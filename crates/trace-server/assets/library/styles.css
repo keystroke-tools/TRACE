@@ -397,6 +397,16 @@ button.primary:hover {
 	gap: 10px;
 }
 
+.admin-settings-form {
+	display: contents;
+}
+
+.admin-loading {
+	grid-column: 1 / -1;
+	margin: 0;
+	color: var(--trace-dim);
+}
+
 .admin-retention-fields input {
 	width: 100%;
 }

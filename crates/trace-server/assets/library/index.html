@@ -79,25 +79,7 @@
 						</div>
 						<div id="token-list" class="token-list"></div>
 					</section>
-					<form id="admin-panel" class="token-panel admin-panel" hidden>
-						<div>
-							<p class="eyebrow">INSTANCE SETTINGS</p>
-							<strong>Access and library retention</strong>
-							<small>Zero means unlimited. Retention applies to private account libraries, not the live replay buffer.</small>
-						</div>
-						<label class="admin-toggle">
-							<input id="registration-enabled" type="checkbox" />
-							<span>Allow new account registrations</span>
-						</label>
-						<div class="admin-retention-fields">
-							<label>Delete after days<input id="library-retention-days" type="number" min="0" max="3650" value="0" /></label>
-							<label>Sessions per user<input id="library-session-limit" type="number" min="0" max="100000" value="0" /></label>
-						</div>
-						<div class="admin-retention-action">
-							<span id="library-retention-preview">No sessions would be removed.</span>
-							<button class="primary" type="submit">Save settings</button>
-						</div>
-					</form>
+					<div id="admin-panel" class="token-panel admin-panel" hidden></div>
 
 					<div class="library-tools">
 						<label id="upload-zone" class="upload-zone">
@@ -234,5 +216,6 @@
 
 		<div id="toast-region" class="toast-region" aria-live="polite"></div>
 		<script src="/app-assets/library.js?v=__TRACE_VERSION__" defer></script>
+		<script src="/app-assets/library-admin.js?v=__TRACE_VERSION__" defer></script>
 	</body>
 </html>
