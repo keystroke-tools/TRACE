@@ -417,29 +417,47 @@ function TelemetryWorkspace() {
 							onPlaybackSpeed={changePlaybackSpeed}
 						/>
 					)}
-					<div className="visual-grid">
+					<div className="telemetry-primary-grid">
+						<div className="telemetry-primary-charts">
+							<ComparisonChart
+								label="SPEED"
+								unit="km/h"
+								samples={samples}
+								series={speedSeries}
+								cursorIndex={cursorIndex}
+								onCursor={seek}
+								onZoom={zoomTelemetry}
+								distanceUnit="%"
+							/>
+							{comparison && (
+								<ComparisonChart
+									label="TIME DELTA · ANALYSED VS REFERENCE"
+									unit="s"
+									samples={samples}
+									series={singleSeries("deltaSeconds", channelColours.delta)}
+									cursorIndex={cursorIndex}
+									onCursor={seek}
+									onZoom={zoomTelemetry}
+									fixedRange={deltaRange(samples)}
+									zeroLine
+									distanceUnit="%"
+								/>
+							)}
+						</div>
 						<div className="web-track-map">
 							<TrackMap
 								samples={samples}
 								cursorIndex={cursorIndex}
 								comparison={Boolean(comparison)}
-								height={360}
+								height={comparison ? 512 : 268}
 								focusSelection={sector != null || telemetryWindow != null}
 								rangeLabel={sector != null ? `SECTOR ${sector}` : undefined}
 								onRangeZoom={zoomTelemetry}
 								rangeZoomLinked={false}
 							/>
 						</div>
-						<ComparisonChart
-							label="SPEED"
-							unit="km/h"
-							samples={samples}
-							series={speedSeries}
-							cursorIndex={cursorIndex}
-							onCursor={seek}
-							onZoom={zoomTelemetry}
-							distanceUnit="%"
-						/>
+					</div>
+					<div className="visual-grid telemetry-secondary-grid">
 						<div className="telemetry-chart-wide">
 							<ComparisonChart
 								label="THROTTLE"
@@ -466,18 +484,20 @@ function TelemetryWorkspace() {
 								distanceUnit="%"
 							/>
 						</div>
-						<ComparisonChart
-							label="STEERING ANGLE"
-							unit="°"
-							samples={samples}
-							series={steeringSeries}
-							cursorIndex={cursorIndex}
-							onCursor={seek}
-							onZoom={zoomTelemetry}
-							fixedRange={steeringAngleRange(samples)}
-							zeroLine
-							distanceUnit="%"
-						/>
+						<div className="telemetry-chart-wide">
+							<ComparisonChart
+								label="STEERING ANGLE"
+								unit="°"
+								samples={samples}
+								series={steeringSeries}
+								cursorIndex={cursorIndex}
+								onCursor={seek}
+								onZoom={zoomTelemetry}
+								fixedRange={steeringAngleRange(samples)}
+								zeroLine
+								distanceUnit="%"
+							/>
+						</div>
 						<ComparisonChart
 							label="ENGINE SPEED"
 							unit="rpm"
@@ -500,22 +520,6 @@ function TelemetryWorkspace() {
 							formatValue={(value) => formatGear(value)}
 							distanceUnit="%"
 						/>
-						{comparison && (
-							<div className="telemetry-chart-wide">
-								<ComparisonChart
-									label="TIME DELTA · ANALYSED VS REFERENCE"
-									unit="s"
-									samples={samples}
-									series={singleSeries("deltaSeconds", channelColours.delta)}
-									cursorIndex={cursorIndex}
-									onCursor={seek}
-									onZoom={zoomTelemetry}
-									fixedRange={deltaRange(samples)}
-									zeroLine
-									distanceUnit="%"
-								/>
-							</div>
-						)}
 					</div>
 				</div>
 			</div>

@@ -3993,6 +3993,8 @@ mod tests {
         assert!(theme.contains("--trace-accent: #c9ff00"));
         assert!(styles.contains("button {"));
         assert!(styles.contains("border-radius: 0"));
+        assert!(styles.contains("main {\n\twidth: 100%;"));
+        assert!(!styles.contains("width: min(1280px"));
         assert!(!styles.contains("#68e997"));
 
         let script = include_str!("../assets/library/library-admin.js");
