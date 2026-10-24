@@ -1211,6 +1211,81 @@ button.primary:hover {
 	letter-spacing: 0.06em;
 }
 
+.telemetry-playback {
+	display: grid;
+	grid-template-columns: 40px 54px auto minmax(120px, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 10px;
+	padding: 9px 12px;
+	border: 1px solid var(--trace-divider);
+	background: var(--trace-black);
+	color: var(--trace-dim);
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+}
+
+.telemetry-playback button,
+.telemetry-playback select {
+	height: 32px;
+	border: 1px solid var(--trace-divider);
+	border-radius: 0;
+	background: var(--trace-deep);
+	color: var(--trace-soft);
+}
+
+.telemetry-playback button {
+	display: grid;
+	place-items: center;
+	padding: 0;
+}
+
+.telemetry-playback button:hover,
+.telemetry-playback select:hover {
+	border-color: var(--trace-soft);
+	color: var(--trace-text);
+}
+
+.telemetry-playback button:disabled {
+	cursor: default;
+	opacity: 0.4;
+}
+
+.telemetry-playback button svg {
+	width: 12px;
+	height: 12px;
+	fill: currentColor;
+}
+
+.telemetry-playback select {
+	padding: 0 8px;
+	font: inherit;
+	font-weight: 800;
+}
+
+.telemetry-playback input[type="range"] {
+	width: 100%;
+	height: 18px;
+	appearance: none;
+	background: transparent;
+	cursor: ew-resize;
+}
+
+.telemetry-playback input[type="range"]::-webkit-slider-runnable-track {
+	height: 3px;
+	background: var(--trace-divider);
+}
+
+.telemetry-playback input[type="range"]::-webkit-slider-thumb {
+	width: 16px;
+	height: 16px;
+	margin-top: -6.5px;
+	appearance: none;
+	border: 2px solid var(--trace-black);
+	background: var(--trace-accent);
+}
+
 .visual-grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

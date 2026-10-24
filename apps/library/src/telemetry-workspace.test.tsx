@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { nearestTelemetryPlaybackIndex, telemetryPlaybackTimeline } from "@trace/ui";
 import { ComparisonSummary, TelemetryWorkspace } from "./telemetry-workspace";
 
 const lap = { id: "lap-one", index: 4, duration_ns: 91_250_000_000 };
@@ -58,6 +59,16 @@ afterEach(() => {
 });
 
 describe("telemetry workspace", () => {
+	it("uses recorded elapsed time and distance fallback for playback", () => {
+		const timeline = telemetryPlaybackTimeline([
+			{ distanceM: 0, referenceElapsedSeconds: 0, referenceSpeedKmh: 72 },
+			{ distanceM: 10, referenceElapsedSeconds: 0.5, referenceSpeedKmh: 72 },
+			{ distanceM: 15, referenceSpeedKmh: 72 },
+		]);
+		expect(timeline).toEqual([0, 0.5, 0.75]);
+		expect(nearestTelemetryPlaybackIndex(timeline, 0.6)).toBe(1);
+	});
+
 	it("renders selected-lap statistics and keeps shared chart zoom synchronized", async () => {
 		window.traceTelemetrySnapshot = { lap, telemetry: { points }, comparison: null, message: "" };
 		render(<TelemetryWorkspace />);
@@ -68,6 +79,9 @@ describe("telemetry workspace", () => {
 		expect(screen.getByRole("button", { name: "Zoom map in" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Zoom map out" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Reset map pan and spatial zoom" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Play telemetry playback" })).toBeTruthy();
+		expect(screen.getByRole("slider", { name: "Seek through lap distance" })).toBeTruthy();
+		expect((screen.getByRole("combobox", { name: "Telemetry playback speed" }) as HTMLSelectElement).value).toBe("1");
 		expect(screen.getByRole("img", { name: "SPEED telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "THROTTLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "BRAKE telemetry by lap distance" })).toBeTruthy();

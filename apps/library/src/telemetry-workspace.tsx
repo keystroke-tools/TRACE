@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	ComparisonChart,
@@ -8,6 +8,8 @@ import {
 	deltaRange,
 	filterSamplesByTelemetryWindow,
 	formatGear,
+	telemetryPlaybackSpeeds,
+	telemetryPlaybackTimeline,
 	nextTelemetryWindow,
 	singleSeries,
 	steeringAngleRange,
@@ -170,20 +172,73 @@ function TelemetryWorkspace() {
 	const snapshot = useWorkspace();
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
 	const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
+	const [playing, setPlaying] = useState(false);
+	const [playbackSpeed, setPlaybackSpeed] = useState(1);
+	const playbackStartIndex = useRef(0);
+	const playbackSpeedRef = useRef(1);
+	const baseSamples = useMemo(
+		() => (snapshot?.comparison ? alignedSamples(snapshot.comparison.samples) : snapshot?.telemetry ? lapSamples(snapshot.telemetry.points) : []),
+		[snapshot?.comparison, snapshot?.telemetry],
+	);
+	const samples = useMemo(() => filterSamplesByTelemetryWindow(baseSamples, telemetryWindow), [baseSamples, telemetryWindow]);
 	useEffect(() => {
 		setCursorIndex(null);
 		setTelemetryWindow(null);
+		setPlaying(false);
 	}, [snapshot?.lap?.id, snapshot?.comparison]);
+	useEffect(() => {
+		if (!playing) return;
+		if (samples.length < 2) {
+			setPlaying(false);
+			return;
+		}
+		const timeline = telemetryPlaybackTimeline(samples);
+		let index = Math.min(playbackStartIndex.current, samples.length - 1);
+		let playbackTime = timeline[index] ?? 0;
+		let previous = performance.now();
+		let animationFrame = 0;
+		const tick = (now: number) => {
+			playbackTime += ((now - previous) / 1_000) * playbackSpeedRef.current;
+			previous = now;
+			while (index < samples.length - 1 && timeline[index + 1] <= playbackTime) index += 1;
+			setCursorIndex(index);
+			if (index >= samples.length - 1) {
+				setPlaying(false);
+				return;
+			}
+			animationFrame = requestAnimationFrame(tick);
+		};
+		animationFrame = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(animationFrame);
+	}, [playing, samples]);
 	if (!snapshot?.lap || !snapshot.telemetry)
 		return <div className="telemetry-empty">{snapshot?.message || "Select a recorded lap to review its telemetry."}</div>;
 	const { lap, telemetry, comparison } = snapshot;
 	const maximumSpeed = Math.max(0, ...telemetry.points.map((point) => point.speed_kph || 0));
 	const maximumRpm = Math.max(0, ...telemetry.points.map((point) => point.engine_rpm || 0));
-	const baseSamples = comparison ? alignedSamples(comparison.samples) : lapSamples(telemetry.points);
-	const samples = filterSamplesByTelemetryWindow(baseSamples, telemetryWindow);
 	const zoomTelemetry = (anchor: number, direction: "in" | "out") => {
+		setPlaying(false);
 		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchor, direction, 2));
 		setCursorIndex(null);
+	};
+	const seek = (index: number | null) => {
+		setPlaying(false);
+		setCursorIndex(index);
+	};
+	const togglePlayback = () => {
+		if (playing) {
+			setPlaying(false);
+			return;
+		}
+		const current = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
+		const start = current >= samples.length - 1 ? 0 : current;
+		playbackStartIndex.current = start;
+		setCursorIndex(start);
+		setPlaying(samples.length > 1);
+	};
+	const changePlaybackSpeed = (speed: number) => {
+		playbackSpeedRef.current = speed;
+		setPlaybackSpeed(speed);
 	};
 	const comparisonIsFaster = false;
 	const speedSeries = comparison
@@ -208,6 +263,7 @@ function TelemetryWorkspace() {
 						<button
 							type="button"
 							onClick={() => {
+								setPlaying(false);
 								setTelemetryWindow(null);
 								setCursorIndex(null);
 							}}
@@ -226,6 +282,43 @@ function TelemetryWorkspace() {
 					</span>
 				</div>
 			</div>
+			<div className="telemetry-playback">
+				<button
+					type="button"
+					onClick={togglePlayback}
+					disabled={samples.length < 2}
+					aria-label={playing ? "Pause telemetry playback" : "Play telemetry playback"}
+				>
+					{playing ? (
+						<svg viewBox="0 0 12 12" aria-hidden="true">
+							<path d="M2 1h3v10H2zm5 0h3v10H7z" />
+						</svg>
+					) : (
+						<svg viewBox="0 0 12 12" aria-hidden="true">
+							<path d="m3 1 8 5-8 5z" />
+						</svg>
+					)}
+				</button>
+				<select value={playbackSpeed} onChange={(event) => changePlaybackSpeed(Number(event.target.value))} aria-label="Telemetry playback speed">
+					{telemetryPlaybackSpeeds.map((speed) => (
+						<option value={speed} key={speed}>
+							{speed}×
+						</option>
+					))}
+				</select>
+				<span>{Math.round(samples[0]?.distanceM ?? 0)}%</span>
+				<input
+					type="range"
+					min="0"
+					max={Math.max(samples.length - 1, 0)}
+					step="1"
+					value={Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0))}
+					disabled={samples.length < 2}
+					onChange={(event) => seek(Number(event.target.value))}
+					aria-label="Seek through lap distance"
+				/>
+				<span>{Math.round(samples.at(-1)?.distanceM ?? 0)}%</span>
+			</div>
 			<div className="visual-grid">
 				<div className="web-track-map">
 					<TrackMap
@@ -243,7 +336,7 @@ function TelemetryWorkspace() {
 					samples={samples}
 					series={speedSeries}
 					cursorIndex={cursorIndex}
-					onCursor={setCursorIndex}
+					onCursor={seek}
 					onZoom={zoomTelemetry}
 					distanceUnit="%"
 				/>
@@ -254,7 +347,7 @@ function TelemetryWorkspace() {
 						samples={samples}
 						series={throttleSeries}
 						cursorIndex={cursorIndex}
-						onCursor={setCursorIndex}
+						onCursor={seek}
 						onZoom={zoomTelemetry}
 						fixedRange={[0, 100]}
 						distanceUnit="%"
@@ -267,7 +360,7 @@ function TelemetryWorkspace() {
 						samples={samples}
 						series={brakeSeries}
 						cursorIndex={cursorIndex}
-						onCursor={setCursorIndex}
+						onCursor={seek}
 						onZoom={zoomTelemetry}
 						fixedRange={[0, 100]}
 						distanceUnit="%"
@@ -281,7 +374,7 @@ function TelemetryWorkspace() {
 							samples={samples}
 							series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
 							cursorIndex={cursorIndex}
-							onCursor={setCursorIndex}
+							onCursor={seek}
 							onZoom={zoomTelemetry}
 							fixedRange={steeringAngleRange(samples)}
 							zeroLine
@@ -293,7 +386,7 @@ function TelemetryWorkspace() {
 							samples={samples}
 							series={singleSeries("referenceGear", channelColours.gear)}
 							cursorIndex={cursorIndex}
-							onCursor={setCursorIndex}
+							onCursor={seek}
 							onZoom={zoomTelemetry}
 							fixedRange={[-1, 8]}
 							formatValue={(value) => formatGear(value)}
@@ -309,7 +402,7 @@ function TelemetryWorkspace() {
 							samples={samples}
 							series={singleSeries("deltaSeconds", channelColours.delta)}
 							cursorIndex={cursorIndex}
-							onCursor={setCursorIndex}
+							onCursor={seek}
 							onZoom={zoomTelemetry}
 							fixedRange={deltaRange(samples)}
 							zeroLine

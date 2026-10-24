@@ -28,6 +28,7 @@ import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMa
 import { ComparisonSessionPicker } from "./ComparisonSessionPicker";
 import { fasterReferenceSuggestions, type ComparisonSelection, type ReferenceSuggestion, validComparisonLaps } from "./comparison-selection";
 import { FEATURE_FLAGS_CHANGED_EVENT, richComparisonPickerEnabled } from "../settings/feature-flags";
+import { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "@trace/ui";
 import {
 	filterSamplesByDistance,
 	filterSamplesBySector,
@@ -35,8 +36,6 @@ import {
 	nextTelemetryWindow,
 	type TelemetryWindow,
 } from "../telemetry/telemetry-window";
-
-const COMPARISON_PLAYBACK_SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4] as const;
 
 export function ComparePage({
 	sessions,
@@ -260,7 +259,7 @@ export function ComparePage({
 			setComparisonPlaying(false);
 			return;
 		}
-		const timeline = comparisonPlaybackTimeline(samples);
+		const timeline = telemetryPlaybackTimeline(samples);
 		let index = Math.min(playbackStartIndex.current, samples.length - 1);
 		let playbackTime = timeline[index] ?? 0;
 		let previous = performance.now();
@@ -315,20 +314,20 @@ export function ComparePage({
 					setCursorIndex(event.code === "Home" ? 0 : samples.length - 1);
 					return;
 				}
-				const timeline = comparisonPlaybackTimeline(samples);
+				const timeline = telemetryPlaybackTimeline(samples);
 				const current = Math.min(Math.max(cursorIndex ?? 0, 0), samples.length - 1);
 				const direction = event.code === "ArrowLeft" ? -1 : 1;
 				const seconds = event.shiftKey ? 5 : 1;
-				setCursorIndex(nearestTimelineIndex(timeline, timeline[current] + direction * seconds));
+				setCursorIndex(nearestTelemetryPlaybackIndex(timeline, timeline[current] + direction * seconds));
 				return;
 			}
 
 			if (event.code === "BracketLeft" || event.code === "BracketRight") {
 				event.preventDefault();
-				const current = COMPARISON_PLAYBACK_SPEEDS.indexOf(playbackSpeed as (typeof COMPARISON_PLAYBACK_SPEEDS)[number]);
+				const current = telemetryPlaybackSpeeds.indexOf(playbackSpeed as (typeof telemetryPlaybackSpeeds)[number]);
 				const direction = event.code === "BracketLeft" ? -1 : 1;
-				const next = Math.min(COMPARISON_PLAYBACK_SPEEDS.length - 1, Math.max(0, (current < 0 ? 3 : current) + direction));
-				changePlaybackSpeed(COMPARISON_PLAYBACK_SPEEDS[next]);
+				const next = Math.min(telemetryPlaybackSpeeds.length - 1, Math.max(0, (current < 0 ? 3 : current) + direction));
+				changePlaybackSpeed(telemetryPlaybackSpeeds[next]);
 			}
 		};
 		window.addEventListener("keydown", handlePlaybackKey);
@@ -1967,7 +1966,7 @@ function TelemetrySeek({
 								className="h-8 w-11 cursor-pointer appearance-none border border-trace-divider bg-trace-deep p-0 text-center text-[10px] font-black tabular-nums text-trace-soft outline-none hover:border-trace-soft hover:text-trace-text focus:border-trace-accent"
 								aria-label="Comparison playback speed"
 							>
-								{COMPARISON_PLAYBACK_SPEEDS.map((speed) => (
+								{telemetryPlaybackSpeeds.map((speed) => (
 									<option value={speed} key={speed}>
 										{speed}×
 									</option>
@@ -1992,42 +1991,6 @@ function TelemetrySeek({
 			<span className="text-right">{Math.round(end)} M</span>
 		</div>
 	);
-}
-
-function comparisonPlaybackTimeline(samples: LapComparisonSample[]) {
-	let elapsed = finiteElapsed(samples[0]) ?? 0;
-	return samples.map((sample, index) => {
-		const reported = finiteElapsed(sample);
-		if (reported != null && (index === 0 || reported > elapsed)) {
-			elapsed = reported;
-		} else if (index > 0) {
-			const previous = samples[index - 1];
-			const distance = Math.max(0, sample.distanceM - previous.distanceM);
-			const speedKmh = sample.comparisonSpeedKmh ?? sample.referenceSpeedKmh;
-			const estimatedStep = speedKmh != null && speedKmh > 1 ? distance / (speedKmh / 3.6) : 1 / 60;
-			elapsed += Math.min(0.25, Math.max(1 / 240, estimatedStep));
-		}
-		return elapsed;
-	});
-}
-
-function nearestTimelineIndex(timeline: number[], target: number) {
-	if (target <= (timeline[0] ?? 0)) return 0;
-	if (target >= (timeline.at(-1) ?? 0)) return Math.max(0, timeline.length - 1);
-	let low = 0;
-	let high = timeline.length - 1;
-	while (low < high) {
-		const middle = Math.floor((low + high) / 2);
-		if (timeline[middle] < target) low = middle + 1;
-		else high = middle;
-	}
-	if (low === 0) return 0;
-	return target - timeline[low - 1] <= timeline[low] - target ? low - 1 : low;
-}
-
-function finiteElapsed(sample: LapComparisonSample) {
-	const elapsed = sample.comparisonElapsedSeconds ?? sample.referenceElapsedSeconds;
-	return elapsed != null && Number.isFinite(elapsed) ? elapsed : null;
 }
 
 function HudValue({ label, value, unit, colour }: { label: string; value: string; unit?: string; colour?: string }) {
