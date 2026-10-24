@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { formatSessionDate, formatSessionType } from "@trace/ui";
+import { formatLapDurationNs, formatSessionDate, formatSessionType, sessionOverview } from "@trace/ui";
 
 type Summary = {
 	session_id: string;
@@ -16,7 +16,12 @@ type Summary = {
 };
 
 type Lap = {
+	id: string;
+	index: number;
 	duration_ns: number | null;
+	validity: string;
+	max_tyres_out?: number | null;
+	sectors: Array<{ index: number; duration_ns: number | null }>;
 };
 
 type ReviewSnapshot = {
@@ -46,13 +51,6 @@ function toast(message: string, kind: "success" | "error" = "success") {
 	emit("trace:toast", { message, kind });
 }
 
-function formatDuration(nanoseconds: number) {
-	const milliseconds = Math.round(nanoseconds / 1_000_000);
-	const minutes = Math.floor(milliseconds / 60_000);
-	const seconds = Math.floor((milliseconds % 60_000) / 1000);
-	return `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds % 1000).padStart(3, "0")}`;
-}
-
 function ReviewHeader() {
 	const [snapshot, setSnapshot] = useState<ReviewSnapshot | null>(window.traceReviewSnapshot || null);
 	const [editing, setEditing] = useState(false);
@@ -71,9 +69,16 @@ function ReviewHeader() {
 		return () => window.removeEventListener("trace:review-load", receive);
 	}, []);
 
-	const bestLap = useMemo(() => {
-		const timed = snapshot?.laps.map((lap) => lap.duration_ns).filter((duration): duration is number => duration != null) || [];
-		return timed.length ? Math.min(...timed) : null;
+	const overview = useMemo(() => {
+		return sessionOverview(
+			(snapshot?.laps || []).map((lap) => ({
+				id: lap.id,
+				index: lap.index,
+				durationNs: lap.duration_ns,
+				invalid: lap.validity === "invalid" || (lap.max_tyres_out != null && lap.max_tyres_out >= 3),
+				sectors: lap.sectors.map((sector) => ({ index: sector.index, durationNs: sector.duration_ns })),
+			})),
+		);
 	}, [snapshot]);
 
 	if (!snapshot) return null;
@@ -206,12 +211,20 @@ function ReviewHeader() {
 						{summary.track || "Unknown track"} · {summary.car || "Unknown car"} · {formatSessionDate(summary.started_at)}
 					</p>
 				</div>
-				{bestLap != null && (
-					<div className="best-lap">
-						<small>BEST LAP</small>
-						<strong>{formatDuration(bestLap)}</strong>
-					</div>
-				)}
+				<div className="session-highlights">
+					{overview.bestLapDurationNs != null && (
+						<div className="best-lap">
+							<small>BEST LAP</small>
+							<strong>{formatLapDurationNs(overview.bestLapDurationNs)}</strong>
+						</div>
+					)}
+					{overview.theoreticalBestDurationNs != null && (
+						<div className="theoretical-lap">
+							<small>THEORETICAL BEST</small>
+							<strong>{formatLapDurationNs(overview.theoreticalBestDurationNs)}</strong>
+						</div>
+					)}
+				</div>
 			</div>
 		</>
 	);

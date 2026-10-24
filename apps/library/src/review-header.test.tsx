@@ -26,12 +26,34 @@ describe("review header", () => {
 	it("shows the session identity and fastest timed lap", () => {
 		window.traceReviewSnapshot = {
 			summary,
-			laps: [{ duration_ns: 92_456_000_000 }, { duration_ns: 91_123_000_000 }],
+			laps: [
+				{
+					id: "lap-one",
+					index: 1,
+					duration_ns: 92_456_000_000,
+					validity: "valid",
+					sectors: [
+						{ index: 1, duration_ns: 29_000_000_000 },
+						{ index: 2, duration_ns: 63_456_000_000 },
+					],
+				},
+				{
+					id: "lap-two",
+					index: 2,
+					duration_ns: 91_123_000_000,
+					validity: "valid",
+					sectors: [
+						{ index: 1, duration_ns: 30_000_000_000 },
+						{ index: 2, duration_ns: 61_123_000_000 },
+					],
+				},
+			],
 			publicShareId: null,
 		};
 		render(<ReviewHeader />);
 		expect(screen.getByText("Race two")).toBeTruthy();
 		expect(screen.getByText("1:31.123")).toBeTruthy();
+		expect(screen.getByText("1:30.123")).toBeTruthy();
 		expect(screen.getByText("Edit details")).toBeTruthy();
 	});
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
+import { formatLapDurationNs, sessionOverview } from "@trace/ui";
 import type { RecordedSessionSummary } from "../../data-source";
-import { formatSessionDate, friendlySessionType, lapDuration, lapIsInvalid, theoreticalBestLap } from "./session-components";
+import { formatSessionDate, friendlySessionType, lapDuration, lapIsInvalid } from "./session-components";
 
 export function SessionSummaryModal({
 	session,
@@ -132,11 +133,18 @@ function SummaryMetric({
 }
 
 function sessionSummary(session: RecordedSessionSummary, sessions: RecordedSessionSummary[]) {
-	const validLaps = session.laps.filter((lap) => lap.time !== "—" && !lapIsInvalid(lap));
-	const bestLap = validLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
-	const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
-	const theoreticalBest = theoreticalBestLap(session.laps, sectorIndices);
-	const theoreticalBestNs = theoreticalBest == null ? null : parseLapTime(theoreticalBest);
+	const overview = sessionOverview(
+		session.laps.map((lap) => ({
+			id: String(lap.index),
+			index: lap.index,
+			durationNs: Number.isFinite(lapDuration(lap)) ? lapDuration(lap) : null,
+			invalid: lapIsInvalid(lap),
+			sectors: lap.sectors.map((sector) => ({ index: sector.index, durationNs: sector.durationNs })),
+		})),
+	);
+	const bestLap = session.laps.find((lap) => String(lap.index) === overview.bestLapId);
+	const theoreticalBestNs = overview.theoreticalBestDurationNs;
+	const theoreticalBest = theoreticalBestNs == null ? null : formatLapDurationNs(theoreticalBestNs);
 	const previous = sessions
 		.filter(
 			(candidate) =>
@@ -157,16 +165,10 @@ function sessionSummary(session: RecordedSessionSummary, sessions: RecordedSessi
 		bestLap,
 		previousBest,
 		theoreticalBest,
-		validLaps: validLaps.length,
+		validLaps: overview.validTimedLapCount,
 		timeFound: bestDuration != null && previousDuration != null ? previousDuration - bestDuration : null,
 		potentialNs: bestDuration != null && theoreticalBestNs != null ? Math.max(0, bestDuration - theoreticalBestNs) : null,
 	};
-}
-
-function parseLapTime(value: string) {
-	const match = /^(\d+):(\d{2})\.(\d{3})$/.exec(value);
-	if (!match) return null;
-	return (Number(match[1]) * 60_000 + Number(match[2]) * 1_000 + Number(match[3])) * 1_000_000;
 }
 
 function formatDelta(durationNs: number) {

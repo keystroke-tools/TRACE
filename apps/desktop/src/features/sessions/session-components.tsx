@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
-import { formatSessionDate as formatSharedSessionDate, formatSessionType as formatSharedSessionType } from "@trace/ui";
+import {
+	formatSessionDate as formatSharedSessionDate,
+	formatSessionType as formatSharedSessionType,
+	sectorPerformance as sharedSectorPerformance,
+	type SessionOverviewLap,
+} from "@trace/ui";
 export { OwnershipBadge } from "@trace/ui";
 import type { RecordedLapMetrics, RecordedSessionSummary } from "../../data-source";
 import { Tooltip } from "../../Tooltip";
@@ -72,11 +77,13 @@ export function SectorBars({
 	laps: RecordedSessionSummary["laps"];
 	sectorIndices: number[];
 }) {
+	const timingLaps = sessionTimingLaps(laps);
+	const timingLap = timingLaps.find((candidate) => candidate.index === lap.index)!;
 	return (
 		<div className="flex min-w-0 gap-1.5 overflow-x-auto" aria-label={`Sector times for lap ${lap.index}`}>
 			{sectorIndices.map((index) => {
 				const sector = lap.sectors.find((candidate) => candidate.index === index);
-				const performance = sectorPerformance(laps, lap, index);
+				const performance = sharedSectorPerformance(timingLaps, timingLap, index);
 				const colour =
 					performance === "purple"
 						? "bg-trace-purple"
@@ -98,21 +105,14 @@ export function SectorBars({
 	);
 }
 
-export function sectorPerformance(laps: RecordedSessionSummary["laps"], lap: RecordedSessionSummary["laps"][number], sectorIndex: number) {
-	const sector = lap.sectors.find((candidate) => candidate.index === sectorIndex);
-	if (!sector || lapIsInvalid(lap)) return "grey";
-	const comparable = laps
-		.filter((candidate) => !lapIsInvalid(candidate))
-		.flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex));
-	const sessionBest = Math.min(...comparable.map((candidate) => candidate.durationNs));
-	if (sector.durationNs === sessionBest) return "purple";
-	const priorBest = Math.min(
-		...laps
-			.filter((candidate) => candidate.index < lap.index && !lapIsInvalid(candidate))
-			.flatMap((candidate) => candidate.sectors.filter((item) => item.index === sectorIndex))
-			.map((candidate) => candidate.durationNs),
-	);
-	return sector.durationNs < priorBest ? "green" : "yellow";
+function sessionTimingLaps(laps: RecordedSessionSummary["laps"]): SessionOverviewLap[] {
+	return laps.map((lap) => ({
+		id: String(lap.index),
+		index: lap.index,
+		durationNs: Number.isFinite(lapDuration(lap)) ? lapDuration(lap) : null,
+		invalid: lapIsInvalid(lap),
+		sectors: lap.sectors.map((sector) => ({ index: sector.index, durationNs: sector.durationNs })),
+	}));
 }
 
 export function ExportOption({ label, detail, disabled, onClick }: { label: string; detail: string; disabled: boolean; onClick: () => void }) {
@@ -312,25 +312,6 @@ export function formatSessionType(value: string) {
 export function lapDuration(lap: RecordedSessionSummary["laps"][number]) {
 	if (lap.durationNs != null) return lap.durationNs;
 	return lapTimeMs(lap.time) * 1_000_000;
-}
-
-export function theoreticalBestLap(laps: RecordedSessionSummary["laps"], sectorIndices: number[]) {
-	if (sectorIndices.length === 0) return null;
-	const validLaps = laps.filter((lap) => !lapIsInvalid(lap));
-	let totalDurationNs = 0;
-	for (const index of sectorIndices) {
-		const durations = validLaps
-			.flatMap((lap) => lap.sectors)
-			.filter((sector) => sector.index === index && Number.isFinite(sector.durationNs) && sector.durationNs > 0)
-			.map((sector) => sector.durationNs);
-		if (durations.length === 0) return null;
-		totalDurationNs += Math.min(...durations);
-	}
-	const totalMilliseconds = Math.floor(totalDurationNs / 1_000_000);
-	const minutes = Math.floor(totalMilliseconds / 60_000);
-	const seconds = Math.floor((totalMilliseconds % 60_000) / 1_000);
-	const milliseconds = totalMilliseconds % 1_000;
-	return `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
 }
 
 export function lapTimeMs(value: string) {

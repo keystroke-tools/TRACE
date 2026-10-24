@@ -20,6 +20,14 @@ export { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlayba
 export { SectorPicker } from "./sector-picker";
 export { LapTelemetryHud, type LapTelemetryHudProps } from "./lap-telemetry-hud";
 export {
+	formatLapDurationNs,
+	sectorPerformance,
+	sessionOverview,
+	type SessionOverview,
+	type SessionOverviewLap,
+	type SessionOverviewSector,
+} from "./session-overview";
+export {
 	FloatingTrackMap,
 	TrackMap,
 	closestSampleAtElapsedTime,

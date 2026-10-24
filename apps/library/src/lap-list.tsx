@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { formatLapDurationNs, sectorPerformance, sessionOverview, type SessionOverviewLap } from "@trace/ui";
 
 type Sector = {
 	index: number;
@@ -11,6 +12,7 @@ type Lap = {
 	index: number;
 	duration_ns: number | null;
 	validity: string;
+	max_tyres_out?: number | null;
 	sectors: Sector[];
 };
 
@@ -25,14 +27,6 @@ declare global {
 	}
 }
 
-function formatDuration(nanoseconds: number | null) {
-	if (nanoseconds == null) return "—";
-	const milliseconds = Math.round(nanoseconds / 1_000_000);
-	const minutes = Math.floor(milliseconds / 60_000);
-	const seconds = Math.floor((milliseconds % 60_000) / 1000);
-	return `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds % 1000).padStart(3, "0")}`;
-}
-
 function LapList() {
 	const [snapshot, setSnapshot] = useState<LapListSnapshot | null>(window.traceLapListSnapshot || null);
 
@@ -42,11 +36,16 @@ function LapList() {
 		return () => window.removeEventListener("trace:laps-load", receive);
 	}, []);
 
-	const bestId = useMemo(() => {
-		if (!snapshot) return null;
-		const timed = snapshot.laps.filter((lap) => lap.duration_ns != null);
-		return timed.length ? timed.reduce((best, lap) => (lap.duration_ns! < best.duration_ns! ? lap : best)).id : null;
+	const timingLaps = useMemo<SessionOverviewLap[]>(() => {
+		return (snapshot?.laps || []).map((lap) => ({
+			id: lap.id,
+			index: lap.index,
+			durationNs: lap.duration_ns,
+			invalid: lap.validity === "invalid" || (lap.max_tyres_out != null && lap.max_tyres_out >= 3),
+			sectors: lap.sectors.map((sector) => ({ index: sector.index, durationNs: sector.duration_ns })),
+		}));
 	}, [snapshot]);
+	const overview = useMemo(() => sessionOverview(timingLaps), [timingLaps]);
 
 	if (!snapshot) return null;
 	const { laps, selectedLapId } = snapshot;
@@ -61,11 +60,12 @@ function LapList() {
 			</div>
 			<div className="lap-list">
 				{laps.map((lap) => {
+					const timingLap = timingLaps.find((candidate) => candidate.id === lap.id)!;
 					const classes = [
 						"lap-row",
 						lap.id === selectedLapId ? "active" : "",
-						lap.id === bestId ? "best" : "",
-						lap.validity !== "valid" ? "invalid" : "",
+						lap.id === overview.bestLapId ? "best" : "",
+						timingLap.invalid ? "invalid" : "",
 					]
 						.filter(Boolean)
 						.join(" ");
@@ -78,13 +78,13 @@ function LapList() {
 						>
 							<span className="lap-identity">
 								<small>LAP {lap.index}</small>
-								<strong>{formatDuration(lap.duration_ns)}</strong>
+								<strong>{formatLapDurationNs(lap.duration_ns)}</strong>
 							</span>
 							<span className="sector-list">
 								{lap.sectors.length
 									? lap.sectors.map((sector) => (
-											<span key={sector.index}>
-												S{sector.index} {formatDuration(sector.duration_ns)}
+											<span className={`sector-time ${sectorPerformance(timingLaps, timingLap, sector.index)}`} key={sector.index}>
+												<i aria-hidden="true" /> S{sector.index} {formatLapDurationNs(sector.duration_ns)}
 											</span>
 										))
 									: "No sectors"}

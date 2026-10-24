@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sessionOverview } from "@trace/ui";
 import { createPortal } from "react-dom";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -38,7 +39,6 @@ import {
 	sessionSourceGroup,
 	sessionSourceLabel,
 	setupDifferenceLabel,
-	theoreticalBestLap,
 } from "./session-components";
 
 export function SessionDetail({
@@ -78,12 +78,20 @@ export function SessionDetail({
 	const [compareOpen, setCompareOpen] = useState(false);
 	const actionsMenu = useRef<HTMLDivElement>(null);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
-	const hasSectorTiming = session.laps.some((lap) => lap.sectors.length > 0);
-	const sectorIndices = [...new Set(session.laps.flatMap((lap) => lap.sectors.map((sector) => sector.index)))].sort((left, right) => left - right);
-	const timedLaps = session.laps.filter((lap) => lap.time !== "—" && !lapIsInvalid(lap));
-	const bestLap = timedLaps.slice().sort((left, right) => lapDuration(left) - lapDuration(right))[0];
-	const fastestDuration = bestLap ? lapDuration(bestLap) : Number.POSITIVE_INFINITY;
-	const theoreticalBest = theoreticalBestLap(session.laps, sectorIndices);
+	const overview = sessionOverview(
+		session.laps.map((lap) => ({
+			id: String(lap.index),
+			index: lap.index,
+			durationNs: Number.isFinite(lapDuration(lap)) ? lapDuration(lap) : null,
+			invalid: lapIsInvalid(lap),
+			sectors: lap.sectors.map((sector) => ({ index: sector.index, durationNs: sector.durationNs })),
+		})),
+	);
+	const hasSectorTiming = overview.sectorIndices.length > 0;
+	const sectorIndices = overview.sectorIndices;
+	const bestLap = session.laps.find((lap) => String(lap.index) === overview.bestLapId);
+	const fastestDuration = overview.bestLapDurationNs ?? Number.POSITIVE_INFINITY;
+	const theoreticalBest = overview.theoreticalBestDurationNs == null ? null : formatLapDurationNs(overview.theoreticalBestDurationNs);
 	const confirmedSetup = compatibleSetups.find((value) => value.confirmed) ?? null;
 	const thisSessionIsLive = liveBroadcast?.sourceSessionId === session.id;
 	const broadcastBusy = liveBroadcast?.phase === "ending";

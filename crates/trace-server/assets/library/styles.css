@@ -817,24 +817,38 @@ button.primary:hover {
 	font-size: 13px;
 }
 
-.best-lap {
+.session-highlights {
+	display: flex;
+	align-items: flex-end;
+	gap: 28px;
+}
+
+.best-lap,
+.theoretical-lap {
 	display: grid;
 	justify-items: end;
 	gap: 4px;
 	flex: 0 0 auto;
 }
 
-.best-lap small {
+.best-lap small,
+.theoretical-lap small {
 	color: #9f82ff;
 	font-size: 10px;
 	font-weight: 800;
 	letter-spacing: 0.14em;
 }
 
-.best-lap strong {
+.best-lap strong,
+.theoretical-lap strong {
 	color: #b49cff;
 	font-size: clamp(24px, 3vw, 36px);
 	font-variant-numeric: tabular-nums;
+}
+
+.theoretical-lap small,
+.theoretical-lap strong {
+	color: var(--trace-soft);
 }
 
 .comparison-summary {
@@ -1134,6 +1148,31 @@ button.primary:hover {
 	letter-spacing: 0.08em;
 }
 
+.sector-time {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.sector-time i {
+	display: block;
+	width: 14px;
+	height: 3px;
+	background: var(--trace-dim);
+}
+
+.sector-time.purple i {
+	background: var(--trace-purple);
+}
+
+.sector-time.green i {
+	background: var(--trace-accent);
+}
+
+.sector-time.yellow i {
+	background: var(--trace-sector-yellow);
+}
+
 .lap-identity strong {
 	font-size: 14px;
 	font-variant-numeric: tabular-nums;
@@ -1391,7 +1430,12 @@ button.primary:hover {
 		border-bottom: 1px solid #2c2c2c;
 	}
 
-	.best-lap {
+	.session-highlights {
+		justify-content: space-between;
+	}
+
+	.best-lap,
+	.theoretical-lap {
 		justify-items: start;
 	}
 

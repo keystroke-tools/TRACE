@@ -35,7 +35,6 @@ import {
 	sessionSourceGroup,
 	sessionSourceLabel,
 	setupDifferenceLabel,
-	theoreticalBestLap,
 } from "./session-components";
 import { MotecImportModal } from "./MotecImportModal";
 import { MotecFolderImportModal } from "./MotecFolderImportModal";
