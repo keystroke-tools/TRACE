@@ -107,8 +107,7 @@ button {
 .brand small,
 .instance small,
 .eyebrow,
-.list-head,
-.session-meta {
+.list-head {
 	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 	font-size: 11px;
 	letter-spacing: 0.12em;
@@ -587,12 +586,10 @@ button.primary:hover {
 	outline: none;
 }
 
-.session-primary,
 .session-context {
 	min-width: 0;
 }
 
-.session-primary strong,
 .session-context strong {
 	display: block;
 	overflow: hidden;
@@ -602,7 +599,6 @@ button.primary:hover {
 	white-space: nowrap;
 }
 
-.session-primary small,
 .session-context small {
 	display: block;
 	margin-top: 6px;
@@ -611,12 +607,6 @@ button.primary:hover {
 	font-size: 12px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-.session-meta {
-	margin-bottom: 7px;
-	color: var(--trace-accent);
-	font-weight: 800;
 }
 
 .session-actions {

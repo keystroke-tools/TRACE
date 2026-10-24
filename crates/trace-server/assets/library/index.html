@@ -81,24 +81,7 @@
 					</section>
 					<div id="admin-panel" class="token-panel admin-panel" hidden></div>
 
-					<div class="library-tools">
-						<label id="upload-zone" class="upload-zone">
-							<input id="package-input" type="file" accept=".trace,application/vnd.simtrace.session" />
-							<span class="upload-mark">+</span>
-							<strong>Upload a TRACE session</strong>
-							<small>Choose or drop a .trace package · <span id="upload-limit"></span></small>
-						</label>
-						<label class="search-field"
-							><span>Search library</span><input id="session-search" type="search" placeholder="Driver, car, track, tag…"
-						/></label>
-					</div>
-
-					<div class="list-head"><strong>SESSIONS</strong><span id="session-count">0</span></div>
-					<div id="session-list" class="session-list"></div>
-					<div id="empty-library" class="empty-state" hidden>
-						<strong>No sessions here yet.</strong>
-						<p>Export a session from TRACE and upload the resulting package.</p>
-					</div>
+					<div id="session-library-root"></div>
 				</div>
 
 				<div id="review-view" hidden>

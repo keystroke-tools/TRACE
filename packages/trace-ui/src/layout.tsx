@@ -40,18 +40,18 @@ export function SessionIdentityBlock({
 	ownership?: "mine" | "other" | "unknown";
 }) {
 	return (
-		<div className="min-w-0">
-			<div className="flex min-w-0 items-center gap-3">
-				<span className="shrink-0 font-mono text-[12px] font-extrabold tracking-[.1em] text-trace-accent">{sessionType}</span>
-				<h2 className="min-w-0 truncate text-base font-black tracking-[.02em]">{title}</h2>
+		<div className="trace-session-identity min-w-0">
+			<div className="trace-session-identity-heading flex min-w-0 items-center gap-3">
+				<span className="trace-session-type shrink-0 font-mono text-[12px] font-extrabold tracking-[.1em] text-trace-accent">{sessionType}</span>
+				<h2 className="trace-session-title min-w-0 truncate text-base font-black tracking-[.02em]">{title}</h2>
 				{ownership && ownership !== "unknown" && <OwnershipBadge ownership={ownership} />}
 			</div>
-			<span className="mt-2 flex min-w-0 items-center gap-2 text-[12px] text-trace-dim">
-				<span className="shrink-0 text-trace-soft">{car}</span>
+			<span className="trace-session-meta mt-2 flex min-w-0 items-center gap-2 text-[12px] text-trace-dim">
+				<span className="trace-session-car shrink-0 text-trace-soft">{car}</span>
 				{track && title !== track && (
 					<>
 						<span aria-hidden="true">·</span>
-						<span className="min-w-0 truncate">{track}</span>
+						<span className="trace-session-track min-w-0 truncate">{track}</span>
 					</>
 				)}
 				<span aria-hidden="true">·</span>
@@ -59,7 +59,7 @@ export function SessionIdentityBlock({
 				{driver && (
 					<>
 						<span aria-hidden="true">·</span>
-						<span className="min-w-0 truncate text-trace-muted">{driver}</span>
+						<span className="trace-session-driver min-w-0 truncate text-trace-muted">{driver}</span>
 					</>
 				)}
 			</span>

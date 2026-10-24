@@ -36,13 +36,6 @@ const elements = {
 	tokenValue: document.querySelector("#token-value"),
 	tokenCopy: document.querySelector("#token-copy"),
 	tokenList: document.querySelector("#token-list"),
-	input: document.querySelector("#package-input"),
-	uploadZone: document.querySelector("#upload-zone"),
-	uploadLimit: document.querySelector("#upload-limit"),
-	search: document.querySelector("#session-search"),
-	list: document.querySelector("#session-list"),
-	count: document.querySelector("#session-count"),
-	empty: document.querySelector("#empty-library"),
 	reviewBack: document.querySelector("#review-back"),
 	reviewDownload: document.querySelector("#review-download"),
 	reviewOpenTrace: document.querySelector("#review-open-trace"),
@@ -167,7 +160,16 @@ async function loadLibrary() {
 	state.sessions = await request("/api/v1/library/sessions");
 	elements.accountName.textContent = state.account.display_name;
 	elements.instanceSettings.hidden = !state.account.administrator;
-	renderSessions();
+	syncSessionLibrary();
+}
+
+function syncSessionLibrary() {
+	const snapshot = {
+		sessions: state.sessions,
+		maximumUploadBytes: state.instance?.limits.maximum_upload_bytes || 0,
+	};
+	window.traceLibrarySnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:sessions-load", { detail: snapshot }));
 }
 
 function toggleAdminPanel() {
@@ -247,11 +249,6 @@ async function copyToken() {
 	await copyText(elements.tokenValue.value, "Desktop token copied.", elements.tokenValue);
 }
 
-function formatBytes(bytes) {
-	if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-}
-
 function formatDate(value) {
 	const date = new Date(value);
 	if (Number.isNaN(date.valueOf())) return value || "Unknown date";
@@ -329,66 +326,6 @@ function sessionSearchText(session) {
 		.filter(Boolean)
 		.join(" ")
 		.toLocaleLowerCase();
-}
-
-function renderSessions() {
-	const query = elements.search.value.trim().toLocaleLowerCase();
-	const sessions = state.sessions.filter((session) => sessionSearchText(session).includes(query));
-	elements.list.replaceChildren(...sessions.map(sessionRow));
-	elements.count.textContent = query ? `${sessions.length}/${state.sessions.length}` : String(state.sessions.length);
-	elements.empty.hidden = state.sessions.length !== 0 || Boolean(query);
-}
-
-function sessionRow(session) {
-	const row = document.createElement("article");
-	row.className = "session-row";
-	row.tabIndex = 0;
-	row.setAttribute("role", "button");
-	row.addEventListener("click", () => openReview(session.session_id));
-	row.addEventListener("keydown", (event) => {
-		if (event.key === "Enter" || event.key === " ") {
-			event.preventDefault();
-			openReview(session.session_id);
-		}
-	});
-
-	const primary = document.createElement("div");
-	primary.className = "session-primary";
-	const meta = document.createElement("div");
-	meta.className = "session-meta";
-	meta.textContent = `${session.share_id ? "UNLISTED · " : ""}${readable(session.session_type, "Session")} · ${session.lap_count} ${session.lap_count === 1 ? "lap" : "laps"}`;
-	const title = document.createElement("strong");
-	title.textContent = readable(session.title, readable(session.driver_name, "Unnamed driver"));
-	const date = document.createElement("small");
-	date.textContent = formatDate(session.started_at);
-	primary.append(meta, title, date);
-
-	const context = document.createElement("div");
-	context.className = "session-context";
-	const track = document.createElement("strong");
-	track.textContent = readable(session.track, "Unknown track");
-	const car = document.createElement("small");
-	car.textContent = `${readable(session.car, "Unknown car")} · ${readable(session.simulator, "Unknown simulator")} · ${formatBytes(session.size_bytes)}`;
-	context.append(track, car);
-
-	const actions = document.createElement("div");
-	actions.className = "session-actions";
-	const download = document.createElement("a");
-	download.href = `/api/v1/library/sessions/${encodeURIComponent(session.session_id)}/download`;
-	download.textContent = "Download";
-	download.addEventListener("click", (event) => event.stopPropagation());
-	const remove = document.createElement("button");
-	remove.className = "danger";
-	remove.type = "button";
-	remove.textContent = "Delete";
-	remove.addEventListener("click", (event) => {
-		event.stopPropagation();
-		deleteSession(session, remove);
-	});
-	actions.append(download, remove);
-
-	row.append(primary, context, actions);
-	return row;
 }
 
 async function openReview(sessionId, navigate = true) {
@@ -501,7 +438,7 @@ async function updateMetadata(event) {
 		const index = state.sessions.findIndex((session) => session.session_id === sessionId);
 		if (index >= 0) state.sessions[index] = summary;
 		elements.metadataPanel.hidden = true;
-		renderSessions();
+		syncSessionLibrary();
 		renderReview();
 		setLocation(sessionPath(summary), true);
 		toast("Session details updated.");
@@ -518,7 +455,7 @@ function updateOwnedShare(shareId, shareUrl = null) {
 	state.shareUrl = shareUrl;
 	const summary = state.sessions.find((session) => session.session_id === state.review.summary.session_id);
 	if (summary) summary.share_id = shareId;
-	renderSessions();
+	syncSessionLibrary();
 	renderShareState();
 }
 
@@ -1016,52 +953,6 @@ function drawSeriesGraph(canvas, series, zeroCentered = false) {
 	}
 }
 
-async function deleteSession(session, button) {
-	const previous = button.textContent;
-	if (previous !== "Confirm") {
-		button.textContent = "Confirm";
-		setTimeout(() => {
-			if (button.isConnected && button.textContent === "Confirm") button.textContent = previous;
-		}, 3000);
-		return;
-	}
-	button.disabled = true;
-	try {
-		await request(`/api/v1/library/sessions/${encodeURIComponent(session.session_id)}`, { method: "DELETE" });
-		state.sessions = state.sessions.filter((item) => item.session_id !== session.session_id);
-		renderSessions();
-		toast("Session deleted.");
-	} catch (error) {
-		button.disabled = false;
-		button.textContent = "Delete";
-		toast(error.message, "error");
-	}
-}
-
-async function upload(file) {
-	if (!file) return;
-	if (!file.name.toLocaleLowerCase().endsWith(".trace")) {
-		toast("Choose a .trace package.", "error");
-		return;
-	}
-	elements.uploadZone.classList.add("dragging");
-	try {
-		const session = await request("/api/v1/library/sessions", {
-			method: "POST",
-			headers: { "content-type": "application/vnd.simtrace.session" },
-			body: file,
-		});
-		state.sessions.unshift(session);
-		renderSessions();
-		toast("Session uploaded to your private library.");
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		elements.uploadZone.classList.remove("dragging");
-		elements.input.value = "";
-	}
-}
-
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.reviewBack.addEventListener("click", () => closeReview());
@@ -1078,18 +969,6 @@ elements.compareOpen.addEventListener("click", openComparePicker);
 elements.compareClose.addEventListener("click", closeComparePicker);
 elements.comparisonClear.addEventListener("click", () => clearComparison());
 elements.compareSearch.addEventListener("input", renderCompareSessions);
-elements.search.addEventListener("input", renderSessions);
-elements.input.addEventListener("change", () => upload(elements.input.files[0]));
-elements.uploadZone.addEventListener("dragover", (event) => {
-	event.preventDefault();
-	elements.uploadZone.classList.add("dragging");
-});
-elements.uploadZone.addEventListener("dragleave", () => elements.uploadZone.classList.remove("dragging"));
-elements.uploadZone.addEventListener("drop", (event) => {
-	event.preventDefault();
-	elements.uploadZone.classList.remove("dragging");
-	upload(event.dataTransfer.files[0]);
-});
 
 elements.loginForm.addEventListener("submit", async (event) => {
 	event.preventDefault();
@@ -1164,6 +1043,10 @@ window.addEventListener("trace:toast", (event) => toast(event.detail.message, ev
 window.addEventListener("trace:library-changed", () => {
 	if (state.account) void loadLibrary();
 });
+window.addEventListener("trace:sessions-updated", (event) => {
+	state.sessions = event.detail.sessions;
+});
+window.addEventListener("trace:open-session", (event) => void openReview(event.detail.sessionId));
 
 const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
 telemetryResizeObserver.observe(elements.trackCanvas);
@@ -1179,7 +1062,6 @@ async function start() {
 		elements.instanceName.textContent = state.instance.name;
 		elements.instanceVersion.textContent = `v${state.instance.version}`;
 		document.title = `${state.instance.name} · TRACE Library`;
-		elements.uploadLimit.textContent = `up to ${formatBytes(state.instance.limits.maximum_upload_bytes)}`;
 		const registrationOpen = state.instance.registration_enabled || state.instance.initial_admin_required;
 		elements.registerTab.hidden = !registrationOpen;
 		if (state.instance.initial_admin_required) {

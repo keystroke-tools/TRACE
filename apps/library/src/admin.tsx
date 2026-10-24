@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { SectionHeading } from "@trace/ui";
+import "./sessions";
 
 type Cleanup = {
 	session_count: number;
