@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	ComparisonChart,
+	LapTelemetryHud,
 	SectorPicker,
 	TrackMap,
 	channelColours,
@@ -9,8 +10,8 @@ import {
 	deltaRange,
 	filterSamplesByTelemetryWindow,
 	filterSamplesBySector,
+	formatSessionType,
 	formatGear,
-	telemetryPlaybackSpeeds,
 	telemetryPlaybackTimeline,
 	nextTelemetryWindow,
 	singleSeries,
@@ -35,7 +36,15 @@ type Point = {
 
 type Telemetry = { points: Point[] };
 type Lap = { id: string; index: number; duration_ns: number | null };
-type Detail = { summary: { title: string | null; driver_name: string | null } };
+type Detail = {
+	summary: {
+		title: string | null;
+		driver_name: string | null;
+		track?: string | null;
+		car?: string | null;
+		session_type?: string | null;
+	};
+};
 type Entry = { detail: Detail; lap: Lap; telemetry: Telemetry };
 
 type Sample = {
@@ -65,6 +74,7 @@ type Comparison = {
 };
 
 type WorkspaceSnapshot = {
+	detail: Detail | null;
 	lap: Lap | null;
 	telemetry: Telemetry | null;
 	comparison: Comparison | null;
@@ -226,7 +236,7 @@ function TelemetryWorkspace() {
 	}, [playing, samples]);
 	if (!snapshot?.lap || !snapshot.telemetry)
 		return <div className="telemetry-empty">{snapshot?.message || "Select a recorded lap to review its telemetry."}</div>;
-	const { lap, telemetry, comparison } = snapshot;
+	const { detail, lap, telemetry, comparison } = snapshot;
 	const maximumSpeed = Math.max(0, ...telemetry.points.map((point) => point.speed_kph || 0));
 	const maximumRpm = Math.max(0, ...telemetry.points.map((point) => point.engine_rpm || 0));
 	const zoomTelemetry = (anchor: number, direction: "in" | "out") => {
@@ -307,43 +317,19 @@ function TelemetryWorkspace() {
 					}}
 				/>
 			</div>
-			<div className="telemetry-playback">
-				<button
-					type="button"
-					onClick={togglePlayback}
-					disabled={samples.length < 2}
-					aria-label={playing ? "Pause telemetry playback" : "Play telemetry playback"}
-				>
-					{playing ? (
-						<svg viewBox="0 0 12 12" aria-hidden="true">
-							<path d="M2 1h3v10H2zm5 0h3v10H7z" />
-						</svg>
-					) : (
-						<svg viewBox="0 0 12 12" aria-hidden="true">
-							<path d="m3 1 8 5-8 5z" />
-						</svg>
-					)}
-				</button>
-				<select value={playbackSpeed} onChange={(event) => changePlaybackSpeed(Number(event.target.value))} aria-label="Telemetry playback speed">
-					{telemetryPlaybackSpeeds.map((speed) => (
-						<option value={speed} key={speed}>
-							{speed}×
-						</option>
-					))}
-				</select>
-				<span>{Math.round(samples[0]?.distanceM ?? 0)}%</span>
-				<input
-					type="range"
-					min="0"
-					max={Math.max(samples.length - 1, 0)}
-					step="1"
-					value={Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0))}
-					disabled={samples.length < 2}
-					onChange={(event) => seek(Number(event.target.value))}
-					aria-label="Seek through lap distance"
-				/>
-				<span>{Math.round(samples.at(-1)?.distanceM ?? 0)}%</span>
-			</div>
+			<LapTelemetryHud
+				identity={[detail?.summary.track, detail?.summary.car].filter(Boolean).join(" · ") || detail?.summary.title || "Recorded lap"}
+				secondary={`LAP ${lap.index} · ${formatSessionType(detail?.summary.session_type)}`}
+				samples={samples}
+				cursorIndex={cursorIndex}
+				onSeek={(index) => seek(index)}
+				layout="embedded"
+				distanceUnit="%"
+				playing={playing}
+				onTogglePlayback={togglePlayback}
+				playbackSpeed={playbackSpeed}
+				onPlaybackSpeed={changePlaybackSpeed}
+			/>
 			<div className="visual-grid">
 				<div className="web-track-map">
 					<TrackMap

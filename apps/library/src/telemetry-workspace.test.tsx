@@ -72,12 +72,19 @@ describe("telemetry workspace", () => {
 	});
 
 	it("renders selected-lap statistics and keeps shared chart zoom synchronized", async () => {
-		window.traceTelemetrySnapshot = { lap, telemetry: { points }, comparison: null, message: "" };
+		window.traceTelemetrySnapshot = {
+			detail: { summary: { title: null, driver_name: "Alex", track: "Zandvoort", car: "Mazda MX-5 Cup", session_type: "Hotlap" } },
+			lap,
+			telemetry: { points },
+			comparison: null,
+			message: "",
+		};
 		render(<TelemetryWorkspace />);
 		expect(screen.getByText("LAP 4")).toBeTruthy();
 		expect(screen.getByText("1:31.250")).toBeTruthy();
 		expect(screen.getByText("210 km/h")).toBeTruthy();
 		expect(screen.getByText("7500 rpm")).toBeTruthy();
+		expect(screen.getByText("Zandvoort · Mazda MX-5 Cup")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Zoom map in" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Zoom map out" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Reset map pan and spatial zoom" })).toBeTruthy();
@@ -100,6 +107,7 @@ describe("telemetry workspace", () => {
 		const reference = { detail: { summary: { title: null, driver_name: "Sam" } }, lap: { ...lap, duration_ns: 90_000_000_000 }, telemetry: { points } };
 		const analysed = { detail: { summary: { title: null, driver_name: "Alex" } }, lap, telemetry: { points } };
 		window.traceTelemetrySnapshot = {
+			detail: null,
 			lap,
 			telemetry: { points },
 			comparison: { reference, analysed, samples: [], alignment: "distance" },

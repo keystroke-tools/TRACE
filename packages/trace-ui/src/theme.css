@@ -21,6 +21,53 @@
 	--trace-danger: #c42b1c;
 }
 
+.trace-seek {
+	height: 18px;
+	appearance: none;
+	background: transparent;
+	cursor: ew-resize;
+}
+
+.trace-seek::-webkit-slider-runnable-track {
+	height: 3px;
+	background: var(--trace-divider);
+}
+
+.trace-value-slider::-webkit-slider-runnable-track {
+	background: linear-gradient(
+		to right,
+		var(--trace-accent) 0,
+		var(--trace-accent) var(--trace-slider-fill, 0%),
+		var(--trace-divider) var(--trace-slider-fill, 0%),
+		var(--trace-divider) 100%
+	);
+}
+
+.trace-seek::-webkit-slider-thumb {
+	width: 12px;
+	height: 12px;
+	margin-top: -4.5px;
+	appearance: none;
+	border: 2px solid var(--trace-black);
+	background: var(--trace-accent);
+}
+
+.trace-seek-lg::-webkit-slider-thumb {
+	width: 16px;
+	height: 16px;
+	margin-top: -6.5px;
+}
+
+.trace-seek:focus-visible {
+	outline: 1px solid var(--trace-accent);
+	outline-offset: 3px;
+}
+
+.trace-seek:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
 .trace-section-heading {
 	color: var(--trace-soft);
 	font-size: 12px;

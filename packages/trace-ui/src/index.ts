@@ -18,6 +18,7 @@ export {
 export { filterSamplesByDistance, filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "./telemetry-window";
 export { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "./telemetry-playback";
 export { SectorPicker } from "./sector-picker";
+export { LapTelemetryHud, type LapTelemetryHudProps } from "./lap-telemetry-hud";
 export {
 	FloatingTrackMap,
 	TrackMap,

@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { SectorPicker } from "@trace/ui";
+import { formatSessionType, LapTelemetryHud, SectorPicker } from "@trace/ui";
 import { telemetryDataSource, type LapComparisonSample, type LapTrace, type RecordedSessionSummary } from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { channelColours, ComparisonChart, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import { filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "../telemetry/telemetry-window";
-import { TelemetryHud } from "../compare/ComparePage";
 import { ConsistencyChart } from "./ConsistencyChart";
 
 export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary; lapIndex: number }) {
@@ -274,9 +273,23 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 							onDismiss={mapPip.dismiss}
 						/>
 					)}
-					<TelemetryHud session={session} lapIndex={lapIndex} samples={samples} cursorIndex={cursorIndex} onSeek={setCursorIndex} />
+					<LapTelemetryHud
+						identity={`${session.track} · ${session.car}`}
+						secondary={`LAP ${lapIndex} · ${formatSessionType(session.sessionType)}`}
+						samples={samples}
+						cursorIndex={cursorIndex}
+						onSeek={setCursorIndex}
+						airTemperatureC={numericCondition(session.ambientTemperatureC)}
+						trackTemperatureC={numericCondition(session.roadTemperatureC)}
+					/>
 				</div>
 			)}
 		</>
 	);
+}
+
+function numericCondition(value?: string | null) {
+	if (!value) return null;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
 }

@@ -157,6 +157,7 @@ function syncComparePicker() {
 function syncTelemetryWorkspace(visible = Boolean(state.review)) {
 	const snapshot = visible
 		? {
+				detail: state.review,
 				lap: state.selectedLap,
 				telemetry: state.telemetry,
 				comparison: state.comparison,

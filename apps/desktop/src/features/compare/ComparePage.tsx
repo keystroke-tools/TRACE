@@ -18,7 +18,6 @@ import {
 	formatLapDurationNs,
 	formatSessionDate,
 	formatSessionType,
-	friendlySessionType,
 	lapDuration,
 	lapIsInvalid,
 	sessionSourceGroup,
@@ -1444,53 +1443,6 @@ function cornerSummary(corner: CornerAnalysis, dominantPhase: string) {
 			: null;
 	if (dominantPhase === "EXIT" && throttleDifference != null && throttleDifference > 3) return `Throttle applied ${Math.round(throttleDifference)} m later`;
 	return `Loss develops through ${dominantPhase.toLowerCase()}`;
-}
-
-export function TelemetryHud({
-	session,
-	lapIndex,
-	samples,
-	cursorIndex,
-	onSeek,
-}: {
-	session: RecordedSessionSummary;
-	lapIndex: number;
-	samples: LapComparisonSample[];
-	cursorIndex: number | null;
-	onSeek: (index: number) => void;
-}) {
-	const sample = samples[cursorIndex ?? 0] ?? null;
-	const airTemperature = sample?.referenceAirTemperatureC ?? numericCondition(session.ambientTemperatureC);
-	const trackTemperature = sample?.referenceTrackTemperatureC ?? numericCondition(session.roadTemperatureC);
-	const showConditions = hasHudConditions(airTemperature, trackTemperature);
-	return (
-		<div
-			className={`fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[108px] ${showConditions ? "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
-		>
-			<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
-				<TelemetrySeek samples={samples} cursorIndex={cursorIndex} onSeek={onSeek} />
-			</div>
-			<div className="min-w-0">
-				<span className="block truncate text-[13px] font-black">
-					{session.track} · {session.car}
-				</span>
-				<span className="font-mono text-[11px] text-trace-dim">
-					LAP {lapIndex} · {friendlySessionType(session)}
-				</span>
-			</div>
-			<HudValue label="DISTANCE" value={sample ? `${Math.round(sample.distanceM)} M` : "—"} />
-			<HudValue
-				label="SPEED / GEAR"
-				value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`}
-				colour={channelColours.speed}
-			/>
-			<HudValue label="RPM" value={sample?.referenceRpm == null ? "—" : String(Math.round(sample.referenceRpm))} colour={channelColours.rpm} />
-			<HudSteering value={sample?.referenceSteeringDegrees} colour={channelColours.steering} />
-			<HudProgress label="THROTTLE" value={sample?.referenceThrottlePercent} colour={channelColours.throttle} />
-			<HudProgress label="BRAKE" value={sample?.referenceBrakePercent} colour={channelColours.brake} />
-			{showConditions && <HudConditions air={airTemperature} track={trackTemperature} />}
-		</div>
-	);
 }
 
 type ComparisonHudProps = {
