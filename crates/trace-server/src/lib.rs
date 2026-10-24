@@ -376,6 +376,7 @@ enum ServiceError {
     AccountUnauthorized,
     LibraryUnavailable,
     LibrarySessionNotFound,
+    InvalidLibraryMetadata,
     AdministratorRequired,
 }
 
@@ -422,6 +423,7 @@ impl IntoResponse for ServiceError {
                 "web session library is unavailable",
             ),
             Self::LibrarySessionNotFound => (StatusCode::NOT_FOUND, "library session not found"),
+            Self::InvalidLibraryMetadata => (StatusCode::BAD_REQUEST, "invalid session metadata"),
             Self::AdministratorRequired => {
                 (StatusCode::FORBIDDEN, "administrator access is required")
             }
@@ -1080,7 +1082,10 @@ pub fn app(config: ServerConfig) -> Router {
         )
         .route(
             "/api/v1/library/sessions/{session_id}",
-            get(get_library_session).delete(delete_library_session),
+            get(get_library_session)
+                .put(update_library_session)
+                .delete(delete_library_session)
+                .layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
         )
         .route(
             "/api/v1/library/sessions/{session_id}/download",
@@ -1483,6 +1488,43 @@ async fn get_library_session(
         .map_err(|_| ServiceError::Unavailable)?
         .map(|stored| Json(stored.summary))
         .map_err(map_library_error)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateLibrarySessionRequest {
+    title: Option<String>,
+    driver_name: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+async fn update_library_session(
+    State(service): State<LiveService>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateLibrarySessionRequest>,
+) -> Result<Json<LibrarySessionSummary>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    let store = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || {
+        store.update_metadata(
+            &account.account_id,
+            &session_id,
+            request.title.as_deref(),
+            request.driver_name.as_deref(),
+            &request.tags,
+        )
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map(Json)
+    .map_err(|error| match error {
+        LibraryStoreError::Invalid => ServiceError::InvalidLibraryMetadata,
+        other => map_library_error(other),
+    })
 }
 
 async fn review_library_session(
@@ -2555,6 +2597,7 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::AccountUnauthorized => "authentication required",
         ServiceError::LibraryUnavailable => "web session library is unavailable",
         ServiceError::LibrarySessionNotFound => "library session not found",
+        ServiceError::InvalidLibraryMetadata => "invalid session metadata",
         ServiceError::AdministratorRequired => "administrator access is required",
     }
 }
@@ -2928,6 +2971,8 @@ mod tests {
                 .expect("library review body"),
         )
         .expect("library review");
+        assert_eq!(review["summary"]["title"], "League race");
+        assert_eq!(review["summary"]["driver_name"], "Alex R.");
         assert_eq!(review["source_track_id"], "zandvoort");
         assert_eq!(review["laps"][0]["id"], "lap-1");
         assert_eq!(review["laps"][0]["duration_ns"], 90_000_000_000_u64);
@@ -3030,6 +3075,13 @@ mod tests {
             .await
             .expect("public review response");
         assert_eq!(review.status(), StatusCode::OK);
+        let review: serde_json::Value = serde_json::from_slice(
+            &to_bytes(review.into_body(), 64 * 1024)
+                .await
+                .expect("public review body"),
+        )
+        .expect("public review");
+        assert_eq!(review["summary"]["title"], "League race");
         let telemetry = application
             .clone()
             .oneshot(
@@ -4022,6 +4074,45 @@ mod tests {
         )
         .expect("library list");
         assert_eq!(listed.as_array().map(Vec::len), Some(1));
+
+        let updated = restarted
+            .clone()
+            .oneshot(
+                Request::put(format!("/api/v1/library/sessions/{session_id}"))
+                    .header(header::COOKIE, &owner_cookie)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"title":"League race","driver_name":"Alex R.","tags":["league","wet","league"]}"#,
+                    ))
+                    .expect("metadata update request"),
+            )
+            .await
+            .expect("metadata update response");
+        assert_eq!(updated.status(), StatusCode::OK);
+        let updated: serde_json::Value = serde_json::from_slice(
+            &to_bytes(updated.into_body(), 64 * 1024)
+                .await
+                .expect("metadata update body"),
+        )
+        .expect("updated library summary");
+        assert_eq!(updated["title"], "League race");
+        assert_eq!(updated["driver_name"], "Alex R.");
+        assert_eq!(updated["tags"], serde_json::json!(["league", "wet"]));
+
+        let forbidden_update = restarted
+            .clone()
+            .oneshot(
+                Request::put(format!("/api/v1/library/sessions/{session_id}"))
+                    .header(header::COOKIE, &other_cookie)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"title":"Not mine","driver_name":null,"tags":[]}"#,
+                    ))
+                    .expect("other metadata update request"),
+            )
+            .await
+            .expect("other metadata update response");
+        assert_eq!(forbidden_update.status(), StatusCode::NOT_FOUND);
 
         assert_private_library_review(&restarted, &session_id, &owner_cookie, &other_cookie).await;
         assert_revocable_library_share(

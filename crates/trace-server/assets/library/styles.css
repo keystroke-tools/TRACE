@@ -640,6 +640,54 @@ button.primary:hover {
 	gap: 8px;
 }
 
+.metadata-panel {
+	display: grid;
+	gap: 14px;
+	margin-bottom: 14px;
+	padding: 16px;
+	border: 1px solid var(--trace-divider);
+	background: var(--trace-surface);
+}
+
+.metadata-panel[hidden] {
+	display: none;
+}
+
+.metadata-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+}
+
+.metadata-heading .eyebrow {
+	margin-bottom: 5px;
+}
+
+.metadata-heading strong {
+	font-size: 13px;
+}
+
+.metadata-fields {
+	display: grid;
+	grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(200px, 1.3fr) auto;
+	align-items: end;
+	gap: 10px;
+}
+
+.metadata-fields label {
+	min-width: 0;
+}
+
+.metadata-fields input {
+	width: 100%;
+}
+
+.metadata-panel > small {
+	color: var(--trace-dim);
+	font-size: 11px;
+}
+
 .share-panel {
 	display: grid;
 	grid-template-columns: minmax(240px, 0.9fr) minmax(360px, 1.1fr);
@@ -1254,7 +1302,8 @@ button.primary:hover {
 	}
 
 	.share-panel,
-	.share-link-row {
+	.share-link-row,
+	.metadata-fields {
 		grid-template-columns: 1fr;
 	}
 

@@ -119,12 +119,29 @@
 						<button id="review-back" class="back-button" type="button">← Library</button>
 						<div class="review-actions">
 							<button id="compare-open" type="button">Compare a lap</button>
+							<button id="metadata-open" type="button">Edit details</button>
 							<button id="share-open" type="button">Share</button>
 							<a id="review-open-trace" class="button-link" href="#">Open in TRACE</a>
 							<button id="review-copy-trace" type="button" hidden>Copy app link</button>
 							<a id="review-download" class="button-link" href="#">Download</a>
 						</div>
 					</div>
+					<form id="metadata-panel" class="metadata-panel" hidden>
+						<div class="metadata-heading">
+							<div>
+								<p class="eyebrow">SESSION DETAILS</p>
+								<strong>Make this session easier to identify.</strong>
+							</div>
+							<button id="metadata-cancel" class="quiet" type="button">Cancel</button>
+						</div>
+						<div class="metadata-fields">
+							<label>Title<input id="metadata-title" maxlength="120" placeholder="Race 2 — wet setup test" /></label>
+							<label>Driver<input id="metadata-driver" maxlength="80" placeholder="Driver name" /></label>
+							<label class="metadata-tags">Tags<input id="metadata-tags" maxlength="491" placeholder="league, wet, endurance" /></label>
+							<button class="primary" type="submit">Save details</button>
+						</div>
+						<small>Separate tags with commas. These edits apply to this web library and its shared view.</small>
+					</form>
 					<section id="share-panel" class="share-panel" hidden>
 						<div>
 							<p class="eyebrow">UNLISTED LINK</p>

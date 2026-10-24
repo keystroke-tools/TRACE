@@ -48,6 +48,12 @@ const elements = {
 	reviewDownload: document.querySelector("#review-download"),
 	reviewOpenTrace: document.querySelector("#review-open-trace"),
 	reviewCopyTrace: document.querySelector("#review-copy-trace"),
+	metadataOpen: document.querySelector("#metadata-open"),
+	metadataPanel: document.querySelector("#metadata-panel"),
+	metadataCancel: document.querySelector("#metadata-cancel"),
+	metadataTitle: document.querySelector("#metadata-title"),
+	metadataDriver: document.querySelector("#metadata-driver"),
+	metadataTags: document.querySelector("#metadata-tags"),
 	shareOpen: document.querySelector("#share-open"),
 	sharePanel: document.querySelector("#share-panel"),
 	shareUrl: document.querySelector("#share-url"),
@@ -411,6 +417,7 @@ function sessionRow(session) {
 
 async function openReview(sessionId, navigate = true) {
 	state.publicShareId = null;
+	elements.metadataOpen.hidden = false;
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	elements.telemetryContent.hidden = true;
@@ -438,6 +445,8 @@ async function openPublicReview(shareId) {
 	elements.reviewView.hidden = false;
 	elements.reviewBack.hidden = true;
 	elements.compareOpen.hidden = true;
+	elements.metadataOpen.hidden = true;
+	elements.metadataPanel.hidden = true;
 	elements.shareOpen.hidden = true;
 	elements.sharePanel.hidden = true;
 	elements.telemetryContent.hidden = true;
@@ -473,11 +482,58 @@ function closeReview(navigate = true) {
 	elements.shareOpen.hidden = false;
 	elements.reviewOpenTrace.hidden = true;
 	elements.reviewCopyTrace.hidden = true;
+	elements.metadataPanel.hidden = true;
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
 	document.title = `${state.instance?.name || "TRACE"} · TRACE Library`;
 	if (navigate) setLocation("/app");
+}
+
+function toggleMetadataPanel() {
+	if (!state.review || state.publicShareId) return;
+	const opening = elements.metadataPanel.hidden;
+	elements.metadataPanel.hidden = !opening;
+	if (!opening) return;
+	const summary = state.review.summary;
+	elements.metadataTitle.value = summary.title || "";
+	elements.metadataDriver.value = summary.driver_name || "";
+	elements.metadataTags.value = (summary.tags || []).join(", ");
+	elements.metadataTitle.focus();
+}
+
+async function updateMetadata(event) {
+	event.preventDefault();
+	if (!state.review || state.publicShareId) return;
+	const tags = elements.metadataTags.value
+		.split(",")
+		.map((tag) => tag.trim())
+		.filter(Boolean);
+	setBusy(elements.metadataPanel, true);
+	try {
+		const sessionId = state.review.summary.session_id;
+		const summary = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}`, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				title: elements.metadataTitle.value,
+				driver_name: elements.metadataDriver.value,
+				tags,
+			}),
+		});
+		state.review.summary = summary;
+		const index = state.sessions.findIndex((session) => session.session_id === sessionId);
+		if (index >= 0) state.sessions[index] = summary;
+		elements.metadataPanel.hidden = true;
+		renderSessions();
+		renderReview();
+		setLocation(sessionPath(summary), true);
+		toast("Session details updated.");
+	} catch (error) {
+		toast(error.message, "error");
+	} finally {
+		setBusy(elements.metadataPanel, false);
+	}
 }
 
 function updateOwnedShare(shareId, shareUrl = null) {
@@ -1033,6 +1089,11 @@ async function upload(file) {
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.reviewBack.addEventListener("click", () => closeReview());
+elements.metadataOpen.addEventListener("click", toggleMetadataPanel);
+elements.metadataCancel.addEventListener("click", () => {
+	elements.metadataPanel.hidden = true;
+});
+elements.metadataPanel.addEventListener("submit", updateMetadata);
 elements.shareOpen.addEventListener("click", toggleSharePanel);
 elements.shareCopy.addEventListener("click", copyShareLink);
 elements.reviewCopyTrace.addEventListener("click", copyTraceLink);

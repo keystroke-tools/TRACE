@@ -304,6 +304,39 @@ impl LibraryStore {
         fs::remove_file(deleting).map_err(|_| LibraryStoreError::Unavailable)
     }
 
+    pub(crate) fn update_metadata(
+        &self,
+        account_id: &str,
+        session_id: &str,
+        title: Option<&str>,
+        driver_name: Option<&str>,
+        tags: &[String],
+    ) -> Result<LibrarySessionSummary, LibraryStoreError> {
+        if !valid_identifier(session_id) {
+            return Err(LibraryStoreError::NotFound);
+        }
+        let title = normalized_metadata_value(title, 120)?;
+        let driver_name = normalized_metadata_value(driver_name, 80)?;
+        let tags = normalized_tags(tags)?;
+        let tags_json = serde_json::to_string(&tags).map_err(|_| LibraryStoreError::Invalid)?;
+        let updated = self
+            .connection
+            .lock()
+            .map_err(|_| LibraryStoreError::Database)?
+            .execute(
+                "UPDATE web_library_sessions
+                 SET title = ?3, driver_name = ?4, tags_json = ?5
+                 WHERE account_id = ?1 AND session_id = ?2",
+                params![account_id, session_id, title, driver_name, tags_json],
+            )
+            .map_err(|_| LibraryStoreError::Database)?;
+        if updated != 1 {
+            return Err(LibraryStoreError::NotFound);
+        }
+        self.find(account_id, session_id)
+            .map(|stored| stored.summary)
+    }
+
     pub(crate) fn detail(
         &self,
         account_id: &str,
@@ -460,6 +493,39 @@ impl LibraryStore {
             .map_err(|_| LibraryStoreError::Database)?
             .ok_or(LibraryStoreError::NotFound)
     }
+}
+
+fn normalized_metadata_value(
+    value: Option<&str>,
+    maximum_characters: usize,
+) -> Result<Option<String>, LibraryStoreError> {
+    let value = value.map(str::trim).filter(|value| !value.is_empty());
+    if value.is_some_and(|value| {
+        value.chars().count() > maximum_characters || value.chars().any(char::is_control)
+    }) {
+        return Err(LibraryStoreError::Invalid);
+    }
+    Ok(value.map(str::to_owned))
+}
+
+fn normalized_tags(tags: &[String]) -> Result<Vec<String>, LibraryStoreError> {
+    if tags.len() > 12 {
+        return Err(LibraryStoreError::Invalid);
+    }
+    let mut normalized = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            continue;
+        }
+        if tag.chars().count() > 40 || tag.chars().any(char::is_control) {
+            return Err(LibraryStoreError::Invalid);
+        }
+        if !normalized.iter().any(|existing| existing == tag) {
+            normalized.push(tag.to_owned());
+        }
+    }
+    Ok(normalized)
 }
 
 fn open_package(
