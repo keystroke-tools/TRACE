@@ -35,7 +35,7 @@ export function LapTelemetryHud({
 	const sample = samples[cursorIndex ?? 0] ?? null;
 	const airTemperature = sample?.referenceAirTemperatureC ?? airTemperatureC;
 	const trackTemperature = sample?.referenceTrackTemperatureC ?? trackTemperatureC;
-	const showConditions = hasConditions(airTemperature, trackTemperature);
+	const showConditions = hasHudConditions(airTemperature, trackTemperature);
 	const frame =
 		layout === "fixed"
 			? `fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[108px] ${showConditions ? "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`
@@ -73,17 +73,17 @@ export function LapTelemetryHud({
 	);
 }
 
-function TelemetrySeek({
+export function TelemetrySeek({
 	samples,
 	cursorIndex,
 	onSeek,
-	distanceUnit,
+	distanceUnit = "M",
 	playing,
 	onTogglePlayback,
 	playbackSpeed,
 	onPlaybackSpeed,
 }: Pick<LapTelemetryHudProps, "samples" | "cursorIndex" | "onSeek" | "playing" | "onTogglePlayback" | "playbackSpeed" | "onPlaybackSpeed"> & {
-	distanceUnit: string;
+	distanceUnit?: string;
 }) {
 	const index = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
 	const start = samples[0]?.distanceM ?? 0;
@@ -148,7 +148,7 @@ function TelemetrySeek({
 	);
 }
 
-function HudValue({ label, value, colour }: { label: string; value: string; colour?: string }) {
+export function HudValue({ label, value, colour }: { label: string; value: string; colour?: string }) {
 	return (
 		<div className="h-10 min-w-0 overflow-hidden font-mono">
 			<span className="block truncate whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.1em] text-trace-dim">{label}</span>
@@ -159,7 +159,7 @@ function HudValue({ label, value, colour }: { label: string; value: string; colo
 	);
 }
 
-function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
+export function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
 	const rotation = value == null || !Number.isFinite(value) ? 0 : Math.min(450, Math.max(-450, value));
 	return (
 		<div className="flex h-10 min-w-0 items-center gap-2 font-mono">
@@ -186,7 +186,7 @@ function HudSteering({ value, colour }: { value?: number | null; colour: string 
 	);
 }
 
-function HudProgress({ label, value, colour }: { label: string; value?: number | null; colour: string }) {
+export function HudProgress({ label, value, colour }: { label: string; value?: number | null; colour: string }) {
 	const primary = Math.min(100, Math.max(0, value ?? 0));
 	return (
 		<div className="h-10 overflow-hidden font-mono">
@@ -201,7 +201,7 @@ function HudProgress({ label, value, colour }: { label: string; value?: number |
 	);
 }
 
-function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
+export function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
 	return (
 		<div className="h-10 min-w-0 overflow-hidden font-mono">
 			<span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">CONDITIONS</span>
@@ -221,6 +221,15 @@ function HudConditions({ air, track }: { air?: number | null; track?: number | n
 	);
 }
 
-function hasConditions(air?: number | null, track?: number | null) {
+export function hasHudConditions(air?: number | null, track?: number | null) {
 	return (air != null && Number.isFinite(air)) || (track != null && Number.isFinite(track));
+}
+
+export function HudPedals({ throttle, brake }: { throttle?: number | null; brake?: number | null }) {
+	return (
+		<div className="grid h-10 w-full min-w-0 max-w-80 grid-cols-2 gap-3 justify-self-center">
+			<HudProgress label="THROTTLE" value={throttle} colour={channelColours.throttle} />
+			<HudProgress label="BRAKE" value={brake} colour={channelColours.brake} />
+		</div>
+	);
 }

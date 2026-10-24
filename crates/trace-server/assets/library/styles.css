@@ -1261,6 +1261,23 @@ button.primary:hover {
 	background: var(--trace-black);
 }
 
+.comparison-review-layout.with-analysis {
+	display: grid;
+	grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
+	align-items: start;
+	gap: 12px;
+}
+
+.comparison-analysis-column {
+	position: sticky;
+	top: 16px;
+	min-width: 0;
+}
+
+.comparison-telemetry-content {
+	min-width: 0;
+}
+
 .visual-grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1455,6 +1472,14 @@ button.primary:hover {
 
 	.visual-grid {
 		grid-template-columns: 1fr;
+	}
+
+	.comparison-review-layout.with-analysis {
+		grid-template-columns: 1fr;
+	}
+
+	.comparison-analysis-column {
+		position: static;
 	}
 
 	.visual-card.delta-card {

@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	ComparisonChart,
+	ComparisonAnalysisPanel,
+	ComparisonTelemetryHud,
 	LapTelemetryHud,
 	SectorPicker,
 	TrackMap,
 	channelColours,
 	comparisonSeries,
+	comparisonAnalysis,
+	comparisonSectorDeltas,
 	deltaRange,
 	filterSamplesByTelemetryWindow,
 	filterSamplesBySector,
@@ -35,7 +39,7 @@ type Point = {
 };
 
 type Telemetry = { points: Point[] };
-type Lap = { id: string; index: number; duration_ns: number | null };
+type Lap = { id: string; index: number; duration_ns: number | null; sectors?: Array<{ index: number; duration_ns: number | null }> };
 type Detail = {
 	summary: {
 		title: string | null;
@@ -61,6 +65,12 @@ type Sample = {
 	analysed_throttle?: number | null;
 	reference_brake?: number | null;
 	analysed_brake?: number | null;
+	reference_engine_rpm?: number | null;
+	analysed_engine_rpm?: number | null;
+	reference_steering_angle_rad?: number | null;
+	analysed_steering_angle_rad?: number | null;
+	reference_gear?: number | null;
+	analysed_gear?: number | null;
 	reference_elapsed_seconds?: number | null;
 	analysed_elapsed_seconds?: number | null;
 	delta_seconds?: number | null;
@@ -181,6 +191,12 @@ function alignedSamples(samples: Sample[]): LapComparisonSample[] {
 		comparisonThrottlePercent: percentage(sample.analysed_throttle),
 		referenceBrakePercent: percentage(sample.reference_brake),
 		comparisonBrakePercent: percentage(sample.analysed_brake),
+		referenceRpm: sample.reference_engine_rpm,
+		comparisonRpm: sample.analysed_engine_rpm,
+		referenceSteeringDegrees: sample.reference_steering_angle_rad == null ? null : (sample.reference_steering_angle_rad * 180) / Math.PI,
+		comparisonSteeringDegrees: sample.analysed_steering_angle_rad == null ? null : (sample.analysed_steering_angle_rad * 180) / Math.PI,
+		referenceGear: sample.reference_gear,
+		comparisonGear: sample.analysed_gear,
 		referencePositionXM: sample.reference_position_x_m,
 		referencePositionZM: sample.reference_position_z_m,
 		comparisonPositionXM: sample.analysed_position_x_m,
@@ -192,6 +208,7 @@ function TelemetryWorkspace() {
 	const snapshot = useWorkspace();
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
 	const [sector, setSector] = useState<number | null>(null);
+	const [analysisSelection, setAnalysisSelection] = useState<string | null>(null);
 	const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
 	const [playing, setPlaying] = useState(false);
 	const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -206,6 +223,7 @@ function TelemetryWorkspace() {
 	useEffect(() => {
 		setCursorIndex(null);
 		setSector(null);
+		setAnalysisSelection(null);
 		setTelemetryWindow(null);
 		setPlaying(false);
 	}, [snapshot?.lap?.id, snapshot?.comparison]);
@@ -264,6 +282,14 @@ function TelemetryWorkspace() {
 		setPlaybackSpeed(speed);
 	};
 	const comparisonIsFaster = false;
+	const sectorDeltas = comparison
+		? comparisonSectorDeltas(
+				(comparison.reference.lap.sectors || []).map((item) => ({ index: item.index, durationNs: item.duration_ns })),
+				(comparison.analysed.lap.sectors || []).map((item) => ({ index: item.index, durationNs: item.duration_ns })),
+				baseSamples,
+			)
+		: [];
+	const analysisSegments = comparison ? comparisonAnalysis(baseSamples) : [];
 	const speedSeries = comparison
 		? comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed, comparisonIsFaster)
 		: singleSeries("referenceSpeedKmh", channelColours.speed);
@@ -273,6 +299,15 @@ function TelemetryWorkspace() {
 	const brakeSeries = comparison
 		? comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake, comparisonIsFaster)
 		: singleSeries("referenceBrakePercent", channelColours.brake);
+	const steeringSeries = comparison
+		? comparisonSeries("referenceSteeringDegrees", "comparisonSteeringDegrees", channelColours.steering, comparisonIsFaster)
+		: singleSeries("referenceSteeringDegrees", channelColours.steering);
+	const rpmSeries = comparison
+		? comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm, comparisonIsFaster)
+		: singleSeries("referenceRpm", channelColours.rpm);
+	const gearSeries = comparison
+		? comparisonSeries("referenceGear", "comparisonGear", channelColours.gear, comparisonIsFaster)
+		: singleSeries("referenceGear", channelColours.gear);
 
 	return (
 		<>
@@ -305,87 +340,137 @@ function TelemetryWorkspace() {
 					</span>
 				</div>
 			</div>
-			<div className="telemetry-range">
-				<SectorPicker
-					samples={baseSamples}
-					value={sector}
-					onChange={(value) => {
-						setPlaying(false);
-						setSector(value);
-						setTelemetryWindow(null);
-						setCursorIndex(null);
-					}}
-				/>
-			</div>
-			<LapTelemetryHud
-				identity={[detail?.summary.track, detail?.summary.car].filter(Boolean).join(" · ") || detail?.summary.title || "Recorded lap"}
-				secondary={`LAP ${lap.index} · ${formatSessionType(detail?.summary.session_type)}`}
-				samples={samples}
-				cursorIndex={cursorIndex}
-				onSeek={(index) => seek(index)}
-				layout="embedded"
-				distanceUnit="%"
-				playing={playing}
-				onTogglePlayback={togglePlayback}
-				playbackSpeed={playbackSpeed}
-				onPlaybackSpeed={changePlaybackSpeed}
-			/>
-			<div className="visual-grid">
-				<div className="web-track-map">
-					<TrackMap
-						samples={samples}
-						cursorIndex={cursorIndex}
-						comparison={Boolean(comparison)}
-						height={360}
-						focusSelection={sector != null || telemetryWindow != null}
-						rangeLabel={sector != null ? `SECTOR ${sector}` : undefined}
-						onRangeZoom={zoomTelemetry}
-						rangeZoomLinked={false}
-					/>
-				</div>
-				<ComparisonChart
-					label="SPEED"
-					unit="km/h"
-					samples={samples}
-					series={speedSeries}
-					cursorIndex={cursorIndex}
-					onCursor={seek}
-					onZoom={zoomTelemetry}
-					distanceUnit="%"
-				/>
-				<div className="telemetry-chart-wide">
-					<ComparisonChart
-						label="THROTTLE"
-						unit="%"
-						samples={samples}
-						series={throttleSeries}
-						cursorIndex={cursorIndex}
-						onCursor={seek}
-						onZoom={zoomTelemetry}
-						fixedRange={[0, 100]}
-						distanceUnit="%"
-					/>
-				</div>
-				<div className="telemetry-chart-wide">
-					<ComparisonChart
-						label="BRAKE"
-						unit="%"
-						samples={samples}
-						series={brakeSeries}
-						cursorIndex={cursorIndex}
-						onCursor={seek}
-						onZoom={zoomTelemetry}
-						fixedRange={[0, 100]}
-						distanceUnit="%"
-					/>
-				</div>
-				{!comparison && (
-					<>
+			<div className={`comparison-review-layout ${comparison ? "with-analysis" : "single"}`}>
+				{comparison && (
+					<div className="comparison-analysis-column">
+						<ComparisonAnalysisPanel
+							segments={analysisSegments}
+							selectedId={analysisSelection}
+							onSelect={(segment) => {
+								setPlaying(false);
+								setAnalysisSelection(segment?.id ?? null);
+								setCursorIndex(null);
+								if (!segment) {
+									setSector(null);
+									setTelemetryWindow(null);
+								} else if (segment.sectorIndex != null) {
+									setSector(segment.sectorIndex);
+									setTelemetryWindow(null);
+								} else {
+									setSector(null);
+									setTelemetryWindow({ startM: segment.startM, endM: segment.endM });
+								}
+							}}
+						/>
+					</div>
+				)}
+				<div className="comparison-telemetry-content">
+					<div className="telemetry-range">
+						<SectorPicker
+							samples={baseSamples}
+							value={sector}
+							onChange={(value) => {
+								setPlaying(false);
+								setSector(value);
+								setTelemetryWindow(null);
+								setCursorIndex(null);
+							}}
+						/>
+					</div>
+					{comparison ? (
+						<ComparisonTelemetryHud
+							samples={samples}
+							cursorIndex={cursorIndex}
+							onSeek={(index) => seek(index)}
+							referenceLabel={comparisonName(comparison.reference)}
+							comparisonLabel={comparisonName(comparison.analysed)}
+							trackCarLabel={[comparison.reference.detail.summary.track, comparison.reference.detail.summary.car].filter(Boolean).join(" · ")}
+							sectorDeltas={sectorDeltas}
+							sector={sector}
+							onSector={(value) => {
+								setPlaying(false);
+								setSector(value);
+								setTelemetryWindow(null);
+								setCursorIndex(null);
+							}}
+							onSwap={() => window.dispatchEvent(new Event("trace:comparison-swap"))}
+							onClose={() => window.dispatchEvent(new Event("trace:comparison-clear"))}
+							layout="embedded"
+							distanceUnit="%"
+							playing={playing}
+							onTogglePlayback={togglePlayback}
+							playbackSpeed={playbackSpeed}
+							onPlaybackSpeed={changePlaybackSpeed}
+						/>
+					) : (
+						<LapTelemetryHud
+							identity={[detail?.summary.track, detail?.summary.car].filter(Boolean).join(" · ") || detail?.summary.title || "Recorded lap"}
+							secondary={`LAP ${lap.index} · ${formatSessionType(detail?.summary.session_type)}`}
+							samples={samples}
+							cursorIndex={cursorIndex}
+							onSeek={(index) => seek(index)}
+							layout="embedded"
+							distanceUnit="%"
+							playing={playing}
+							onTogglePlayback={togglePlayback}
+							playbackSpeed={playbackSpeed}
+							onPlaybackSpeed={changePlaybackSpeed}
+						/>
+					)}
+					<div className="visual-grid">
+						<div className="web-track-map">
+							<TrackMap
+								samples={samples}
+								cursorIndex={cursorIndex}
+								comparison={Boolean(comparison)}
+								height={360}
+								focusSelection={sector != null || telemetryWindow != null}
+								rangeLabel={sector != null ? `SECTOR ${sector}` : undefined}
+								onRangeZoom={zoomTelemetry}
+								rangeZoomLinked={false}
+							/>
+						</div>
+						<ComparisonChart
+							label="SPEED"
+							unit="km/h"
+							samples={samples}
+							series={speedSeries}
+							cursorIndex={cursorIndex}
+							onCursor={seek}
+							onZoom={zoomTelemetry}
+							distanceUnit="%"
+						/>
+						<div className="telemetry-chart-wide">
+							<ComparisonChart
+								label="THROTTLE"
+								unit="%"
+								samples={samples}
+								series={throttleSeries}
+								cursorIndex={cursorIndex}
+								onCursor={seek}
+								onZoom={zoomTelemetry}
+								fixedRange={[0, 100]}
+								distanceUnit="%"
+							/>
+						</div>
+						<div className="telemetry-chart-wide">
+							<ComparisonChart
+								label="BRAKE"
+								unit="%"
+								samples={samples}
+								series={brakeSeries}
+								cursorIndex={cursorIndex}
+								onCursor={seek}
+								onZoom={zoomTelemetry}
+								fixedRange={[0, 100]}
+								distanceUnit="%"
+							/>
+						</div>
 						<ComparisonChart
 							label="STEERING ANGLE"
 							unit="°"
 							samples={samples}
-							series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
+							series={steeringSeries}
 							cursorIndex={cursorIndex}
 							onCursor={seek}
 							onZoom={zoomTelemetry}
@@ -394,10 +479,20 @@ function TelemetryWorkspace() {
 							distanceUnit="%"
 						/>
 						<ComparisonChart
+							label="ENGINE SPEED"
+							unit="rpm"
+							samples={samples}
+							series={rpmSeries}
+							cursorIndex={cursorIndex}
+							onCursor={seek}
+							onZoom={zoomTelemetry}
+							distanceUnit="%"
+						/>
+						<ComparisonChart
 							label="GEAR"
 							unit=""
 							samples={samples}
-							series={singleSeries("referenceGear", channelColours.gear)}
+							series={gearSeries}
 							cursorIndex={cursorIndex}
 							onCursor={seek}
 							onZoom={zoomTelemetry}
@@ -405,31 +500,29 @@ function TelemetryWorkspace() {
 							formatValue={(value) => formatGear(value)}
 							distanceUnit="%"
 						/>
-					</>
-				)}
-				{comparison && (
-					<div className="telemetry-chart-wide">
-						<ComparisonChart
-							label="TIME DELTA · ANALYSED VS REFERENCE"
-							unit="s"
-							samples={samples}
-							series={singleSeries("deltaSeconds", channelColours.delta)}
-							cursorIndex={cursorIndex}
-							onCursor={seek}
-							onZoom={zoomTelemetry}
-							fixedRange={deltaRange(samples)}
-							zeroLine
-							distanceUnit="%"
-						/>
+						{comparison && (
+							<div className="telemetry-chart-wide">
+								<ComparisonChart
+									label="TIME DELTA · ANALYSED VS REFERENCE"
+									unit="s"
+									samples={samples}
+									series={singleSeries("deltaSeconds", channelColours.delta)}
+									cursorIndex={cursorIndex}
+									onCursor={seek}
+									onZoom={zoomTelemetry}
+									fixedRange={deltaRange(samples)}
+									zeroLine
+									distanceUnit="%"
+								/>
+							</div>
+						)}
 					</div>
-				)}
+				</div>
 			</div>
 		</>
 	);
 }
 
-const summaryRoot = document.querySelector("#comparison-summary-root");
-if (summaryRoot) createRoot(summaryRoot).render(<ComparisonSummary />);
 const workspaceRoot = document.querySelector("#telemetry-workspace-root");
 if (workspaceRoot) createRoot(workspaceRoot).render(<TelemetryWorkspace />);
 

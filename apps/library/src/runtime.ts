@@ -453,7 +453,18 @@ function interpolate(points, progress, key) {
 function alignLaps(referencePoints, analysedPoints) {
 	const reference = progressSeries(referencePoints);
 	const analysed = progressSeries(analysedPoints);
-	const keys = ["elapsed_seconds", "sector_index", "speed_kph", "throttle", "brake", "position_x_m", "position_z_m"];
+	const keys = [
+		"elapsed_seconds",
+		"sector_index",
+		"speed_kph",
+		"throttle",
+		"brake",
+		"engine_rpm",
+		"steering_angle_rad",
+		"gear",
+		"position_x_m",
+		"position_z_m",
+	];
 	const samples = Array.from({ length: 600 }, (_, index) => {
 		const progress = index / 599;
 		const sample = { progress };
@@ -474,6 +485,14 @@ function clearComparison(redraw = true) {
 	state.comparison = null;
 	if (redraw) syncTelemetryWorkspace();
 }
+
+window.addEventListener("trace:comparison-swap", () => {
+	if (!state.comparison) return;
+	const reference = state.comparison.analysed;
+	const analysed = state.comparison.reference;
+	state.comparison = { reference, analysed, ...alignLaps(reference.telemetry.points, analysed.telemetry.points) };
+	syncTelemetryWorkspace();
+});
 
 window.addEventListener("popstate", () => {
 	if (state.account) void openAuthenticatedRoute();

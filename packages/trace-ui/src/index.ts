@@ -18,7 +18,17 @@ export {
 export { filterSamplesByDistance, filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "./telemetry-window";
 export { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "./telemetry-playback";
 export { SectorPicker } from "./sector-picker";
-export { LapTelemetryHud, type LapTelemetryHudProps } from "./lap-telemetry-hud";
+export {
+	HudConditions,
+	HudPedals,
+	HudProgress,
+	HudSteering,
+	HudValue,
+	LapTelemetryHud,
+	TelemetrySeek,
+	hasHudConditions,
+	type LapTelemetryHudProps,
+} from "./lap-telemetry-hud";
 export {
 	formatLapDurationNs,
 	sectorPerformance,
@@ -27,6 +37,14 @@ export {
 	type SessionOverviewLap,
 	type SessionOverviewSector,
 } from "./session-overview";
+export {
+	ComparisonTelemetryHud,
+	comparisonSectorDeltas,
+	type ComparisonSectorDelta,
+	type ComparisonSectorTiming,
+	type ComparisonTelemetryHudProps,
+} from "./comparison-hud";
+export { ComparisonAnalysisPanel, comparisonAnalysis, type ComparisonAnalysisSegment } from "./comparison-analysis";
 export {
 	FloatingTrackMap,
 	TrackMap,

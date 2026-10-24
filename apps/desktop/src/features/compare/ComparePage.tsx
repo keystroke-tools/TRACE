@@ -27,7 +27,14 @@ import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMa
 import { ComparisonSessionPicker } from "./ComparisonSessionPicker";
 import { fasterReferenceSuggestions, type ComparisonSelection, type ReferenceSuggestion, validComparisonLaps } from "./comparison-selection";
 import { FEATURE_FLAGS_CHANGED_EVENT, richComparisonPickerEnabled } from "../settings/feature-flags";
-import { nearestTelemetryPlaybackIndex, SectorPicker, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "@trace/ui";
+import {
+	ComparisonTelemetryHud,
+	comparisonSectorDeltas as sharedComparisonSectorDeltas,
+	nearestTelemetryPlaybackIndex,
+	SectorPicker,
+	telemetryPlaybackSpeeds,
+	telemetryPlaybackTimeline,
+} from "@trace/ui";
 import {
 	filterSamplesByDistance,
 	filterSamplesBySector,
@@ -1514,108 +1521,65 @@ function ComparisonHud({
 	const referenceTrackTemperature = sample?.referenceTrackTemperatureC ?? numericCondition(referenceSession?.roadTemperatureC);
 	const comparisonAirTemperature = sample?.comparisonAirTemperatureC ?? numericCondition(comparisonSession?.ambientTemperatureC);
 	const comparisonTrackTemperature = sample?.comparisonTrackTemperatureC ?? numericCondition(comparisonSession?.roadTemperatureC);
-	const referenceHasConditions = hasHudConditions(referenceAirTemperature, referenceTrackTemperature);
-	const comparisonHasConditions = hasHudConditions(comparisonAirTemperature, comparisonTrackTemperature);
-	const showConditions = referenceHasConditions || comparisonHasConditions;
-	const sectorDeltas = comparisonSectorDeltas(referenceLaps, referenceLap, comparisonLaps, comparisonLap, comparison?.samples ?? []);
-	const gapTone =
-		sample?.deltaSeconds == null || Math.abs(sample.deltaSeconds) < 0.0005
-			? "text-trace-text"
-			: sample.deltaSeconds > 0
-				? "text-[#ff5263]"
-				: "text-[#42db76]";
+	const sectorDeltas = sharedComparisonSectorDeltas(
+		referenceLaps.find((lap) => lap.index === referenceLap)?.sectors.map((item) => ({ index: item.index, durationNs: item.durationNs })) ?? [],
+		comparisonLaps.find((lap) => lap.index === comparisonLap)?.sectors.map((item) => ({ index: item.index, durationNs: item.durationNs })) ?? [],
+		comparison?.samples ?? [],
+	);
 	const referenceLabel = referenceSession?.driver?.trim() || "REFERENCE";
 	const comparisonLabel = comparisonSession?.driver?.trim() || "ANALYSED LAP";
 	const trackCarLabel = referenceSession ? `${referenceSession.track} · ${referenceSession.car}` : "TRACK · CAR";
 	return (
-		<>
-			<div
-				className={`fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[204px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[40px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`}
-			>
-				<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
-					<TelemetrySeek
-						samples={samples}
-						cursorIndex={cursorIndex}
-						onSeek={onSeek}
-						playing={playing}
-						onTogglePlayback={onTogglePlayback}
-						playbackSpeed={playbackSpeed}
-						onPlaybackSpeed={onPlaybackSpeed}
-					/>
-				</div>
-				<div className="col-span-full grid grid-cols-[1fr_52px_1fr] gap-3 border-b border-trace-divider pb-2">
-					<HudLapChoice
-						label={referenceLabel}
-						role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER REFERENCE"}
-						colour={comparisonIsFaster ? "text-trace-accent" : "text-trace-purple"}
-						sessions={sessions}
-						sessionId={referenceSessionId}
-						onSession={onReferenceSession}
-						laps={referenceLaps}
-						lapIndex={referenceLap}
-						onLap={onReferenceLap}
-						richSessionPicker={richSessionPicker}
-					/>
-					<div className="flex min-w-0 items-center justify-center">
-						<button
-							type="button"
-							disabled={referenceLap == null || comparisonLap == null}
-							onClick={onSwap}
-							className="grid size-9 shrink-0 place-items-center border border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text disabled:text-trace-dim"
-							aria-label="Swap Reference and Analysed Lap"
-						>
-							<svg className="size-4 fill-none stroke-current" viewBox="0 0 16 16" aria-hidden="true">
-								<path d="M3 5h9m0 0L9.5 2.5M12 5 9.5 7.5M13 11H4m0 0 2.5-2.5M4 11l2.5 2.5" />
-							</svg>
-						</button>
-					</div>
-					<HudLapChoice
-						label={comparisonLabel}
-						role={comparisonIsFaster ? "FASTER SELECTED LAP" : "LAP TO IMPROVE"}
-						colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"}
-						sessions={compatibleSessions}
-						sessionId={comparisonSessionId}
-						onSession={onComparisonSession}
-						laps={comparisonLaps}
-						lapIndex={comparisonLap}
-						onLap={onComparisonLap}
-						disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null}
-						richSessionPicker={richSessionPicker}
-					/>
-				</div>
-				<HudValue
-					label="REFERENCE SPEED / GEAR"
-					value={sample?.referenceSpeedKmh == null ? "—" : `${Math.round(sample.referenceSpeedKmh)} · ${formatGear(sample.referenceGear)}`}
-					colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster}
+		<ComparisonTelemetryHud
+			samples={samples}
+			cursorIndex={cursorIndex}
+			onSeek={onSeek}
+			referenceLabel={referenceLabel}
+			comparisonLabel={comparisonLabel}
+			trackCarLabel={trackCarLabel}
+			sectorDeltas={sectorDeltas}
+			sector={sector}
+			onSector={onSector}
+			comparisonIsFaster={comparisonIsFaster}
+			onSwap={referenceLap == null || comparisonLap == null ? undefined : onSwap}
+			playing={playing}
+			onTogglePlayback={onTogglePlayback}
+			playbackSpeed={playbackSpeed}
+			onPlaybackSpeed={onPlaybackSpeed}
+			referenceAirTemperatureC={referenceAirTemperature}
+			referenceTrackTemperatureC={referenceTrackTemperature}
+			comparisonAirTemperatureC={comparisonAirTemperature}
+			comparisonTrackTemperatureC={comparisonTrackTemperature}
+			referenceChoice={
+				<HudLapChoice
+					label={referenceLabel}
+					role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER REFERENCE"}
+					colour={comparisonIsFaster ? "text-trace-accent" : "text-trace-purple"}
+					sessions={sessions}
+					sessionId={referenceSessionId}
+					onSession={onReferenceSession}
+					laps={referenceLaps}
+					lapIndex={referenceLap}
+					onLap={onReferenceLap}
+					richSessionPicker={richSessionPicker}
 				/>
-				<HudSteering value={sample?.referenceSteeringDegrees} colour={comparisonIsFaster ? "var(--color-trace-accent)" : channelColours.faster} />
-				<HudPedals throttle={sample?.referenceThrottlePercent} brake={sample?.referenceBrakePercent} />
-				{showConditions &&
-					(referenceHasConditions ? <HudConditions air={referenceAirTemperature} track={referenceTrackTemperature} /> : <div aria-hidden="true" />)}
-				<div className="h-10 min-w-0 overflow-hidden border-x border-trace-divider px-3 text-center font-mono">
-					<span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">LIVE GAP</span>
-					<strong className={`mt-1 block truncate text-[13px] leading-5 tabular-nums ${gapTone}`}>
-						{sample == null ? "—" : `${Math.round(sample.distanceM)} M · ${formatComparisonGap(sample.deltaSeconds)}`}
-					</strong>
-				</div>
-				{showConditions &&
-					(comparisonHasConditions ? (
-						<HudConditions air={comparisonAirTemperature} track={comparisonTrackTemperature} />
-					) : (
-						<div aria-hidden="true" />
-					))}
-				<HudPedals throttle={sample?.comparisonThrottlePercent} brake={sample?.comparisonBrakePercent} />
-				<HudSteering value={sample?.comparisonSteeringDegrees} colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"} />
-				<HudValue
-					label="ANALYSED SPEED / GEAR"
-					value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`}
-					colour={comparisonIsFaster ? channelColours.faster : "var(--color-trace-accent)"}
+			}
+			comparisonChoice={
+				<HudLapChoice
+					label={comparisonLabel}
+					role={comparisonIsFaster ? "FASTER SELECTED LAP" : "LAP TO IMPROVE"}
+					colour={comparisonIsFaster ? "text-trace-purple" : "text-trace-accent"}
+					sessions={compatibleSessions}
+					sessionId={comparisonSessionId}
+					onSession={onComparisonSession}
+					laps={comparisonLaps}
+					lapIndex={comparisonLap}
+					onLap={onComparisonLap}
+					disabledLap={comparisonSessionId === referenceSessionId ? referenceLap : null}
+					richSessionPicker={richSessionPicker}
 				/>
-				<div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
-					<ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} trackCarLabel={trackCarLabel} />
-				</div>
-			</div>
-		</>
+			}
+		/>
 	);
 }
 
@@ -1673,113 +1637,6 @@ function SuggestedReferencesList({
 	);
 }
 
-type SectorDelta = { index: number; seconds: number | null };
-
-function comparisonSectorDeltas(
-	referenceLaps: RecordedSessionSummary["laps"],
-	referenceLap: number | null,
-	comparisonLaps: RecordedSessionSummary["laps"],
-	comparisonLap: number | null,
-	samples: LapComparisonSample[],
-): SectorDelta[] {
-	const reference = referenceLaps.find((lap) => lap.index === referenceLap);
-	const comparison = comparisonLaps.find((lap) => lap.index === comparisonLap);
-	const indices = [
-		...new Set([
-			...(reference?.sectors.map((sector) => sector.index) ?? []),
-			...(comparison?.sectors.map((sector) => sector.index) ?? []),
-			...samples.flatMap((sample) => (sample.sectorIndex == null ? [] : [sample.sectorIndex])),
-		]),
-	].sort((left, right) => left - right);
-	const cumulativeDeltas = new Map(
-		indices.map((index) => [
-			index,
-			samples
-				.slice()
-				.reverse()
-				.find((sample) => sample.sectorIndex === index && sample.deltaSeconds != null)?.deltaSeconds ?? null,
-		]),
-	);
-	return indices.map((index, position) => {
-		const referenceSector = reference?.sectors.find((sector) => sector.index === index);
-		const comparisonSector = comparison?.sectors.find((sector) => sector.index === index);
-		if (referenceSector && comparisonSector) {
-			return { index, seconds: (comparisonSector.durationNs - referenceSector.durationNs) / 1_000_000_000 };
-		}
-		const cumulativeDelta = cumulativeDeltas.get(index) ?? null;
-		const previousDelta = position === 0 ? 0 : (cumulativeDeltas.get(indices[position - 1]) ?? null);
-		const seconds = cumulativeDelta == null || previousDelta == null ? null : cumulativeDelta - previousDelta;
-		return { index, seconds };
-	});
-}
-
-function ComparisonSectorStrip({
-	sectors,
-	value,
-	onChange,
-	trackCarLabel,
-}: {
-	sectors: SectorDelta[];
-	value: number | null;
-	onChange: (value: number | null) => void;
-	trackCarLabel: string;
-}) {
-	return (
-		<div className="flex h-6 min-w-0 items-stretch gap-3 font-mono" aria-label="Sector comparison and telemetry range">
-			<div className="flex min-w-0 flex-1 items-stretch gap-1.5 overflow-x-auto">
-				<span className="flex w-28 shrink-0 items-center text-[9px] font-black tracking-[.08em] text-trace-accent">
-					{value == null ? "VIEWING FULL LAP" : `VIEWING SECTOR ${value}`}
-				</span>
-				<button
-					type="button"
-					onClick={() => onChange(null)}
-					className={`shrink-0 border px-2 text-[9px] font-black leading-none tracking-[.08em] ${value == null ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:text-trace-text"}`}
-				>
-					LAP
-				</button>
-				{sectors.map((sector) => {
-					const gaining = sector.seconds != null && sector.seconds < -0.0005;
-					const losing = sector.seconds != null && sector.seconds > 0.0005;
-					const tone = gaining
-						? "border-trace-accent/45 bg-trace-accent/10 text-trace-accent"
-						: losing
-							? "border-trace-danger/60 bg-trace-danger/25 text-red-200"
-							: "border-trace-divider bg-trace-deep text-trace-muted";
-					const selected = value === sector.index ? "outline outline-2 -outline-offset-2 outline-trace-accent" : "hover:border-trace-soft";
-					const explanation =
-						sector.seconds == null
-							? `Sector ${sector.index} timing is unavailable.`
-							: Math.abs(sector.seconds) < 0.0005
-								? `Sector ${sector.index} was even with the reference.`
-								: `The Analysed Lap ${gaining ? "gained" : "lost"} ${Math.abs(sector.seconds).toFixed(3)} seconds against the Reference in sector ${sector.index}.`;
-					return (
-						<Tooltip content={explanation} key={sector.index}>
-							<button
-								type="button"
-								onClick={() => onChange(sector.index)}
-								className={`flex shrink-0 items-center gap-1.5 border px-2 text-[10px] font-bold leading-none tabular-nums ${tone} ${selected}`}
-								aria-pressed={value === sector.index}
-							>
-								<span className="text-[9px] opacity-75">S{sector.index}</span>
-								<strong>
-									{sector.seconds == null
-										? "—"
-										: Math.abs(sector.seconds) < 0.0005
-											? "0.000"
-											: `${sector.seconds > 0 ? "+" : "−"}${Math.abs(sector.seconds).toFixed(3)}`}
-								</strong>
-							</button>
-						</Tooltip>
-					);
-				})}
-			</div>
-			<Tooltip content={trackCarLabel} className="min-w-0 max-w-[38%] shrink-0 items-center justify-end">
-				<span className="truncate text-right text-[10px] font-bold tracking-[.06em] text-trace-soft">{trackCarLabel}</span>
-			</Tooltip>
-		</div>
-	);
-}
-
 function HudLapChoice({
 	label,
 	role,
@@ -1831,183 +1688,6 @@ function HudLapChoice({
 			</select>
 		</div>
 	);
-}
-
-function formatComparisonGap(seconds?: number | null) {
-	if (seconds == null) return "GAP —";
-	if (Math.abs(seconds) < 0.0005) return "EVEN";
-	return `${Math.abs(seconds).toFixed(3)}s ${seconds > 0 ? "BEHIND" : "AHEAD"}`;
-}
-
-function TelemetrySeek({
-	samples,
-	cursorIndex,
-	onSeek,
-	playing,
-	onTogglePlayback,
-	playbackSpeed,
-	onPlaybackSpeed,
-}: {
-	samples: LapComparisonSample[];
-	cursorIndex: number | null;
-	onSeek: (index: number) => void;
-	playing?: boolean;
-	onTogglePlayback?: () => void;
-	playbackSpeed?: number;
-	onPlaybackSpeed?: (speed: number) => void;
-}) {
-	const index = Math.min(Math.max(cursorIndex ?? 0, 0), Math.max(samples.length - 1, 0));
-	const start = samples[0]?.distanceM ?? 0;
-	const end = samples.at(-1)?.distanceM ?? 0;
-	return (
-		<div
-			className={`grid h-8 ${onTogglePlayback ? "grid-cols-[auto_48px_minmax(0,1fr)_52px]" : "grid-cols-[52px_minmax(0,1fr)_56px]"} items-center gap-2 font-mono text-[10px] tabular-nums text-trace-dim`}
-		>
-			{onTogglePlayback && (
-				<div className="mr-1 flex items-center gap-2 border-r border-trace-divider pr-3">
-					<Tooltip content={playing ? "Pause comparison playback (Space)" : "Play comparison playback (Space)"}>
-						<button
-							type="button"
-							onClick={onTogglePlayback}
-							disabled={samples.length < 2}
-							className={`grid h-8 w-11 place-items-center border ${playing ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text"} disabled:cursor-not-allowed disabled:opacity-35`}
-							aria-label={playing ? "Pause comparison playback" : "Play comparison playback"}
-						>
-							{playing ? (
-								<svg className="size-3 fill-current" viewBox="0 0 12 12" aria-hidden="true">
-									<path d="M2 1h3v10H2zm5 0h3v10H7z" />
-								</svg>
-							) : (
-								<svg className="size-3 fill-current" viewBox="0 0 12 12" aria-hidden="true">
-									<path d="m3 1 8 5-8 5z" />
-								</svg>
-							)}
-						</button>
-					</Tooltip>
-					{onPlaybackSpeed && (
-						<Tooltip content="Playback speed ([ slower · ] faster)" className="h-8 w-11">
-							<select
-								value={playbackSpeed ?? 1}
-								onChange={(event) => onPlaybackSpeed(Number(event.target.value))}
-								className="h-8 w-11 cursor-pointer appearance-none border border-trace-divider bg-trace-deep p-0 text-center text-[10px] font-black tabular-nums text-trace-soft outline-none hover:border-trace-soft hover:text-trace-text focus:border-trace-accent"
-								aria-label="Comparison playback speed"
-							>
-								{telemetryPlaybackSpeeds.map((speed) => (
-									<option value={speed} key={speed}>
-										{speed}×
-									</option>
-								))}
-							</select>
-						</Tooltip>
-					)}
-				</div>
-			)}
-			<span>{Math.round(start)} M</span>
-			<input
-				className="trace-seek trace-seek-lg w-full"
-				type="range"
-				min="0"
-				max={Math.max(samples.length - 1, 0)}
-				step="1"
-				value={index}
-				disabled={samples.length < 2}
-				onChange={(event) => onSeek(Number(event.target.value))}
-				aria-label="Seek through lap distance"
-			/>
-			<span className="text-right">{Math.round(end)} M</span>
-		</div>
-	);
-}
-
-function HudValue({ label, value, unit, colour }: { label: string; value: string; unit?: string; colour?: string }) {
-	return (
-		<div className="h-10 min-w-0 overflow-hidden font-mono">
-			<span className="block truncate whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.1em] text-trace-dim">{label}</span>
-			<strong className="mt-1 block truncate whitespace-nowrap text-[15px] leading-5 tabular-nums" style={{ color: colour }}>
-				{value}
-				{unit && <small className="ml-1 text-[9px] text-trace-dim">{unit}</small>}
-			</strong>
-		</div>
-	);
-}
-
-function HudSteering({ value, colour }: { value?: number | null; colour: string }) {
-	const rotation = value == null || !Number.isFinite(value) ? 0 : Math.min(450, Math.max(-450, value));
-	return (
-		<div className="flex h-10 min-w-0 items-center gap-2 font-mono">
-			<svg
-				className="size-9 shrink-0"
-				viewBox="0 0 36 36"
-				role="img"
-				aria-label={value == null ? "Steering unavailable" : `Steering angle ${Math.round(value)} degrees`}
-			>
-				<circle cx="18" cy="18" r="15" fill="var(--color-trace-deep)" stroke={colour} strokeWidth="2" />
-				<g transform={`rotate(${rotation} 18 18)`} stroke={colour} strokeWidth="2" strokeLinecap="round">
-					<line x1="18" y1="18" x2="18" y2="31" />
-					<line x1="7" y1="17" x2="29" y2="17" />
-				</g>
-				<circle cx="18" cy="18" r="2.5" fill={colour} />
-			</svg>
-			<span className="min-w-0">
-				<span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">STEER</span>
-				<strong className="block truncate text-[12px] leading-4 tabular-nums" style={{ color: colour }}>
-					{value == null ? "—" : `${Math.round(value)}°`}
-				</strong>
-			</span>
-		</div>
-	);
-}
-
-function HudConditions({ air, track }: { air?: number | null; track?: number | null }) {
-	return (
-		<div className="h-10 min-w-0 overflow-hidden font-mono">
-			<span className="block text-[9px] font-bold leading-3 tracking-[.08em] text-trace-dim">CONDITIONS</span>
-			<span className="mt-1 flex items-center gap-2 whitespace-nowrap text-[10px] leading-4 tabular-nums">
-				{air != null && (
-					<span className="text-trace-dim">
-						AIR <strong className="text-trace-text">{formatHudTemperature(air)}</strong>
-					</span>
-				)}
-				{track != null && (
-					<span className="text-trace-dim">
-						TRACK <strong className="text-trace-text">{formatHudTemperature(track)}</strong>
-					</span>
-				)}
-			</span>
-		</div>
-	);
-}
-
-function hasHudConditions(air?: number | null, track?: number | null) {
-	return (air != null && Number.isFinite(air)) || (track != null && Number.isFinite(track));
-}
-
-function HudProgress({ label, value, colour }: { label: string; value?: number | null; colour: string }) {
-	const primary = Math.min(100, Math.max(0, value ?? 0));
-	return (
-		<div className="h-10 overflow-hidden font-mono">
-			<span className="flex h-3 justify-between whitespace-nowrap text-[10px] font-bold leading-3 tracking-[.08em] tabular-nums text-trace-dim">
-				<span className="truncate">{label}</span>
-				<span>{Math.round(primary)}%</span>
-			</span>
-			<span className="mt-2 block h-2 overflow-hidden bg-trace-divider">
-				<span className="block h-full transition-[width] duration-75" style={{ width: `${primary}%`, backgroundColor: colour }} />
-			</span>
-		</div>
-	);
-}
-
-function HudPedals({ throttle, brake }: { throttle?: number | null; brake?: number | null }) {
-	return (
-		<div className="grid h-10 w-full min-w-0 max-w-80 grid-cols-2 gap-3 justify-self-center">
-			<HudProgress label="THROTTLE" value={throttle} colour={channelColours.throttle} />
-			<HudProgress label="BRAKE" value={brake} colour={channelColours.brake} />
-		</div>
-	);
-}
-
-function formatHudTemperature(value?: number | null) {
-	return value == null ? "—" : `${Math.round(value)}°C`;
 }
 
 function numericCondition(value?: string | null) {

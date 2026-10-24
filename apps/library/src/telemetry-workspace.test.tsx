@@ -129,4 +129,87 @@ describe("telemetry workspace", () => {
 		await userEvent.click(screen.getByText("Close comparison"));
 		expect(closed).toBe(true);
 	});
+
+	it("renders the shared comparison HUD, analysis, and complete channel set", async () => {
+		const reference = {
+			detail: { summary: { title: null, driver_name: "Sam", track: "Spa", car: "LMP3" } },
+			lap: { ...lap, id: "reference", duration_ns: 90_000_000_000, sectors: [{ index: 1, duration_ns: 90_000_000_000 }] },
+			telemetry: { points },
+		};
+		const analysed = {
+			detail: { summary: { title: null, driver_name: "Alex", track: "Spa", car: "LMP3" } },
+			lap: { ...lap, id: "analysed", sectors: [{ index: 1, duration_ns: 91_250_000_000 }] },
+			telemetry: { points },
+		};
+		window.traceTelemetrySnapshot = {
+			detail: analysed.detail,
+			lap: analysed.lap,
+			telemetry: { points },
+			comparison: {
+				reference,
+				analysed,
+				alignment: "distance",
+				samples: [
+					{
+						progress: 0,
+						reference_sector_index: 1,
+						analysed_sector_index: 1,
+						reference_elapsed_seconds: 0,
+						analysed_elapsed_seconds: 0,
+						delta_seconds: 0,
+						reference_speed_kph: 120,
+						analysed_speed_kph: 116,
+						reference_throttle: 1,
+						analysed_throttle: 0.8,
+						reference_brake: 0,
+						analysed_brake: 0.1,
+						reference_engine_rpm: 6_000,
+						analysed_engine_rpm: 5_800,
+						reference_steering_angle_rad: 0,
+						analysed_steering_angle_rad: 0.1,
+						reference_gear: 4,
+						analysed_gear: 4,
+						reference_position_x_m: 0,
+						reference_position_z_m: 0,
+						analysed_position_x_m: 0,
+						analysed_position_z_m: 0,
+					},
+					{
+						progress: 1,
+						reference_sector_index: 1,
+						analysed_sector_index: 1,
+						reference_elapsed_seconds: 90,
+						analysed_elapsed_seconds: 91.25,
+						delta_seconds: 1.25,
+						reference_speed_kph: 200,
+						analysed_speed_kph: 190,
+						reference_throttle: 1,
+						analysed_throttle: 0.8,
+						reference_brake: 0,
+						analysed_brake: 0.1,
+						reference_engine_rpm: 7_000,
+						analysed_engine_rpm: 6_700,
+						reference_steering_angle_rad: 0.2,
+						analysed_steering_angle_rad: 0.3,
+						reference_gear: 5,
+						analysed_gear: 5,
+						reference_position_x_m: 10,
+						reference_position_z_m: 5,
+						analysed_position_x_m: 9,
+						analysed_position_z_m: 5,
+					},
+				],
+			},
+			message: "",
+		};
+		render(<TelemetryWorkspace />);
+		expect(screen.getByText("FASTER REFERENCE")).toBeTruthy();
+		expect(screen.getByText("LAP TO IMPROVE")).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Swap Reference and Analysed Lap" })).toBeTruthy();
+		expect(screen.getByText("INSIGHTS 1")).toBeTruthy();
+		expect(screen.getByRole("img", { name: "ENGINE SPEED telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByRole("img", { name: "STEERING ANGLE telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByRole("img", { name: "GEAR telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByText(/may be incomplete or incorrect/)).toBeTruthy();
+	});
 });
