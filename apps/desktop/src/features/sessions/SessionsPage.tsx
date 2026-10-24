@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { SessionIdentityBlock } from "@trace/ui";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -18,7 +19,6 @@ import {
 	ExportOption,
 	FuelUsage,
 	LapMetricValue,
-	OwnershipBadge,
 	SectorBars,
 	SectorLegend,
 	SessionDetailsEditor,
@@ -467,34 +467,19 @@ function SessionRow({
 						onClick={onOpen}
 						className="group grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_88px_124px_20px] items-center gap-6 border-0 bg-transparent px-5 py-5 text-left hover:bg-trace-raised"
 					>
-						<div className="min-w-0">
-							<div className="flex min-w-0 items-center gap-3">
-								<span className="shrink-0 font-mono text-[12px] font-extrabold tracking-[.1em] text-trace-accent">
-									{friendlySessionType(session)}
-								</span>
-								<h2 className="min-w-0 truncate text-base font-black tracking-[.02em]">{session.title ?? session.track}</h2>
-								{session.ownership !== "unknown" && <OwnershipBadge ownership={session.ownership} />}
-							</div>
-							<span className="mt-2 flex min-w-0 items-center gap-2 text-[12px] text-trace-dim">
-								<span className="shrink-0 text-trace-soft">{session.car}</span>
-								{session.title && (
-									<>
-										<span aria-hidden="true">·</span>
-										<span className="min-w-0 truncate">{session.track}</span>
-									</>
-								)}
-								<span aria-hidden="true">·</span>
+						<SessionIdentityBlock
+							sessionType={friendlySessionType(session)}
+							title={session.title ?? session.track}
+							car={session.car}
+							track={session.track}
+							date={
 								<Tooltip className="shrink-0" content={session.startedAt}>
 									{formatSessionDate(session.startedAt)}
 								</Tooltip>
-								{session.driver && (
-									<>
-										<span aria-hidden="true">·</span>
-										<span className="min-w-0 truncate text-trace-muted">{session.driver}</span>
-									</>
-								)}
-							</span>
-						</div>
+							}
+							driver={session.driver}
+							ownership={session.ownership}
+						/>
 						<div className="font-mono text-right">
 							<strong className="block text-sm text-trace-soft">{session.laps.length}</strong>
 							<span className="mt-1 block text-[12px] tracking-[.08em] text-trace-dim">LAPS</span>
