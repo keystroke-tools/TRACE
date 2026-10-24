@@ -22,7 +22,7 @@ afterEach(() => {
 describe("account shell", () => {
 	it("offers first-run administrator creation even when registration is disabled", () => {
 		window.traceAccountSnapshot = {
-			instance: { name: "TRACE", version: "0.8.5", registration_enabled: false, initial_admin_required: true },
+			instance: { name: "TRACE", version: "0.8.6", registration_enabled: false, initial_admin_required: true },
 			account: null,
 		};
 		render(<AuthPanel />);
@@ -32,7 +32,7 @@ describe("account shell", () => {
 
 	it("signs in and publishes the authenticated account", async () => {
 		window.traceAccountSnapshot = {
-			instance: { name: "TRACE", version: "0.8.5", registration_enabled: false, initial_admin_required: false },
+			instance: { name: "TRACE", version: "0.8.6", registration_enabled: false, initial_admin_required: false },
 			account: null,
 		};
 		const account = { account_id: "one", username: "alex", display_name: "Alex", administrator: false };
@@ -54,7 +54,7 @@ describe("account shell", () => {
 
 	it("loads desktop tokens when the account control is opened", async () => {
 		window.traceAccountSnapshot = {
-			instance: { name: "TRACE", version: "0.8.5", registration_enabled: false, initial_admin_required: false },
+			instance: { name: "TRACE", version: "0.8.6", registration_enabled: false, initial_admin_required: false },
 			account: { account_id: "one", username: "alex", display_name: "Alex", administrator: true },
 		};
 		const fetch = vi
@@ -78,7 +78,7 @@ describe("account shell", () => {
 			window.dispatchEvent(
 				new CustomEvent("trace:account-load", {
 					detail: {
-						instance: { name: "TRACE", version: "0.8.5", registration_enabled: false, initial_admin_required: false },
+						instance: { name: "TRACE", version: "0.8.6", registration_enabled: false, initial_admin_required: false },
 						account: { account_id: "one", username: "alex", display_name: "Alex", administrator: false },
 					},
 				}),
