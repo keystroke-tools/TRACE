@@ -7,7 +7,7 @@ const state = {
 	selectedLap: null,
 	selectedLapId: null,
 	comparison: null,
-	pickerReview: null,
+	comparePickerOpen: false,
 	publicShareId: null,
 	shareUrl: null,
 	tokens: [],
@@ -41,11 +41,6 @@ const elements = {
 	shareUrl: document.querySelector("#share-url"),
 	shareCopy: document.querySelector("#share-copy"),
 	shareRevoke: document.querySelector("#share-revoke"),
-	compareClose: document.querySelector("#compare-close"),
-	comparePicker: document.querySelector("#compare-picker"),
-	compareSearch: document.querySelector("#compare-search"),
-	compareSessions: document.querySelector("#compare-sessions"),
-	compareLaps: document.querySelector("#compare-laps"),
 	comparisonSummary: document.querySelector("#comparison-summary"),
 	comparisonClear: document.querySelector("#comparison-clear"),
 	alignmentLabel: document.querySelector("#alignment-label"),
@@ -153,6 +148,7 @@ function syncSessionLibrary() {
 	};
 	window.traceLibrarySnapshot = snapshot;
 	window.dispatchEvent(new CustomEvent("trace:sessions-load", { detail: snapshot }));
+	if (state.comparePickerOpen) syncComparePicker();
 }
 
 function syncReviewHeader() {
@@ -176,6 +172,19 @@ function syncLapList() {
 		: null;
 	window.traceLapListSnapshot = snapshot;
 	window.dispatchEvent(new CustomEvent("trace:laps-load", { detail: snapshot }));
+}
+
+function syncComparePicker() {
+	const snapshot =
+		state.comparePickerOpen && state.review && state.selectedLap
+			? {
+					sessions: state.sessions,
+					currentReview: state.review,
+					selectedLap: state.selectedLap,
+				}
+			: null;
+	window.traceCompareSnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:compare-load", { detail: snapshot }));
 }
 
 function toggleAdminPanel() {
@@ -325,13 +334,6 @@ async function openAuthenticatedRoute() {
 		return;
 	}
 	if (window.location.pathname !== "/app") setLocation("/app", true);
-}
-
-function sessionSearchText(session) {
-	return [session.title, session.driver_name, session.simulator, session.track, session.layout, session.car, session.session_type, ...(session.tags || [])]
-		.filter(Boolean)
-		.join(" ")
-		.toLocaleLowerCase();
 }
 
 async function openReview(sessionId, navigate = true) {
@@ -515,138 +517,29 @@ async function loadLap(lapId) {
 }
 
 function openComparePicker() {
-	if (!state.selectedLap || !state.telemetry) {
+	if (!state.selectedLap || state.selectedLap.duration_ns == null || !state.telemetry) {
 		toast("Select a timed lap first.", "error");
 		return;
 	}
-	elements.comparePicker.hidden = false;
-	elements.compareSearch.value = "";
-	state.pickerReview = null;
-	renderCompareSessions();
-	elements.compareLaps.replaceChildren(message("Select a session to see its laps."));
-	elements.compareSearch.focus();
+	state.comparePickerOpen = true;
+	syncComparePicker();
 }
 
 function closeComparePicker() {
-	elements.comparePicker.hidden = true;
-	state.pickerReview = null;
+	state.comparePickerOpen = false;
+	syncComparePicker();
 }
 
-function message(text) {
-	const paragraph = document.createElement("p");
-	paragraph.textContent = text;
-	return paragraph;
-}
-
-function summaryCompatible(summary) {
-	const current = state.review?.summary;
-	if (!current) return false;
-	return (
-		summary.simulator === current.simulator &&
-		readable(summary.track, "").toLocaleLowerCase() === readable(current.track, "").toLocaleLowerCase() &&
-		readable(summary.car, "").toLocaleLowerCase() === readable(current.car, "").toLocaleLowerCase()
-	);
-}
-
-function renderCompareSessions() {
-	const query = elements.compareSearch.value.trim().toLocaleLowerCase();
-	const sessions = [...state.sessions]
-		.filter((session) => sessionSearchText(session).includes(query))
-		.sort((left, right) => Number(summaryCompatible(right)) - Number(summaryCompatible(left)));
-	elements.compareSessions.replaceChildren(...sessions.map(compareSessionRow));
-	if (!sessions.length) elements.compareSessions.append(message("No matching sessions."));
-}
-
-function compareSessionRow(session) {
-	const button = document.createElement("button");
-	button.type = "button";
-	button.className = "picker-session";
-	if (state.pickerReview?.summary.session_id === session.session_id) button.classList.add("active");
-	const heading = document.createElement("span");
-	const driver = document.createElement("strong");
-	driver.textContent = readable(session.driver_name, readable(session.title, "Recorded session"));
-	const badge = document.createElement("small");
-	badge.textContent = summaryCompatible(session) ? "MATCH" : readable(session.simulator, "OTHER");
-	heading.append(driver, badge);
-	const context = document.createElement("span");
-	context.textContent = `${readable(session.track, "Unknown track")} · ${readable(session.car, "Unknown car")}`;
-	const date = document.createElement("time");
-	date.textContent = formatDate(session.started_at);
-	button.append(heading, context, date);
-	button.addEventListener("click", () => loadPickerSession(session.session_id));
-	return button;
-}
-
-async function loadPickerSession(sessionId) {
-	elements.compareLaps.replaceChildren(message("Loading laps…"));
-	try {
-		state.pickerReview = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/review`);
-		renderCompareSessions();
-		renderPickerLaps();
-	} catch (error) {
-		elements.compareLaps.replaceChildren(message(error.message));
-	}
-}
-
-function detailsCompatible(left, right) {
-	const sameIdentity = (sourceLeft, sourceRight, labelLeft, labelRight) =>
-		sourceLeft && sourceRight ? sourceLeft === sourceRight : readable(labelLeft, "").toLocaleLowerCase() === readable(labelRight, "").toLocaleLowerCase();
-	return (
-		left.summary.simulator === right.summary.simulator &&
-		sameIdentity(left.source_track_id, right.source_track_id, left.summary.track, right.summary.track) &&
-		sameIdentity(left.source_car_id, right.source_car_id, left.summary.car, right.summary.car) &&
-		readable(left.summary.layout, "") === readable(right.summary.layout, "")
-	);
-}
-
-function renderPickerLaps() {
-	const compatible = detailsCompatible(state.review, state.pickerReview);
-	const heading = document.createElement("div");
-	heading.className = `picker-compatibility ${compatible ? "compatible" : "warning"}`;
-	heading.textContent = compatible ? "Compatible car and track" : "Different car, track, layout, or simulator";
-	const laps = state.pickerReview.laps.map((lap) => pickerLapRow(lap, compatible));
-	elements.compareLaps.replaceChildren(heading, ...laps);
-	if (!laps.length) elements.compareLaps.append(message("This session has no laps."));
-}
-
-function pickerLapRow(lap, compatible) {
-	const sameLap = state.pickerReview.summary.session_id === state.review.summary.session_id && lap.id === state.selectedLap.id;
-	const unavailable = lap.duration_ns == null || lap.validity === "invalid" || (lap.max_tyres_out ?? 0) >= 3;
-	const button = document.createElement("button");
-	button.type = "button";
-	button.className = "picker-lap";
-	button.disabled = sameLap || unavailable || !compatible;
-	const label = document.createElement("span");
-	label.textContent = `Lap ${lap.index}`;
-	const duration = document.createElement("strong");
-	duration.textContent = formatDuration(lap.duration_ns);
-	const status = document.createElement("small");
-	status.textContent = sameLap ? "CURRENT" : unavailable ? "UNAVAILABLE" : `${lap.sectors.length} SECTORS`;
-	button.append(label, duration, status);
-	button.addEventListener("click", () => createComparison(lap));
-	return button;
-}
-
-async function createComparison(candidateLap) {
-	elements.compareLaps.classList.add("loading");
-	try {
-		const candidateSession = state.pickerReview;
-		const candidateTelemetry = await request(
-			`/api/v1/library/sessions/${encodeURIComponent(candidateSession.summary.session_id)}/laps/${encodeURIComponent(candidateLap.id)}/telemetry?max_points=1800`,
-		);
-		const current = { detail: state.review, lap: state.selectedLap, telemetry: state.telemetry };
-		const candidate = { detail: candidateSession, lap: candidateLap, telemetry: candidateTelemetry };
-		const reference = candidateLap.duration_ns < state.selectedLap.duration_ns ? candidate : current;
-		const analysed = reference === candidate ? current : candidate;
-		state.comparison = { reference, analysed, ...alignLaps(reference.telemetry.points, analysed.telemetry.points) };
-		closeComparePicker();
-		renderComparison();
-		requestAnimationFrame(drawTelemetry);
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		elements.compareLaps.classList.remove("loading");
-	}
+function createComparison(candidateSession, candidateLap, candidateTelemetry) {
+	if (!state.review || !state.selectedLap || !state.telemetry) return;
+	const current = { detail: state.review, lap: state.selectedLap, telemetry: state.telemetry };
+	const candidate = { detail: candidateSession, lap: candidateLap, telemetry: candidateTelemetry };
+	const reference = candidateLap.duration_ns < state.selectedLap.duration_ns ? candidate : current;
+	const analysed = reference === candidate ? current : candidate;
+	state.comparison = { reference, analysed, ...alignLaps(reference.telemetry.points, analysed.telemetry.points) };
+	closeComparePicker();
+	renderComparison();
+	requestAnimationFrame(drawTelemetry);
 }
 
 function progressSeries(points) {
@@ -874,9 +767,7 @@ elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.shareCopy.addEventListener("click", copyShareLink);
 elements.shareRevoke.addEventListener("click", revokeShare);
-elements.compareClose.addEventListener("click", closeComparePicker);
 elements.comparisonClear.addEventListener("click", () => clearComparison());
-elements.compareSearch.addEventListener("input", renderCompareSessions);
 
 elements.loginForm.addEventListener("submit", async (event) => {
 	event.preventDefault();
@@ -958,6 +849,10 @@ window.addEventListener("trace:open-session", (event) => void openReview(event.d
 window.addEventListener("trace:lap-open", (event) => void loadLap(event.detail.lapId));
 window.addEventListener("trace:review-back", () => closeReview());
 window.addEventListener("trace:compare-open", openComparePicker);
+window.addEventListener("trace:compare-close", closeComparePicker);
+window.addEventListener("trace:comparison-create", (event) =>
+	createComparison(event.detail.candidateSession, event.detail.candidateLap, event.detail.candidateTelemetry),
+);
 window.addEventListener("trace:share-open", toggleSharePanel);
 window.addEventListener("trace:copy-app-link", copyTraceLink);
 window.addEventListener("trace:review-summary-updated", (event) => {
