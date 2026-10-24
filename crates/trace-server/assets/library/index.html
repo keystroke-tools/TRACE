@@ -24,61 +24,12 @@
 			</section>
 
 			<section id="auth-view" class="auth-layout" hidden>
-				<div class="auth-intro">
-					<p class="eyebrow">SELF-HOSTED TELEMETRY</p>
-					<h1>Your laps,<br /><em>where you put them.</em></h1>
-					<p>Upload portable <code>.trace</code> sessions to this instance. Your library remains private to your account.</p>
-				</div>
-				<div class="auth-card">
-					<div class="auth-tabs" role="tablist">
-						<button id="login-tab" class="active" type="button" role="tab">Sign in</button>
-						<button id="register-tab" type="button" role="tab" hidden>Create account</button>
-					</div>
-					<form id="login-form">
-						<label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" /></label>
-						<label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256" /></label>
-						<button class="primary" type="submit">Sign in</button>
-					</form>
-					<form id="register-form" hidden>
-						<label>Display name<input name="display_name" autocomplete="name" required maxlength="80" /></label>
-						<label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" /></label>
-						<label>Password<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256" /></label>
-						<p class="field-note">Use at least 12 characters.</p>
-						<button class="primary" type="submit">Create account</button>
-					</form>
-				</div>
+				<div id="auth-root" class="auth-root"></div>
 			</section>
 
 			<section id="library-view" hidden>
 				<div id="library-home">
-					<div class="library-head">
-						<div>
-							<p class="eyebrow">02 / SESSION LIBRARY</p>
-							<h1>SESSIONS</h1>
-							<p><span id="account-name"></span> · Private sessions stored on this TRACE instance.</p>
-						</div>
-						<div class="library-account-actions">
-							<button id="instance-settings" type="button" hidden>Instance settings</button>
-							<button id="connect-desktop" type="button">Connect desktop</button>
-							<button id="logout-button" class="quiet" type="button">Sign out</button>
-						</div>
-					</div>
-					<section id="token-panel" class="token-panel" hidden>
-						<div>
-							<p class="eyebrow">DESKTOP ACCESS</p>
-							<strong>Upload directly from the TRACE desktop app.</strong>
-							<small>Create a revocable token, then paste it into Settings → Connectivity in TRACE.</small>
-						</div>
-						<div class="token-create">
-							<input id="token-label" maxlength="40" value="TRACE desktop" aria-label="Token label" />
-							<button id="token-create" class="primary" type="button">Create token</button>
-						</div>
-						<div id="token-secret" class="token-secret" hidden>
-							<strong>Copy this token now. It will not be shown again.</strong>
-							<div><input id="token-value" readonly /><button id="token-copy" type="button">Copy</button></div>
-						</div>
-						<div id="token-list" class="token-list"></div>
-					</section>
+					<div id="account-shell-root"></div>
 					<div id="admin-panel" class="token-panel admin-panel" hidden></div>
 
 					<div id="session-library-root"></div>

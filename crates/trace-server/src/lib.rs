@@ -3971,23 +3971,14 @@ mod tests {
     }
 
     #[test]
-    fn embedded_library_forms_capture_values_before_disabling_controls() {
-        let script = include_str!("../assets/library/app.js");
-        for form in ["loginForm", "registerForm"] {
-            let handler = script
-                .split_once(&format!("elements.{form}.addEventListener(\"submit\""))
-                .expect("form submit handler")
-                .1
-                .split_once("});")
-                .expect("end of form submit handler")
-                .0;
-            let capture = handler.find("new FormData").expect("form value capture");
-            let disable = handler.find("setBusy").expect("form busy state");
-            assert!(
-                capture < disable,
-                "{form} must be read before it is disabled"
-            );
-        }
+    fn embedded_library_mounts_the_react_account_shell() {
+        let html = include_str!("../assets/library/index.html");
+        assert!(html.contains("id=\"auth-root\""));
+        assert!(html.contains("id=\"account-shell-root\""));
+
+        let bundle = include_str!("../assets/library/library-admin.js");
+        assert!(bundle.contains("/api/v1/auth/sessions"));
+        assert!(bundle.contains("/api/v1/auth/tokens"));
         assert!(include_str!("../assets/library/styles.css").contains("[hidden]"));
     }
 

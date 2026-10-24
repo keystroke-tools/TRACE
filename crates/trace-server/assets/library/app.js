@@ -13,7 +13,6 @@ const state = {
 	publicShareId: null,
 	shareUrl: null,
 	sharePanelOpen: false,
-	tokens: [],
 };
 
 const elements = {
@@ -24,22 +23,7 @@ const elements = {
 	reviewView: document.querySelector("#review-view"),
 	instanceName: document.querySelector("#instance-name"),
 	instanceVersion: document.querySelector("#instance-version"),
-	accountName: document.querySelector("#account-name"),
-	loginTab: document.querySelector("#login-tab"),
-	registerTab: document.querySelector("#register-tab"),
-	loginForm: document.querySelector("#login-form"),
-	registerForm: document.querySelector("#register-form"),
-	logout: document.querySelector("#logout-button"),
-	connectDesktop: document.querySelector("#connect-desktop"),
-	instanceSettings: document.querySelector("#instance-settings"),
 	adminPanel: document.querySelector("#admin-panel"),
-	tokenPanel: document.querySelector("#token-panel"),
-	tokenLabel: document.querySelector("#token-label"),
-	tokenCreate: document.querySelector("#token-create"),
-	tokenSecret: document.querySelector("#token-secret"),
-	tokenValue: document.querySelector("#token-value"),
-	tokenCopy: document.querySelector("#token-copy"),
-	tokenList: document.querySelector("#token-list"),
 	toasts: document.querySelector("#toast-region"),
 };
 
@@ -69,10 +53,6 @@ function toast(message, kind = "success") {
 	setTimeout(() => item.remove(), 4500);
 }
 
-function setBusy(form, busy) {
-	for (const control of form.elements) control.disabled = busy;
-}
-
 async function copyText(value, successMessage, source = null) {
 	try {
 		if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
@@ -99,31 +79,29 @@ async function copyText(value, successMessage, source = null) {
 	}
 }
 
-function switchAuth(mode) {
-	const registering = mode === "register";
-	elements.loginTab.classList.toggle("active", !registering);
-	elements.registerTab.classList.toggle("active", registering);
-	elements.loginForm.hidden = registering;
-	elements.registerForm.hidden = !registering;
-}
-
 async function loadAccount() {
 	try {
 		state.account = await request("/api/v1/auth/session");
+		syncAccountShell();
 		await loadLibrary();
 		show("library");
 		await openAuthenticatedRoute();
 	} catch {
 		state.account = null;
+		syncAccountShell();
 		show("auth");
 	}
 }
 
 async function loadLibrary() {
 	state.sessions = await request("/api/v1/library/sessions");
-	elements.accountName.textContent = state.account.display_name;
-	elements.instanceSettings.hidden = !state.account.administrator;
 	syncSessionLibrary();
+}
+
+function syncAccountShell() {
+	const snapshot = { instance: state.instance, account: state.account };
+	window.traceAccountSnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:account-load", { detail: snapshot }));
 }
 
 function syncSessionLibrary() {
@@ -202,83 +180,6 @@ function toggleAdminPanel() {
 	elements.adminPanel.hidden = !elements.adminPanel.hidden;
 	if (elements.adminPanel.hidden) return;
 	window.dispatchEvent(new Event("trace:admin-open"));
-}
-
-async function toggleTokenPanel() {
-	elements.tokenPanel.hidden = !elements.tokenPanel.hidden;
-	if (elements.tokenPanel.hidden) return;
-	try {
-		state.tokens = await request("/api/v1/auth/tokens");
-		renderTokens();
-	} catch (error) {
-		toast(error.message, "error");
-	}
-}
-
-function renderTokens() {
-	const rows = state.tokens.map((token) => {
-		const row = document.createElement("div");
-		row.className = "token-row";
-		const details = document.createElement("span");
-		const label = document.createElement("strong");
-		label.textContent = token.label;
-		const meta = document.createElement("small");
-		meta.textContent = `${token.token_prefix}… · Created ${formatDate(token.created_at_unix_ms)}`;
-		details.append(label, meta);
-		const revoke = document.createElement("button");
-		revoke.type = "button";
-		revoke.className = "danger";
-		revoke.textContent = "Revoke";
-		revoke.addEventListener("click", () => revokeToken(token, revoke));
-		row.append(details, revoke);
-		return row;
-	});
-	elements.tokenList.replaceChildren(...rows);
-}
-
-async function createToken() {
-	const label = elements.tokenLabel.value.trim();
-	if (!label) return;
-	elements.tokenCreate.disabled = true;
-	try {
-		const created = await request("/api/v1/auth/tokens", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ label }),
-		});
-		state.tokens.unshift(created);
-		elements.tokenValue.value = created.token;
-		elements.tokenSecret.hidden = false;
-		renderTokens();
-		toast("Desktop token created.");
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		elements.tokenCreate.disabled = false;
-	}
-}
-
-async function revokeToken(token, button) {
-	button.disabled = true;
-	try {
-		await request(`/api/v1/auth/tokens/${encodeURIComponent(token.token_id)}`, { method: "DELETE" });
-		state.tokens = state.tokens.filter((candidate) => candidate.token_id !== token.token_id);
-		renderTokens();
-		toast("Desktop token revoked.");
-	} catch (error) {
-		button.disabled = false;
-		toast(error.message, "error");
-	}
-}
-
-async function copyToken() {
-	await copyText(elements.tokenValue.value, "Desktop token copied.", elements.tokenValue);
-}
-
-function formatDate(value) {
-	const date = new Date(value);
-	if (Number.isNaN(date.valueOf())) return value || "Unknown date";
-	return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function readable(value, fallback) {
@@ -569,72 +470,6 @@ function clearComparison(redraw = true) {
 	if (redraw) syncTelemetryWorkspace();
 }
 
-elements.loginTab.addEventListener("click", () => switchAuth("login"));
-elements.registerTab.addEventListener("click", () => switchAuth("register"));
-elements.loginForm.addEventListener("submit", async (event) => {
-	event.preventDefault();
-	const values = Object.fromEntries(new FormData(elements.loginForm));
-	setBusy(elements.loginForm, true);
-	try {
-		state.account = await request("/api/v1/auth/sessions", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify(values),
-		});
-		elements.loginForm.reset();
-		await loadLibrary();
-		show("library");
-		await openAuthenticatedRoute();
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		setBusy(elements.loginForm, false);
-	}
-});
-
-elements.registerForm.addEventListener("submit", async (event) => {
-	event.preventDefault();
-	const values = Object.fromEntries(new FormData(elements.registerForm));
-	setBusy(elements.registerForm, true);
-	try {
-		await request("/api/v1/accounts", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify(values),
-		});
-		state.account = await request("/api/v1/auth/sessions", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ username: values.username, password: values.password }),
-		});
-		elements.registerForm.reset();
-		await loadLibrary();
-		show("library");
-		await openAuthenticatedRoute();
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		setBusy(elements.registerForm, false);
-	}
-});
-
-elements.logout.addEventListener("click", async () => {
-	try {
-		await request("/api/v1/auth/session", { method: "DELETE" });
-		state.account = null;
-		state.sessions = [];
-		closeReview(false);
-		setLocation("/app", true);
-		show("auth");
-	} catch (error) {
-		toast(error.message, "error");
-	}
-});
-elements.connectDesktop.addEventListener("click", toggleTokenPanel);
-elements.instanceSettings.addEventListener("click", toggleAdminPanel);
-elements.tokenCreate.addEventListener("click", createToken);
-elements.tokenCopy.addEventListener("click", copyToken);
-elements.tokenValue.addEventListener("click", () => elements.tokenValue.select());
 window.addEventListener("popstate", () => {
 	if (state.account) void openAuthenticatedRoute();
 });
@@ -642,6 +477,22 @@ window.addEventListener("trace:toast", (event) => toast(event.detail.message, ev
 window.addEventListener("trace:library-changed", () => {
 	if (state.account) void loadLibrary();
 });
+window.addEventListener("trace:authenticated", async (event) => {
+	state.account = event.detail.account;
+	syncAccountShell();
+	await loadLibrary();
+	show("library");
+	await openAuthenticatedRoute();
+});
+window.addEventListener("trace:signed-out", () => {
+	state.account = null;
+	state.sessions = [];
+	closeReview(false);
+	syncAccountShell();
+	setLocation("/app", true);
+	show("auth");
+});
+window.addEventListener("trace:admin-toggle", toggleAdminPanel);
 window.addEventListener("trace:sessions-updated", (event) => {
 	state.sessions = event.detail.sessions;
 });
@@ -678,15 +529,10 @@ async function start() {
 	show("loading");
 	try {
 		state.instance = await request("/api/v1/instance");
+		syncAccountShell();
 		elements.instanceName.textContent = state.instance.name;
 		elements.instanceVersion.textContent = `v${state.instance.version}`;
 		document.title = `${state.instance.name} · TRACE Library`;
-		const registrationOpen = state.instance.registration_enabled || state.instance.initial_admin_required;
-		elements.registerTab.hidden = !registrationOpen;
-		if (state.instance.initial_admin_required) {
-			elements.registerTab.textContent = "Create administrator";
-			switchAuth("register");
-		}
 		const shareId = publicShareId();
 		if (shareId) {
 			document.title = `Shared session · ${state.instance.name}`;

@@ -164,6 +164,10 @@ main {
 	min-height: calc(100vh - 200px);
 }
 
+.auth-root {
+	display: contents;
+}
+
 .eyebrow {
 	margin: 0 0 16px;
 	color: var(--trace-accent);
