@@ -1201,6 +1201,16 @@ button.primary:hover {
 	font-variant-numeric: tabular-nums;
 }
 
+.telemetry-reset-zoom {
+	border: 0;
+	background: transparent;
+	color: var(--trace-accent);
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+}
+
 .visual-grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

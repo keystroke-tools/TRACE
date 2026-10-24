@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe("telemetry workspace", () => {
-	it("renders selected-lap statistics and all base visualisations", () => {
+	it("renders selected-lap statistics and keeps shared chart zoom synchronized", async () => {
 		window.traceTelemetrySnapshot = { lap, telemetry: { points }, comparison: null, message: "" };
 		render(<TelemetryWorkspace />);
 		expect(screen.getByText("LAP 4")).toBeTruthy();
@@ -72,6 +72,8 @@ describe("telemetry workspace", () => {
 		expect(screen.getByRole("img", { name: "STEERING ANGLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "GEAR telemetry by lap distance" })).toBeTruthy();
 		expect(screen.queryByText("TIME DELTA · ANALYSED VS REFERENCE")).toBeNull();
+		await userEvent.click(screen.getAllByRole("button", { name: /Zoom all telemetry in around 50 %/ })[0]);
+		expect(screen.getByText(/RESET ZOOM/)).toBeTruthy();
 	});
 
 	it("renders comparison identity and bridges closing it", async () => {

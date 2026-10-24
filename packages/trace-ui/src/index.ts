@@ -15,3 +15,4 @@ export {
 	type ComparisonChartSeries,
 	type LapComparisonSample,
 } from "./telemetry-chart";
+export { filterSamplesByDistance, filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "./telemetry-window";

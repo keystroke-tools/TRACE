@@ -5,10 +5,13 @@ import {
 	channelColours,
 	comparisonSeries,
 	deltaRange,
+	filterSamplesByTelemetryWindow,
 	formatGear,
+	nextTelemetryWindow,
 	singleSeries,
 	steeringAngleRange,
 	type LapComparisonSample,
+	type TelemetryWindow,
 } from "@trace/ui";
 
 type Point = {
@@ -233,6 +236,11 @@ function alignedSamples(samples: Sample[]): LapComparisonSample[] {
 function TelemetryWorkspace() {
 	const snapshot = useWorkspace();
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+	const [telemetryWindow, setTelemetryWindow] = useState<TelemetryWindow | null>(null);
+	useEffect(() => {
+		setCursorIndex(null);
+		setTelemetryWindow(null);
+	}, [snapshot?.lap?.id, snapshot?.comparison]);
 	if (!snapshot?.lap || !snapshot.telemetry)
 		return <div className="telemetry-empty">{snapshot?.message || "Select a recorded lap to review its telemetry."}</div>;
 	const { lap, telemetry, comparison } = snapshot;
@@ -244,7 +252,12 @@ function TelemetryWorkspace() {
 				{ points: comparison.reference.telemetry.points, color: "#b49cff", width: 3 },
 			]
 		: [{ points: telemetry.points, color: "#d5d5d5", width: 3 }];
-	const samples = comparison ? alignedSamples(comparison.samples) : lapSamples(telemetry.points);
+	const baseSamples = comparison ? alignedSamples(comparison.samples) : lapSamples(telemetry.points);
+	const samples = filterSamplesByTelemetryWindow(baseSamples, telemetryWindow);
+	const zoomTelemetry = (anchor: number, direction: "in" | "out") => {
+		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchor, direction, 2));
+		setCursorIndex(null);
+	};
 	const comparisonIsFaster = false;
 	const speedSeries = comparison
 		? comparisonSeries("referenceSpeedKmh", "comparisonSpeedKmh", channelColours.speed, comparisonIsFaster)
@@ -264,6 +277,18 @@ function TelemetryWorkspace() {
 					<strong>{formatDuration(lap.duration_ns)}</strong>
 				</div>
 				<div className="telemetry-stats">
+					{telemetryWindow && (
+						<button
+							type="button"
+							onClick={() => {
+								setTelemetryWindow(null);
+								setCursorIndex(null);
+							}}
+							className="telemetry-reset-zoom"
+						>
+							{Math.round(telemetryWindow.startM)}–{Math.round(telemetryWindow.endM)}% · RESET ZOOM
+						</button>
+					)}
 					<span>
 						<strong>{Math.round(maximumSpeed)} km/h</strong>
 						<small>MAX SPEED</small>
@@ -286,6 +311,7 @@ function TelemetryWorkspace() {
 					series={speedSeries}
 					cursorIndex={cursorIndex}
 					onCursor={setCursorIndex}
+					onZoom={zoomTelemetry}
 					distanceUnit="%"
 				/>
 				<div className="telemetry-chart-wide">
@@ -296,6 +322,7 @@ function TelemetryWorkspace() {
 						series={throttleSeries}
 						cursorIndex={cursorIndex}
 						onCursor={setCursorIndex}
+						onZoom={zoomTelemetry}
 						fixedRange={[0, 100]}
 						distanceUnit="%"
 					/>
@@ -308,6 +335,7 @@ function TelemetryWorkspace() {
 						series={brakeSeries}
 						cursorIndex={cursorIndex}
 						onCursor={setCursorIndex}
+						onZoom={zoomTelemetry}
 						fixedRange={[0, 100]}
 						distanceUnit="%"
 					/>
@@ -321,6 +349,7 @@ function TelemetryWorkspace() {
 							series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
 							cursorIndex={cursorIndex}
 							onCursor={setCursorIndex}
+							onZoom={zoomTelemetry}
 							fixedRange={steeringAngleRange(samples)}
 							zeroLine
 							distanceUnit="%"
@@ -332,6 +361,7 @@ function TelemetryWorkspace() {
 							series={singleSeries("referenceGear", channelColours.gear)}
 							cursorIndex={cursorIndex}
 							onCursor={setCursorIndex}
+							onZoom={zoomTelemetry}
 							fixedRange={[-1, 8]}
 							formatValue={(value) => formatGear(value)}
 							distanceUnit="%"
@@ -347,6 +377,7 @@ function TelemetryWorkspace() {
 							series={singleSeries("deltaSeconds", channelColours.delta)}
 							cursorIndex={cursorIndex}
 							onCursor={setCursorIndex}
+							onZoom={zoomTelemetry}
 							fixedRange={deltaRange(samples)}
 							zeroLine
 							distanceUnit="%"
