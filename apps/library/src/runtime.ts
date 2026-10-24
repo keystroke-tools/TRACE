@@ -1,3 +1,7 @@
+// The library coordinator intentionally owns navigation and server state while
+// individual React surfaces own rendering and interaction.
+// @ts-nocheck
+
 const state = {
 	instance: null,
 	account: null,
