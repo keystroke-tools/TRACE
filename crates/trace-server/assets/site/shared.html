@@ -13,7 +13,7 @@
 		<meta name="twitter:card" content="summary_large_image" />
 		<link rel="canonical" href="{{TRACE_URL}}" />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-		<link rel="stylesheet" href="/live-assets/site.css" />
+		<link rel="stylesheet" href="/live-assets/site.css?v={{TRACE_VERSION}}" />
 		<title>{{TRACE_TITLE}}</title>
 	</head>
 	<body class="error-page">
@@ -27,6 +27,10 @@
 				<div class="actions">
 					<a class="button primary" href="{{TRACE_OPEN_URL}}">Open in TRACE <span>↗</span></a>
 					<a class="button" href="{{TRACE_DOWNLOAD_URL}}">Download .trace <span>↓</span></a>
+				</div>
+				<div class="copyable-link">
+					<span>TRACE APP LINK</span>
+					<code>{{TRACE_OPEN_URL}}</code>
 				</div>
 				<p>Open the downloaded package in TRACE to review every included lap and telemetry channel. This unlisted link expires automatically.</p>
 			</section>

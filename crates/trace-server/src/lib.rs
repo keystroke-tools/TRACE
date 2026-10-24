@@ -3708,6 +3708,31 @@ mod tests {
         assert!(include_str!("../assets/library/styles.css").contains("[hidden]"));
     }
 
+    #[test]
+    fn browser_library_uses_the_trace_theme_and_copyable_links() {
+        let styles = include_str!("../assets/library/styles.css");
+        assert!(styles.contains("--trace-accent: #c9ff00"));
+        assert!(styles.contains("button {"));
+        assert!(styles.contains("border-radius: 0"));
+        assert!(!styles.contains("#68e997"));
+
+        let script = include_str!("../assets/library/app.js");
+        assert!(script.contains("async function copyText"));
+        assert!(script.contains("document.execCommand(\"copy\")"));
+        assert!(script.contains("reviewCopyTrace"));
+
+        let landing = site_html(
+            include_str!("../assets/site/index.html"),
+            "https://live.simtrace.run",
+        );
+        assert!(landing.contains("class=\"button primary\" href=\"/app\""));
+        assert!(landing.contains("Open web app"));
+        assert!(landing.contains(&format!(
+            "/live-assets/site.css?v={}",
+            env!("CARGO_PKG_VERSION")
+        )));
+    }
+
     #[tokio::test]
     async fn shared_packages_are_validated_downloadable_and_durable() {
         let directory = tempfile::tempdir().expect("share directory");

@@ -47,6 +47,7 @@ const elements = {
 	reviewBack: document.querySelector("#review-back"),
 	reviewDownload: document.querySelector("#review-download"),
 	reviewOpenTrace: document.querySelector("#review-open-trace"),
+	reviewCopyTrace: document.querySelector("#review-copy-trace"),
 	shareOpen: document.querySelector("#share-open"),
 	sharePanel: document.querySelector("#share-panel"),
 	shareUrl: document.querySelector("#share-url"),
@@ -109,6 +110,32 @@ function toast(message, kind = "success") {
 
 function setBusy(form, busy) {
 	for (const control of form.elements) control.disabled = busy;
+}
+
+async function copyText(value, successMessage, source = null) {
+	try {
+		if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+		await navigator.clipboard.writeText(value);
+		toast(successMessage);
+		return;
+	} catch {
+		const field = source || document.createElement("textarea");
+		if (!source) {
+			field.value = value;
+			field.className = "clipboard-fallback";
+			document.body.append(field);
+		}
+		field.focus();
+		field.select();
+		field.setSelectionRange?.(0, field.value.length);
+		const copied = document.execCommand("copy");
+		if (!source) field.remove();
+		if (!copied && !source) window.prompt("Copy this link", value);
+		toast(
+			copied ? successMessage : source ? "The value is selected. Press Ctrl+C to copy it." : "Copy the link from the dialog.",
+			copied ? "success" : "error",
+		);
+	}
 }
 
 function switchAuth(mode) {
@@ -234,13 +261,7 @@ async function revokeToken(token, button) {
 }
 
 async function copyToken() {
-	try {
-		await navigator.clipboard.writeText(elements.tokenValue.value);
-		toast("Desktop token copied.");
-	} catch {
-		elements.tokenValue.select();
-		toast("Press Ctrl+C to copy the selected token.");
-	}
+	await copyText(elements.tokenValue.value, "Desktop token copied.", elements.tokenValue);
 }
 
 function formatBytes(bytes) {
@@ -394,6 +415,7 @@ function closeReview() {
 	elements.compareOpen.hidden = false;
 	elements.shareOpen.hidden = false;
 	elements.reviewOpenTrace.hidden = true;
+	elements.reviewCopyTrace.hidden = true;
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
@@ -441,14 +463,11 @@ async function toggleSharePanel() {
 }
 
 async function copyShareLink() {
-	const value = elements.shareUrl.value;
-	try {
-		await navigator.clipboard.writeText(value);
-		toast("Share link copied.");
-	} catch {
-		elements.shareUrl.select();
-		toast("Press Ctrl+C to copy the selected link.");
-	}
+	await copyText(elements.shareUrl.value, "Share link copied.", elements.shareUrl);
+}
+
+async function copyTraceLink() {
+	await copyText(elements.reviewOpenTrace.href, "TRACE app link copied.");
 }
 
 async function revokeShare() {
@@ -479,6 +498,7 @@ function renderReview() {
 		? `/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`
 		: `/api/v1/library/sessions/${encodeURIComponent(summary.session_id)}/download`;
 	elements.reviewOpenTrace.hidden = !state.publicShareId;
+	elements.reviewCopyTrace.hidden = !state.publicShareId;
 	if (state.publicShareId) {
 		const downloadUrl = new URL(`/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/download`, window.location.origin).href;
 		elements.reviewOpenTrace.href = `trace://shared-session?url=${encodeURIComponent(downloadUrl)}`;
@@ -804,7 +824,7 @@ function drawTelemetry() {
 	if (state.comparison) {
 		const { reference, analysed, samples } = state.comparison;
 		drawTrack(elements.trackCanvas, [
-			{ points: analysed.telemetry.points, color: "#68e997", width: 2 },
+			{ points: analysed.telemetry.points, color: "#c9ff00", width: 2 },
 			{ points: reference.telemetry.points, color: "#b49cff", width: 3 },
 		]);
 		drawSeriesGraph(elements.speedCanvas, [
@@ -812,7 +832,7 @@ function drawTelemetry() {
 			{ values: samples.map((sample) => sample.reference_speed_kph), color: "#b49cff" },
 		]);
 		drawSeriesGraph(elements.throttleCanvas, [
-			{ values: samples.map((sample) => sample.analysed_throttle), color: "#68e997", maximum: 1 },
+			{ values: samples.map((sample) => sample.analysed_throttle), color: "#c9ff00", maximum: 1 },
 			{ values: samples.map((sample) => sample.reference_throttle), color: "#b49cff", maximum: 1 },
 		]);
 		drawSeriesGraph(elements.brakeCanvas, [
@@ -824,7 +844,7 @@ function drawTelemetry() {
 	}
 	drawTrack(elements.trackCanvas, [{ points: state.telemetry.points, color: "#d5d5d5", width: 3 }]);
 	drawSeriesGraph(elements.speedCanvas, [{ values: state.telemetry.points.map((point) => point.speed_kph), color: "#65a9ff" }]);
-	drawSeriesGraph(elements.throttleCanvas, [{ values: state.telemetry.points.map((point) => point.throttle), color: "#68e997", maximum: 1 }]);
+	drawSeriesGraph(elements.throttleCanvas, [{ values: state.telemetry.points.map((point) => point.throttle), color: "#c9ff00", maximum: 1 }]);
 	drawSeriesGraph(elements.brakeCanvas, [{ values: state.telemetry.points.map((point) => point.brake), color: "#ef6969", maximum: 1 }]);
 }
 
@@ -958,6 +978,7 @@ elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.reviewBack.addEventListener("click", closeReview);
 elements.shareOpen.addEventListener("click", toggleSharePanel);
 elements.shareCopy.addEventListener("click", copyShareLink);
+elements.reviewCopyTrace.addEventListener("click", copyTraceLink);
 elements.shareRevoke.addEventListener("click", revokeShare);
 elements.compareOpen.addEventListener("click", openComparePicker);
 elements.compareClose.addEventListener("click", closeComparePicker);
@@ -1037,6 +1058,9 @@ elements.instanceSettings.addEventListener("click", toggleAdminPanel);
 elements.registrationEnabled.addEventListener("change", updateRegistration);
 elements.tokenCreate.addEventListener("click", createToken);
 elements.tokenCopy.addEventListener("click", copyToken);
+for (const field of [elements.tokenValue, elements.shareUrl]) {
+	field.addEventListener("click", () => field.select());
+}
 
 const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
 telemetryResizeObserver.observe(elements.trackCanvas);

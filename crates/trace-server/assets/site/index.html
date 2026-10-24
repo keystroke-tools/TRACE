@@ -19,14 +19,14 @@
 		<meta name="twitter:image" content="{{TRACE_OG_IMAGE}}" />
 		<link rel="canonical" href="{{TRACE_URL}}" />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-		<link rel="stylesheet" href="/live-assets/site.css" />
+		<link rel="stylesheet" href="/live-assets/site.css?v={{TRACE_VERSION}}" />
 		<title>TRACE Go Live — The pit wall, in your browser</title>
 	</head>
 	<body>
 		<header>
 			<a class="brand" href="{{TRACE_URL}}" aria-label="TRACE Go Live home"><span>TRACE</span><i>//</i><small>GO LIVE</small></a>
 			<nav><a href="https://simtrace.run/docs/#go-live">How it works</a><a href="https://github.com/keystroke-tools/TRACE">Source</a></nav>
-			<a class="header-action" href="/app">Open library <span>→</span></a>
+			<a class="header-action" href="/app">Open web app <span>→</span></a>
 		</header>
 		<main>
 			<div class="grid" aria-hidden="true"></div>
@@ -36,8 +36,9 @@
 					<h1>The pit wall,<br /><em>in your browser.</em></h1>
 					<p>TRACE Go Live turns an active drive or recorded session into an unlisted browser pit wall—track map, inputs, timing, laps, and all.</p>
 					<div class="actions">
-						<a class="button primary" href="https://simtrace.run">Download TRACE <span>↗</span></a>
-						<a class="button" href="https://simtrace.run/docs/#go-live">Read the guide <span>→</span></a>
+						<a class="button primary" href="/app">Open web app <span>→</span></a>
+						<a class="button" href="https://simtrace.run">Download TRACE <span>↗</span></a>
+						<a class="text-link" href="https://simtrace.run/docs/#go-live">Read the guide <span>→</span></a>
 					</div>
 				</div>
 				<aside class="status-card">
@@ -52,7 +53,7 @@
 						</div>
 						<div>
 							<dt>ACTIVE SESSION</dt>
-							<dd>Open a shared link</dd>
+							<dd><a href="/app">Open your library →</a></dd>
 						</div>
 						<div>
 							<dt>DISCOVERY</dt>
@@ -86,7 +87,10 @@
 			</section>
 		</main>
 		<footer>
-			<span>TRACE // GO LIVE</span><small>Powered by the open-source TRACE telemetry platform.</small><a href="https://simtrace.run/faq/">FAQ ↗</a>
+			<span>TRACE // GO LIVE</span>
+			<small>Powered by the open-source TRACE telemetry platform.</small>
+			<a href="/app">WEB APP →</a>
+			<a href="https://simtrace.run/faq/">FAQ ↗</a>
 		</footer>
 	</body>
 </html>

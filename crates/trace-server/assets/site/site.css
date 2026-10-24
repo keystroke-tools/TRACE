@@ -162,6 +162,23 @@ h1 em {
 	gap: 0.75rem;
 	margin-top: 2.2rem;
 }
+.text-link {
+	display: inline-flex;
+	min-height: 48px;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0 0.5rem;
+	color: var(--muted);
+	font-family: ui-monospace, monospace;
+	font-size: 0.65rem;
+	font-weight: 800;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+}
+.text-link:hover,
+.status-card dd a:hover {
+	color: var(--accent);
+}
 .button {
 	display: inline-flex;
 	min-height: 48px;
@@ -342,6 +359,29 @@ footer small {
 }
 .error-card .actions {
 	margin-bottom: 2rem;
+}
+.copyable-link {
+	display: grid;
+	gap: 0.55rem;
+	margin-bottom: 1.5rem;
+	border-left: 2px solid var(--accent);
+	background: #101010;
+	padding: 0.85rem 1rem;
+}
+.copyable-link span {
+	color: var(--muted);
+	font-family: ui-monospace, monospace;
+	font-size: 0.56rem;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+}
+.copyable-link code {
+	overflow-wrap: anywhere;
+	color: #d8d8d8;
+	font-family: ui-monospace, monospace;
+	font-size: 0.68rem;
+	line-height: 1.5;
+	user-select: all;
 }
 @media (max-width: 900px) {
 	header {
