@@ -202,7 +202,7 @@ function drawMap() {
 	}
 	if (latestPosition) {
 		const marker = project(latestPosition);
-		context.fillStyle = "#71df8b";
+		context.fillStyle = "#c9ff00";
 		context.beginPath();
 		context.arc(marker.x, marker.y, 7 * ratio, 0, Math.PI * 2);
 		context.fill();

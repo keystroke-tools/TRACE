@@ -10,9 +10,9 @@
 		sans-serif;
 	background: #101010;
 	color: #ededed;
-	--accent: #c9ff00;
-	--line: #303030;
-	--muted: #929292;
+	--accent: var(--trace-accent);
+	--line: var(--trace-divider);
+	--muted: var(--trace-muted);
 }
 * {
 	box-sizing: border-box;

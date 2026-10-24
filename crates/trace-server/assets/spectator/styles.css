@@ -42,7 +42,7 @@ header {
 	white-space: nowrap;
 }
 .brand i {
-	color: #71df8b;
+	color: var(--trace-accent);
 	font-style: normal;
 }
 .identity {
@@ -59,7 +59,7 @@ header {
 	place-items: center;
 	border: 1px solid #444;
 	background: #202020;
-	color: #71df8b;
+	color: var(--trace-accent);
 	font:
 		900 10px ui-monospace,
 		monospace;
@@ -93,8 +93,8 @@ header {
 	background: #777;
 }
 .connection.live i {
-	background: #71df8b;
-	box-shadow: 0 0 10px #71df8b;
+	background: var(--trace-accent);
+	box-shadow: 0 0 10px var(--trace-accent);
 	animation: pulse 1.4s infinite;
 }
 .connection.warn i {
@@ -180,7 +180,7 @@ header {
 .dvr-seek::-webkit-slider-runnable-track {
 	height: 5px;
 	border: 1px solid #444;
-	background: linear-gradient(to right, #71df8b 0 var(--dvr-progress), #292929 var(--dvr-progress) 100%);
+	background: linear-gradient(to right, var(--trace-accent) 0 var(--dvr-progress), #292929 var(--dvr-progress) 100%);
 }
 .dvr-seek::-webkit-slider-thumb {
 	width: 6px;
@@ -189,7 +189,7 @@ header {
 	border: 1px solid #101010;
 	border-radius: 1px;
 	appearance: none;
-	background: #71df8b;
+	background: var(--trace-accent);
 }
 .dvr-seek::-moz-range-track {
 	height: 5px;
@@ -198,17 +198,17 @@ header {
 }
 .dvr-seek::-moz-range-progress {
 	height: 5px;
-	background: #71df8b;
+	background: var(--trace-accent);
 }
 .dvr-seek::-moz-range-thumb {
 	width: 6px;
 	height: 17px;
 	border: 1px solid #101010;
 	border-radius: 1px;
-	background: #71df8b;
+	background: var(--trace-accent);
 }
 .dvr-seek:focus-visible {
-	outline: 1px solid #71df8b;
+	outline: 1px solid var(--trace-accent);
 	outline-offset: 3px;
 }
 .live-edge {
@@ -234,11 +234,11 @@ header {
 }
 .live-edge.active {
 	border-color: #477c55;
-	color: #71df8b;
+	color: var(--trace-accent);
 }
 .live-edge.active i {
-	background: #71df8b;
-	box-shadow: 0 0 8px #71df8b;
+	background: var(--trace-accent);
+	box-shadow: 0 0 8px var(--trace-accent);
 }
 main {
 	--trace-height: clamp(120px, 24vh, 240px);
@@ -385,7 +385,7 @@ canvas {
 .trace-resizer:hover i,
 .trace-resizer:focus-visible i,
 body.resizing-trace .trace-resizer i {
-	background: #71df8b;
+	background: var(--trace-accent);
 }
 .trace-resizer:focus-visible {
 	outline: none;
@@ -608,7 +608,7 @@ body.resizing-trace {
 	background: #1a211c;
 }
 .lap-row.current .lap-state {
-	color: #71df8b;
+	color: var(--trace-accent);
 }
 .lap-empty {
 	display: grid;

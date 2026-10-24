@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { formatSessionDate as formatSharedSessionDate, formatSessionType as formatSharedSessionType } from "@trace/ui";
 import type { RecordedLapMetrics, RecordedSessionSummary } from "../../data-source";
 import { Tooltip } from "../../Tooltip";
 
@@ -317,16 +318,7 @@ export function friendlySessionType(session: RecordedSessionSummary) {
 }
 
 export function formatSessionType(value: string) {
-	const type = value.trim().toLocaleLowerCase();
-	if (!type) return "Unknown";
-	if (type === "session") return "Drive";
-	if (type === "qualify") return "Qualifying";
-	if (type.includes("replay")) return "Replay";
-	return type
-		.split(/[\s_-]+/)
-		.filter(Boolean)
-		.map((part) => `${part.charAt(0).toLocaleUpperCase()}${part.slice(1)}`)
-		.join(" ");
+	return formatSharedSessionType(value);
 }
 
 export function lapDuration(lap: RecordedSessionSummary["laps"][number]) {
@@ -368,12 +360,7 @@ export function formatLapDurationNs(durationNs: number) {
 }
 
 export function formatSessionDate(value: string) {
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) return value;
-	return new Intl.DateTimeFormat(undefined, {
-		dateStyle: "medium",
-		timeStyle: "short",
-	}).format(date);
+	return formatSharedSessionDate(value);
 }
 
 export function formatCompactSessionDate(value: string) {

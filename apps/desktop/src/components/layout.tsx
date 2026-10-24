@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
+import { SectionHeading } from "@trace/ui";
 import { Tooltip } from "../Tooltip";
+
+export { SectionHeading } from "@trace/ui";
 
 export function PageIntro({ index, eyebrow, title, description }: { index: string; eyebrow: string; title: string; description: string }) {
 	return (
@@ -7,15 +10,6 @@ export function PageIntro({ index, eyebrow, title, description }: { index: strin
 			<SectionHeading index={index}>{eyebrow}</SectionHeading>
 			<h1 className="mt-3 text-2xl font-black tracking-[-.02em]">{title}</h1>
 			<p className="mt-2 max-w-2xl text-[14px] leading-6 text-trace-muted">{description}</p>
-		</div>
-	);
-}
-
-export function SectionHeading({ index, children }: { index: string; children: ReactNode }) {
-	return (
-		<div className="text-[12px] font-extrabold tracking-[.14em] text-trace-soft">
-			<span className="mr-2.5 text-trace-accent">{index}</span>
-			{children}
 		</div>
 	);
 }

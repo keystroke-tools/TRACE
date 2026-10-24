@@ -1145,6 +1145,7 @@ pub fn app(config: ServerConfig) -> Router {
         .route("/shared/{share_ref}", get(library_page))
         .route("/app-assets/library.css", get(library_styles))
         .route("/app-assets/library.js", get(library_script))
+        .route("/trace-assets/theme.css", get(trace_theme))
         .route("/live-assets/spectator.css", get(spectator_styles))
         .route("/live-assets/spectator.js", get(spectator_script))
         .route("/live-assets/site.css", get(site_styles))
@@ -2042,6 +2043,16 @@ async fn library_script() -> impl IntoResponse {
             (header::CACHE_CONTROL, "no-cache"),
         ],
         include_str!("../assets/library/app.js"),
+    )
+}
+
+async fn trace_theme() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("../../../packages/trace-ui/src/theme.css"),
     )
 }
 
@@ -3606,6 +3617,7 @@ mod tests {
             ("/live-assets/site.css", "text/css; charset=utf-8"),
             ("/app-assets/library.css", "text/css; charset=utf-8"),
             ("/app-assets/library.js", "text/javascript; charset=utf-8"),
+            ("/trace-assets/theme.css", "text/css; charset=utf-8"),
             ("/favicon.svg", "image/svg+xml"),
             ("/live-assets/trace-live-og.png", "image/png"),
         ] {
@@ -3729,6 +3741,10 @@ mod tests {
             "/app-assets/library.css?v={}",
             env!("CARGO_PKG_VERSION")
         )));
+        assert!(body.contains(&format!(
+            "/trace-assets/theme.css?v={}",
+            env!("CARGO_PKG_VERSION")
+        )));
         assert!(!body.contains("__TRACE_VERSION__"));
         assert!(!body.contains("<script>"));
 
@@ -3773,7 +3789,8 @@ mod tests {
     #[test]
     fn browser_library_uses_the_trace_theme_and_copyable_links() {
         let styles = include_str!("../assets/library/styles.css");
-        assert!(styles.contains("--trace-accent: #c9ff00"));
+        let theme = include_str!("../../../packages/trace-ui/src/theme.css");
+        assert!(theme.contains("--trace-accent: #c9ff00"));
         assert!(styles.contains("button {"));
         assert!(styles.contains("border-radius: 0"));
         assert!(!styles.contains("#68e997"));
