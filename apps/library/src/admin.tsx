@@ -5,6 +5,7 @@ import "./compare-picker";
 import "./lap-list";
 import "./review-header";
 import "./sessions";
+import "./telemetry-workspace";
 
 type Cleanup = {
 	session_count: number;

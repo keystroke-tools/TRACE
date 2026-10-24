@@ -3928,7 +3928,12 @@ mod tests {
             include_str!("../assets/library/library-admin.js")
                 .contains("Compare against your library")
         );
-        assert!(body.contains("TIME DELTA · ANALYSED VS REFERENCE"));
+        assert!(body.contains("id=\"comparison-summary-root\""));
+        assert!(body.contains("id=\"telemetry-workspace-root\""));
+        assert!(
+            include_str!("../assets/library/library-admin.js")
+                .contains("TIME DELTA · ANALYSED VS REFERENCE")
+        );
         assert!(body.contains(&format!(
             "/app-assets/library.js?v={}",
             env!("CARGO_PKG_VERSION")

@@ -98,12 +98,7 @@
 							<button id="share-revoke" class="danger" type="button">Revoke</button>
 						</div>
 					</section>
-					<div id="comparison-summary" class="comparison-summary" hidden>
-						<div class="comparison-driver reference"><small>REFERENCE · FASTER</small><strong></strong><span></span></div>
-						<div class="comparison-delta"><small>LAP DELTA</small><strong></strong><span id="alignment-label"></span></div>
-						<div class="comparison-driver analysed"><small>ANALYSED LAP</small><strong></strong><span></span></div>
-						<button id="comparison-clear" class="quiet" type="button">Close comparison</button>
-					</div>
+					<div id="comparison-summary-root"></div>
 
 					<div id="compare-picker-root"></div>
 
@@ -111,37 +106,7 @@
 						<aside class="lap-panel">
 							<div id="review-laps-root"></div>
 						</aside>
-						<section class="telemetry-panel">
-							<div id="telemetry-empty" class="telemetry-empty">Select a recorded lap to review its telemetry.</div>
-							<div id="telemetry-content" hidden>
-								<div class="telemetry-head">
-									<div><span id="telemetry-lap-label"></span><strong id="telemetry-lap-time"></strong></div>
-									<div id="telemetry-stats" class="telemetry-stats"></div>
-								</div>
-								<div class="visual-grid">
-									<div class="visual-card map-card">
-										<div class="visual-label">DRIVING LINE</div>
-										<canvas id="track-canvas"></canvas>
-									</div>
-									<div class="visual-card">
-										<div class="visual-label">SPEED</div>
-										<canvas id="speed-canvas"></canvas>
-									</div>
-									<div class="visual-card">
-										<div class="visual-label">THROTTLE</div>
-										<canvas id="throttle-canvas"></canvas>
-									</div>
-									<div class="visual-card">
-										<div class="visual-label">BRAKE</div>
-										<canvas id="brake-canvas"></canvas>
-									</div>
-									<div id="delta-card" class="visual-card delta-card" hidden>
-										<div class="visual-label">TIME DELTA · ANALYSED VS REFERENCE</div>
-										<canvas id="delta-canvas"></canvas>
-									</div>
-								</div>
-							</div>
-						</section>
+						<section id="telemetry-workspace-root" class="telemetry-panel"></section>
 					</div>
 				</div>
 			</section>

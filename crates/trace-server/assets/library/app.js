@@ -4,6 +4,8 @@ const state = {
 	sessions: [],
 	review: null,
 	telemetry: null,
+	telemetryMessage: "Select a recorded lap to review its telemetry.",
+	lapRequestSequence: 0,
 	selectedLap: null,
 	selectedLapId: null,
 	comparison: null,
@@ -41,20 +43,6 @@ const elements = {
 	shareUrl: document.querySelector("#share-url"),
 	shareCopy: document.querySelector("#share-copy"),
 	shareRevoke: document.querySelector("#share-revoke"),
-	comparisonSummary: document.querySelector("#comparison-summary"),
-	comparisonClear: document.querySelector("#comparison-clear"),
-	alignmentLabel: document.querySelector("#alignment-label"),
-	telemetryEmpty: document.querySelector("#telemetry-empty"),
-	telemetryContent: document.querySelector("#telemetry-content"),
-	telemetryLapLabel: document.querySelector("#telemetry-lap-label"),
-	telemetryLapTime: document.querySelector("#telemetry-lap-time"),
-	telemetryStats: document.querySelector("#telemetry-stats"),
-	trackCanvas: document.querySelector("#track-canvas"),
-	speedCanvas: document.querySelector("#speed-canvas"),
-	throttleCanvas: document.querySelector("#throttle-canvas"),
-	brakeCanvas: document.querySelector("#brake-canvas"),
-	deltaCanvas: document.querySelector("#delta-canvas"),
-	deltaCard: document.querySelector("#delta-card"),
 	toasts: document.querySelector("#toast-region"),
 };
 
@@ -187,6 +175,19 @@ function syncComparePicker() {
 	window.dispatchEvent(new CustomEvent("trace:compare-load", { detail: snapshot }));
 }
 
+function syncTelemetryWorkspace(visible = Boolean(state.review)) {
+	const snapshot = visible
+		? {
+				lap: state.selectedLap,
+				telemetry: state.telemetry,
+				comparison: state.comparison,
+				message: state.telemetryMessage,
+			}
+		: null;
+	window.traceTelemetrySnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:telemetry-load", { detail: snapshot }));
+}
+
 function toggleAdminPanel() {
 	elements.adminPanel.hidden = !elements.adminPanel.hidden;
 	if (elements.adminPanel.hidden) return;
@@ -270,15 +271,6 @@ function formatDate(value) {
 	return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-function formatDuration(nanoseconds) {
-	if (nanoseconds == null) return "—";
-	const milliseconds = Math.round(nanoseconds / 1_000_000);
-	const minutes = Math.floor(milliseconds / 60_000);
-	const seconds = Math.floor((milliseconds % 60_000) / 1000);
-	const remainder = milliseconds % 1000;
-	return `${minutes}:${String(seconds).padStart(2, "0")}.${String(remainder).padStart(3, "0")}`;
-}
-
 function readable(value, fallback) {
 	return value && value.trim() ? value : fallback;
 }
@@ -337,15 +329,18 @@ async function openAuthenticatedRoute() {
 }
 
 async function openReview(sessionId, navigate = true) {
+	state.lapRequestSequence += 1;
 	state.publicShareId = null;
 	state.review = null;
+	state.telemetry = null;
+	state.selectedLap = null;
+	state.comparison = null;
+	state.telemetryMessage = "Loading session…";
 	syncReviewHeader();
 	syncLapList();
+	syncTelemetryWorkspace(true);
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
-	elements.telemetryContent.hidden = true;
-	elements.telemetryEmpty.hidden = false;
-	elements.telemetryEmpty.textContent = "Loading session…";
 	try {
 		state.review = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/review`);
 		state.telemetry = null;
@@ -364,16 +359,19 @@ async function openReview(sessionId, navigate = true) {
 }
 
 async function openPublicReview(shareId) {
+	state.lapRequestSequence += 1;
 	state.publicShareId = shareId;
 	state.review = null;
+	state.telemetry = null;
+	state.selectedLap = null;
+	state.comparison = null;
+	state.telemetryMessage = "Loading shared session…";
 	syncReviewHeader();
 	syncLapList();
+	syncTelemetryWorkspace(true);
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	elements.sharePanel.hidden = true;
-	elements.telemetryContent.hidden = true;
-	elements.telemetryEmpty.hidden = false;
-	elements.telemetryEmpty.textContent = "Loading shared session…";
 	try {
 		state.review = await request(`/api/v1/public-sessions/${encodeURIComponent(shareId)}`);
 		state.telemetry = null;
@@ -386,15 +384,18 @@ async function openPublicReview(shareId) {
 		if (preferred) await loadLap(preferred.id);
 		show("library");
 	} catch (error) {
-		elements.telemetryEmpty.textContent = "This shared session is unavailable or its owner revoked the link.";
+		state.telemetryMessage = "This shared session is unavailable or its owner revoked the link.";
+		syncTelemetryWorkspace(true);
 		show("library");
 		toast(error.message, "error");
 	}
 }
 
 function closeReview(navigate = true) {
+	state.lapRequestSequence += 1;
 	state.review = null;
 	state.telemetry = null;
+	state.telemetryMessage = "Select a recorded lap to review its telemetry.";
 	state.selectedLap = null;
 	state.selectedLapId = null;
 	state.publicShareId = null;
@@ -403,6 +404,7 @@ function closeReview(navigate = true) {
 	closeComparePicker();
 	syncReviewHeader();
 	syncLapList();
+	syncTelemetryWorkspace();
 	elements.sharePanel.hidden = true;
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
@@ -486,32 +488,40 @@ async function revokeShare() {
 
 function renderReview() {
 	const { summary, laps } = state.review;
+	state.telemetryMessage = laps.length ? "Select a recorded lap to review its telemetry." : "This package contains no recorded laps.";
 	syncReviewHeader();
 	syncLapList();
+	syncTelemetryWorkspace();
 	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
-	elements.telemetryEmpty.textContent = laps.length ? "Select a recorded lap to review its telemetry." : "This package contains no recorded laps.";
 	if (!state.publicShareId) renderShareState();
 }
 
 async function loadLap(lapId) {
 	if (!state.review) return;
+	const requestSequence = ++state.lapRequestSequence;
 	clearComparison(false);
 	state.selectedLapId = lapId;
+	state.selectedLap = null;
+	state.telemetry = null;
+	state.telemetryMessage = "Loading lap telemetry…";
 	syncLapList();
-	elements.telemetryContent.hidden = true;
-	elements.telemetryEmpty.hidden = false;
-	elements.telemetryEmpty.textContent = "Loading lap telemetry…";
+	syncTelemetryWorkspace();
 	try {
 		const sessionId = state.review.summary.session_id;
 		const endpoint = state.publicShareId
 			? `/api/v1/public-sessions/${encodeURIComponent(state.publicShareId)}/laps/${encodeURIComponent(lapId)}/telemetry?max_points=1800`
 			: `/api/v1/library/sessions/${encodeURIComponent(sessionId)}/laps/${encodeURIComponent(lapId)}/telemetry?max_points=1800`;
-		state.telemetry = await request(endpoint);
+		const telemetry = await request(endpoint);
+		if (requestSequence !== state.lapRequestSequence) return;
+		state.telemetry = telemetry;
 		const lap = state.review.laps.find((candidate) => candidate.id === lapId);
 		state.selectedLap = lap;
-		renderTelemetry(lap);
+		state.telemetryMessage = "";
+		syncTelemetryWorkspace();
 	} catch (error) {
-		elements.telemetryEmpty.textContent = error.message;
+		if (requestSequence !== state.lapRequestSequence) return;
+		state.telemetryMessage = error.message;
+		syncTelemetryWorkspace();
 		toast(error.message, "error");
 	}
 }
@@ -538,8 +548,7 @@ function createComparison(candidateSession, candidateLap, candidateTelemetry) {
 	const analysed = reference === candidate ? current : candidate;
 	state.comparison = { reference, analysed, ...alignLaps(reference.telemetry.points, analysed.telemetry.points) };
 	closeComparePicker();
-	renderComparison();
-	requestAnimationFrame(drawTelemetry);
+	syncTelemetryWorkspace();
 }
 
 function progressSeries(points) {
@@ -595,179 +604,15 @@ function alignLaps(referencePoints, analysedPoints) {
 	return { samples, alignment: reference.mode === "distance" && analysed.mode === "distance" ? "distance" : "time" };
 }
 
-function comparisonName(entry) {
-	return readable(entry.detail.summary.driver_name, readable(entry.detail.summary.title, `Lap ${entry.lap.index}`));
-}
-
-function renderComparison() {
-	const { reference, analysed, alignment } = state.comparison;
-	const referenceElement = elements.comparisonSummary.querySelector(".reference");
-	const analysedElement = elements.comparisonSummary.querySelector(".analysed");
-	referenceElement.querySelector("strong").textContent = comparisonName(reference);
-	referenceElement.querySelector("span").textContent = `Lap ${reference.lap.index} · ${formatDuration(reference.lap.duration_ns)}`;
-	analysedElement.querySelector("strong").textContent = comparisonName(analysed);
-	analysedElement.querySelector("span").textContent = `Lap ${analysed.lap.index} · ${formatDuration(analysed.lap.duration_ns)}`;
-	const deltaSeconds = (analysed.lap.duration_ns - reference.lap.duration_ns) / 1_000_000_000;
-	elements.comparisonSummary.querySelector(".comparison-delta strong").textContent = `+${deltaSeconds.toFixed(3)}`;
-	elements.alignmentLabel.textContent = alignment === "distance" ? "DISTANCE ALIGNED" : "NORMALISED TIME · DISTANCE UNAVAILABLE";
-	elements.comparisonSummary.hidden = false;
-	elements.deltaCard.hidden = false;
-}
-
 function clearComparison(redraw = true) {
 	state.comparison = null;
-	elements.comparisonSummary.hidden = true;
-	elements.deltaCard.hidden = true;
-	if (redraw) requestAnimationFrame(drawTelemetry);
-}
-
-function renderTelemetry(lap) {
-	const points = state.telemetry.points;
-	elements.telemetryEmpty.hidden = true;
-	elements.telemetryContent.hidden = false;
-	elements.telemetryLapLabel.textContent = `LAP ${lap.index}`;
-	elements.telemetryLapTime.textContent = formatDuration(lap.duration_ns);
-	const maximumSpeed = Math.max(0, ...points.map((point) => point.speed_kph || 0));
-	const maximumRpm = Math.max(0, ...points.map((point) => point.engine_rpm || 0));
-	elements.telemetryStats.replaceChildren(stat(`${Math.round(maximumSpeed)} km/h`, "MAX SPEED"), stat(`${Math.round(maximumRpm)} rpm`, "MAX RPM"));
-	requestAnimationFrame(drawTelemetry);
-}
-
-function stat(value, label) {
-	const item = document.createElement("span");
-	const strong = document.createElement("strong");
-	strong.textContent = value;
-	const small = document.createElement("small");
-	small.textContent = label;
-	item.append(strong, small);
-	return item;
-}
-
-function canvasContext(canvas) {
-	const rectangle = canvas.getBoundingClientRect();
-	const ratio = window.devicePixelRatio || 1;
-	canvas.width = Math.max(1, Math.round(rectangle.width * ratio));
-	canvas.height = Math.max(1, Math.round(rectangle.height * ratio));
-	const context = canvas.getContext("2d");
-	context.scale(ratio, ratio);
-	context.lineJoin = "round";
-	context.lineCap = "round";
-	return { context, width: rectangle.width, height: rectangle.height };
-}
-
-function drawTelemetry() {
-	if (!state.telemetry || elements.telemetryContent.hidden) return;
-	if (state.comparison) {
-		const { reference, analysed, samples } = state.comparison;
-		drawTrack(elements.trackCanvas, [
-			{ points: analysed.telemetry.points, color: "#c9ff00", width: 2 },
-			{ points: reference.telemetry.points, color: "#b49cff", width: 3 },
-		]);
-		drawSeriesGraph(elements.speedCanvas, [
-			{ values: samples.map((sample) => sample.analysed_speed_kph), color: "#65a9ff" },
-			{ values: samples.map((sample) => sample.reference_speed_kph), color: "#b49cff" },
-		]);
-		drawSeriesGraph(elements.throttleCanvas, [
-			{ values: samples.map((sample) => sample.analysed_throttle), color: "#c9ff00", maximum: 1 },
-			{ values: samples.map((sample) => sample.reference_throttle), color: "#b49cff", maximum: 1 },
-		]);
-		drawSeriesGraph(elements.brakeCanvas, [
-			{ values: samples.map((sample) => sample.analysed_brake), color: "#ef6969", maximum: 1 },
-			{ values: samples.map((sample) => sample.reference_brake), color: "#b49cff", maximum: 1 },
-		]);
-		drawSeriesGraph(elements.deltaCanvas, [{ values: samples.map((sample) => sample.delta_seconds), color: "#e8e8e8" }], true);
-		return;
-	}
-	drawTrack(elements.trackCanvas, [{ points: state.telemetry.points, color: "#d5d5d5", width: 3 }]);
-	drawSeriesGraph(elements.speedCanvas, [{ values: state.telemetry.points.map((point) => point.speed_kph), color: "#65a9ff" }]);
-	drawSeriesGraph(elements.throttleCanvas, [{ values: state.telemetry.points.map((point) => point.throttle), color: "#c9ff00", maximum: 1 }]);
-	drawSeriesGraph(elements.brakeCanvas, [{ values: state.telemetry.points.map((point) => point.brake), color: "#ef6969", maximum: 1 }]);
-}
-
-function drawTrack(canvas, traces) {
-	const { context, width, height } = canvasContext(canvas);
-	const positionedTraces = traces.map((trace) => ({
-		...trace,
-		points: trace.points.filter((point) => Number.isFinite(point.position_x_m) && Number.isFinite(point.position_z_m)),
-	}));
-	const positions = positionedTraces.flatMap((trace) => trace.points);
-	if (positions.length < 2) {
-		context.fillStyle = "#777";
-		context.font = "12px system-ui";
-		context.textAlign = "center";
-		context.fillText("TRACK POSITION NOT RECORDED", width / 2, height / 2);
-		return;
-	}
-	const xs = positions.map((point) => point.position_x_m);
-	const zs = positions.map((point) => point.position_z_m);
-	const minX = Math.min(...xs);
-	const maxX = Math.max(...xs);
-	const minZ = Math.min(...zs);
-	const maxZ = Math.max(...zs);
-	const padding = 24;
-	const scale = Math.min((width - padding * 2) / Math.max(maxX - minX, 1), (height - padding * 2) / Math.max(maxZ - minZ, 1));
-	const offsetX = (width - (maxX - minX) * scale) / 2;
-	const offsetZ = (height - (maxZ - minZ) * scale) / 2;
-	for (const trace of positionedTraces) {
-		context.strokeStyle = trace.color;
-		context.lineWidth = trace.width;
-		context.beginPath();
-		trace.points.forEach((point, index) => {
-			const x = offsetX + (point.position_x_m - minX) * scale;
-			const y = offsetZ + (point.position_z_m - minZ) * scale;
-			if (index === 0) context.moveTo(x, y);
-			else context.lineTo(x, y);
-		});
-		context.stroke();
-	}
-}
-
-function drawSeriesGraph(canvas, series, zeroCentered = false) {
-	const { context, width, height } = canvasContext(canvas);
-	const padding = 12;
-	context.strokeStyle = "#292929";
-	context.lineWidth = 1;
-	for (let line = 1; line < 4; line += 1) {
-		const y = padding + ((height - padding * 2) * line) / 4;
-		context.beginPath();
-		context.moveTo(0, y);
-		context.lineTo(width, y);
-		context.stroke();
-	}
-	const allValues = series.flatMap((item) => item.values.filter(Number.isFinite));
-	const absoluteMaximum = Math.max(0.01, ...allValues.map(Math.abs));
-	const sharedMaximum = zeroCentered ? absoluteMaximum : Math.max(1, ...allValues);
-	if (zeroCentered) {
-		context.strokeStyle = "#555";
-		context.beginPath();
-		context.moveTo(0, height / 2);
-		context.lineTo(width, height / 2);
-		context.stroke();
-	}
-	for (const item of series) {
-		const maximum = item.maximum || sharedMaximum;
-		context.strokeStyle = item.color;
-		context.lineWidth = 2;
-		context.beginPath();
-		let started = false;
-		item.values.forEach((value, index) => {
-			if (!Number.isFinite(value)) return;
-			const x = item.values.length === 1 ? 0 : (index / (item.values.length - 1)) * width;
-			const normalized = zeroCentered ? (value + maximum) / (maximum * 2) : Math.max(0, value) / maximum;
-			const y = height - padding - normalized * (height - padding * 2);
-			if (started) context.lineTo(x, y);
-			else context.moveTo(x, y);
-			started = true;
-		});
-		context.stroke();
-	}
+	if (redraw) syncTelemetryWorkspace();
 }
 
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
 elements.shareCopy.addEventListener("click", copyShareLink);
 elements.shareRevoke.addEventListener("click", revokeShare);
-elements.comparisonClear.addEventListener("click", () => clearComparison());
 
 elements.loginForm.addEventListener("submit", async (event) => {
 	event.preventDefault();
@@ -853,6 +698,7 @@ window.addEventListener("trace:compare-close", closeComparePicker);
 window.addEventListener("trace:comparison-create", (event) =>
 	createComparison(event.detail.candidateSession, event.detail.candidateLap, event.detail.candidateTelemetry),
 );
+window.addEventListener("trace:comparison-clear", () => clearComparison());
 window.addEventListener("trace:share-open", toggleSharePanel);
 window.addEventListener("trace:copy-app-link", copyTraceLink);
 window.addEventListener("trace:review-summary-updated", (event) => {
@@ -865,13 +711,6 @@ window.addEventListener("trace:review-summary-updated", (event) => {
 	setLocation(sessionPath(summary), true);
 	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
 });
-
-const telemetryResizeObserver = new ResizeObserver(() => requestAnimationFrame(drawTelemetry));
-telemetryResizeObserver.observe(elements.trackCanvas);
-telemetryResizeObserver.observe(elements.speedCanvas);
-telemetryResizeObserver.observe(elements.throttleCanvas);
-telemetryResizeObserver.observe(elements.brakeCanvas);
-telemetryResizeObserver.observe(elements.deltaCanvas);
 
 async function start() {
 	show("loading");
