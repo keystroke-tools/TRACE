@@ -58,7 +58,13 @@ describe("telemetry workspace", () => {
 			message: "",
 		};
 		let closed = false;
-		window.addEventListener("trace:comparison-clear", () => (closed = true), { once: true });
+		window.addEventListener(
+			"trace:comparison-clear",
+			() => {
+				closed = true;
+			},
+			{ once: true },
+		);
 		render(<ComparisonSummary />);
 		expect(screen.getByText("Sam")).toBeTruthy();
 		expect(screen.getByText("Alex")).toBeTruthy();

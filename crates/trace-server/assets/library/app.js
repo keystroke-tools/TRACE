@@ -12,6 +12,7 @@ const state = {
 	comparePickerOpen: false,
 	publicShareId: null,
 	shareUrl: null,
+	sharePanelOpen: false,
 	tokens: [],
 };
 
@@ -39,10 +40,6 @@ const elements = {
 	tokenValue: document.querySelector("#token-value"),
 	tokenCopy: document.querySelector("#token-copy"),
 	tokenList: document.querySelector("#token-list"),
-	sharePanel: document.querySelector("#share-panel"),
-	shareUrl: document.querySelector("#share-url"),
-	shareCopy: document.querySelector("#share-copy"),
-	shareRevoke: document.querySelector("#share-revoke"),
 	toasts: document.querySelector("#toast-region"),
 };
 
@@ -188,6 +185,19 @@ function syncTelemetryWorkspace(visible = Boolean(state.review)) {
 	window.dispatchEvent(new CustomEvent("trace:telemetry-load", { detail: snapshot }));
 }
 
+function syncSharePanel() {
+	const snapshot =
+		state.review && !state.publicShareId
+			? {
+					summary: state.review.summary,
+					shareUrl: state.shareUrl,
+					open: state.sharePanelOpen,
+				}
+			: null;
+	window.traceShareSnapshot = snapshot;
+	window.dispatchEvent(new CustomEvent("trace:share-load", { detail: snapshot }));
+}
+
 function toggleAdminPanel() {
 	elements.adminPanel.hidden = !elements.adminPanel.hidden;
 	if (elements.adminPanel.hidden) return;
@@ -331,6 +341,8 @@ async function openAuthenticatedRoute() {
 async function openReview(sessionId, navigate = true) {
 	state.lapRequestSequence += 1;
 	state.publicShareId = null;
+	state.sharePanelOpen = false;
+	state.shareUrl = null;
 	state.review = null;
 	state.telemetry = null;
 	state.selectedLap = null;
@@ -339,6 +351,7 @@ async function openReview(sessionId, navigate = true) {
 	syncReviewHeader();
 	syncLapList();
 	syncTelemetryWorkspace(true);
+	syncSharePanel();
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
 	try {
@@ -361,6 +374,8 @@ async function openReview(sessionId, navigate = true) {
 async function openPublicReview(shareId) {
 	state.lapRequestSequence += 1;
 	state.publicShareId = shareId;
+	state.sharePanelOpen = false;
+	state.shareUrl = null;
 	state.review = null;
 	state.telemetry = null;
 	state.selectedLap = null;
@@ -369,9 +384,9 @@ async function openPublicReview(shareId) {
 	syncReviewHeader();
 	syncLapList();
 	syncTelemetryWorkspace(true);
+	syncSharePanel();
 	elements.libraryHome.hidden = true;
 	elements.reviewView.hidden = false;
-	elements.sharePanel.hidden = true;
 	try {
 		state.review = await request(`/api/v1/public-sessions/${encodeURIComponent(shareId)}`);
 		state.telemetry = null;
@@ -400,12 +415,13 @@ function closeReview(navigate = true) {
 	state.selectedLapId = null;
 	state.publicShareId = null;
 	state.shareUrl = null;
+	state.sharePanelOpen = false;
 	clearComparison(false);
 	closeComparePicker();
 	syncReviewHeader();
 	syncLapList();
 	syncTelemetryWorkspace();
-	elements.sharePanel.hidden = true;
+	syncSharePanel();
 	elements.reviewView.hidden = true;
 	elements.libraryHome.hidden = false;
 	document.title = `${state.instance?.name || "TRACE"} · TRACE Library`;
@@ -418,44 +434,10 @@ function updateOwnedShare(shareId, shareUrl = null) {
 	state.shareUrl = shareUrl;
 	const summary = state.sessions.find((session) => session.session_id === state.review.summary.session_id);
 	if (summary) summary.share_id = shareId;
+	if (!shareId) state.sharePanelOpen = false;
 	syncSessionLibrary();
 	syncReviewHeader();
-	renderShareState();
-}
-
-function renderShareState() {
-	const shareId = state.review?.summary.share_id;
-	if (!shareId) {
-		elements.sharePanel.hidden = true;
-		elements.shareUrl.value = "";
-		return;
-	}
-	elements.shareUrl.value = state.shareUrl || new URL(sharedSessionPath(state.review.summary, shareId), window.location.origin).href;
-}
-
-async function toggleSharePanel() {
-	if (!state.review || state.publicShareId) return;
-	if (state.review.summary.share_id) {
-		elements.sharePanel.hidden = !elements.sharePanel.hidden;
-		return;
-	}
-	const button = document.querySelector("#share-open");
-	if (button) button.disabled = true;
-	try {
-		const sessionId = state.review.summary.session_id;
-		const share = await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/share`, { method: "POST" });
-		updateOwnedShare(share.share_id, share.share_url);
-		elements.sharePanel.hidden = false;
-		toast("Unlisted session link created.");
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		if (button) button.disabled = false;
-	}
-}
-
-async function copyShareLink() {
-	await copyText(elements.shareUrl.value, "Share link copied.", elements.shareUrl);
+	syncSharePanel();
 }
 
 async function copyTraceLink() {
@@ -464,36 +446,14 @@ async function copyTraceLink() {
 	await copyText(`trace://shared-session?url=${encodeURIComponent(downloadUrl)}`, "TRACE app link copied.");
 }
 
-async function revokeShare() {
-	if (elements.shareRevoke.textContent !== "Confirm revoke") {
-		elements.shareRevoke.textContent = "Confirm revoke";
-		setTimeout(() => {
-			if (elements.shareRevoke.textContent === "Confirm revoke") elements.shareRevoke.textContent = "Revoke";
-		}, 3000);
-		return;
-	}
-	elements.shareRevoke.disabled = true;
-	try {
-		const sessionId = state.review.summary.session_id;
-		await request(`/api/v1/library/sessions/${encodeURIComponent(sessionId)}/share`, { method: "DELETE" });
-		updateOwnedShare(null);
-		toast("Public access revoked.");
-	} catch (error) {
-		toast(error.message, "error");
-	} finally {
-		elements.shareRevoke.disabled = false;
-		elements.shareRevoke.textContent = "Revoke";
-	}
-}
-
 function renderReview() {
 	const { summary, laps } = state.review;
 	state.telemetryMessage = laps.length ? "Select a recorded lap to review its telemetry." : "This package contains no recorded laps.";
 	syncReviewHeader();
 	syncLapList();
 	syncTelemetryWorkspace();
+	syncSharePanel();
 	document.title = `${readable(summary.driver_name, readable(summary.title, "Session"))} at ${readable(summary.track, "Unknown track")} · TRACE`;
-	if (!state.publicShareId) renderShareState();
 }
 
 async function loadLap(lapId) {
@@ -611,9 +571,6 @@ function clearComparison(redraw = true) {
 
 elements.loginTab.addEventListener("click", () => switchAuth("login"));
 elements.registerTab.addEventListener("click", () => switchAuth("register"));
-elements.shareCopy.addEventListener("click", copyShareLink);
-elements.shareRevoke.addEventListener("click", revokeShare);
-
 elements.loginForm.addEventListener("submit", async (event) => {
 	event.preventDefault();
 	const values = Object.fromEntries(new FormData(elements.loginForm));
@@ -677,9 +634,7 @@ elements.connectDesktop.addEventListener("click", toggleTokenPanel);
 elements.instanceSettings.addEventListener("click", toggleAdminPanel);
 elements.tokenCreate.addEventListener("click", createToken);
 elements.tokenCopy.addEventListener("click", copyToken);
-for (const field of [elements.tokenValue, elements.shareUrl]) {
-	field.addEventListener("click", () => field.select());
-}
+elements.tokenValue.addEventListener("click", () => elements.tokenValue.select());
 window.addEventListener("popstate", () => {
 	if (state.account) void openAuthenticatedRoute();
 });
@@ -699,7 +654,14 @@ window.addEventListener("trace:comparison-create", (event) =>
 	createComparison(event.detail.candidateSession, event.detail.candidateLap, event.detail.candidateTelemetry),
 );
 window.addEventListener("trace:comparison-clear", () => clearComparison());
-window.addEventListener("trace:share-open", toggleSharePanel);
+window.addEventListener("trace:share-updated", (event) => {
+	state.sharePanelOpen = event.detail.open;
+	updateOwnedShare(event.detail.shareId, event.detail.shareUrl);
+});
+window.addEventListener("trace:share-visibility", (event) => {
+	state.sharePanelOpen = event.detail.open;
+	syncSharePanel();
+});
 window.addEventListener("trace:copy-app-link", copyTraceLink);
 window.addEventListener("trace:review-summary-updated", (event) => {
 	if (!state.review) return;
