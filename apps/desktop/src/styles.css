@@ -1,5 +1,6 @@
 @import "@trace/ui/theme.css";
 @import "tailwindcss";
+@source "../../../packages/trace-ui/src/*.tsx";
 
 @theme {
 	--color-trace-base: var(--trace-base);
