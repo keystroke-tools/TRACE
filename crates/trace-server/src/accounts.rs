@@ -42,6 +42,13 @@ pub(crate) struct CreatedAccountToken {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub(crate) struct StoredInstanceSettings {
+    pub(crate) registration_enabled: bool,
+    pub(crate) library_retention_days: u32,
+    pub(crate) library_max_sessions_per_account: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum AccountStoreError {
     Database,
     InvalidCredentials,
@@ -181,12 +188,45 @@ impl AccountStore {
             .map_err(|_| AccountStoreError::Database)
     }
 
-    pub(crate) fn set_registration_enabled(
+    pub(crate) fn instance_settings(
+        &self,
+        configured_registration: bool,
+    ) -> Result<StoredInstanceSettings, AccountStoreError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| AccountStoreError::Database)?;
+        let read = |key: &str| {
+            connection
+                .query_row(
+                    "SELECT value FROM web_instance_settings WHERE key = ?1",
+                    [key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|_| AccountStoreError::Database)
+        };
+        let registration_enabled =
+            read("registration_enabled")?.map_or(configured_registration, |value| value == "true");
+        let library_retention_days = read("library_retention_days")?
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_default();
+        let library_max_sessions_per_account = read("library_max_sessions_per_account")?
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_default();
+        Ok(StoredInstanceSettings {
+            registration_enabled,
+            library_retention_days,
+            library_max_sessions_per_account,
+        })
+    }
+
+    pub(crate) fn set_instance_settings(
         &self,
         account_id: &str,
-        enabled: bool,
+        settings: StoredInstanceSettings,
     ) -> Result<(), AccountStoreError> {
-        let connection = self
+        let mut connection = self
             .connection
             .lock()
             .map_err(|_| AccountStoreError::Database)?;
@@ -202,15 +242,34 @@ impl AccountStore {
         if !administrator {
             return Err(AccountStoreError::AdministratorRequired);
         }
-        connection
-            .execute(
-                "INSERT INTO web_instance_settings (key, value)
-                 VALUES ('registration_enabled', ?1)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                [if enabled { "true" } else { "false" }],
-            )
+        let transaction = connection
+            .transaction()
             .map_err(|_| AccountStoreError::Database)?;
-        Ok(())
+        for (key, value) in [
+            (
+                "registration_enabled",
+                settings.registration_enabled.to_string(),
+            ),
+            (
+                "library_retention_days",
+                settings.library_retention_days.to_string(),
+            ),
+            (
+                "library_max_sessions_per_account",
+                settings.library_max_sessions_per_account.to_string(),
+            ),
+        ] {
+            transaction
+                .execute(
+                    "INSERT INTO web_instance_settings (key, value) VALUES (?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![key, value],
+                )
+                .map_err(|_| AccountStoreError::Database)?;
+        }
+        transaction
+            .commit()
+            .map_err(|_| AccountStoreError::Database)
     }
 
     pub(crate) fn login(
@@ -488,9 +547,19 @@ mod tests {
         assert!(!store.initial_admin_required().expect("setup state"));
         assert!(!store.registration_enabled(false).expect("registration"));
         store
-            .set_registration_enabled(&account.account_id, true)
+            .set_instance_settings(
+                &account.account_id,
+                StoredInstanceSettings {
+                    registration_enabled: true,
+                    library_retention_days: 30,
+                    library_max_sessions_per_account: 200,
+                },
+            )
             .expect("administrator enables registration");
         assert!(store.registration_enabled(false).expect("registration"));
+        let settings = store.instance_settings(false).expect("instance settings");
+        assert_eq!(settings.library_retention_days, 30);
+        assert_eq!(settings.library_max_sessions_per_account, 200);
         assert!(matches!(
             store.register("DRIVER", "Duplicate", "another safe password", 2_000, true),
             Err(AccountStoreError::UsernameTaken)

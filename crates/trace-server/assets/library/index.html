@@ -79,20 +79,25 @@
 						</div>
 						<div id="token-list" class="token-list"></div>
 					</section>
-					<section id="admin-panel" class="token-panel" hidden>
+					<form id="admin-panel" class="token-panel admin-panel" hidden>
 						<div>
-							<p class="eyebrow">INSTANCE ACCESS</p>
-							<strong>Account registration</strong>
-							<small
-								>Registration closes after the first administrator is created. Open it only when you want other people to create
-								accounts.</small
-							>
+							<p class="eyebrow">INSTANCE SETTINGS</p>
+							<strong>Access and library retention</strong>
+							<small>Zero means unlimited. Retention applies to private account libraries, not the live replay buffer.</small>
 						</div>
 						<label class="admin-toggle">
 							<input id="registration-enabled" type="checkbox" />
 							<span>Allow new account registrations</span>
 						</label>
-					</section>
+						<div class="admin-retention-fields">
+							<label>Delete after days<input id="library-retention-days" type="number" min="0" max="3650" value="0" /></label>
+							<label>Sessions per user<input id="library-session-limit" type="number" min="0" max="100000" value="0" /></label>
+						</div>
+						<div class="admin-retention-action">
+							<span id="library-retention-preview">No sessions would be removed.</span>
+							<button class="primary" type="submit">Save settings</button>
+						</div>
+					</form>
 
 					<div class="library-tools">
 						<label id="upload-zone" class="upload-zone">

@@ -44,10 +44,11 @@ mod shares;
 
 use accounts::{
     AccountStore, AccountStoreError, AccountSummary, AccountTokenSummary, CreatedAccountToken,
+    StoredInstanceSettings,
 };
 use library::{
-    LibraryLapTelemetry, LibrarySessionDetail, LibrarySessionSummary, LibraryStore,
-    LibraryStoreError, StoredLibrarySession,
+    LibraryCleanupSummary, LibraryLapTelemetry, LibrarySessionDetail, LibrarySessionSummary,
+    LibraryStore, LibraryStoreError, StoredLibrarySession,
 };
 use live_store::LiveStore;
 use shares::{ShareStore, ShareStoreError};
@@ -377,6 +378,7 @@ enum ServiceError {
     LibraryUnavailable,
     LibrarySessionNotFound,
     InvalidLibraryMetadata,
+    InvalidAdminSettings,
     AdministratorRequired,
 }
 
@@ -424,6 +426,7 @@ impl IntoResponse for ServiceError {
             ),
             Self::LibrarySessionNotFound => (StatusCode::NOT_FOUND, "library session not found"),
             Self::InvalidLibraryMetadata => (StatusCode::BAD_REQUEST, "invalid session metadata"),
+            Self::InvalidAdminSettings => (StatusCode::BAD_REQUEST, "invalid instance settings"),
             Self::AdministratorRequired => {
                 (StatusCode::FORBIDDEN, "administrator access is required")
             }
@@ -455,6 +458,21 @@ impl LiveService {
             LibraryStore::open(directory, config.max_shared_session_bytes)
                 .expect("TRACE web library persistence could not be opened")
         });
+        if let (Some(accounts), Some(library)) = (&accounts, &library) {
+            let configured = matches!(config.registration_policy, RegistrationPolicy::Open);
+            let settings = accounts
+                .instance_settings(configured)
+                .expect("TRACE instance settings could not be loaded");
+            library
+                .enforce_retention(
+                    None,
+                    unix_timestamp_ms(),
+                    settings.library_retention_days,
+                    settings.library_max_sessions_per_account,
+                    None,
+                )
+                .expect("TRACE library retention could not be enforced");
+        }
         let shares = config.share_directory.as_ref().map(|directory| {
             ShareStore::new(
                 directory.join("shares"),
@@ -1067,6 +1085,10 @@ pub fn app(config: ServerConfig) -> Router {
                 .layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
         )
         .route(
+            "/api/v1/admin/library-retention-preview",
+            post(preview_library_retention).layer(DefaultBodyLimit::max(MAX_ACCOUNT_REQUEST_BYTES)),
+        )
+        .route(
             "/api/v1/auth/tokens",
             get(list_account_tokens)
                 .post(create_account_token)
@@ -1249,15 +1271,24 @@ async fn create_account(
     Ok((StatusCode::CREATED, Json(account)))
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct AdminSettings {
     registration_enabled: bool,
+    library_retention_days: u32,
+    library_max_sessions_per_account: u32,
+}
+
+#[derive(Serialize)]
+struct AdminSettingsResponse {
+    #[serde(flatten)]
+    settings: AdminSettings,
+    cleanup: LibraryCleanupSummary,
 }
 
 async fn admin_settings(
     State(service): State<LiveService>,
     headers: HeaderMap,
-) -> Result<Json<AdminSettings>, ServiceError> {
+) -> Result<Json<AdminSettingsResponse>, ServiceError> {
     let account = authenticated_account(&service, &headers).await?;
     ensure_administrator(&account)?;
     let store = service
@@ -1265,36 +1296,111 @@ async fn admin_settings(
         .clone()
         .ok_or(ServiceError::AccountsUnavailable)?;
     let configured = matches!(service.config.registration_policy, RegistrationPolicy::Open);
-    tokio::task::spawn_blocking(move || store.registration_enabled(configured))
-        .await
-        .map_err(|_| ServiceError::Unavailable)?
-        .map(|registration_enabled| {
-            Json(AdminSettings {
-                registration_enabled,
-            })
+    let library = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || {
+        let stored = store.instance_settings(configured)?;
+        let cleanup = library
+            .preview_retention(
+                None,
+                unix_timestamp_ms(),
+                stored.library_retention_days,
+                stored.library_max_sessions_per_account,
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        Ok((stored, cleanup))
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map(|(stored, cleanup)| {
+        Json(AdminSettingsResponse {
+            settings: AdminSettings {
+                registration_enabled: stored.registration_enabled,
+                library_retention_days: stored.library_retention_days,
+                library_max_sessions_per_account: stored.library_max_sessions_per_account,
+            },
+            cleanup,
         })
-        .map_err(map_account_error)
+    })
+    .map_err(map_account_error)
+}
+
+async fn preview_library_retention(
+    State(service): State<LiveService>,
+    headers: HeaderMap,
+    Json(settings): Json<AdminSettings>,
+) -> Result<Json<LibraryCleanupSummary>, ServiceError> {
+    let account = authenticated_account(&service, &headers).await?;
+    ensure_administrator(&account)?;
+    validate_admin_settings(&settings)?;
+    let library = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
+    tokio::task::spawn_blocking(move || {
+        library.preview_retention(
+            None,
+            unix_timestamp_ms(),
+            settings.library_retention_days,
+            settings.library_max_sessions_per_account,
+        )
+    })
+    .await
+    .map_err(|_| ServiceError::Unavailable)?
+    .map(Json)
+    .map_err(map_library_error)
 }
 
 async fn set_admin_settings(
     State(service): State<LiveService>,
     headers: HeaderMap,
     Json(settings): Json<AdminSettings>,
-) -> Result<Json<AdminSettings>, ServiceError> {
+) -> Result<Json<AdminSettingsResponse>, ServiceError> {
     let account = authenticated_account(&service, &headers).await?;
     ensure_administrator(&account)?;
+    validate_admin_settings(&settings)?;
     let store = service
         .accounts
         .clone()
         .ok_or(ServiceError::AccountsUnavailable)?;
+    let library = service
+        .library
+        .clone()
+        .ok_or(ServiceError::LibraryUnavailable)?;
     let account_id = account.account_id;
+    let stored = StoredInstanceSettings {
+        registration_enabled: settings.registration_enabled,
+        library_retention_days: settings.library_retention_days,
+        library_max_sessions_per_account: settings.library_max_sessions_per_account,
+    };
     tokio::task::spawn_blocking(move || {
-        store.set_registration_enabled(&account_id, settings.registration_enabled)
+        store.set_instance_settings(&account_id, stored)?;
+        let cleanup = library
+            .enforce_retention(
+                None,
+                unix_timestamp_ms(),
+                stored.library_retention_days,
+                stored.library_max_sessions_per_account,
+                None,
+            )
+            .map_err(|_| AccountStoreError::Database)?;
+        Ok(cleanup)
     })
     .await
     .map_err(|_| ServiceError::Unavailable)?
-    .map_err(map_account_error)?;
-    Ok(Json(settings))
+    .map(|cleanup| Json(AdminSettingsResponse { settings, cleanup }))
+    .map_err(map_account_error)
+}
+
+fn validate_admin_settings(settings: &AdminSettings) -> Result<(), ServiceError> {
+    if settings.library_retention_days > 3_650
+        || settings.library_max_sessions_per_account > 100_000
+    {
+        return Err(ServiceError::InvalidAdminSettings);
+    }
+    Ok(())
 }
 
 fn ensure_administrator(account: &AccountSummary) -> Result<(), ServiceError> {
@@ -1446,10 +1552,28 @@ async fn upload_library_session(
         .library
         .clone()
         .ok_or(ServiceError::LibraryUnavailable)?;
+    let accounts = service
+        .accounts
+        .clone()
+        .ok_or(ServiceError::AccountsUnavailable)?;
+    let configured_registration =
+        matches!(service.config.registration_policy, RegistrationPolicy::Open);
     let account_id = account.account_id;
     let contents = contents.to_vec();
     let summary = tokio::task::spawn_blocking(move || {
-        store.upload(&account_id, &contents, unix_timestamp_ms())
+        let settings = accounts
+            .instance_settings(configured_registration)
+            .map_err(|_| LibraryStoreError::Database)?;
+        let now = unix_timestamp_ms();
+        let summary = store.upload(&account_id, &contents, now)?;
+        store.enforce_retention(
+            Some(&account_id),
+            now,
+            settings.library_retention_days,
+            settings.library_max_sessions_per_account,
+            Some(&summary.session_id),
+        )?;
+        Ok(summary)
     })
     .await
     .map_err(|_| ServiceError::Unavailable)?
@@ -2598,6 +2722,7 @@ fn error_message(error: ServiceError) -> &'static str {
         ServiceError::LibraryUnavailable => "web session library is unavailable",
         ServiceError::LibrarySessionNotFound => "library session not found",
         ServiceError::InvalidLibraryMetadata => "invalid session metadata",
+        ServiceError::InvalidAdminSettings => "invalid instance settings",
         ServiceError::AdministratorRequired => "administrator access is required",
     }
 }
@@ -4163,6 +4288,170 @@ mod tests {
             .await
             .expect("missing library response");
         assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn administrator_library_retention_is_previewed_persisted_and_enforced() {
+        let directory = tempfile::tempdir().expect("library directory");
+        let config = ServerConfig::new("https://telemetry.example.test")
+            .with_share_directory(directory.path())
+            .with_registration_policy(RegistrationPolicy::Open);
+        let application = app(config.clone());
+        let owner_cookie = registered_account_cookie(&application, "retention-owner").await;
+        let package = shared_package();
+
+        let mut session_ids = Vec::new();
+        for _ in 0..2 {
+            let response = application
+                .clone()
+                .oneshot(
+                    Request::post("/api/v1/library/sessions")
+                        .header(header::COOKIE, &owner_cookie)
+                        .body(Body::from(package.clone()))
+                        .expect("library upload request"),
+                )
+                .await
+                .expect("library upload response");
+            assert_eq!(response.status(), StatusCode::CREATED);
+            let uploaded: serde_json::Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), 64 * 1024)
+                    .await
+                    .expect("uploaded session body"),
+            )
+            .expect("uploaded session");
+            session_ids.push(
+                uploaded["session_id"]
+                    .as_str()
+                    .expect("uploaded session ID")
+                    .to_owned(),
+            );
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+
+        rusqlite::Connection::open(directory.path().join("live.sqlite"))
+            .expect("retention database")
+            .execute(
+                "UPDATE web_library_sessions SET created_at_unix_ms = 0 WHERE session_id = ?1",
+                [&session_ids[0]],
+            )
+            .expect("age first session");
+
+        let age_preview = serde_json::json!({
+            "registration_enabled": false,
+            "library_retention_days": 1,
+            "library_max_sessions_per_account": 0
+        });
+        let age_preview = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/admin/library-retention-preview")
+                    .header(header::COOKIE, &owner_cookie)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(age_preview.to_string()))
+                    .expect("age retention preview request"),
+            )
+            .await
+            .expect("age retention preview response");
+        let age_preview: serde_json::Value = serde_json::from_slice(
+            &to_bytes(age_preview.into_body(), 64 * 1024)
+                .await
+                .expect("age retention preview body"),
+        )
+        .expect("age retention preview");
+        assert_eq!(age_preview["session_count"], 1);
+
+        let settings = serde_json::json!({
+            "registration_enabled": false,
+            "library_retention_days": 0,
+            "library_max_sessions_per_account": 1
+        });
+        let preview = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/admin/library-retention-preview")
+                    .header(header::COOKIE, &owner_cookie)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(settings.to_string()))
+                    .expect("retention preview request"),
+            )
+            .await
+            .expect("retention preview response");
+        assert_eq!(preview.status(), StatusCode::OK);
+        let preview: serde_json::Value = serde_json::from_slice(
+            &to_bytes(preview.into_body(), 64 * 1024)
+                .await
+                .expect("retention preview body"),
+        )
+        .expect("retention preview");
+        assert_eq!(preview["session_count"], 1);
+
+        let saved = application
+            .clone()
+            .oneshot(
+                Request::put("/api/v1/admin/settings")
+                    .header(header::COOKIE, &owner_cookie)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(settings.to_string()))
+                    .expect("save retention request"),
+            )
+            .await
+            .expect("save retention response");
+        assert_eq!(saved.status(), StatusCode::OK);
+        let saved: serde_json::Value = serde_json::from_slice(
+            &to_bytes(saved.into_body(), 64 * 1024)
+                .await
+                .expect("save retention body"),
+        )
+        .expect("saved settings");
+        assert_eq!(saved["cleanup"]["session_count"], 1);
+
+        let restarted = app(config);
+        let persisted = restarted
+            .clone()
+            .oneshot(
+                Request::get("/api/v1/admin/settings")
+                    .header(header::COOKIE, &owner_cookie)
+                    .body(Body::empty())
+                    .expect("persisted settings request"),
+            )
+            .await
+            .expect("persisted settings response");
+        let persisted: serde_json::Value = serde_json::from_slice(
+            &to_bytes(persisted.into_body(), 64 * 1024)
+                .await
+                .expect("persisted settings body"),
+        )
+        .expect("persisted settings");
+        assert_eq!(persisted["library_max_sessions_per_account"], 1);
+
+        let uploaded = restarted
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/library/sessions")
+                    .header(header::COOKIE, &owner_cookie)
+                    .body(Body::from(package))
+                    .expect("retained upload request"),
+            )
+            .await
+            .expect("retained upload response");
+        assert_eq!(uploaded.status(), StatusCode::CREATED);
+        let listed = restarted
+            .oneshot(
+                Request::get("/api/v1/library/sessions")
+                    .header(header::COOKIE, owner_cookie)
+                    .body(Body::empty())
+                    .expect("retained library request"),
+            )
+            .await
+            .expect("retained library response");
+        let listed: serde_json::Value = serde_json::from_slice(
+            &to_bytes(listed.into_body(), 64 * 1024)
+                .await
+                .expect("retained library body"),
+        )
+        .expect("retained library");
+        assert_eq!(listed.as_array().map(Vec::len), Some(1));
     }
 
     #[tokio::test]

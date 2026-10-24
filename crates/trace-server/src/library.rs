@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -79,6 +80,12 @@ pub(crate) struct LibraryTelemetryPoint {
     pub(crate) gear: Option<i16>,
     pub(crate) position_x_m: Option<f64>,
     pub(crate) position_z_m: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub(crate) struct LibraryCleanupSummary {
+    pub(crate) session_count: u64,
+    pub(crate) size_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -335,6 +342,122 @@ impl LibraryStore {
         }
         self.find(account_id, session_id)
             .map(|stored| stored.summary)
+    }
+
+    pub(crate) fn preview_retention(
+        &self,
+        account_id: Option<&str>,
+        now_unix_ms: i64,
+        retention_days: u32,
+        maximum_sessions_per_account: u32,
+    ) -> Result<LibraryCleanupSummary, LibraryStoreError> {
+        let candidates = self.retention_candidates(
+            account_id,
+            now_unix_ms,
+            retention_days,
+            maximum_sessions_per_account,
+            None,
+        )?;
+        Ok(LibraryCleanupSummary {
+            session_count: u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+            size_bytes: candidates
+                .iter()
+                .fold(0_u64, |total, candidate| total.saturating_add(candidate.2)),
+        })
+    }
+
+    pub(crate) fn enforce_retention(
+        &self,
+        account_id: Option<&str>,
+        now_unix_ms: i64,
+        retention_days: u32,
+        maximum_sessions_per_account: u32,
+        protected_session_id: Option<&str>,
+    ) -> Result<LibraryCleanupSummary, LibraryStoreError> {
+        let candidates = self.retention_candidates(
+            account_id,
+            now_unix_ms,
+            retention_days,
+            maximum_sessions_per_account,
+            protected_session_id,
+        )?;
+        let mut cleanup = LibraryCleanupSummary::default();
+        for (owner_id, session_id, size_bytes) in candidates {
+            self.delete(&owner_id, &session_id)?;
+            cleanup.session_count = cleanup.session_count.saturating_add(1);
+            cleanup.size_bytes = cleanup.size_bytes.saturating_add(size_bytes);
+        }
+        Ok(cleanup)
+    }
+
+    fn retention_candidates(
+        &self,
+        account_id: Option<&str>,
+        now_unix_ms: i64,
+        retention_days: u32,
+        maximum_sessions_per_account: u32,
+        protected_session_id: Option<&str>,
+    ) -> Result<Vec<(String, String, u64)>, LibraryStoreError> {
+        if retention_days == 0 && maximum_sessions_per_account == 0 {
+            return Ok(Vec::new());
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| LibraryStoreError::Database)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT account_id, session_id, size_bytes, created_at_unix_ms
+                 FROM web_library_sessions
+                 ORDER BY account_id, created_at_unix_ms DESC, session_id DESC",
+            )
+            .map_err(|_| LibraryStoreError::Database)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(|_| LibraryStoreError::Database)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| LibraryStoreError::Database)?;
+        let age_ms = i64::from(retention_days).saturating_mul(24 * 60 * 60 * 1_000);
+        let cutoff = now_unix_ms.saturating_sub(age_ms);
+        let mut owner_counts = HashMap::<String, u32>::new();
+        let mut selected = HashSet::new();
+        let mut candidates = Vec::new();
+        let mut rows = rows;
+        rows.sort_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                let left_protected = protected_session_id == Some(left.1.as_str());
+                let right_protected = protected_session_id == Some(right.1.as_str());
+                right_protected
+                    .cmp(&left_protected)
+                    .then_with(|| right.3.cmp(&left.3))
+                    .then_with(|| right.1.cmp(&left.1))
+            })
+        });
+        for (owner_id, session_id, size_bytes, created_at_unix_ms) in rows {
+            if account_id.is_some_and(|expected| expected != owner_id) {
+                continue;
+            }
+            let count = owner_counts.entry(owner_id.clone()).or_default();
+            *count = count.saturating_add(1);
+            let expired_by_age = retention_days > 0 && created_at_unix_ms < cutoff;
+            let exceeds_count =
+                maximum_sessions_per_account > 0 && *count > maximum_sessions_per_account;
+            if (expired_by_age || exceeds_count) && selected.insert(session_id.clone()) {
+                candidates.push((
+                    owner_id,
+                    session_id,
+                    u64::try_from(size_bytes).unwrap_or_default(),
+                ));
+            }
+        }
+        Ok(candidates)
     }
 
     pub(crate) fn detail(

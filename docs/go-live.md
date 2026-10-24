@@ -133,8 +133,9 @@ All implemented routes are versioned under `/api/v1`.
 | `POST`   | `/api/v1/auth/sessions`                                      | none            | Start an HTTP-only browser login session                  |
 | `GET`    | `/api/v1/auth/session`                                       | account cookie  | Read the currently authenticated account                  |
 | `DELETE` | `/api/v1/auth/session`                                       | account cookie  | Revoke the current browser login session                  |
-| `GET`    | `/api/v1/admin/settings`                                     | administrator   | Read account-registration settings                        |
-| `PUT`    | `/api/v1/admin/settings`                                     | administrator   | Open or close account registration                        |
+| `GET`    | `/api/v1/admin/settings`                                     | administrator   | Read registration and library-retention settings          |
+| `PUT`    | `/api/v1/admin/settings`                                     | administrator   | Save settings and enforce library retention               |
+| `POST`   | `/api/v1/admin/library-retention-preview`                    | administrator   | Preview sessions and bytes a policy would remove          |
 | `GET`    | `/api/v1/auth/tokens`                                        | account cookie  | List revocable desktop access tokens                      |
 | `POST`   | `/api/v1/auth/tokens`                                        | account cookie  | Create a desktop access token; secret is returned once    |
 | `DELETE` | `/api/v1/auth/tokens/{token_id}`                             | account cookie  | Revoke a desktop access token                             |
@@ -180,6 +181,15 @@ close future account creation from **Instance settings** in the library. The
 `TRACE_REGISTRATION_POLICY=open` environment setting remains available as an initial
 operator default, but an administrator's saved choice takes precedence. Passwords use
 Argon2id hashes and login sessions use hashed, revocable, HTTP-only cookies.
+
+The same administrator panel can limit private-library storage by session age, by the
+maximum number of sessions retained per account, or by both. Both values default to
+zero (unlimited), so upgrading never deletes existing sessions implicitly. TRACE shows
+the number of sessions and bytes affected before saving; saving applies the policy
+immediately. The policy is stored in `live.sqlite`, enforced after every future upload,
+and applied again when the server starts. Age may be set up to 3,650 days and the
+per-account limit up to 100,000 sessions. Cleanup removes the package and its SQLite
+row, including any unlisted link through the existing foreign-key cascade.
 
 The library's **Connect desktop** panel creates personal access tokens for direct
 desktop uploads. TRACE stores the pasted token locally and uses it only with the

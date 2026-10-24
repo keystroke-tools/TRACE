@@ -30,6 +30,9 @@ const elements = {
 	instanceSettings: document.querySelector("#instance-settings"),
 	adminPanel: document.querySelector("#admin-panel"),
 	registrationEnabled: document.querySelector("#registration-enabled"),
+	libraryRetentionDays: document.querySelector("#library-retention-days"),
+	librarySessionLimit: document.querySelector("#library-session-limit"),
+	libraryRetentionPreview: document.querySelector("#library-retention-preview"),
 	tokenPanel: document.querySelector("#token-panel"),
 	tokenLabel: document.querySelector("#token-label"),
 	tokenCreate: document.querySelector("#token-create"),
@@ -177,26 +180,69 @@ async function toggleAdminPanel() {
 	try {
 		const settings = await request("/api/v1/admin/settings");
 		elements.registrationEnabled.checked = settings.registration_enabled;
+		elements.libraryRetentionDays.value = settings.library_retention_days;
+		elements.librarySessionLimit.value = settings.library_max_sessions_per_account;
+		renderRetentionImpact(settings.cleanup);
 	} catch (error) {
 		toast(error.message, "error");
 	}
 }
 
-async function updateRegistration() {
-	elements.registrationEnabled.disabled = true;
+function adminSettingsPayload() {
+	return {
+		registration_enabled: elements.registrationEnabled.checked,
+		library_retention_days: Number(elements.libraryRetentionDays.value) || 0,
+		library_max_sessions_per_account: Number(elements.librarySessionLimit.value) || 0,
+	};
+}
+
+function renderRetentionImpact(cleanup) {
+	const count = cleanup?.session_count || 0;
+	const size = cleanup?.size_bytes || 0;
+	elements.libraryRetentionPreview.textContent = count
+		? `${count} ${count === 1 ? "session" : "sessions"} (${formatBytes(size)}) will be removed when saved.`
+		: "No sessions would be removed.";
+	elements.libraryRetentionPreview.classList.toggle("danger", count > 0);
+}
+
+let retentionPreviewTimer;
+function previewRetention() {
+	clearTimeout(retentionPreviewTimer);
+	retentionPreviewTimer = setTimeout(async () => {
+		try {
+			const cleanup = await request("/api/v1/admin/library-retention-preview", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(adminSettingsPayload()),
+			});
+			renderRetentionImpact(cleanup);
+		} catch (error) {
+			elements.libraryRetentionPreview.textContent = error.message;
+			elements.libraryRetentionPreview.classList.add("danger");
+		}
+	}, 250);
+}
+
+async function updateAdminSettings(event) {
+	event.preventDefault();
+	setBusy(elements.adminPanel, true);
 	try {
 		const settings = await request("/api/v1/admin/settings", {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ registration_enabled: elements.registrationEnabled.checked }),
+			body: JSON.stringify(adminSettingsPayload()),
 		});
 		elements.registrationEnabled.checked = settings.registration_enabled;
-		toast(settings.registration_enabled ? "Account registration opened." : "Account registration closed.");
+		elements.libraryRetentionDays.value = settings.library_retention_days;
+		elements.librarySessionLimit.value = settings.library_max_sessions_per_account;
+		const removed = settings.cleanup?.session_count || 0;
+		renderRetentionImpact({ session_count: 0, size_bytes: 0 });
+		await loadLibrary();
+		toast(removed ? `Settings saved. ${removed} ${removed === 1 ? "session" : "sessions"} removed.` : "Instance settings saved.");
 	} catch (error) {
-		elements.registrationEnabled.checked = !elements.registrationEnabled.checked;
 		toast(error.message, "error");
 	} finally {
-		elements.registrationEnabled.disabled = false;
+		setBusy(elements.adminPanel, false);
 	}
 }
 
@@ -1176,7 +1222,9 @@ elements.logout.addEventListener("click", async () => {
 });
 elements.connectDesktop.addEventListener("click", toggleTokenPanel);
 elements.instanceSettings.addEventListener("click", toggleAdminPanel);
-elements.registrationEnabled.addEventListener("change", updateRegistration);
+elements.adminPanel.addEventListener("submit", updateAdminSettings);
+elements.libraryRetentionDays.addEventListener("input", previewRetention);
+elements.librarySessionLimit.addEventListener("input", previewRetention);
 elements.tokenCreate.addEventListener("click", createToken);
 elements.tokenCopy.addEventListener("click", copyToken);
 for (const field of [elements.tokenValue, elements.shareUrl]) {
