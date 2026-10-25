@@ -81,6 +81,13 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | pit state                         | scoring pit flags/state                                                    |
 | additional native values          | fuel capacity, best-lap delta, brake bias, steering ranges                 |
 
+The scoring stream exposes both a friendly vehicle model and a vehicle-class field.
+LMU setup files use a separate class/package identity and live beneath simulator-owned
+track folders, while shared memory does not publish that folder identifier. TRACE keeps
+automatic setup matching strict: explicitly attaching one installed setup confirms the
+package/folder relationship for that recorded car and track, after which other setups
+with the same native identities may be suggested. No fuzzy car or track matching is used.
+
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
 Its SDK world coordinates are left-handed with Y pointing up. The adapter reflects
 source X once and marks the result as TRACE-world coordinates so maps use the same

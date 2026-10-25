@@ -23,12 +23,14 @@ track folder, and **Index existing** scans the existing `<track>\<setup>.svm` la
 The bounded text parser reads `VehicleClassSetting` and, when present, the package name
 from LMU's `//VEH=` header. It does not infer car identity from community filenames.
 
-LMU telemetry currently identifies the driven car with a display model while setup
-files identify a vehicle class/package. TRACE therefore lists indexed LMU setups but
-does not automatically suggest a setup based on fuzzy name similarity. Explicitly
-attaching a chosen `.svm` to a session records the user's confirmation and allows the
-file to travel with a `.trace` package. LMU setup-value editing and comparison remain
-future provider capabilities.
+LMU telemetry identifies the driven car and track with friendly names while setup files
+use a vehicle class/package and a simulator-owned track folder. TRACE never joins these
+with fuzzy name similarity. The first time you explicitly attach an installed LMU setup
+to a session, TRACE remembers that confirmed identity relationship. Other indexed setups
+for the same LMU vehicle package and track folder can then appear as compatible for that
+car/track combination. The mapping stays local, and selecting a setup still records the
+specific file used so it can travel with a `.trace` package. LMU setup-value editing and
+comparison remain future provider capabilities.
 
 The behavior is a native Rust port of the workflow first explored in
 [`ac-setup-importer-proto`](https://github.com/aosasona/ac-setup-importer-proto). TRACE
@@ -92,9 +94,10 @@ editing belongs to the separate editor capability.
 
 The session overview queries this library using the session's preserved source
 identities. A setup is suggested only when simulator, car, track, and layout all match
-exactly (case-insensitively for simulator-provided identifiers). Friendly display names
-are not used for matching. This intentionally prefers an empty result over suggesting
-a setup for the wrong car or layout.
+exactly, either directly or through an identity relationship the user confirmed while
+attaching a simulator-native setup. Friendly display names, filenames, and fuzzy or
+substring matching are not used. This intentionally prefers an empty result over
+suggesting a setup for the wrong car or layout.
 
 The UI calls these entries **compatible setups**. Compatibility is not evidence that
 the driver loaded one. A user may explicitly mark one setup as **used for session**;

@@ -364,13 +364,27 @@ pub(crate) fn attach_session_setup(
         .session_setup_identity(&options.session_id)
         .map_err(|error| format!("failed to read session setup identity: {error:?}"))?;
     drop(store);
+    let setup_path = Path::new(&options.setup_path);
+    let setups_folder = PathBuf::from(options.setups_folder.trim());
+    let provider_identity = (identity.simulator_key == LE_MANS_ULTIMATE_ID)
+        .then(|| lmu_setup_provider_identity(setup_path, &setups_folder))
+        .transpose()?
+        .flatten();
+    let source_car_id = provider_identity
+        .as_ref()
+        .map_or_else(|| identity.source_car_id.clone(), |value| value.0.clone());
+    let source_track_id = provider_identity
+        .as_ref()
+        .map_or_else(|| identity.source_track_id.clone(), |value| value.1.clone());
     let import_options = SetupFileImportOptions {
-        simulator_id: identity.simulator_key,
+        simulator_id: identity.simulator_key.clone(),
         setup_paths: vec![options.setup_path],
         setups_folder: options.setups_folder,
-        source_car_id: Some(identity.source_car_id),
-        source_track_id: identity.source_track_id,
-        layout_id: identity.layout_id,
+        source_car_id: Some(source_car_id),
+        source_track_id,
+        layout_id: provider_identity
+            .as_ref()
+            .map_or_else(|| identity.layout_id.clone(), |_| None),
         overwrite: options.overwrite,
     };
     let results = import_setup_files_inner(&app, &import_options);
@@ -396,22 +410,58 @@ pub(crate) fn attach_session_setup(
                 .map(|name| destination.join(name))
         })
         .ok_or("setup attachment did not retain its installed path")?;
+    let confirmed_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| format!("failed to timestamp setup attachment: {error}"))?;
     let mut store = open_metadata_store(&app)?;
+    if let Some((setup_car_id, setup_track_id)) = provider_identity {
+        store
+            .confirm_setup_identity_mapping(
+                &options.session_id,
+                &setup_car_id,
+                &setup_track_id,
+                None,
+                &confirmed_at,
+            )
+            .map_err(|error| format!("failed to remember LMU setup identity: {error:?}"))?;
+        drop(store);
+        discover_lmu_setups(&app, &setups_folder)?;
+        store = open_metadata_store(&app)?;
+    }
     let setup = store
         .compatible_setups(&options.session_id, 50)
         .map_err(|error| format!("failed to refresh compatible setups: {error:?}"))?
         .into_iter()
         .find(|setup| Path::new(&setup.installed_path) == installed_path)
         .ok_or("attached setup was not indexed as compatible")?;
-    let confirmed_at = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .map_err(|error| format!("failed to timestamp setup attachment: {error}"))?;
     store
         .confirm_session_setup(&options.session_id, &setup.id, &confirmed_at)
         .map_err(|error| format!("failed to attach setup to session: {error:?}"))?;
     store
         .compatible_setups(&options.session_id, 50)
         .map_err(|error| format!("failed to refresh compatible setups: {error:?}"))
+}
+
+fn lmu_setup_provider_identity(
+    setup_path: &Path,
+    setups_folder: &Path,
+) -> Result<Option<(String, String)>, String> {
+    let Some(parent) = setup_path
+        .parent()
+        .filter(|parent| parent.parent() == Some(setups_folder))
+    else {
+        return Ok(None);
+    };
+    let Some(track) = safe_directory_name(parent) else {
+        return Ok(None);
+    };
+    let contents = File::open(setup_path)
+        .and_then(|mut file| read_bounded(&mut file, MAX_SETUP_BYTES))
+        .map_err(|error| format!("could not inspect LMU setup identity: {error}"))?;
+    let identity = parse_setup_identity(&contents)
+        .map_err(|error| format!("could not inspect LMU setup identity: {error}"))?;
+    let car = identity.vehicle_package.unwrap_or(identity.vehicle_class);
+    Ok(Some((car, track)))
 }
 
 #[tauri::command]
@@ -1462,6 +1512,33 @@ mod tests {
         let spa_string = spa.to_string_lossy().into_owned();
         assert_eq!(imported.destination.as_deref(), Some(spa_string.as_str()));
         assert_eq!(imported.skipped, vec!["race.svm"]);
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn reads_provider_identity_only_from_an_installed_lmu_setup() {
+        let root = test_directory();
+        let settings = root.join("Settings");
+        let spa = settings.join("Spa");
+        fs::create_dir_all(&spa).expect("create track folder");
+        let installed = spa.join("race.svm");
+        fs::write(
+            &installed,
+            b"VehicleClassSetting=\"ELMS2025 LMP3 Ligier_JS_P325\"\n//VEH=C:\\LMU\\Installed\\Vehicles\\Ligier_JSP325_2025\\1.09\\car.VEH\n",
+        )
+        .expect("write installed setup");
+
+        assert_eq!(
+            lmu_setup_provider_identity(&installed, &settings).expect("identity"),
+            Some(("Ligier_JSP325_2025".into(), "Spa".into()))
+        );
+
+        let external = root.join("external.svm");
+        fs::copy(&installed, &external).expect("copy external setup");
+        assert_eq!(
+            lmu_setup_provider_identity(&external, &settings).expect("external identity"),
+            None
+        );
         fs::remove_dir_all(root).expect("remove test directory");
     }
 

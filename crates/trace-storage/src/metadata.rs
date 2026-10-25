@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BlobMetadata, RelativeBlobPath};
 
-const SCHEMA_VERSION: u32 = 9;
+const SCHEMA_VERSION: u32 = 10;
 const MIGRATION_1: &str = include_str!("../migrations/0001_initial.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_lap_sectors.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_session_details.sql");
@@ -17,6 +17,7 @@ const MIGRATION_6: &str = include_str!("../migrations/0006_simulator_install_pat
 const MIGRATION_7: &str = include_str!("../migrations/0007_profile_and_saved_comparisons.sql");
 const MIGRATION_8: &str = include_str!("../migrations/0008_setup_library.sql");
 const MIGRATION_9: &str = include_str!("../migrations/0009_session_setup_links.sql");
+const MIGRATION_10: &str = include_str!("../migrations/0010_setup_identity_mappings.sql");
 
 /// `SQLite` metadata connection configured for TRACE invariants.
 pub struct MetadataStore {
@@ -294,6 +295,7 @@ impl MetadataStore {
             (7, MIGRATION_7),
             (8, MIGRATION_8),
             (9, MIGRATION_9),
+            (10, MIGRATION_10),
         ];
         for (version, migration) in migrations {
             if current >= version {
@@ -856,14 +858,22 @@ impl MetadataStore {
                  JOIN simulators sim ON sim.id = s.simulator_id
                  JOIN tracks t ON t.id = s.track_id
                  JOIN cars c ON c.id = s.car_id
-                 JOIN setup_library sl
-                   ON sl.simulator_key = sim.key
-                  AND sl.source_track_id = t.source_track_id COLLATE NOCASE
-                  AND sl.layout_id = t.layout_id COLLATE NOCASE
-                  AND sl.source_car_id = c.source_car_id COLLATE NOCASE
+                 JOIN setup_library sl ON sl.simulator_key = sim.key
+                 LEFT JOIN setup_identity_mappings simap
+                   ON simap.simulator_key = sl.simulator_key
+                  AND simap.setup_car_id = sl.source_car_id COLLATE NOCASE
+                  AND simap.setup_track_id = sl.source_track_id COLLATE NOCASE
+                  AND simap.setup_layout_id = sl.layout_id COLLATE NOCASE
                  LEFT JOIN session_setup_links ssl
                    ON ssl.session_id = s.id AND ssl.setup_id = sl.id
                  WHERE s.id = ?1
+                   AND ((sl.source_track_id = t.source_track_id COLLATE NOCASE
+                         AND sl.layout_id = t.layout_id COLLATE NOCASE
+                         AND sl.source_car_id = c.source_car_id COLLATE NOCASE)
+                        OR
+                        (simap.session_track_id = t.source_track_id COLLATE NOCASE
+                         AND simap.session_layout_id = t.layout_id COLLATE NOCASE
+                         AND simap.session_car_id = c.source_car_id COLLATE NOCASE))
                  ORDER BY sl.imported_at DESC, sl.name COLLATE NOCASE, sl.id
                  LIMIT ?2",
             )
@@ -900,6 +910,63 @@ impl MetadataStore {
         confirmed_at: &str,
     ) -> Result<(), MetadataError> {
         self.link_session_setup(session_id, setup_id, confirmed_at, "user_confirmed")
+    }
+
+    /// Remembers a user-confirmed mapping from simulator setup identities to a
+    /// recorded session's canonical car and track identities.
+    ///
+    /// This is intentionally explicit: providers such as LMU expose friendly
+    /// telemetry names that do not necessarily equal their setup folder/package
+    /// identifiers, so TRACE must not infer the relationship fuzzily.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] for an unknown session, invalid identity, or
+    /// database failure.
+    pub fn confirm_setup_identity_mapping(
+        &mut self,
+        session_id: &str,
+        setup_car_id: &str,
+        setup_track_id: &str,
+        setup_layout_id: Option<&str>,
+        confirmed_at: &str,
+    ) -> Result<(), MetadataError> {
+        for value in [setup_car_id, setup_track_id, confirmed_at] {
+            if value.is_empty()
+                || value.chars().count() > 256
+                || value.chars().any(char::is_control)
+            {
+                return Err(MetadataError::InvalidRecord(
+                    "invalid setup identity mapping".into(),
+                ));
+            }
+        }
+        let session = self.session_setup_identity(session_id)?;
+        self.connection
+            .execute(
+                "INSERT INTO setup_identity_mappings
+                 (simulator_key, setup_car_id, setup_track_id, setup_layout_id,
+                  session_car_id, session_track_id, session_layout_id, confirmed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(simulator_key, setup_car_id, setup_track_id, setup_layout_id)
+                 DO UPDATE SET
+                    session_car_id = excluded.session_car_id,
+                    session_track_id = excluded.session_track_id,
+                    session_layout_id = excluded.session_layout_id,
+                    confirmed_at = excluded.confirmed_at",
+                params![
+                    session.simulator_key,
+                    setup_car_id,
+                    setup_track_id,
+                    setup_layout_id.unwrap_or(""),
+                    session.source_car_id,
+                    session.source_track_id,
+                    session.layout_id.as_deref().unwrap_or(""),
+                    confirmed_at,
+                ],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
     }
 
     /// Restores a setup and its sender-confirmed session relationship from a package.
@@ -943,11 +1010,20 @@ impl MetadataStore {
                     JOIN tracks t ON t.id = s.track_id
                     JOIN cars c ON c.id = s.car_id
                     JOIN setup_library sl ON sl.id = ?2
+                    LEFT JOIN setup_identity_mappings simap
+                      ON simap.simulator_key = sl.simulator_key
+                     AND simap.setup_car_id = sl.source_car_id COLLATE NOCASE
+                     AND simap.setup_track_id = sl.source_track_id COLLATE NOCASE
+                     AND simap.setup_layout_id = sl.layout_id COLLATE NOCASE
                     WHERE s.id = ?1
                       AND sl.simulator_key = sim.key
-                      AND sl.source_track_id = t.source_track_id COLLATE NOCASE
-                      AND sl.layout_id = t.layout_id COLLATE NOCASE
-                      AND sl.source_car_id = c.source_car_id COLLATE NOCASE
+                      AND ((sl.source_track_id = t.source_track_id COLLATE NOCASE
+                            AND sl.layout_id = t.layout_id COLLATE NOCASE
+                            AND sl.source_car_id = c.source_car_id COLLATE NOCASE)
+                           OR
+                           (simap.session_track_id = t.source_track_id COLLATE NOCASE
+                            AND simap.session_layout_id = t.layout_id COLLATE NOCASE
+                            AND simap.session_car_id = c.source_car_id COLLATE NOCASE))
                  )",
                 params![session_id, setup_id],
                 |row| row.get::<_, bool>(0),
@@ -2023,7 +2099,7 @@ mod tests {
     #[test]
     fn migration_creates_expected_metadata_tables_only() {
         let store = MetadataStore::open_in_memory().expect("migrated store");
-        assert_eq!(store.schema_version().expect("schema version"), 9);
+        assert_eq!(store.schema_version().expect("schema version"), 10);
 
         let mut statement = store
             .connection
@@ -2045,6 +2121,7 @@ mod tests {
         assert!(tables.contains(&"saved_comparisons".to_owned()));
         assert!(tables.contains(&"setup_library".to_owned()));
         assert!(tables.contains(&"session_setup_links".to_owned()));
+        assert!(tables.contains(&"setup_identity_mappings".to_owned()));
         assert!(!tables.contains(&"telemetry_samples".to_owned()));
     }
 
@@ -2165,6 +2242,62 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_provider_identity_makes_matching_setups_compatible() {
+        let mut store = MetadataStore::open_in_memory().expect("metadata");
+        store
+            .create_session(&session("session-1"))
+            .expect("session");
+        for (id, name) in [("setup-race", "race.svm"), ("setup-qual", "qual.svm")] {
+            store
+                .save_setup_import(&NewSetupImport {
+                    id: id.into(),
+                    simulator_key: "assetto-corsa".into(),
+                    source_car_id: "provider-car-package".into(),
+                    source_track_id: "provider-track-folder".into(),
+                    layout_id: None,
+                    name: name.into(),
+                    installed_path: format!("C:\\Setups\\provider-track-folder\\{name}"),
+                    source_archive: None,
+                    content_sha256: [8; 32],
+                    imported_at: "2026-10-25T10:00:00Z".into(),
+                })
+                .expect("save provider setup");
+        }
+        assert!(
+            store
+                .compatible_setups("session-1", 10)
+                .expect("suggestions before mapping")
+                .is_empty()
+        );
+
+        store
+            .confirm_setup_identity_mapping(
+                "session-1",
+                "provider-car-package",
+                "provider-track-folder",
+                None,
+                "2026-10-25T10:01:00Z",
+            )
+            .expect("confirm identity mapping");
+
+        let suggestions = store
+            .compatible_setups("session-1", 10)
+            .expect("mapped suggestions");
+        assert_eq!(suggestions.len(), 2);
+        store
+            .confirm_session_setup("session-1", "setup-race", "2026-10-25T10:02:00Z")
+            .expect("confirm mapped setup");
+        assert_eq!(
+            store
+                .confirmed_session_setup("session-1")
+                .expect("confirmed setup")
+                .expect("setup")
+                .id,
+            "setup-race"
+        );
+    }
+
+    #[test]
     fn version_one_database_migrates_without_losing_existing_rows() {
         let connection = Connection::open_in_memory().expect("database");
         connection
@@ -2182,7 +2315,7 @@ mod tests {
 
         let store = MetadataStore::configure_and_migrate(connection).expect("migration");
 
-        assert_eq!(store.schema_version().expect("schema version"), 9);
+        assert_eq!(store.schema_version().expect("schema version"), 10);
         let simulator_count: u32 = store
             .connection
             .query_row("SELECT COUNT(*) FROM simulators", [], |row| row.get(0))
