@@ -232,6 +232,29 @@ struct RecordedLapMetrics {
     tyre_wear_start: [Option<f32>; 4],
     tyre_wear_end: [Option<f32>; 4],
     tyre_wear_minimum: [Option<f32>; 4],
+    electronics: Option<RecordedLapElectronics>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordedLapElectronics {
+    settings: Vec<RecordedLapElectronicSetting>,
+    tc_active_percent: Option<f32>,
+    abs_active_percent: Option<f32>,
+    rear_flap_active_percent: Option<f32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordedLapElectronicSetting {
+    key: &'static str,
+    label: &'static str,
+    start: u8,
+    end: u8,
+    minimum: u8,
+    maximum: u8,
+    available_maximum: Option<u8>,
+    changes: u32,
 }
 
 #[derive(Serialize)]
@@ -1054,6 +1077,7 @@ fn session_lap_metrics(
         .into_iter()
         .find(|session| session.id == session_id)
         .ok_or_else(|| "recorded session was not found".to_owned())?;
+    let is_lmu = session.simulator_key == "le-mans-ultimate";
     let mut result = Vec::with_capacity(session.laps.len());
 
     for lap in session.laps {
@@ -1079,9 +1103,65 @@ fn session_lap_metrics(
             tyre_wear_start: metrics.tyre_wear_start,
             tyre_wear_end: metrics.tyre_wear_end,
             tyre_wear_minimum: metrics.tyre_wear_minimum,
+            electronics: is_lmu
+                .then(|| recorded_lap_electronics(metrics.electronics))
+                .flatten(),
         });
     }
     Ok(result)
+}
+
+fn recorded_lap_electronics(
+    electronics: trace_storage::ipc::LapElectronicsMetrics,
+) -> Option<RecordedLapElectronics> {
+    let mut settings = Vec::new();
+    for (key, label, setting) in [
+        ("tc", "TC", electronics.tc),
+        ("tc_slip", "TC SLIP", electronics.tc_slip),
+        ("tc_cut", "TC CUT", electronics.tc_cut),
+        ("abs", "ABS", electronics.abs),
+        ("motor_map", "MOTOR", electronics.motor_map),
+        ("brake_migration", "MIGRATION", electronics.brake_migration),
+    ] {
+        let supported = setting.available_maximum.is_some_and(|maximum| maximum > 0)
+            || setting.minimum.is_some_and(|value| value > 0)
+            || setting.maximum.is_some_and(|value| value > 0);
+        if !supported {
+            continue;
+        }
+        let (Some(start), Some(end), Some(minimum), Some(maximum)) =
+            (setting.start, setting.end, setting.minimum, setting.maximum)
+        else {
+            continue;
+        };
+        settings.push(RecordedLapElectronicSetting {
+            key,
+            label,
+            start,
+            end,
+            minimum,
+            maximum,
+            available_maximum: setting.available_maximum,
+            changes: setting.changes,
+        });
+    }
+    let percentage = |samples: u64| {
+        (electronics.observed_samples > 0).then(|| {
+            #[allow(clippy::cast_precision_loss)]
+            let percent = samples as f32 / electronics.observed_samples as f32 * 100.0;
+            percent.clamp(0.0, 100.0)
+        })
+    };
+    (!settings.is_empty()
+        || electronics.tc_active_samples > 0
+        || electronics.abs_active_samples > 0
+        || electronics.rear_flap_active_samples > 0)
+        .then(|| RecordedLapElectronics {
+            settings,
+            tc_active_percent: percentage(electronics.tc_active_samples),
+            abs_active_percent: percentage(electronics.abs_active_samples),
+            rear_flap_active_percent: percentage(electronics.rear_flap_active_samples),
+        })
 }
 
 #[tauri::command]

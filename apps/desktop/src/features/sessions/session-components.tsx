@@ -105,6 +105,53 @@ export function SectorBars({
 	);
 }
 
+export function ElectronicsSummary({ metrics }: { metrics?: RecordedLapMetrics }) {
+	const electronics = metrics?.electronics;
+	if (!electronics) return null;
+	const activity = [
+		["TC ACTIVE", electronics.tcActivePercent],
+		["ABS ACTIVE", electronics.absActivePercent],
+		["DRS OPEN", electronics.rearFlapActivePercent],
+	] as const;
+	if (electronics.settings.length === 0 && activity.every(([, percent]) => percent == null || percent < 0.1)) return null;
+	return (
+		<div className="mt-2 flex min-w-0 flex-wrap gap-1.5" aria-label="Electronics used during this lap">
+			{electronics.settings.map((setting) => {
+				const changed = setting.changes > 0;
+				const value = changed ? `${setting.start}→${setting.end}` : String(setting.start);
+				const detail = [
+					`${setting.label}: ${value}`,
+					changed ? `${setting.changes} change${setting.changes === 1 ? "" : "s"} during the lap` : "Unchanged during the lap",
+					setting.minimum !== setting.maximum ? `Observed range ${setting.minimum}–${setting.maximum}` : null,
+					setting.availableMaximum != null ? `Available maximum ${setting.availableMaximum}` : null,
+				]
+					.filter(Boolean)
+					.join(" · ");
+				return (
+					<Tooltip
+						className={`border px-1.5 py-1 text-[9px] font-bold leading-none ${changed ? "border-trace-warning/70 text-trace-warning" : "border-trace-divider text-trace-muted"}`}
+						content={detail}
+						key={setting.key}
+					>
+						{setting.label} {value}
+					</Tooltip>
+				);
+			})}
+			{activity.map(([label, percent]) =>
+				percent != null && percent >= 0.1 ? (
+					<Tooltip
+						className="border border-trace-accent/50 px-1.5 py-1 text-[9px] font-bold leading-none text-trace-accent"
+						content={`${label.replace(" ACTIVE", "").replace(" OPEN", "")} was active for ${percent.toFixed(1)}% of recorded samples in this lap`}
+						key={label}
+					>
+						{label} {Math.round(percent)}%
+					</Tooltip>
+				) : null,
+			)}
+		</div>
+	);
+}
+
 function sessionTimingLaps(laps: RecordedSessionSummary["laps"]): SessionOverviewLap[] {
 	return laps.map((lap) => ({
 		id: String(lap.index),
@@ -349,7 +396,11 @@ export function friendlyConditionName(value: string) {
 }
 
 export function friendlySetupLabel(value: string) {
-	return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+	return value
+		.replace(/Setting$/i, "")
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.replaceAll("_", " ")
+		.replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 export function setupDifferenceLabel(section: string, key: string) {

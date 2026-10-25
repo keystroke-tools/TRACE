@@ -40,7 +40,7 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 32] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 39] = [
     "static.max_fuel_litres",
     "Max Fuel",
     "static.track_spline_length_m",
@@ -73,6 +73,33 @@ const SHARED_NATIVE_FLOAT_FIELDS: [&str; 32] = [
     "Tire Slip Ratio FR",
     "Tire Slip Ratio RL",
     "Tire Slip Ratio RR",
+    "rear_brake_bias",
+    "turbo_boost_pressure",
+    "battery_charge_fraction",
+    "electric_motor_torque",
+    "regeneration_kw",
+    "state_of_charge",
+    "virtual_energy",
+];
+const SHARED_NATIVE_INTEGER_FIELDS: [&str; 18] = [
+    "rear_flap_active",
+    "rear_flap_legal_status",
+    "electric_motor_state",
+    "abs_active",
+    "tc_active",
+    "speed_limiter_active",
+    "tc_setting",
+    "tc_max",
+    "tc_slip_setting",
+    "tc_slip_max",
+    "tc_cut_setting",
+    "tc_cut_max",
+    "abs_setting",
+    "abs_max",
+    "motor_map",
+    "motor_map_max",
+    "brake_migration",
+    "brake_migration_max",
 ];
 const SHARED_NATIVE_TEXT_FIELDS: [&str; 1] = ["static.track_configuration"];
 
@@ -115,6 +142,31 @@ pub struct TelemetryColumns {
 
 /// Bounded summary derived from one lap's immutable telemetry sample range.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LapSettingMetrics {
+    pub start: Option<u8>,
+    pub end: Option<u8>,
+    pub minimum: Option<u8>,
+    pub maximum: Option<u8>,
+    pub available_maximum: Option<u8>,
+    pub changes: u32,
+}
+
+/// Driver-adjustable electronics observed throughout one lap.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LapElectronicsMetrics {
+    pub tc: LapSettingMetrics,
+    pub tc_slip: LapSettingMetrics,
+    pub tc_cut: LapSettingMetrics,
+    pub abs: LapSettingMetrics,
+    pub motor_map: LapSettingMetrics,
+    pub brake_migration: LapSettingMetrics,
+    pub observed_samples: u64,
+    pub tc_active_samples: u64,
+    pub abs_active_samples: u64,
+    pub rear_flap_active_samples: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LapTelemetryMetrics {
     pub fuel_start_litres: Option<f32>,
     pub fuel_end_litres: Option<f32>,
@@ -123,6 +175,7 @@ pub struct LapTelemetryMetrics {
     pub tyre_wear_start: [Option<f32>; 4],
     pub tyre_wear_end: [Option<f32>; 4],
     pub tyre_wear_minimum: [Option<f32>; 4],
+    pub electronics: LapElectronicsMetrics,
 }
 
 impl TelemetryColumns {
@@ -537,7 +590,8 @@ fn compact_share_batch(
         columns[index] = Arc::new(shared_native_float_map(source, rows)?);
     }
     if let Some(index) = integer_index {
-        columns[index] = Arc::new(empty_native_integer_map(rows)?);
+        let source = batch.column(index).as_any().downcast_ref::<MapArray>();
+        columns[index] = Arc::new(shared_native_integer_map(source, rows)?);
     }
     if let Some(index) = text_index {
         let source = batch.column(index).as_any().downcast_ref::<MapArray>();
@@ -564,10 +618,20 @@ fn shared_native_float_map(source: Option<&MapArray>, rows: usize) -> Result<Map
     Ok(builder.finish())
 }
 
-fn empty_native_integer_map(rows: usize) -> Result<MapArray, IpcError> {
+fn shared_native_integer_map(source: Option<&MapArray>, rows: usize) -> Result<MapArray, IpcError> {
     let mut builder = MapBuilder::new(None, StringBuilder::new(), Int64Builder::new());
-    for _ in 0..rows {
-        builder.append(false).map_err(IpcError::from)?;
+    for row in 0..rows {
+        let mut found = false;
+        if let Some(source) = source {
+            for key in SHARED_NATIVE_INTEGER_FIELDS {
+                if let Some(value) = native_integer_value(source, row, key) {
+                    builder.keys().append_value(key);
+                    builder.values().append_value(value);
+                    found = true;
+                }
+            }
+        }
+        builder.append(found).map_err(IpcError::from)?;
     }
     Ok(builder.finish())
 }
@@ -1373,6 +1437,14 @@ fn observe_lap_metrics(
         .index_of("native_float_fields")
         .ok()
         .and_then(|index| batch.column(index).as_any().downcast_ref::<MapArray>());
+    let native_integers = schema
+        .index_of("native_integer_fields")
+        .ok()
+        .and_then(|index| batch.column(index).as_any().downcast_ref::<MapArray>());
+    let native_payloads = schema
+        .index_of("native_payload")
+        .ok()
+        .and_then(|index| batch.column(index).as_any().downcast_ref::<BinaryArray>());
 
     for row in start..start + length {
         if !fuel.is_null(row) && fuel.value(row).is_finite() {
@@ -1407,8 +1479,90 @@ fn observe_lap_metrics(
                 }
             }
         }
+        let payload = native_payloads
+            .filter(|payloads| !payloads.is_null(row))
+            .and_then(|payloads| lmu_native_telemetry(payloads.value(row)));
+        observe_lap_electronics(&mut metrics.electronics, native_integers, payload, row);
     }
     Ok(())
+}
+
+fn observe_lap_electronics(
+    electronics: &mut LapElectronicsMetrics,
+    native: Option<&MapArray>,
+    telemetry: Option<&[u8]>,
+    row: usize,
+) {
+    let integer = |key: &str, offset: usize| {
+        native
+            .and_then(|values| native_integer_value(values, row, key))
+            .and_then(|value| u8::try_from(value).ok())
+            .or_else(|| telemetry.and_then(|bytes| bytes.get(offset).copied()))
+    };
+    let mut observed = false;
+    for (setting, key, maximum_key, offset, maximum_offset) in [
+        (&mut electronics.tc, "tc_setting", "tc_max", 750, 751),
+        (
+            &mut electronics.tc_slip,
+            "tc_slip_setting",
+            "tc_slip_max",
+            752,
+            753,
+        ),
+        (
+            &mut electronics.tc_cut,
+            "tc_cut_setting",
+            "tc_cut_max",
+            754,
+            755,
+        ),
+        (&mut electronics.abs, "abs_setting", "abs_max", 756, 757),
+        (
+            &mut electronics.motor_map,
+            "motor_map",
+            "motor_map_max",
+            758,
+            759,
+        ),
+        (
+            &mut electronics.brake_migration,
+            "brake_migration",
+            "brake_migration_max",
+            760,
+            761,
+        ),
+    ] {
+        if let Some(value) = integer(key, offset) {
+            observe_setting(setting, value);
+            observed = true;
+        }
+        if let Some(value) = integer(maximum_key, maximum_offset) {
+            setting.available_maximum = Some(value);
+        }
+    }
+    if !observed {
+        return;
+    }
+    electronics.observed_samples = electronics.observed_samples.saturating_add(1);
+    electronics.tc_active_samples = electronics
+        .tc_active_samples
+        .saturating_add(u64::from(integer("tc_active", 747) == Some(1)));
+    electronics.abs_active_samples = electronics
+        .abs_active_samples
+        .saturating_add(u64::from(integer("abs_active", 746) == Some(1)));
+    electronics.rear_flap_active_samples = electronics
+        .rear_flap_active_samples
+        .saturating_add(u64::from(integer("rear_flap_active", 617) == Some(1)));
+}
+
+fn observe_setting(setting: &mut LapSettingMetrics, value: u8) {
+    setting.start.get_or_insert(value);
+    if setting.end.is_some_and(|previous| previous != value) {
+        setting.changes = setting.changes.saturating_add(1);
+    }
+    setting.end = Some(value);
+    setting.minimum = Some(setting.minimum.map_or(value, |minimum| minimum.min(value)));
+    setting.maximum = Some(setting.maximum.map_or(value, |maximum| maximum.max(value)));
 }
 
 fn native_float_value(map: &MapArray, row: usize, key: &str) -> Option<f64> {
@@ -1782,12 +1936,33 @@ fn backfill_lmu_wheel_channels(
 }
 
 fn lmu_native_wheel_channels(payload: &[u8]) -> Option<[(Option<f32>, Option<f32>); 4]> {
+    const WHEEL_OFFSET: usize = 848;
+    const WHEEL_BYTES: usize = 260;
+    let telemetry = lmu_native_telemetry(payload)?;
+    Some(std::array::from_fn(|corner| {
+        let wheel = WHEEL_OFFSET + corner * WHEEL_BYTES;
+        let lateral = read_lmu_f64(telemetry, wheel + 64);
+        let longitudinal = read_lmu_f64(telemetry, wheel + 72);
+        let load = read_lmu_f64(telemetry, wheel + 104)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(narrow_native_float);
+        let slip_angle = lateral
+            .zip(longitudinal)
+            .and_then(|(lateral, longitudinal)| {
+                (lateral.is_finite()
+                    && longitudinal.is_finite()
+                    && lateral.hypot(longitudinal) >= 1.0)
+                    .then(|| narrow_native_float(lateral.atan2(longitudinal.abs())))
+            });
+        (load, slip_angle)
+    }))
+}
+
+fn lmu_native_telemetry(payload: &[u8]) -> Option<&[u8]> {
     const HEADER_BYTES: usize = 8;
     const SCORING_INFO_BYTES: usize = 548;
     const VEHICLE_SCORING_BYTES: usize = 584;
     const TELEMETRY_BYTES: usize = 1_888;
-    const WHEEL_OFFSET: usize = 848;
-    const WHEEL_BYTES: usize = 260;
     if payload.get(..4)? != b"LMUS" || u16::from_le_bytes(payload.get(4..6)?.try_into().ok()?) != 1
     {
         return None;
@@ -1811,24 +1986,7 @@ fn lmu_native_wheel_channels(payload: &[u8]) -> Option<[(Option<f32>, Option<f32
     if telemetry_length != TELEMETRY_BYTES || payload.len() < cursor + telemetry_length {
         return None;
     }
-    let telemetry = &payload[cursor..cursor + telemetry_length];
-    Some(std::array::from_fn(|corner| {
-        let wheel = WHEEL_OFFSET + corner * WHEEL_BYTES;
-        let lateral = read_lmu_f64(telemetry, wheel + 64);
-        let longitudinal = read_lmu_f64(telemetry, wheel + 72);
-        let load = read_lmu_f64(telemetry, wheel + 104)
-            .filter(|value| value.is_finite() && *value >= 0.0)
-            .map(narrow_native_float);
-        let slip_angle = lateral
-            .zip(longitudinal)
-            .and_then(|(lateral, longitudinal)| {
-                (lateral.is_finite()
-                    && longitudinal.is_finite()
-                    && lateral.hypot(longitudinal) >= 1.0)
-                    .then(|| narrow_native_float(lateral.atan2(longitudinal.abs())))
-            });
-        (load, slip_angle)
-    }))
+    payload.get(cursor..cursor + telemetry_length)
 }
 
 fn read_lmu_f64(bytes: &[u8], offset: usize) -> Option<f64> {
@@ -2259,7 +2417,11 @@ mod tests {
                         ("static.max_fuel_litres".into(), 60.0),
                         ("physics.unused".into(), 123.0),
                     ]),
-                    integer_fields: BTreeMap::from([("physics.unused".into(), 42)]),
+                    integer_fields: BTreeMap::from([
+                        ("tc_setting".into(), 4),
+                        ("tc_max".into(), 10),
+                        ("physics.unused".into(), 42),
+                    ]),
                     text_fields: BTreeMap::from([
                         ("static.track_configuration".into(), "gp".into()),
                         ("graphics.unused".into(), "value".into()),
@@ -2323,6 +2485,18 @@ mod tests {
             Some(4.5)
         );
         assert_eq!(native_float_value(floats, 0, "physics.unused"), None);
+        let integers = batch
+            .column(
+                batch
+                    .schema()
+                    .index_of("native_integer_fields")
+                    .expect("integer map"),
+            )
+            .as_any()
+            .downcast_ref::<MapArray>()
+            .expect("integer map");
+        assert_eq!(native_integer_value(integers, 0, "tc_setting"), Some(4));
+        assert_eq!(native_integer_value(integers, 0, "physics.unused"), None);
     }
 
     #[test]
@@ -2864,7 +3038,7 @@ mod tests {
                         ..VehicleState::default()
                     },
                     native: Some(Box::new(NativeTelemetrySample {
-                        schema: "assetto-corsa.shared-memory/1".into(),
+                        schema: "le-mans-ultimate.shared-memory/v01".into(),
                         float_fields: (0..4)
                             .map(|corner| {
                                 (
@@ -2874,6 +3048,26 @@ mod tests {
                             })
                             .chain([("static.max_fuel_litres".into(), 30.0)])
                             .collect(),
+                        integer_fields: BTreeMap::from([
+                            (
+                                "tc_setting".into(),
+                                i64::from(u8::try_from(sequence.div_ceil(2)).unwrap()),
+                            ),
+                            ("tc_max".into(), 10),
+                            ("tc_slip_setting".into(), 3),
+                            ("tc_slip_max".into(), 10),
+                            ("tc_cut_setting".into(), 2),
+                            ("tc_cut_max".into(), 10),
+                            ("abs_setting".into(), 5),
+                            ("abs_max".into(), 12),
+                            ("motor_map".into(), 1),
+                            ("motor_map_max".into(), 4),
+                            ("brake_migration".into(), 7),
+                            ("brake_migration_max".into(), 20),
+                            ("tc_active".into(), i64::from(sequence == 2)),
+                            ("abs_active".into(), i64::from(sequence == 3)),
+                            ("rear_flap_active".into(), 0),
+                        ]),
                         ..NativeTelemetrySample::default()
                     })),
                     ..TelemetryFrame::default()
@@ -2890,6 +3084,14 @@ mod tests {
         assert_eq!(metrics.tyre_wear_start, [Some(99.0); 4]);
         assert_eq!(metrics.tyre_wear_end, [Some(97.0); 4]);
         assert_eq!(metrics.tyre_wear_minimum, [Some(97.0); 4]);
+        assert_eq!(metrics.electronics.tc.start, Some(1));
+        assert_eq!(metrics.electronics.tc.end, Some(2));
+        assert_eq!(metrics.electronics.tc.changes, 1);
+        assert_eq!(metrics.electronics.tc.available_maximum, Some(10));
+        assert_eq!(metrics.electronics.abs.start, Some(5));
+        assert_eq!(metrics.electronics.observed_samples, 3);
+        assert_eq!(metrics.electronics.tc_active_samples, 1);
+        assert_eq!(metrics.electronics.abs_active_samples, 1);
     }
 
     #[test]
@@ -2921,5 +3123,35 @@ mod tests {
                 .is_some_and(|angle| angle > 0.039 && angle < 0.041)
         );
         assert_eq!(wheels[3].0, Some(3_003.0));
+
+        let frames = [4_u8, 4, 3]
+            .into_iter()
+            .enumerate()
+            .map(|(index, tc)| {
+                let mut sample_payload = payload.clone();
+                sample_payload[telemetry_start + 750] = tc;
+                sample_payload[telemetry_start + 751] = 10;
+                sample_payload[telemetry_start + 752] = 2;
+                sample_payload[telemetry_start + 753] = 10;
+                sample_payload[telemetry_start + 756] = 5;
+                sample_payload[telemetry_start + 757] = 12;
+                sample_payload[telemetry_start + 747] = u8::from(index == 1);
+                TelemetryFrame {
+                    sequence: FrameSequence(u64::try_from(index).unwrap()),
+                    native: Some(Box::new(NativeTelemetrySample {
+                        schema: "le-mans-ultimate.shared-memory/v01".into(),
+                        payload: sample_payload,
+                        ..NativeTelemetrySample::default()
+                    })),
+                    ..TelemetryFrame::default()
+                }
+            })
+            .collect::<Vec<_>>();
+        let bytes = encode_frames(&frames).expect("legacy LMU telemetry");
+        let metrics = read_lap_metrics(Cursor::new(bytes), 0, 3).expect("legacy metrics");
+        assert_eq!(metrics.electronics.tc.start, Some(4));
+        assert_eq!(metrics.electronics.tc.end, Some(3));
+        assert_eq!(metrics.electronics.tc.changes, 1);
+        assert_eq!(metrics.electronics.tc_active_samples, 1);
     }
 }

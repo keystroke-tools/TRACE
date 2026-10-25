@@ -470,6 +470,31 @@ fn native_fields(
     integer_fields.insert("in_pits".into(), i64::from(page.u8(scoring + 198)?));
     integer_fields.insert("control_source".into(), i64::from(page.i8(scoring + 197)?));
     integer_fields.insert("pit_state".into(), i64::from(page.u8(scoring + 457)?));
+    for (key, offset) in [
+        ("front_flap_active", 616),
+        ("rear_flap_active", 617),
+        ("rear_flap_legal_status", 618),
+        ("ignition_starter", 619),
+        ("electric_motor_state", 744),
+        ("abs_active", 746),
+        ("tc_active", 747),
+        ("speed_limiter_active", 748),
+        ("wiper_state", 749),
+        ("tc_setting", 750),
+        ("tc_max", 751),
+        ("tc_slip_setting", 752),
+        ("tc_slip_max", 753),
+        ("tc_cut_setting", 754),
+        ("tc_cut_max", 755),
+        ("abs_setting", 756),
+        ("abs_max", 757),
+        ("motor_map", 758),
+        ("motor_map_max", 759),
+        ("brake_migration", 760),
+        ("brake_migration_max", 761),
+    ] {
+        integer_fields.insert(key.into(), i64::from(page.u8(telemetry + offset)?));
+    }
     let mut float_fields = BTreeMap::new();
     float_fields.insert("unfiltered_steering".into(), page.f64(telemetry + 404)?);
     float_fields.insert(
@@ -483,6 +508,21 @@ fn native_fields(
     float_fields.insert("fuel_capacity_litres".into(), page.f64(telemetry + 608)?);
     float_fields.insert("delta_best_seconds".into(), page.f64(telemetry + 696)?);
     float_fields.insert("rear_brake_bias".into(), page.f64(telemetry + 664)?);
+    float_fields.insert("turbo_boost_pressure".into(), page.f64(telemetry + 672)?);
+    float_fields.insert("battery_charge_fraction".into(), page.f64(telemetry + 704)?);
+    float_fields.insert("electric_motor_torque".into(), page.f64(telemetry + 712)?);
+    float_fields.insert(
+        "regeneration_kw".into(),
+        f64::from(page.f32(telemetry + 768)?),
+    );
+    float_fields.insert(
+        "state_of_charge".into(),
+        f64::from(page.f32(telemetry + 772)?),
+    );
+    float_fields.insert(
+        "virtual_energy".into(),
+        f64::from(page.f32(telemetry + 776)?),
+    );
     for (index, suffix) in ["FL", "FR", "RL", "RR"].into_iter().enumerate() {
         let wheel = telemetry + WHEEL_OFFSET + index * WHEEL_SIZE;
         let load = page.f64(wheel + 104)?;
@@ -733,6 +773,18 @@ mod tests {
         write_f64(&mut bytes, scoring + 176, 31.0);
         write_f32(&mut bytes, telemetry + 692, 540.0);
         write_f64(&mut bytes, telemetry + 608, 75.0);
+        bytes[telemetry + 617] = 1;
+        bytes[telemetry + 746] = 1;
+        bytes[telemetry + 747] = 1;
+        bytes[telemetry + 750] = 4;
+        bytes[telemetry + 752] = 3;
+        bytes[telemetry + 754] = 2;
+        bytes[telemetry + 756] = 5;
+        bytes[telemetry + 758] = 2;
+        bytes[telemetry + 760] = 7;
+        write_f64(&mut bytes, telemetry + 704, 0.63);
+        write_f32(&mut bytes, telemetry + 768, 112.5);
+        write_f32(&mut bytes, telemetry + 772, 0.61);
         write_f64(&mut bytes, SCORING_OFFSET + 228, 21.0);
         write_f64(&mut bytes, SCORING_OFFSET + 236, 29.0);
         for index in 0..4 {
@@ -816,6 +868,21 @@ mod tests {
                 .and_then(|native| native.float_fields.get("Tire Slip Angle FL"))
                 .is_some_and(|angle| *angle > 1.7 && *angle < 1.8)
         );
+        let native = frame.native.as_ref().expect("native telemetry");
+        assert_eq!(native.integer_fields.get("tc_setting"), Some(&4));
+        assert_eq!(native.integer_fields.get("tc_slip_setting"), Some(&3));
+        assert_eq!(native.integer_fields.get("tc_cut_setting"), Some(&2));
+        assert_eq!(native.integer_fields.get("abs_setting"), Some(&5));
+        assert_eq!(native.integer_fields.get("motor_map"), Some(&2));
+        assert_eq!(native.integer_fields.get("brake_migration"), Some(&7));
+        assert_eq!(native.integer_fields.get("tc_active"), Some(&1));
+        assert_eq!(native.integer_fields.get("abs_active"), Some(&1));
+        assert_eq!(native.integer_fields.get("rear_flap_active"), Some(&1));
+        assert_eq!(
+            native.float_fields.get("battery_charge_fraction"),
+            Some(&0.63)
+        );
+        assert_eq!(native.float_fields.get("regeneration_kw"), Some(&112.5));
     }
 
     #[test]

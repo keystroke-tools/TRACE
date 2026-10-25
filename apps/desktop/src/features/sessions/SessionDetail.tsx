@@ -19,6 +19,7 @@ import { fasterReferenceSuggestions, type ComparisonSelection, validComparisonLa
 import { savedSetupFolder } from "../setups/setup-preferences";
 import {
 	DeleteConfirmation,
+	ElectronicsSummary,
 	EmptySessions,
 	ExportOption,
 	FuelUsage,
@@ -485,7 +486,7 @@ export function SessionDetail({
 				<div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
 					<span>LAP</span>
 					<span>TIME</span>
-					<span>SECTORS</span>
+					<span>SECTORS / ELECTRONICS</span>
 					<span className="border-l border-trace-divider pl-6">FUEL</span>
 					<span className="border-l border-trace-divider pl-6">TOP SPEED</span>
 					<span aria-hidden="true" />
@@ -518,11 +519,14 @@ export function SessionDetail({
 									</span>
 								</Tooltip>
 								<strong className={invalid ? "text-red-200" : fastest ? "text-trace-purple" : "text-trace-text"}>{lap.time}</strong>
-								{hasSectorTiming ? (
-									<SectorBars lap={lap} laps={session.laps} sectorIndices={sectorIndices} />
-								) : (
-									<span className="text-[12px] text-trace-dim">UNAVAILABLE</span>
-								)}
+								<div className="min-w-0">
+									{hasSectorTiming ? (
+										<SectorBars lap={lap} laps={session.laps} sectorIndices={sectorIndices} />
+									) : (
+										<span className="text-[12px] text-trace-dim">SECTORS UNAVAILABLE</span>
+									)}
+									<ElectronicsSummary metrics={lapMetrics} />
+								</div>
 								<div className="flex min-h-16 items-center border-l border-trace-divider pl-6">
 									<FuelUsage state={metricsState} metrics={lapMetrics} />
 								</div>
@@ -906,7 +910,7 @@ function CompatibleSetupsDock({
 									<p className="px-5 py-4 text-[11px] text-trace-dim">These setups contain the same readable values.</p>
 								)}
 								<p className="border-t border-trace-divider px-4 py-3 text-[10px] leading-4 text-trace-dim">
-									Literal INI differences only. A changed value does not prove why either lap was faster.
+									Literal setup-file differences only. A changed value does not prove why either lap was faster.
 								</p>
 							</aside>
 						)}

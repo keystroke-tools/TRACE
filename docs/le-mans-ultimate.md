@@ -79,7 +79,10 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | tyres                             | angular speed, slip angle, load, pressure, carcass temperature, suspension |
 | conditions                        | ambient and track temperature                                              |
 | pit state                         | scoring pit flags/state                                                    |
-| additional native values          | fuel capacity, best-lap delta, brake bias, steering ranges                 |
+| electronics settings              | TC, TC slip/cut, ABS, motor map, brake migration, and available ranges     |
+| electronics activity              | TC/ABS intervention, DRS/flap, limiter, ignition, and hybrid motor state   |
+| hybrid/energy                     | battery charge, state of charge, regeneration, and virtual energy          |
+| additional native values          | fuel capacity, best-lap delta, brake bias, boost, and steering ranges      |
 
 The scoring stream exposes both a friendly vehicle model and a vehicle-class field.
 LMU setup files use a separate class/package identity and live beneath simulator-owned
@@ -87,6 +90,12 @@ track folders, while shared memory does not publish that folder identifier. TRAC
 automatic setup matching strict: explicitly attaching one installed setup confirms the
 package/folder relationship for that recorded car and track, after which other setups
 with the same native identities may be suggested. No fuzzy car or track matching is used.
+
+TRACE samples adjustable electronics continuously rather than assigning one setting to
+an entire session. Session lap rows show the setting at the start and end of each lap and
+flag mid-lap changes. Recordings made before these named fields were added can recover
+the same values from the bounded native LMU telemetry payload retained in their Arrow
+stream.
 
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
 Its SDK world coordinates are left-handed with Y pointing up. The adapter reflects

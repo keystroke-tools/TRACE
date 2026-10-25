@@ -68,6 +68,25 @@ export interface RecordedLapMetrics {
 	tyreWearStart: Array<number | null>;
 	tyreWearEnd: Array<number | null>;
 	tyreWearMinimum: Array<number | null>;
+	electronics?: RecordedLapElectronics | null;
+}
+
+export interface RecordedLapElectronics {
+	settings: RecordedLapElectronicSetting[];
+	tcActivePercent?: number | null;
+	absActivePercent?: number | null;
+	rearFlapActivePercent?: number | null;
+}
+
+export interface RecordedLapElectronicSetting {
+	key: string;
+	label: string;
+	start: number;
+	end: number;
+	minimum: number;
+	maximum: number;
+	availableMaximum?: number | null;
+	changes: number;
 }
 
 export interface RecordedSessionSummary {
