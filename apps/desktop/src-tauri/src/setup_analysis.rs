@@ -61,9 +61,10 @@ pub(crate) fn compare_setups(
     let alternative = setup_record(&store, &alternative_setup_id)?;
     ensure_compatible(&baseline, &alternative)?;
     match baseline.simulator_key.as_str() {
-        "assetto-corsa" => {
-            let baseline_document = parse_ac_setup(&read_setup(&baseline.installed_path)?)?;
-            let alternative_document = parse_ac_setup(&read_setup(&alternative.installed_path)?)?;
+        "assetto-corsa" | "le-mans-ultimate" => {
+            let baseline_document = parse_setup_document(&read_setup(&baseline.installed_path)?)?;
+            let alternative_document =
+                parse_setup_document(&read_setup(&alternative.installed_path)?)?;
             Ok(compare_documents(
                 baseline.name,
                 alternative.name,
@@ -114,12 +115,12 @@ fn read_setup(path: &str) -> Result<Vec<u8>, String> {
     Ok(contents)
 }
 
-fn parse_ac_setup(contents: &[u8]) -> Result<SetupDocument, String> {
+fn parse_setup_document(contents: &[u8]) -> Result<SetupDocument, String> {
     let mut document = SetupDocument::new();
     let mut section = "GENERAL".to_owned();
     let mut values = 0_usize;
     for line in String::from_utf8_lossy(contents).lines().map(str::trim) {
-        if line.is_empty() || line.starts_with([';', '#']) {
+        if line.is_empty() || line.starts_with([';', '#']) || line.starts_with("//") {
             continue;
         }
         if line.starts_with('[') && line.ends_with(']') {
@@ -213,12 +214,14 @@ mod tests {
 
     #[test]
     fn parses_and_compares_ac_ini_values_without_reporting_unchanged_noise() {
-        let baseline =
-            parse_ac_setup(b"; setup\n[TYRES]\nPRESSURE_LF=20\nPRESSURE_RF=20\n[ARB]\nFRONT=3\n")
-                .expect("baseline");
-        let alternative =
-            parse_ac_setup(b"[TYRES]\nPRESSURE_LF=21\nPRESSURE_RF=20\n[ARB]\nFRONT=4\nREAR=2\n")
-                .expect("alternative");
+        let baseline = parse_setup_document(
+            b"; setup\n[TYRES]\nPRESSURE_LF=20\nPRESSURE_RF=20\n[ARB]\nFRONT=3\n",
+        )
+        .expect("baseline");
+        let alternative = parse_setup_document(
+            b"[TYRES]\nPRESSURE_LF=21\nPRESSURE_RF=20\n[ARB]\nFRONT=4\nREAR=2\n",
+        )
+        .expect("alternative");
         let comparison = compare_documents(
             "race.ini".into(),
             "qualifying.ini".into(),
@@ -230,5 +233,33 @@ mod tests {
         assert_eq!(comparison.sections.len(), 2);
         assert_eq!(comparison.sections[0].name, "ARB");
         assert_eq!(comparison.sections[1].changes[0].key, "PRESSURE_LF");
+    }
+
+    #[test]
+    fn compares_lmu_svm_values_with_their_readable_descriptions() {
+        let baseline = parse_setup_document(
+            b"VehicleClassSetting=\"ELMS2025 LMP3\"\n[CONTROLS]\nTractionControlMapSetting=6//6\nAntilockBrakeSystemMapSetting=4//4\n[ENGINE]\nElectricMotorMapSetting=1//Race\n",
+        )
+        .expect("baseline");
+        let alternative = parse_setup_document(
+            b"VehicleClassSetting=\"ELMS2025 LMP3\"\n[CONTROLS]\nTractionControlMapSetting=7//7\nAntilockBrakeSystemMapSetting=4//4\n[ENGINE]\nElectricMotorMapSetting=2//Qualifying\n",
+        )
+        .expect("alternative");
+
+        let comparison = compare_documents(
+            "race.svm".into(),
+            "qualifying.svm".into(),
+            &baseline,
+            &alternative,
+        );
+
+        assert_eq!(comparison.changed_values, 2);
+        assert_eq!(comparison.unchanged_values, 2);
+        assert_eq!(comparison.sections[0].name, "CONTROLS");
+        assert_eq!(
+            comparison.sections[0].changes[0].baseline_value.as_deref(),
+            Some("6//6")
+        );
+        assert_eq!(comparison.sections[1].name, "ENGINE");
     }
 }

@@ -29,8 +29,10 @@ with fuzzy name similarity. The first time you explicitly attach an installed LM
 to a session, TRACE remembers that confirmed identity relationship. Other indexed setups
 for the same LMU vehicle package and track folder can then appear as compatible for that
 car/track combination. The mapping stays local, and selecting a setup still records the
-specific file used so it can travel with a `.trace` package. LMU setup-value editing and
-comparison remain future provider capabilities.
+specific file used so it can travel with a `.trace` package. Compatible `.svm` files can
+be compared read-only by section and setting in the session dock. TRACE preserves both
+the numeric selection and LMU's inline readable description. Setup-value editing remains
+a future provider capability.
 
 The behavior is a native Rust port of the workflow first explored in
 [`ac-setup-importer-proto`](https://github.com/aosasona/ac-setup-importer-proto). TRACE
@@ -111,16 +113,18 @@ Import restores the file beneath TRACE's private setup library, recreates its me
 and associates it with the new local session. It does not silently install the shared
 file into a simulator's live setup folder.
 
-## Assetto Corsa setup differences
+## Setup differences
 
-When a session has a confirmed setup and another compatible AC setup is available,
-**Compare to used** parses both bounded INI files and shows changed values grouped by
-section. Unchanged values are counted but hidden to reduce noise. Missing keys remain
-visible as unavailable on the relevant side.
+When a session has a confirmed setup and another compatible setup is available,
+**Compare to used** parses both bounded section/value files and shows changed values
+grouped by section. Unchanged values are counted but hidden to reduce noise. Missing keys
+remain visible as unavailable on the relevant side. Assetto Corsa `.ini` and Le Mans
+Ultimate `.svm` files are supported; LMU's commented-out defaults are ignored while
+inline value descriptions remain visible.
 
 This is a literal configuration diff. TRACE does not infer whether a change helped,
 hurt, or caused a lap-time difference. Other simulators can add their own parser behind
-the same comparison command without treating their formats as Assetto Corsa INIs.
+the same comparison command without treating their formats as interchangeable.
 
 ### Expected archive layout
 
