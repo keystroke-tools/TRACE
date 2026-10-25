@@ -12,6 +12,7 @@ import {
 	type SessionExportFormat,
 } from "../../data-source";
 import { PageIntro, SectionHeading } from "../../components/layout";
+import { ImportProgressOverlay, type ImportProgressOverlayProps } from "../../components/ImportProgressOverlay";
 import { Tooltip } from "../../Tooltip";
 import { useToast } from "../../Toast";
 import {
@@ -52,6 +53,10 @@ function pairKey(path: string) {
 	return (separator >= 0 ? normalized.slice(0, separator) : normalized).toLowerCase();
 }
 
+function fileName(path: string) {
+	return path.replaceAll("\\", "/").split("/").pop() ?? path;
+}
+
 export function SessionsPage({
 	sessions,
 	onOpen,
@@ -71,6 +76,7 @@ export function SessionsPage({
 	const [simulatorFilter, setSimulatorFilter] = useState("all");
 	const [sortOrder, setSortOrder] = useState("newest");
 	const [importing, setImporting] = useState(false);
+	const [importProgress, setImportProgress] = useState<ImportProgressOverlayProps | null>(null);
 	const [draggingTelemetry, setDraggingTelemetry] = useState(false);
 	const [motecReview, setMotecReview] = useState<{ path: string; preview: MotecImportPreview } | null>(null);
 	const [motecFolderScan, setMotecFolderScan] = useState<MotecFolderScan | null>(null);
@@ -141,6 +147,7 @@ export function SessionsPage({
 
 	async function importTelemetryPath(path: string) {
 		setImporting(true);
+		setImportProgress({ title: "Reading telemetry", detail: `Checking ${fileName(path)} before it is added to your library.`, stage: "READING" });
 		try {
 			if (extension(path) === "ld") {
 				const preview = await telemetryDataSource.previewMotecImport(path);
@@ -151,12 +158,15 @@ export function SessionsPage({
 		} catch (error) {
 			showToast({ kind: "error", title: "Import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
 		} finally {
+			setImportProgress(null);
 			setImporting(false);
 		}
 	}
 
 	async function finishImport(path: string, motecOptions?: MotecImportOptions) {
+		setImportProgress({ title: "Importing telemetry", detail: `Validating and storing ${fileName(path)}.`, stage: "IMPORTING" });
 		const result = await telemetryDataSource.importSession(path, motecOptions);
+		setImportProgress({ title: "Refreshing session library", detail: "Loading the imported laps and session details.", stage: "FINISHING" });
 		await onImported();
 		setMotecReview(null);
 		showToast({
@@ -175,6 +185,7 @@ export function SessionsPage({
 		} catch (error) {
 			showToast({ kind: "error", title: "Import failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
 		} finally {
+			setImportProgress(null);
 			setImporting(false);
 		}
 	}
@@ -194,11 +205,13 @@ export function SessionsPage({
 		const selected = await open({ multiple: false, directory: true, title: "Import a folder of MoTeC logs" });
 		if (typeof selected !== "string") return;
 		setImporting(true);
+		setImportProgress({ title: "Scanning MoTeC folder", detail: "Finding logs and reading their session metadata.", stage: "SCANNING" });
 		try {
 			setMotecFolderScan(await telemetryDataSource.scanMotecFolder(selected));
 		} catch (error) {
 			showToast({ kind: "error", title: "Folder scan failed", message: error instanceof Error ? error.message : String(error), timeoutMs: 9_000 });
 		} finally {
+			setImportProgress(null);
 			setImporting(false);
 		}
 	}
@@ -269,6 +282,7 @@ export function SessionsPage({
 					</div>
 				</div>
 			)}
+			{importProgress && <ImportProgressOverlay {...importProgress} />}
 			<div className="flex items-end justify-between gap-6">
 				<div>
 					<SectionHeading index="02">SESSION LIBRARY</SectionHeading>

@@ -15,6 +15,7 @@ import {
 } from "./data-source";
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
+import { ImportProgressOverlay } from "./components/ImportProgressOverlay";
 import { ComparePage } from "./features/compare/ComparePage";
 import type { ComparisonSelection } from "./features/compare/comparison-selection";
 import { LivePage } from "./features/live/LivePage";
@@ -411,26 +412,14 @@ function SharedSessionImportOverlay({ progress }: { progress: SharedSessionImpor
 				? "Validating the package and writing its laps."
 				: "Preparing a secure download from the shared link.";
 	return (
-		<div className="fixed inset-0 z-[120] grid place-items-center bg-black/75 p-6" role="status" aria-live="polite">
-			<section className="w-full max-w-md border border-trace-divider bg-[#151515] p-6">
-				<div className="flex items-center gap-3">
-					<span className="size-2 animate-pulse rounded-full bg-trace-accent" aria-hidden="true" />
-					<span className="font-mono text-[10px] font-black tracking-[.14em] text-trace-accent">SHARED SESSION</span>
-				</div>
-				<h2 className="mt-4 text-xl font-black">{title}</h2>
-				<p className="mt-2 text-[13px] leading-5 text-trace-muted">{detail}</p>
-				<div className="mt-5 h-1.5 overflow-hidden bg-trace-raised">
-					<div
-						className={`h-full bg-trace-accent transition-[width] duration-200 ${percentage == null ? "w-1/3 animate-pulse" : ""}`}
-						style={percentage == null ? undefined : { width: `${percentage}%` }}
-					/>
-				</div>
-				<div className="mt-3 flex justify-between font-mono text-[10px] text-trace-dim">
-					<span>{progress.stage.toUpperCase()}</span>
-					<span>{percentage == null ? "PLEASE WAIT" : `${percentage}%`}</span>
-				</div>
-			</section>
-		</div>
+		<ImportProgressOverlay
+			eyebrow="SHARED SESSION"
+			title={title}
+			detail={detail}
+			stage={progress.stage.toUpperCase()}
+			current={percentage == null ? undefined : progress.receivedBytes}
+			total={percentage == null ? undefined : total}
+		/>
 	);
 }
 

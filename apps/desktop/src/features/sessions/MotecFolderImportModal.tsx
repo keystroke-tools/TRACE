@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { telemetryDataSource, type MotecFolderScan } from "../../data-source";
+import { ImportProgressOverlay } from "../../components/ImportProgressOverlay";
 import { useToast } from "../../Toast";
 
 export function MotecFolderImportModal({ scan, onClose, onImported }: { scan: MotecFolderScan; onClose: () => void; onImported: () => Promise<void> }) {
@@ -37,8 +38,8 @@ export function MotecFolderImportModal({ scan, onClose, onImported }: { scan: Mo
 			setImported(new Set(nextImported));
 			setFailures(new Map(nextFailures));
 		}
-		setProgress(null);
 		if (nextImported.size > imported.size) await onImported();
+		setProgress(null);
 		const importedNow = nextImported.size - imported.size;
 		showToast({
 			kind: nextFailures.size ? "error" : "success",
@@ -52,6 +53,16 @@ export function MotecFolderImportModal({ scan, onClose, onImported }: { scan: Mo
 	const remaining = [...selected].filter((path) => !imported.has(path)).length;
 	return (
 		<div className="fixed inset-0 z-[95] grid place-items-center bg-black/80 p-5" role="dialog" aria-modal="true" aria-labelledby="motec-folder-title">
+			{progress && (
+				<ImportProgressOverlay
+					eyebrow="BULK MOTEC IMPORT"
+					title={`Importing session ${progress.current} of ${progress.total}`}
+					detail="Validating the telemetry log and adding its laps to your library."
+					stage="IMPORTING"
+					current={progress.current}
+					total={progress.total}
+				/>
+			)}
 			<section className="flex max-h-[min(760px,calc(100vh-40px))] w-full max-w-4xl flex-col border border-trace-divider bg-trace-deep">
 				<header className="flex items-start justify-between gap-5 border-b border-trace-divider p-5">
 					<div className="min-w-0">
