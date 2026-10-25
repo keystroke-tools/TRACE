@@ -1384,7 +1384,8 @@ fn axle_slip_angle(
                 / weighted_load,
         )
     } else {
-        Some(collected.iter().map(|(slip, _)| slip).sum::<f64>() / collected.len() as f64)
+        let count = f64::from(u16::try_from(collected.len()).unwrap_or(u16::MAX));
+        Some(collected.iter().map(|(slip, _)| slip).sum::<f64>() / count)
     }
 }
 
