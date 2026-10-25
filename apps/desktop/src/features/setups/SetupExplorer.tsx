@@ -251,15 +251,16 @@ function ExplorerHeading({ label, count }: { label: string; count: number }) {
 }
 
 function SetupFileRow({ setup, onOpen }: { setup: SetupLibraryEntry; onOpen: () => void }) {
+	const editable = setup.simulatorId === "assetto-corsa";
 	return (
 		<button
 			type="button"
 			onClick={onOpen}
-			disabled={!setup.available}
+			disabled={!setup.available || !editable}
 			className="grid w-full min-w-0 grid-cols-[30px_minmax(0,1fr)] gap-3 border-l-2 border-transparent px-4 py-3 text-left hover:border-trace-accent hover:bg-trace-accent/10 disabled:cursor-not-allowed disabled:opacity-50 xl:grid-cols-[30px_minmax(0,1fr)_auto] xl:items-center"
 		>
 			<span className="grid size-[30px] place-items-center bg-trace-deep font-mono text-[8px] font-black text-trace-muted" aria-hidden="true">
-				INI
+				{editable ? "INI" : "SVM"}
 			</span>
 			<div className="min-w-0">
 				<strong className="block break-words text-[12px] text-trace-text">{setup.name}</strong>
@@ -276,6 +277,7 @@ function SetupFileRow({ setup, onOpen }: { setup: SetupLibraryEntry; onOpen: () 
 				{!setup.available && (
 					<span className="border border-trace-warning/50 px-1.5 py-1 font-mono text-[8px] font-bold text-trace-warning">FILE MISSING</span>
 				)}
+				{setup.available && !editable && <span className="font-mono text-[8px] font-bold text-trace-muted">READ ONLY</span>}
 			</div>
 		</button>
 	);

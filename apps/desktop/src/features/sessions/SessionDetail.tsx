@@ -180,7 +180,12 @@ export function SessionDetail({
 				multiple: false,
 				directory: false,
 				title: `Attach a setup to ${session.title ?? session.track}`,
-				filters: [{ name: "Setup files", extensions: ["ini"] }],
+				filters: [
+					{
+						name: `${session.simulatorName} setup files`,
+						extensions: [session.simulatorId === "le-mans-ultimate" ? "svm" : "ini"],
+					},
+				],
 			});
 			if (typeof selected !== "string") return;
 			const values = await telemetryDataSource.attachSessionSetup({

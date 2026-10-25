@@ -15,10 +15,20 @@ The Assetto Corsa provider installs standalone setup INIs or setup INIs from ZIP
 archives into the game's normal saved-setup tree. This is a local workflow: it does not
 upload setup data.
 
-Le Mans Ultimate does not yet have a setup provider. Its setup locations, file format,
-and reliable association with the setup actually used in a recorded session require a
-separate simulator-specific implementation; TRACE does not treat an arbitrary nearby
-file as session provenance.
+## Le Mans Ultimate provider
+
+TRACE detects LMU's setup tree beneath the configured installation at
+`UserData\player\Settings`. Individual `.svm` files can be installed into a selected
+track folder, and **Index existing** scans the existing `<track>\<setup>.svm` layout.
+The bounded text parser reads `VehicleClassSetting` and, when present, the package name
+from LMU's `//VEH=` header. It does not infer car identity from community filenames.
+
+LMU telemetry currently identifies the driven car with a display model while setup
+files identify a vehicle class/package. TRACE therefore lists indexed LMU setups but
+does not automatically suggest a setup based on fuzzy name similarity. Explicitly
+attaching a chosen `.svm` to a session records the user's confirmation and allows the
+file to travel with a `.trace` package. LMU setup-value editing and comparison remain
+future provider capabilities.
 
 The behavior is a native Rust port of the workflow first explored in
 [`ac-setup-importer-proto`](https://github.com/aosasona/ac-setup-importer-proto). TRACE

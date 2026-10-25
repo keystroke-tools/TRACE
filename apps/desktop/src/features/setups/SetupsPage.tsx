@@ -28,6 +28,10 @@ export function SetupsPage() {
 	const importer = importers.find((value) => value.simulatorId === simulatorId) ?? null;
 
 	useEffect(() => {
+		if (importer && importer.archiveExtensions.length === 0) setImportMode("files");
+	}, [importer]);
+
+	useEffect(() => {
 		let active = true;
 		void telemetryDataSource
 			.getSetupImporters()
@@ -381,21 +385,23 @@ export function SetupsPage() {
 									{ id: "archives", label: "ARCHIVES" },
 									{ id: "files", label: "INDIVIDUAL FILES" },
 								] as const
-							).map((mode) => (
-								<button
-									type="button"
-									role="tab"
-									aria-selected={importMode === mode.id}
-									onClick={() => {
-										setImportMode(mode.id);
-										setResults([]);
-									}}
-									className={`h-11 border-b-2 font-mono text-[11px] font-bold tracking-[.08em] ${importMode === mode.id ? "border-trace-accent bg-trace-deep text-white" : "border-transparent bg-trace-surface text-trace-dim hover:bg-trace-deep hover:text-white"}`}
-									key={mode.id}
-								>
-									{mode.label}
-								</button>
-							))}
+							)
+								.filter((mode) => mode.id !== "archives" || (importer?.archiveExtensions.length ?? 0) > 0)
+								.map((mode) => (
+									<button
+										type="button"
+										role="tab"
+										aria-selected={importMode === mode.id}
+										onClick={() => {
+											setImportMode(mode.id);
+											setResults([]);
+										}}
+										className={`h-11 border-b-2 font-mono text-[11px] font-bold tracking-[.08em] ${importMode === mode.id ? "border-trace-accent bg-trace-deep text-white" : "border-transparent bg-trace-surface text-trace-dim hover:bg-trace-deep hover:text-white"}`}
+										key={mode.id}
+									>
+										{mode.label}
+									</button>
+								))}
 						</div>
 						{importMode === "files" && (
 							<div className="grid gap-4 border-b border-trace-divider bg-trace-surface p-5 md:grid-cols-3">
@@ -404,7 +410,7 @@ export function SetupsPage() {
 									<input
 										value={sourceTrackId}
 										onChange={(event) => setSourceTrackId(event.target.value)}
-										placeholder="e.g. ks_zandvoort"
+										placeholder={simulatorId === "le-mans-ultimate" ? "e.g. Monza" : "e.g. ks_zandvoort"}
 										spellCheck={false}
 										className="mt-2 h-10 w-full border border-trace-divider bg-trace-deep px-3 font-mono text-[12px] text-trace-text outline-none focus:border-trace-accent"
 									/>
@@ -498,9 +504,8 @@ export function SetupsPage() {
 						</div>
 					)}
 					<p className="mt-4 max-w-4xl text-[11px] leading-5 text-trace-dim">
-						Assetto Corsa is the first setup-import adapter. Imported setups are indexed for exact session matches; open a session to mark the setup
-						you used, compare its INI values, and include it in a shared .trace package. TRACE cannot automatically identify which setup was active
-						while you drove.
+						Imported setups retain simulator, car, track, and layout identities where the source format provides them. Explicitly attach the setup
+						you used from a session overview; TRACE does not claim a nearby setup was active while you drove.
 					</p>
 				</>
 			)}

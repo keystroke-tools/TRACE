@@ -1,4 +1,4 @@
-//! Bounded import of Assetto Corsa setup archives.
+//! Bounded, simulator-dispatched setup import and indexing.
 
 use std::{
     collections::BTreeSet,
@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Manager;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use trace_lmu::parse_setup_identity;
 use trace_storage::metadata::{CompatibleSetup, MetadataStore, NewSetupImport};
 use zip::ZipArchive;
 
@@ -25,6 +26,7 @@ const MAX_SETUP_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TOTAL_SETUP_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_DISCOVERED_SETUPS: usize = 5_000;
 const ASSETTO_CORSA_ID: &str = "assetto-corsa";
+const LE_MANS_ULTIMATE_ID: &str = "le-mans-ultimate";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,18 +53,32 @@ pub(crate) struct SetupFolder {
 
 #[tauri::command]
 pub(crate) fn setup_importers() -> Vec<SetupImporterDescriptor> {
-    vec![SetupImporterDescriptor {
-        simulator_id: ASSETTO_CORSA_ID,
-        simulator_name: "Assetto Corsa",
-        archive_label: "Assetto Corsa setup archives",
-        archive_extensions: vec!["zip"],
-        folder_label: "Assetto Corsa setups folder",
-        folder_hint: "Usually Documents\\Assetto Corsa\\setups. Change it if your Documents folder lives elsewhere.",
-        archive_hint: "TRACE uses an .ld telemetry filename to identify the car and track, then installs every .ini setup in the archive.",
-        file_label: "Assetto Corsa setup files",
-        file_extensions: vec!["ini"],
-        file_hint: "Choose standalone .ini files, then provide the track. TRACE reads the CAR / MODEL value when the file contains one.",
-    }]
+    vec![
+        SetupImporterDescriptor {
+            simulator_id: ASSETTO_CORSA_ID,
+            simulator_name: "Assetto Corsa",
+            archive_label: "Assetto Corsa setup archives",
+            archive_extensions: vec!["zip"],
+            folder_label: "Assetto Corsa setups folder",
+            folder_hint: "Usually Documents\\Assetto Corsa\\setups. Change it if your Documents folder lives elsewhere.",
+            archive_hint: "TRACE uses an .ld telemetry filename to identify the car and track, then installs every .ini setup in the archive.",
+            file_label: "Assetto Corsa setup files",
+            file_extensions: vec!["ini"],
+            file_hint: "Choose standalone .ini files, then provide the track. TRACE reads the CAR / MODEL value when the file contains one.",
+        },
+        SetupImporterDescriptor {
+            simulator_id: LE_MANS_ULTIMATE_ID,
+            simulator_name: "Le Mans Ultimate",
+            archive_label: "LMU setup archives",
+            archive_extensions: Vec::new(),
+            folder_label: "LMU setup settings folder",
+            folder_hint: "Usually <LMU install>\\UserData\\player\\Settings. Set the LMU install directory in Settings if detection fails.",
+            archive_hint: "Archive import is not available yet; choose individual .svm files.",
+            file_label: "Le Mans Ultimate setup files",
+            file_extensions: vec!["svm"],
+            file_hint: "Choose .svm files and the destination track. TRACE reads the declared vehicle package and never guesses from the filename.",
+        },
+    ]
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -105,13 +121,19 @@ impl SetupImportResult {
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri IPC owns deserialized strings.
-pub(crate) fn detect_setup_folder(simulator_id: String) -> Result<SetupFolder, String> {
-    if simulator_id != ASSETTO_CORSA_ID {
-        return Err(format!(
-            "setup importing is not available for {simulator_id}"
-        ));
-    }
-    let candidates = setup_folder_candidates();
+pub(crate) fn detect_setup_folder(
+    app: tauri::AppHandle,
+    simulator_id: String,
+) -> Result<SetupFolder, String> {
+    let candidates = match simulator_id.as_str() {
+        ASSETTO_CORSA_ID => setup_folder_candidates(),
+        LE_MANS_ULTIMATE_ID => lmu_setup_folder_candidates(&app),
+        _ => {
+            return Err(format!(
+                "setup importing is not available for {simulator_id}"
+            ));
+        }
+    };
     if let Some(path) = candidates.iter().find(|path| path.is_dir()) {
         return Ok(SetupFolder {
             path: Some(path.to_string_lossy().into_owned()),
@@ -235,7 +257,10 @@ fn import_setup_files_inner(
     app: &tauri::AppHandle,
     options: &SetupFileImportOptions,
 ) -> Vec<SetupImportResult> {
-    if options.simulator_id != ASSETTO_CORSA_ID {
+    if !matches!(
+        options.simulator_id.as_str(),
+        ASSETTO_CORSA_ID | LE_MANS_ULTIMATE_ID
+    ) {
         return vec![
             SetupImportResult::for_path(Path::new("setup files")).fail(format!(
                 "setup importing is not available for {}",
@@ -257,7 +282,11 @@ fn import_setup_files_inner(
                 .fail("choose an Assetto Corsa setups folder"),
         ];
     }
-    let track = options.source_track_id.trim().to_ascii_lowercase();
+    let track = if options.simulator_id == ASSETTO_CORSA_ID {
+        options.source_track_id.trim().to_ascii_lowercase()
+    } else {
+        options.source_track_id.trim().to_owned()
+    };
     if !valid_windows_component(&track) {
         return vec![
             SetupImportResult::for_path(Path::new("setup files"))
@@ -280,7 +309,13 @@ fn import_setup_files_inner(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(str::to_ascii_lowercase);
+        .map(|value| {
+            if options.simulator_id == ASSETTO_CORSA_ID {
+                value.to_ascii_lowercase()
+            } else {
+                value.to_owned()
+            }
+        });
     if explicit_car
         .as_deref()
         .is_some_and(|value| !valid_windows_component(value))
@@ -295,13 +330,23 @@ fn import_setup_files_inner(
         .iter()
         .map(PathBuf::from)
         .map(|path| {
-            import_setup_file(
-                &path,
-                &root,
-                explicit_car.as_deref(),
-                &track,
-                options.overwrite,
-            )
+            if options.simulator_id == LE_MANS_ULTIMATE_ID {
+                import_lmu_setup_file(
+                    &path,
+                    &root,
+                    explicit_car.as_deref(),
+                    &track,
+                    options.overwrite,
+                )
+            } else {
+                import_setup_file(
+                    &path,
+                    &root,
+                    explicit_car.as_deref(),
+                    &track,
+                    options.overwrite,
+                )
+            }
         })
         .collect::<Vec<_>>();
     index_imported_setups(app, &options.simulator_id, &mut results, layout_id, false);
@@ -376,12 +421,13 @@ pub(crate) fn index_existing_setups(
     simulator_id: String,
     setups_folder: String,
 ) -> Result<SetupDiscoveryResult, String> {
-    if simulator_id != ASSETTO_CORSA_ID {
-        return Err(format!(
+    match simulator_id.as_str() {
+        ASSETTO_CORSA_ID => discover_assetto_corsa_setups(&app, Path::new(setups_folder.trim())),
+        LE_MANS_ULTIMATE_ID => discover_lmu_setups(&app, Path::new(setups_folder.trim())),
+        _ => Err(format!(
             "setup discovery is not available for {simulator_id}"
-        ));
+        )),
     }
-    discover_assetto_corsa_setups(&app, Path::new(setups_folder.trim()))
 }
 
 #[tauri::command]
@@ -404,6 +450,12 @@ pub(crate) fn setup_library(app: tauri::AppHandle) -> Result<Vec<SetupLibraryEnt
                     "Assetto Corsa".to_owned(),
                     ac_names.car(&record.source_car_id),
                     ac_names.track(&record.source_track_id, record.layout_id.as_deref()),
+                )
+            } else if record.simulator_key == LE_MANS_ULTIMATE_ID {
+                (
+                    "Le Mans Ultimate".to_owned(),
+                    record.source_car_id.clone(),
+                    record.source_track_id.clone(),
                 )
             } else {
                 (
@@ -582,6 +634,119 @@ fn setup_folder_candidates() -> Vec<PathBuf> {
     candidates
 }
 
+fn lmu_setup_folder_candidates(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let mut candidates = open_metadata_store(app)
+        .ok()
+        .and_then(|store| {
+            store
+                .simulator_install_path(LE_MANS_ULTIMATE_ID)
+                .ok()
+                .flatten()
+        })
+        .map(PathBuf::from)
+        .into_iter()
+        .map(|root| root.join("UserData/player/Settings"))
+        .collect::<Vec<_>>();
+    if let Some(program_files) = env::var_os("ProgramFiles(x86)").map(PathBuf::from) {
+        candidates.push(
+            program_files.join("Steam/steamapps/common/Le Mans Ultimate/UserData/player/Settings"),
+        );
+    }
+    let mut seen = BTreeSet::new();
+    candidates.retain(|path| seen.insert(path.clone()));
+    candidates
+}
+
+fn import_lmu_setup_file(
+    path: &Path,
+    setups_folder: &Path,
+    explicit_car: Option<&str>,
+    track: &str,
+    overwrite: bool,
+) -> SetupImportResult {
+    let mut result = SetupImportResult::for_path(path);
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svm"))
+    {
+        return result.fail("LMU setup file must have an .svm extension");
+    }
+    let Some(name) = path
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .filter(|value| valid_windows_component(value))
+    else {
+        return result.fail("setup file has an unsafe name");
+    };
+    let contents =
+        match File::open(path).and_then(|mut file| read_bounded(&mut file, MAX_SETUP_BYTES)) {
+            Ok(contents) => contents,
+            Err(error) => return result.fail(format!("could not read setup file: {error}")),
+        };
+    let identity = match parse_setup_identity(&contents) {
+        Ok(identity) => identity,
+        Err(error) => return result.fail(error),
+    };
+    let car = explicit_car
+        .map(str::to_owned)
+        .or(identity.vehicle_package)
+        .unwrap_or(identity.vehicle_class);
+    if !valid_windows_component(&car) {
+        return result.fail("LMU setup declares an unsafe vehicle identity");
+    }
+    let destination = path
+        .parent()
+        .filter(|parent| parent.starts_with(setups_folder) && *parent != setups_folder)
+        .map_or_else(|| setups_folder.join(track), Path::to_path_buf);
+    if let Err(error) = fs::create_dir_all(&destination) {
+        return result.fail(format!(
+            "could not create {}: {error}",
+            destination.display()
+        ));
+    }
+    let output_path = destination.join(&name);
+    match write_setup_file(&output_path, &contents, overwrite) {
+        Ok(true) => result.files.push(name),
+        Ok(false) => result.skipped.push(name),
+        Err(error) => return result.fail(error),
+    }
+    result.car = Some(car);
+    result.track = Some(track.to_owned());
+    result.destination = Some(destination.to_string_lossy().into_owned());
+    result.success = true;
+    result
+}
+
+fn write_setup_file(path: &Path, contents: &[u8], overwrite: bool) -> Result<bool, String> {
+    let output = if overwrite {
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+    } else {
+        OpenOptions::new().write(true).create_new(true).open(path)
+    };
+    match output {
+        Ok(mut output) => output
+            .write_all(contents)
+            .and_then(|()| output.flush())
+            .map(|()| true)
+            .map_err(|error| format!("could not install setup: {error}")),
+        Err(error) if !overwrite && error.kind() == io::ErrorKind::AlreadyExists => {
+            let existing = File::open(path)
+                .and_then(|mut file| read_bounded(&mut file, MAX_SETUP_BYTES))
+                .map_err(|read_error| format!("could not verify existing setup: {read_error}"))?;
+            if existing == contents {
+                Ok(false)
+            } else {
+                Err("a different setup with this name already exists; enable replacement or rename the file".into())
+            }
+        }
+        Err(error) => Err(format!("could not install setup: {error}")),
+    }
+}
+
 fn import_setup_file(
     path: &Path,
     setups_folder: &Path,
@@ -726,10 +891,87 @@ fn discover_assetto_corsa_setups(
                     result.limited = true;
                     break 'cars;
                 }
-                match index_existing_file(&mut store, &path, &car, &track, &imported_at) {
+                match index_existing_file(
+                    &mut store,
+                    ASSETTO_CORSA_ID,
+                    &path,
+                    &car,
+                    &track,
+                    &imported_at,
+                ) {
                     Ok(()) => result.indexed += 1,
                     Err(error) => result.errors.push(error),
                 }
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn discover_lmu_setups(
+    app: &tauri::AppHandle,
+    setups_folder: &Path,
+) -> Result<SetupDiscoveryResult, String> {
+    if !setups_folder.is_dir() {
+        return Err("choose an existing LMU Settings folder".into());
+    }
+    let imported_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| format!("failed to timestamp setup discovery: {error}"))?;
+    let mut store = open_metadata_store(app)?;
+    let mut result = SetupDiscoveryResult {
+        indexed: 0,
+        ignored: 0,
+        errors: Vec::new(),
+        limited: false,
+    };
+    'tracks: for track_entry in read_directories(setups_folder)? {
+        let Some(track) = safe_directory_name(&track_entry) else {
+            result.ignored += 1;
+            continue;
+        };
+        let entries = match fs::read_dir(&track_entry) {
+            Ok(entries) => entries,
+            Err(error) => {
+                result
+                    .errors
+                    .push(format!("could not read {}: {error}", track_entry.display()));
+                continue;
+            }
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if !path.is_file()
+                || !path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("svm"))
+            {
+                result.ignored += 1;
+                continue;
+            }
+            if result.indexed >= MAX_DISCOVERED_SETUPS {
+                result.limited = true;
+                break 'tracks;
+            }
+            let identity = File::open(&path)
+                .and_then(|mut file| read_bounded(&mut file, MAX_SETUP_BYTES))
+                .map_err(|error| error.to_string())
+                .and_then(|contents| parse_setup_identity(&contents).map_err(str::to_owned));
+            match identity.and_then(|identity| {
+                let car = identity.vehicle_package.unwrap_or(identity.vehicle_class);
+                index_existing_file(
+                    &mut store,
+                    LE_MANS_ULTIMATE_ID,
+                    &path,
+                    &car,
+                    &track,
+                    &imported_at,
+                )
+            }) {
+                Ok(()) => result.indexed += 1,
+                Err(error) => result
+                    .errors
+                    .push(format!("could not index {}: {error}", path.display())),
             }
         }
     }
@@ -754,6 +996,7 @@ fn safe_directory_name(path: &Path) -> Option<String> {
 
 fn index_existing_file(
     store: &mut MetadataStore,
+    simulator_id: &str,
     path: &Path,
     car: &str,
     track: &str,
@@ -767,11 +1010,11 @@ fn index_existing_file(
         .map(|value| value.to_string_lossy().into_owned())
         .ok_or_else(|| format!("setup has no file name: {}", path.display()))?;
     let content_sha256: [u8; 32] = Sha256::digest(&contents).into();
-    let id = setup_id(ASSETTO_CORSA_ID, path);
+    let id = setup_id(simulator_id, path);
     store
         .save_setup_import(&NewSetupImport {
             id,
-            simulator_key: ASSETTO_CORSA_ID.into(),
+            simulator_key: simulator_id.into(),
             source_car_id: car.into(),
             source_track_id: track.into(),
             layout_id: None,
@@ -1166,6 +1409,59 @@ mod tests {
                 .as_deref()
                 .is_some_and(|error| error.contains("does not match"))
         );
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn imports_lmu_setup_into_track_settings_folder() {
+        let root = test_directory();
+        let input = root.join("race.svm");
+        let settings = root.join("Settings");
+        fs::write(
+            &input,
+            b"VehicleClassSetting=\"ELMS2025 LMP3 Ligier_JS_P325\"\n//VEH=C:\\LMU\\Installed\\Vehicles\\Ligier_JSP325_2025\\1.09\\car.VEH\n[GENERAL]\nFuelSetting=50\n",
+        )
+        .expect("write LMU setup");
+
+        let imported = import_lmu_setup_file(&input, &settings, None, "Monza", false);
+
+        assert!(imported.success, "{:?}", imported.error);
+        assert_eq!(imported.car.as_deref(), Some("Ligier_JSP325_2025"));
+        assert_eq!(imported.track.as_deref(), Some("Monza"));
+        assert!(settings.join("Monza/race.svm").is_file());
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn attaching_existing_lmu_setup_keeps_its_simulator_track_folder() {
+        let root = test_directory();
+        let settings = root.join("Settings");
+        let spa = settings.join("Spa");
+        fs::create_dir_all(&spa).expect("create track folder");
+        let input = spa.join("race.svm");
+        fs::write(
+            &input,
+            b"VehicleClassSetting=\"ELMS2025 LMP3 Duqueine_D09\"\n[GENERAL]\nFuelSetting=50\n",
+        )
+        .expect("write LMU setup");
+
+        let imported = import_lmu_setup_file(
+            &input,
+            &settings,
+            Some("Duqueine D09 P3"),
+            "Circuit de Spa-Francorchamps",
+            false,
+        );
+
+        assert!(imported.success, "{:?}", imported.error);
+        assert_eq!(imported.car.as_deref(), Some("Duqueine D09 P3"));
+        assert_eq!(
+            imported.track.as_deref(),
+            Some("Circuit de Spa-Francorchamps")
+        );
+        let spa_string = spa.to_string_lossy().into_owned();
+        assert_eq!(imported.destination.as_deref(), Some(spa_string.as_str()));
+        assert_eq!(imported.skipped, vec!["race.svm"]);
         fs::remove_dir_all(root).expect("remove test directory");
     }
 
