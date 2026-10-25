@@ -12,6 +12,45 @@ export interface TrackMapAsset {
 	rightBoundary: TrackMapPoint[];
 }
 
+const inferredTrackHalfWidthM = 5.5;
+const maximumInferredTrackPoints = 2_000;
+
+function inferredTrackMap(samples: LapComparisonSample[], comparison: boolean): TrackMapAsset | null {
+	const positions = (xKey: "referencePositionXM" | "comparisonPositionXM", zKey: "referencePositionZM" | "comparisonPositionZM") =>
+		samples.flatMap((sample) => {
+			const xM = sample[xKey];
+			const zM = sample[zKey];
+			return xM == null || zM == null || !Number.isFinite(xM) || !Number.isFinite(zM) ? [] : [{ xM, zM }];
+		});
+	const reference = positions("referencePositionXM", "referencePositionZM");
+	const source = reference.length >= 3 || !comparison ? reference : positions("comparisonPositionXM", "comparisonPositionZM");
+	const stride = Math.max(1, Math.ceil(source.length / maximumInferredTrackPoints));
+	const centreLine = source.filter((point, index) => {
+		if (index % stride !== 0 && index !== source.length - 1) return false;
+		const previous = source[Math.max(0, index - stride)];
+		return index === 0 || Math.hypot(point.xM - previous.xM, point.zM - previous.zM) >= 0.25;
+	});
+	if (centreLine.length < 3) return null;
+	const xs = centreLine.map((point) => point.xM);
+	const zs = centreLine.map((point) => point.zM);
+	const diagonal = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+	const endpointDistance = Math.hypot(centreLine[0].xM - centreLine.at(-1)!.xM, centreLine[0].zM - centreLine.at(-1)!.zM);
+	const closed = endpointDistance <= Math.max(15, diagonal * 0.04);
+	const boundary = (side: -1 | 1) =>
+		centreLine.map((point, index) => {
+			const previous = centreLine[index === 0 ? (closed ? centreLine.length - 1 : 0) : index - 1];
+			const next = centreLine[index === centreLine.length - 1 ? (closed ? 0 : centreLine.length - 1) : index + 1];
+			const dx = next.xM - previous.xM;
+			const dz = next.zM - previous.zM;
+			const magnitude = Math.max(Math.hypot(dx, dz), 0.001);
+			return {
+				xM: point.xM + side * (-dz / magnitude) * inferredTrackHalfWidthM,
+				zM: point.zM + side * (dx / magnitude) * inferredTrackHalfWidthM,
+			};
+		});
+	return { centreLine, leftBoundary: boundary(-1), rightBoundary: boundary(1) };
+}
+
 export interface CornerAnalysis {
 	index: number;
 	label: string;
@@ -342,7 +381,10 @@ export function TrackMap({
 				FOR THIS LAP
 			</div>
 		);
-	const geometryPoints = trackMap ? [...trackMap.leftBoundary, ...trackMap.rightBoundary].map((point) => [point.xM, point.zM] as const) : [];
+	const displayTrackMap = trackMap ?? inferredTrackMap(samples, comparison);
+	const geometryPoints = displayTrackMap
+		? [...displayTrackMap.leftBoundary, ...displayTrackMap.rightBoundary].map((point) => [point.xM, point.zM] as const)
+		: [];
 	const points = focusSelection && drivenPoints.length > 1 ? drivenPoints : geometryPoints.length > 3 ? geometryPoints : drivenPoints;
 	const xs = points.map(([x]) => x);
 	const zs = points.map(([, z]) => z);
@@ -443,11 +485,11 @@ export function TrackMap({
 			const z = sample[zKey];
 			return x == null || z == null || !Number.isFinite(x) || !Number.isFinite(z) ? [] : [project(x, z)];
 		});
-	const obstructionSegments = trackMap
+	const obstructionSegments = displayTrackMap
 		? [
-				...lineSegments(projectedGeometry(trackMap.leftBoundary)),
-				...lineSegments(projectedGeometry(trackMap.rightBoundary)),
-				...lineSegments(projectedGeometry(trackMap.centreLine)),
+				...lineSegments(projectedGeometry(displayTrackMap.leftBoundary)),
+				...lineSegments(projectedGeometry(displayTrackMap.rightBoundary)),
+				...lineSegments(projectedGeometry(displayTrackMap.centreLine)),
 			]
 		: [
 				...lineSegments(projectedSamples("referencePositionXM", "referencePositionZM")),
@@ -466,20 +508,20 @@ export function TrackMap({
 	const labelIsSafe = (point: readonly [number, number]) =>
 		point[0] >= 20 && point[0] <= width - 20 && point[1] >= 20 && point[1] <= height - 20 && labelClearance(point) >= 20;
 	const cornerLabelPoint = (x: number, z: number) => {
-		if (trackMap && trackMap.centreLine.length > 0) {
-			const nearestIndex = trackMap.centreLine.reduce((nearest, point, index) => {
-				const nearestPoint = trackMap.centreLine[nearest];
+		if (displayTrackMap && displayTrackMap.centreLine.length > 0) {
+			const nearestIndex = displayTrackMap.centreLine.reduce((nearest, point, index) => {
+				const nearestPoint = displayTrackMap.centreLine[nearest];
 				const distance = (point.xM - x) ** 2 + (point.zM - z) ** 2;
 				const nearestDistance = (nearestPoint.xM - x) ** 2 + (nearestPoint.zM - z) ** 2;
 				return distance < nearestDistance ? index : nearest;
 			}, 0);
-			const centrePoint = trackMap.centreLine[nearestIndex];
+			const centrePoint = displayTrackMap.centreLine[nearestIndex];
 			const nearestBoundary = (boundary: TrackMapAsset["centreLine"]) =>
 				boundary.reduce(
 					(nearest, point) => ((point.xM - x) ** 2 + (point.zM - z) ** 2 < (nearest.xM - x) ** 2 + (nearest.zM - z) ** 2 ? point : nearest),
 					boundary[0],
 				);
-			const boundaries = [trackMap.leftBoundary, trackMap.rightBoundary].filter((boundary) => boundary.length > 0).map(nearestBoundary);
+			const boundaries = [displayTrackMap.leftBoundary, displayTrackMap.rightBoundary].filter((boundary) => boundary.length > 0).map(nearestBoundary);
 			if (centrePoint && boundaries.length > 0) {
 				const centre = project(centrePoint.xM, centrePoint.zM);
 				const directions = boundaries.map((boundary) => {
@@ -536,7 +578,7 @@ export function TrackMap({
 			return x == null || z == null ? [] : [{ corner, driver, point: project(x, z) }];
 		});
 	});
-	const road = trackMap ? geometryPath([...trackMap.leftBoundary, ...[...trackMap.rightBoundary].reverse()], true) : "";
+	const road = displayTrackMap ? geometryPath([...displayTrackMap.leftBoundary, ...[...displayTrackMap.rightBoundary].reverse()], true) : "";
 	const cursor = cursorIndex == null ? null : (samples[cursorIndex] ?? null);
 	const comparisonCursorSample =
 		comparison && cursor?.referenceElapsedSeconds != null
@@ -739,28 +781,28 @@ export function TrackMap({
 				<g
 					transform={`translate(${renderedPan.x} ${renderedPan.y}) translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}
 				>
-					{trackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
-					{trackMap && (
+					{displayTrackMap && <path d={road} fill="var(--color-trace-deep)" stroke="none" />}
+					{displayTrackMap && (
 						<path
-							d={geometryPath(trackMap.leftBoundary)}
+							d={geometryPath(displayTrackMap.leftBoundary)}
 							fill="none"
 							stroke="var(--color-trace-soft)"
 							strokeWidth="1.5"
 							vectorEffect="non-scaling-stroke"
 						/>
 					)}
-					{trackMap && (
+					{displayTrackMap && (
 						<path
-							d={geometryPath(trackMap.rightBoundary)}
+							d={geometryPath(displayTrackMap.rightBoundary)}
 							fill="none"
 							stroke="var(--color-trace-soft)"
 							strokeWidth="1.5"
 							vectorEffect="non-scaling-stroke"
 						/>
 					)}
-					{trackMap && (
+					{displayTrackMap && (
 						<path
-							d={geometryPath(trackMap.centreLine)}
+							d={geometryPath(displayTrackMap.centreLine)}
 							fill="none"
 							stroke="var(--color-trace-divider)"
 							strokeWidth="1"
