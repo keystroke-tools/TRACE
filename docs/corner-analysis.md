@@ -1,6 +1,6 @@
 # Corner analysis
 
-Status: Implemented. Corner detection algorithm version 3.
+Status: Implemented. Corner detection algorithm version 5.
 
 TRACE detects corners and explains time loss with deterministic distance-domain
 analysis. The implementation lives in `trace-core`; it has no simulator, storage,
@@ -15,7 +15,8 @@ second operand for compatibility; in the equations below it means the Analysed L
 
 The comparison command first aligns both laps onto the existing 5 m distance grid.
 Corner analysis consumes lap distance, cumulative comparison delta, speed, brake,
-throttle, steering input, and world X/Z position where available.
+throttle, steering input, world X/Z position, and per-wheel tyre slip angle and load
+where available.
 
 Speed plus at least one direction/braking signal is required. When those channels are
 missing, the structured result reports unsupported channels. Short or invalid distance
@@ -109,8 +110,32 @@ when all four boundary deltas are available, the phase values sum exactly to tot
 corner loss. Tests assert this invariant.
 
 The result also retains both laps' braking points, release points, peak brake pressure,
-minimum speeds, and throttle-pickup points. The UI may describe these measured
+minimum speeds, throttle-pickup points, and available balance estimates. The UI may describe these measured
 differences but must not infer that one input difference caused the complete time loss.
+
+## Corner balance estimate
+
+When all four wheels expose tyre slip angle, TRACE forms load-weighted front- and
+rear-axle slip magnitudes on the comparison grid. Samples below 30 km/h, below three
+degrees of steering, or with invalid values are excluded. At least three usable samples
+are required within a corner.
+
+The signed balance index is:
+
+```text
+(rear axle slip - front axle slip) / (rear axle slip + front axle slip)
+```
+
+TRACE reports estimated oversteer only when rear slip exceeds front slip by at least
+0.5 degrees and the index is at least `0.12`. The inverse thresholds report estimated
+understeer; values between them are neutral. These deadbands prevent tiny sensor and
+interpolation differences from becoming driver-facing labels. Expanded Breakdown rows
+show the Reference and Analysed estimates plus their mean front/rear slip angles.
+
+This is a tyre-behaviour estimate, not proof of cause. Kerbs, lockups, wheelspin,
+surface changes, damage, setup, fuel, and tyre state can all affect the signal. TRACE
+therefore omits it when the channels are unavailable and explicitly labels it as an
+estimate.
 
 ## Desktop presentation
 
@@ -151,11 +176,12 @@ indices, eligible-corner count, average measured difference, unit, source channe
 comparison context. This makes the UI wording auditable and keeps future consumers from
 having to parse display text.
 
-TRACE deliberately does **not** claim that a lap or car is understeering. Steering input
-alone cannot establish understeer: that requires trustworthy vehicle-response evidence
-such as yaw rate, lateral acceleration, slip angle, speed, and track curvature, plus
-validation across simulators and cars. Until that evidence is implemented and tested,
-an understeer label would be more confident than the telemetry permits.
+TRACE does not infer balance from steering input alone. It only presents a corner-level
+estimate when direct per-wheel slip-angle data is available. A future driving-style
+summary may aggregate repeated balance, braking, steering-correction, and throttle
+patterns across multiple comparable laps. Recommendations must additionally account for
+car, setup, tyres, fuel, and conditions, and must retain the evidence and uncertainty
+behind every suggestion; one corner or one lap is not enough to define a driver.
 
 Track maps draw recorded brake applications over the driving line in red. Segment
 opacity follows recorded brake percentage, producing a brake-intensity gradient rather
@@ -194,6 +220,7 @@ Synthetic core tests cover:
 - a continuously steered range splitting into two corners at a meaningful speed
   recovery, with both braking zones retained;
 - missing corner signals and invalid distance ordering.
+- neutral and understeer classifications from synthetic axle-slip data.
 
 ## Current limitations
 
@@ -212,7 +239,8 @@ Synthetic core tests cover:
   not claim driver or setup causality.
 
 Future revisions must increment the algorithm identity when thresholds or boundary
-semantics change so cached results remain attributable. Version 4 selects the strongest
+semantics change so cached results remain attributable. Version 5 adds conservative,
+channel-gated axle-slip balance estimates. Version 4 selects the strongest
 credible braking event and uses the earlier event as a tie-break, preventing a later
 correction from replacing the main braking zone. Version 3 splits continuously active
 ranges at meaningful speed recoveries, constrains compound-corner apex selection, and

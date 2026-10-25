@@ -425,11 +425,22 @@ fn map_wheels(page: &Page<'_>, telemetry: usize) -> Result<WheelStates, LmuPageE
     .enumerate()
     {
         let wheel = telemetry + WHEEL_OFFSET + index * WHEEL_SIZE;
+        let lateral_ground_velocity = page.f64(wheel + 64)?;
+        let longitudinal_ground_velocity = page.f64(wheel + 72)?;
+        let tyre_slip_angle_rad = if lateral_ground_velocity.is_finite()
+            && longitudinal_ground_velocity.is_finite()
+            && lateral_ground_velocity.hypot(longitudinal_ground_velocity) >= 1.0
+        {
+            finite_f32(lateral_ground_velocity.atan2(longitudinal_ground_velocity.abs()))
+        } else {
+            None
+        };
         wheels.insert(
             corner,
             WheelState {
                 angular_speed_rad_s: finite_f32(page.f64(wheel + 40)?),
                 tyre_load_n: nonnegative_f32(page.f64(wheel + 104)?),
+                tyre_slip_angle_rad,
                 tyre_pressure_pa: nonnegative_f32(page.f64(wheel + 120)? * 1_000.0),
                 tyre_core_temperature_c: finite_f32(page.f64(wheel + 204)? - 273.15),
                 suspension_travel_m: finite_f32(page.f64(wheel)?),
@@ -710,6 +721,12 @@ mod tests {
         for index in 0..4 {
             let wheel = telemetry + WHEEL_OFFSET + index * WHEEL_SIZE;
             write_f64(&mut bytes, wheel + 40, 62.0);
+            write_f64(
+                &mut bytes,
+                wheel + 64,
+                1.5 + f64::from(u32::try_from(index).expect("four wheels")) * 0.25,
+            );
+            write_f64(&mut bytes, wheel + 72, 50.0);
             write_f64(&mut bytes, wheel + 104, 3_200.0);
             write_f64(&mut bytes, wheel + 120, 180.0);
             write_f64(&mut bytes, wheel + 204, 363.15);
@@ -769,6 +786,11 @@ mod tests {
         assert_eq!(
             frame.wheels[&WheelCorner::FrontLeft].tyre_pressure_pa,
             Some(180_000.0)
+        );
+        assert!(
+            frame.wheels[&WheelCorner::FrontLeft]
+                .tyre_slip_angle_rad
+                .is_some_and(|angle| angle > 0.02 && angle < 0.04)
         );
     }
 

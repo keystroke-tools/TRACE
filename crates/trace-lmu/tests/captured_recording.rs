@@ -42,6 +42,7 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
     let mut max_brake = 0.0_f32;
     let mut min_steering = f32::INFINITY;
     let mut max_steering = f32::NEG_INFINITY;
+    let mut tyre_slip_samples = 0_u64;
     let mut session_seed = None;
     let mut frames = Vec::new();
 
@@ -75,6 +76,11 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
             min_steering = min_steering.min(steering);
             max_steering = max_steering.max(steering);
         }
+        tyre_slip_samples += frame
+            .wheels
+            .values()
+            .filter(|wheel| wheel.tyre_slip_angle_rad.is_some())
+            .count() as u64;
         saw_forward |= matches!(frame.vehicle.gear, Some(Gear::Forward(_)));
         saw_neutral |= frame.vehicle.gear == Some(Gear::Neutral);
         let realtime = snapshot.in_realtime().expect("realtime flag");
@@ -93,6 +99,10 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
     assert_eq!(pit_states, BTreeSet::from([0, 1, 5]));
     assert!(saw_realtime && saw_monitor && saw_pits && saw_forward && saw_neutral);
     assert!(max_speed > 75.0 && max_throttle > 0.99 && max_brake > 0.99);
+    assert!(
+        tyre_slip_samples > 1_000,
+        "expected useful LMU tyre slip coverage"
+    );
     assert!(
         min_steering < -0.1 && max_steering > 0.1,
         "steering range was {min_steering}..{max_steering} rad"

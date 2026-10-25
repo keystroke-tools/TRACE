@@ -1211,6 +1211,20 @@ fn compare_session_laps(
         interpolate_channel(comparison_channels.air_temperature.as_ref(), &grid, 1.0)?;
     let comparison_track_temperature =
         interpolate_channel(comparison_channels.track_temperature.as_ref(), &grid, 1.0)?;
+    let reference_tyre_load =
+        interpolate_wheel_channels(&reference_channels.tyre_load, &grid, 1.0)?;
+    let comparison_tyre_load =
+        interpolate_wheel_channels(&comparison_channels.tyre_load, &grid, 1.0)?;
+    let reference_tyre_slip_angle = interpolate_wheel_channels(
+        &reference_channels.tyre_slip_angle,
+        &grid,
+        degrees_per_radian,
+    )?;
+    let comparison_tyre_slip_angle = interpolate_wheel_channels(
+        &comparison_channels.tyre_slip_angle,
+        &grid,
+        degrees_per_radian,
+    )?;
 
     let corner_samples = grid
         .iter()
@@ -1226,6 +1240,30 @@ fn compare_session_laps(
             comparison_brake_percent: comparison_brake[index],
             reference_steering_degrees: reference_steering[index],
             comparison_steering_degrees: comparison_steering[index],
+            reference_front_slip_angle_degrees: axle_slip_angle(
+                &reference_tyre_slip_angle,
+                &reference_tyre_load,
+                index,
+                [0, 1],
+            ),
+            reference_rear_slip_angle_degrees: axle_slip_angle(
+                &reference_tyre_slip_angle,
+                &reference_tyre_load,
+                index,
+                [2, 3],
+            ),
+            comparison_front_slip_angle_degrees: axle_slip_angle(
+                &comparison_tyre_slip_angle,
+                &comparison_tyre_load,
+                index,
+                [0, 1],
+            ),
+            comparison_rear_slip_angle_degrees: axle_slip_angle(
+                &comparison_tyre_slip_angle,
+                &comparison_tyre_load,
+                index,
+                [2, 3],
+            ),
             reference_position_x_m: reference_position_x[index],
             reference_position_z_m: reference_position_z[index],
             comparison_position_x_m: comparison_position_x[index],
@@ -1313,6 +1351,41 @@ fn compare_session_laps(
         driving_analysis,
         samples,
     })
+}
+
+fn axle_slip_angle(
+    slip: &[Vec<Option<f64>>; 4],
+    load: &[Vec<Option<f64>>; 4],
+    sample_index: usize,
+    wheel_indices: [usize; 2],
+) -> Option<f64> {
+    let values = wheel_indices.into_iter().filter_map(|wheel| {
+        let slip = slip[wheel].get(sample_index).copied().flatten()?;
+        slip.is_finite().then_some((
+            slip.abs(),
+            load[wheel]
+                .get(sample_index)
+                .copied()
+                .flatten()
+                .filter(|load| load.is_finite() && *load > 0.0),
+        ))
+    });
+    let collected = values.collect::<Vec<_>>();
+    if collected.is_empty() {
+        return None;
+    }
+    let weighted_load = collected.iter().filter_map(|(_, load)| *load).sum::<f64>();
+    if weighted_load > 0.0 && collected.iter().all(|(_, load)| load.is_some()) {
+        Some(
+            collected
+                .iter()
+                .map(|(slip, load)| slip * load.unwrap_or_default())
+                .sum::<f64>()
+                / weighted_load,
+        )
+    } else {
+        Some(collected.iter().map(|(slip, _)| slip).sum::<f64>() / collected.len() as f64)
+    }
 }
 
 fn sessions_share_track(

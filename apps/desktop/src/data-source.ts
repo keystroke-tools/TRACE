@@ -148,6 +148,16 @@ export interface CornerMetrics {
 	comparisonMinimumSpeedKmh?: number | null;
 	referenceThrottlePointM?: number | null;
 	comparisonThrottlePointM?: number | null;
+	referenceBalance?: CornerBalanceEstimate | null;
+	comparisonBalance?: CornerBalanceEstimate | null;
+}
+
+export interface CornerBalanceEstimate {
+	state: "understeer" | "neutral" | "oversteer";
+	frontSlipAngleDegrees: number;
+	rearSlipAngleDegrees: number;
+	balanceIndex: number;
+	confidence: number;
 }
 
 export interface CornerAnalysis {

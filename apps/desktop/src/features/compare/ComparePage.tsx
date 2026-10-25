@@ -1269,6 +1269,7 @@ function CornerBreakdownRow({ corner, selected, onSelect }: { corner: CornerAnal
 	const [expanded, setExpanded] = useState(false);
 	const dominant = dominantCornerPhase(corner);
 	const hasBrakingMetrics = brakingFacts(corner, "reference") != null || brakingFacts(corner, "comparison") != null;
+	const hasBalanceMetrics = corner.metrics.referenceBalance != null || corner.metrics.comparisonBalance != null;
 	return (
 		<article className={`border-b border-trace-divider ${selected ? "bg-trace-accent-wash outline outline-1 -outline-offset-1 outline-trace-accent" : ""}`}>
 			<div className="flex min-w-0 items-stretch">
@@ -1311,8 +1312,9 @@ function CornerBreakdownRow({ corner, selected, onSelect }: { corner: CornerAnal
 			{expanded && (
 				<div className="border-t border-trace-divider px-4 pb-3">
 					<CornerBrakingMetrics corner={corner} />
+					<CornerBalanceMetrics corner={corner} />
 					<div
-						className={`grid grid-cols-3 gap-3 ${hasBrakingMetrics ? "mt-3 border-t border-trace-divider pt-2" : "pt-3"}`}
+						className={`grid grid-cols-3 gap-3 ${hasBrakingMetrics || hasBalanceMetrics ? "mt-3 border-t border-trace-divider pt-2" : "pt-3"}`}
 						aria-label={`${corner.label} time difference by phase`}
 					>
 						{corner.phases.map((phase) => (
@@ -1332,6 +1334,46 @@ function CornerBreakdownRow({ corner, selected, onSelect }: { corner: CornerAnal
 			)}
 		</article>
 	);
+}
+
+function CornerBalanceMetrics({ corner }: { corner: CornerAnalysis }) {
+	const reference = corner.metrics.referenceBalance;
+	const analysed = corner.metrics.comparisonBalance;
+	if (!reference && !analysed) return null;
+	return (
+		<div className="mt-3 border-t border-trace-divider pt-3">
+			<span className="block font-mono text-[9px] font-bold tracking-[.06em] text-trace-dim">BALANCE ESTIMATE</span>
+			<div className="mt-2 grid grid-cols-2 gap-2">
+				{[
+					{ label: "REFERENCE", value: reference, colour: "text-trace-purple" },
+					{ label: "ANALYSED", value: analysed, colour: "text-trace-accent" },
+				].map(({ label, value, colour }) => (
+					<div className="min-w-0" key={label}>
+						<span className={`block font-mono text-[9px] font-bold tracking-[.06em] ${colour}`}>{label}</span>
+						<strong className={`mt-1 block text-[11px] font-bold leading-4 ${balanceColour(value?.state)}`}>
+							{value ? balanceLabel(value.state) : "Unavailable"}
+						</strong>
+						{value && (
+							<span className="mt-0.5 block font-mono text-[9px] tabular-nums text-trace-muted">
+								F {value.frontSlipAngleDegrees.toFixed(1)}° · R {value.rearSlipAngleDegrees.toFixed(1)}°
+							</span>
+						)}
+					</div>
+				))}
+			</div>
+			<p className="mt-2 text-[9px] leading-3 text-trace-dim">Estimated from load-weighted tyre slip; verify against the traces.</p>
+		</div>
+	);
+}
+
+function balanceLabel(state: "understeer" | "neutral" | "oversteer") {
+	return state === "understeer" ? "Understeer" : state === "oversteer" ? "Oversteer" : "Neutral";
+}
+
+function balanceColour(state: "understeer" | "neutral" | "oversteer" | undefined) {
+	if (state === "understeer") return "text-[#f5b942]";
+	if (state === "oversteer") return "text-[#ff6b76]";
+	return "text-trace-soft";
 }
 
 function DrivingObservationRow({ observation }: { observation: DrivingObservation }) {

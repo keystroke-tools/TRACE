@@ -28,13 +28,13 @@ Every decoder read is bounds checked. Raw mapped pointers remain inside
 
 ## Windows objects and synchronization
 
-| Object                         | Purpose                                      |
-| ------------------------------ | -------------------------------------------- |
-| `LMU_Data`                     | 324,824-byte shared data mapping             |
-| `LMU_SharedMemoryLockData`     | Shared `{ waiters, busy }` lock state        |
-| `LMU_SharedMemoryLockEvent`    | Wakes consumers waiting on the shared lock   |
-| `LMU_Data_HoldEvent`           | Signals the start of an update cycle         |
-| `LMU_Data_DataEvent`           | Signals that the next update is ready        |
+| Object                      | Purpose                                    |
+| --------------------------- | ------------------------------------------ |
+| `LMU_Data`                  | 324,824-byte shared data mapping           |
+| `LMU_SharedMemoryLockData`  | Shared `{ waiters, busy }` lock state      |
+| `LMU_SharedMemoryLockEvent` | Wakes consumers waiting on the shared lock |
+| `LMU_Data_HoldEvent`        | Signals the start of an update cycle       |
+| `LMU_Data_DataEvent`        | Signals that the next update is ready      |
 
 TRACE opens the data and lock objects created by LMU and makes a bounded spin-lock
 attempt before copying the complete mapping into owned memory. It always releases the
@@ -49,14 +49,14 @@ for a future event-driven acquisition mode.
 The current decoder supports the SDK's V01 structures with `#pragma pack(4)` on
 64-bit Windows:
 
-| Structure / region              | Size or mapping offset |
-| ------------------------------- | ---------------------- |
-| `SharedMemoryObjectOut`         | 324,824 bytes          |
-| scoring region                  | byte 1,632             |
-| player scoring record           | 584 bytes              |
-| telemetry region                | byte 128,464           |
-| player telemetry record         | 1,888 bytes            |
-| maximum vehicles                | 104                    |
+| Structure / region      | Size or mapping offset |
+| ----------------------- | ---------------------- |
+| `SharedMemoryObjectOut` | 324,824 bytes          |
+| scoring region          | byte 1,632             |
+| player scoring record   | 584 bytes              |
+| telemetry region        | byte 128,464           |
+| player telemetry record | 1,888 bytes            |
+| maximum vehicles        | 104                    |
 
 LMU identifies the player separately in telemetry and scoring. TRACE validates both
 vehicle counts, checks the telemetry player index, then matches the scoring record by
@@ -64,22 +64,22 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 
 ## Canonical data mapped now
 
-| TRACE data                        | LMU source                                                         |
-| --------------------------------- | ------------------------------------------------------------------ |
-| track, vehicle, driver            | scoring and player telemetry identity                              |
-| session type                      | test day, practice, qualifying, warmup, or race                    |
-| lap count and normalized position | scoring lap count/distance plus reported track length              |
-| current lap and sector timing     | elapsed/lap-start time plus current and last scoring splits         |
-| lap validity                      | authoritative `lap invalidated` flag                               |
-| track-limit progression           | simulator track-limit steps                                        |
-| throttle, brake, clutch           | normalized player inputs                                           |
-| steering angle                    | normalized input × physical range, falling back to visual range    |
-| speed, RPM, gear, fuel            | player telemetry                                                   |
-| position, velocity, acceleration  | player world/vehicle vectors                                       |
-| tyres                             | angular speed, load, pressure, carcass temperature, suspension     |
-| conditions                        | ambient and track temperature                                      |
-| pit state                         | scoring pit flags/state                                            |
-| additional native values          | fuel capacity, best-lap delta, brake bias, steering ranges          |
+| TRACE data                        | LMU source                                                                 |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| track, vehicle, driver            | scoring and player telemetry identity                                      |
+| session type                      | test day, practice, qualifying, warmup, or race                            |
+| lap count and normalized position | scoring lap count/distance plus reported track length                      |
+| current lap and sector timing     | elapsed/lap-start time plus current and last scoring splits                |
+| lap validity                      | authoritative `lap invalidated` flag                                       |
+| track-limit progression           | simulator track-limit steps                                                |
+| throttle, brake, clutch           | normalized player inputs                                                   |
+| steering angle                    | normalized input × physical range, falling back to visual range            |
+| speed, RPM, gear, fuel            | player telemetry                                                           |
+| position, velocity, acceleration  | player world/vehicle vectors                                               |
+| tyres                             | angular speed, slip angle, load, pressure, carcass temperature, suspension |
+| conditions                        | ambient and track temperature                                              |
+| pit state                         | scoring pit flags/state                                                    |
+| additional native values          | fuel capacity, best-lap delta, brake bias, steering ranges                 |
 
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
 Its SDK world coordinates are left-handed with Y pointing up. The adapter reflects
@@ -94,6 +94,12 @@ so the recorder holds a pending crossing until its authoritative duration is ava
 At the finish line, it derives sector three from the last lap and cumulative sector-two
 values. A completed lap with an observed false invalidation flag is stored as valid;
 sources without an authoritative validity channel remain unknown.
+
+Tyre slip angle is derived from LMU's lateral and longitudinal ground-contact velocity
+for each wheel and stored in TRACE's canonical wheel channel. Values below 1 m/s contact
+speed are omitted because their direction is unstable. This enables the rule-based
+corner balance estimate while preserving the underlying per-wheel signal for future
+analysis.
 
 In multiclass races, LMU can switch the global game phase to session-over when the
 overall winner finishes while the player is still completing a final lap. TRACE keeps

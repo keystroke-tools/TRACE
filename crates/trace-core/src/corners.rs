@@ -8,7 +8,7 @@ use crate::analysis::{
     Derivation, MetricEvidence, UncertaintyReason,
 };
 
-const ALGORITHM_VERSION: u32 = 4;
+const ALGORITHM_VERSION: u32 = 5;
 const MINIMUM_SAMPLES: usize = 12;
 const BRAKE_ACTIVE_PERCENT: f64 = 5.0;
 const STEERING_ACTIVE_DEGREES: f64 = 5.0;
@@ -43,10 +43,35 @@ pub struct CornerComparisonSample {
     pub comparison_brake_percent: Option<f64>,
     pub reference_steering_degrees: Option<f64>,
     pub comparison_steering_degrees: Option<f64>,
+    pub reference_front_slip_angle_degrees: Option<f64>,
+    pub reference_rear_slip_angle_degrees: Option<f64>,
+    pub comparison_front_slip_angle_degrees: Option<f64>,
+    pub comparison_rear_slip_angle_degrees: Option<f64>,
     pub reference_position_x_m: Option<f64>,
     pub reference_position_z_m: Option<f64>,
     pub comparison_position_x_m: Option<f64>,
     pub comparison_position_z_m: Option<f64>,
+}
+
+/// A conservative tyre-slip estimate of the car's balance through a corner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerBalanceState {
+    Understeer,
+    Neutral,
+    Oversteer,
+}
+
+/// Axle slip values and the resulting balance classification.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CornerBalanceEstimate {
+    pub state: CornerBalanceState,
+    pub front_slip_angle_degrees: f64,
+    pub rear_slip_angle_degrees: f64,
+    /// Signed, normalized rear-minus-front slip. Positive indicates oversteer.
+    pub balance_index: f64,
+    pub confidence: f32,
 }
 
 /// The telemetry-defined part of a corner.
@@ -83,6 +108,8 @@ pub struct CornerMetrics {
     pub comparison_minimum_speed_kmh: Option<f64>,
     pub reference_throttle_point_m: Option<f64>,
     pub comparison_throttle_point_m: Option<f64>,
+    pub reference_balance: Option<CornerBalanceEstimate>,
+    pub comparison_balance: Option<CornerBalanceEstimate>,
 }
 
 /// Stable distance range and deterministic comparison for one detected corner.
@@ -159,7 +186,7 @@ pub fn analyze_corner_comparison(
         .any(|sample| sample.reference_steering_degrees.is_some());
     let has_path = samples
         .iter()
-        .any(|sample| reference_position(*sample).is_some());
+        .any(|sample| reference_position(sample).is_some());
     if !has_brake && !has_steering && !has_path {
         let channels = vec![
             channel("inputs.brake"),
@@ -473,6 +500,8 @@ fn build_corner(
                 METRIC_THROTTLE_PERCENT,
             )
         }),
+        reference_balance: corner_balance(samples, start, end, true),
+        comparison_balance: corner_balance(samples, start, end, false),
     };
     let index = u32::try_from(zero_based_index + 1).ok()?;
     Some(CornerAnalysis {
@@ -484,6 +513,63 @@ fn build_corner(
         total_loss_seconds,
         phases,
         metrics,
+    })
+}
+
+fn corner_balance(
+    samples: &[CornerComparisonSample],
+    start: usize,
+    end: usize,
+    reference: bool,
+) -> Option<CornerBalanceEstimate> {
+    let values = samples[start..=end]
+        .iter()
+        .filter_map(|sample| {
+            let (speed, steering, front, rear) = if reference {
+                (
+                    sample.reference_speed_kmh,
+                    sample.reference_steering_degrees,
+                    sample.reference_front_slip_angle_degrees,
+                    sample.reference_rear_slip_angle_degrees,
+                )
+            } else {
+                (
+                    sample.comparison_speed_kmh,
+                    sample.comparison_steering_degrees,
+                    sample.comparison_front_slip_angle_degrees,
+                    sample.comparison_rear_slip_angle_degrees,
+                )
+            };
+            let (speed, steering, front, rear) = (speed?, steering?, front?, rear?);
+            (speed >= 30.0 && steering.abs() >= 3.0 && front.is_finite() && rear.is_finite())
+                .then_some((front.abs(), rear.abs()))
+        })
+        .collect::<Vec<_>>();
+    if values.len() < 3 {
+        return None;
+    }
+    let sample_count = u16::try_from(values.len()).unwrap_or(u16::MAX);
+    let count = f64::from(sample_count);
+    let front = values.iter().map(|(front, _)| front).sum::<f64>() / count;
+    let rear = values.iter().map(|(_, rear)| rear).sum::<f64>() / count;
+    if front + rear < 0.5 {
+        return None;
+    }
+    let balance_index = (rear - front) / (rear + front).max(0.1);
+    let difference = rear - front;
+    let state = if difference >= 0.5 && balance_index >= 0.12 {
+        CornerBalanceState::Oversteer
+    } else if difference <= -0.5 && balance_index <= -0.12 {
+        CornerBalanceState::Understeer
+    } else {
+        CornerBalanceState::Neutral
+    };
+    Some(CornerBalanceEstimate {
+        state,
+        front_slip_angle_degrees: front,
+        rear_slip_angle_degrees: rear,
+        balance_index,
+        confidence: (f32::from(sample_count) / 8.0).clamp(0.35, 0.85),
     })
 }
 
@@ -628,9 +714,9 @@ fn path_turn_angle(samples: &[CornerComparisonSample], index: usize) -> Option<f
     if index < STRIDE || index + STRIDE >= samples.len() {
         return None;
     }
-    let before = reference_position(samples[index - STRIDE])?;
-    let centre = reference_position(samples[index])?;
-    let after = reference_position(samples[index + STRIDE])?;
+    let before = reference_position(&samples[index - STRIDE])?;
+    let centre = reference_position(&samples[index])?;
+    let after = reference_position(&samples[index + STRIDE])?;
     let incoming = (centre.0 - before.0, centre.1 - before.1);
     let outgoing = (after.0 - centre.0, after.1 - centre.1);
     let incoming_length = incoming.0.hypot(incoming.1);
@@ -643,7 +729,7 @@ fn path_turn_angle(samples: &[CornerComparisonSample], index: usize) -> Option<f
     Some(cross.atan2(dot))
 }
 
-fn reference_position(sample: CornerComparisonSample) -> Option<(f64, f64)> {
+fn reference_position(sample: &CornerComparisonSample) -> Option<(f64, f64)> {
     sample
         .reference_position_x_m
         .zip(sample.reference_position_z_m)
@@ -710,6 +796,10 @@ mod tests {
                     }),
                     reference_steering_degrees: Some(if in_corner { 25.0 } else { 0.0 }),
                     comparison_steering_degrees: Some(if in_corner { 27.0 } else { 0.0 }),
+                    reference_front_slip_angle_degrees: None,
+                    reference_rear_slip_angle_degrees: None,
+                    comparison_front_slip_angle_degrees: None,
+                    comparison_rear_slip_angle_degrees: None,
                     reference_position_x_m: Some(angle.cos() * 100.0),
                     reference_position_z_m: Some(angle.sin() * 100.0),
                     comparison_position_x_m: Some(angle.cos() * 101.0),
@@ -722,7 +812,7 @@ mod tests {
     #[test]
     fn detects_a_corner_and_keeps_phase_losses_coherent() {
         let result = analyze_corner_comparison(&synthetic_corner(), context());
-        assert_eq!(result.algorithm.version, 4);
+        assert_eq!(result.algorithm.version, 5);
         assert_eq!(result.availability, AnalysisAvailability::Available);
         let value = result.value.expect("available analysis");
         assert_eq!(value.corners.len(), 1);
@@ -742,6 +832,38 @@ mod tests {
         assert_eq!(corner.metrics.comparison_peak_brake_percent, Some(75.0));
         assert_eq!(corner.metrics.reference_throttle_point_m, Some(110.0));
         assert_eq!(corner.metrics.comparison_throttle_point_m, Some(125.0));
+    }
+
+    #[test]
+    fn estimates_corner_balance_from_front_and_rear_slip_angles() {
+        let mut samples = synthetic_corner();
+        for (index, sample) in samples.iter_mut().enumerate() {
+            if (10..=30).contains(&index) {
+                sample.reference_front_slip_angle_degrees = Some(4.0);
+                sample.reference_rear_slip_angle_degrees = Some(4.1);
+                sample.comparison_front_slip_angle_degrees = Some(7.0);
+                sample.comparison_rear_slip_angle_degrees = Some(3.0);
+            }
+        }
+        let corner = analyze_corner_comparison(&samples, context())
+            .value
+            .expect("available analysis")
+            .corners
+            .remove(0);
+        assert_eq!(
+            corner
+                .metrics
+                .reference_balance
+                .expect("reference balance")
+                .state,
+            CornerBalanceState::Neutral
+        );
+        let comparison = corner
+            .metrics
+            .comparison_balance
+            .expect("comparison balance");
+        assert_eq!(comparison.state, CornerBalanceState::Understeer);
+        assert!(comparison.balance_index < -0.3);
     }
 
     #[test]
@@ -864,6 +986,10 @@ mod tests {
                     } else {
                         0.0
                     }),
+                    reference_front_slip_angle_degrees: None,
+                    reference_rear_slip_angle_degrees: None,
+                    comparison_front_slip_angle_degrees: None,
+                    comparison_rear_slip_angle_degrees: None,
                     reference_position_x_m: None,
                     reference_position_z_m: None,
                     comparison_position_x_m: None,
@@ -945,6 +1071,10 @@ mod tests {
                     } else {
                         0.0
                     }),
+                    reference_front_slip_angle_degrees: None,
+                    reference_rear_slip_angle_degrees: None,
+                    comparison_front_slip_angle_degrees: None,
+                    comparison_rear_slip_angle_degrees: None,
                     reference_position_x_m: None,
                     reference_position_z_m: None,
                     comparison_position_x_m: None,

@@ -545,6 +545,8 @@ mod tests {
                 comparison_minimum_speed_kmh: Some(96.0),
                 reference_throttle_point_m: Some(start + 120.0),
                 comparison_throttle_point_m: Some(start + 120.0 + throttle_difference),
+                reference_balance: None,
+                comparison_balance: None,
             },
         }
     }
