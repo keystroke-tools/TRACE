@@ -199,7 +199,10 @@ export function SessionDetail({
 			showToast({
 				kind: "success",
 				title: "Setup attached",
-				message: "The setup is marked as used and will be included in .trace exports.",
+				message:
+					session.simulatorId === "le-mans-ultimate"
+						? "Marked as used. TRACE can now suggest other indexed setups for this LMU car and track."
+						: "The setup is marked as used and will be included in .trace exports.",
 				timeoutMs: 6_000,
 			});
 		} catch (error) {
@@ -436,6 +439,7 @@ export function SessionDetail({
 			)}
 
 			<CompatibleSetupsDock
+				simulatorId={session.simulatorId}
 				setups={compatibleSetups}
 				state={setupsState}
 				confirmedSetup={confirmedSetup}
@@ -667,6 +671,7 @@ function formatBroadcastDuration(nanoseconds: number) {
 }
 
 function CompatibleSetupsDock({
+	simulatorId,
 	setups,
 	state,
 	confirmedSetup,
@@ -680,6 +685,7 @@ function CompatibleSetupsDock({
 	onAttach,
 	onCloseComparison,
 }: {
+	simulatorId: string;
 	setups: CompatibleSetup[];
 	state: "loading" | "ready" | "error";
 	confirmedSetup: CompatibleSetup | null;
@@ -750,7 +756,7 @@ function CompatibleSetupsDock({
 							<div className="min-w-0">
 								<strong className="font-mono text-[11px] tracking-[.08em] text-white">SETUPS FOR THIS SESSION</strong>
 								<p className="mt-1 text-[11px] leading-4 text-trace-dim">
-									Exact simulator, car, track, and layout matches. Only mark one as used when you know it was loaded.
+									Exact or user-confirmed simulator identities. Only mark one as used when you know it was loaded.
 								</p>
 							</div>
 							<div className="flex shrink-0 items-center gap-2">
@@ -832,7 +838,9 @@ function CompatibleSetupsDock({
 								</div>
 							) : state === "ready" ? (
 								<p className="px-5 py-6 text-[11px] leading-5 text-trace-dim">
-									No imported setup matches this session. Import one from the Setups page and it will appear here.
+									{simulatorId === "le-mans-ultimate"
+										? "No LMU setup is linked to this car and track yet. Attach one from LMU's Settings folder to confirm the match and find related setups."
+										: "No imported setup matches this session. Import one from the Setups page and it will appear here."}
 								</p>
 							) : state === "error" ? (
 								<p className="px-5 py-6 text-[11px] leading-5 text-trace-warning">TRACE could not read the local setup library.</p>
