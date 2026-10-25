@@ -16,9 +16,11 @@ use trace_domain::{
 
 mod adapter;
 mod capture;
+mod setup;
 
 pub use adapter::{LmuAdapter, LmuSource, SystemLmuSource};
 pub use capture::{LmuAvailability, LmuCaptureError, LmuSharedMemory};
+pub use setup::{LmuSetupIdentity, parse_setup_identity};
 
 const SHARED_MEMORY_SIZE: usize = 324_824;
 const SCORING_OFFSET: usize = 1_632;
