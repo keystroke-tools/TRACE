@@ -153,7 +153,7 @@ non-AI.
 
 ## Repeated driving observations
 
-TRACE also runs driving-observation algorithm version 1 over the detected corners. It
+TRACE also runs driving-observation algorithm version 2 over the detected corners. It
 does not classify a driver globally or use a learned model. It looks for the same
 measured difference recurring across multiple corners in the selected lap pair:
 
@@ -161,7 +161,9 @@ measured difference recurring across multiple corners in the selected lap pair:
 - minimum speed at least 3 km/h lower;
 - throttle application at least 5 m later;
 - a majority of positive measured time loss accumulating on entry, mid-corner, or exit;
-- more steering-direction reversals above the noise threshold.
+- more steering-direction reversals above the noise threshold;
+- a balance-index difference of at least 0.12 towards front-limited or rear-limited
+  behaviour, when both laps expose trustworthy slip-angle channels.
 
 A pattern needs evidence from at least two corners and at least 40% of the corners where
 that measurement was available. Three or more supporting corners with at least 60%

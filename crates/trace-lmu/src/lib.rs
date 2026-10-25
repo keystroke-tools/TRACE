@@ -481,6 +481,21 @@ fn native_fields(
     float_fields.insert("fuel_capacity_litres".into(), page.f64(telemetry + 608)?);
     float_fields.insert("delta_best_seconds".into(), page.f64(telemetry + 696)?);
     float_fields.insert("rear_brake_bias".into(), page.f64(telemetry + 664)?);
+    for (index, suffix) in ["FL", "FR", "RL", "RR"].into_iter().enumerate() {
+        let wheel = telemetry + WHEEL_OFFSET + index * WHEEL_SIZE;
+        let load = page.f64(wheel + 104)?;
+        if load.is_finite() && load >= 0.0 {
+            float_fields.insert(format!("Tire Load {suffix}"), load);
+        }
+        let lateral = page.f64(wheel + 64)?;
+        let longitudinal = page.f64(wheel + 72)?;
+        if lateral.is_finite() && longitudinal.is_finite() && lateral.hypot(longitudinal) >= 1.0 {
+            float_fields.insert(
+                format!("Tire Slip Angle {suffix}"),
+                lateral.atan2(longitudinal.abs()).to_degrees(),
+            );
+        }
+    }
     Ok((float_fields, integer_fields))
 }
 
@@ -791,6 +806,13 @@ mod tests {
             frame.wheels[&WheelCorner::FrontLeft]
                 .tyre_slip_angle_rad
                 .is_some_and(|angle| angle > 0.02 && angle < 0.04)
+        );
+        assert!(
+            frame
+                .native
+                .as_ref()
+                .and_then(|native| native.float_fields.get("Tire Slip Angle FL"))
+                .is_some_and(|angle| *angle > 1.7 && *angle < 1.8)
         );
     }
 

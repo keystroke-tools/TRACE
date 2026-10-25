@@ -185,7 +185,9 @@ export type DrivingObservationKind =
 	| "entry_loss"
 	| "mid_corner_loss"
 	| "exit_loss"
-	| "more_steering_corrections";
+	| "more_steering_corrections"
+	| "more_understeer"
+	| "more_oversteer";
 
 export interface DrivingObservation {
 	kind: DrivingObservationKind;
@@ -194,7 +196,7 @@ export interface DrivingObservation {
 	cornerIndices: number[];
 	eligibleCornerCount: number;
 	meanDifference: number;
-	unit: "metre" | "kilometres_per_hour" | "second" | "count";
+	unit: "metre" | "kilometres_per_hour" | "second" | "count" | "ratio";
 }
 
 export interface DrivingAnalysis {

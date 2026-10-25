@@ -1706,6 +1706,7 @@ fn extend_projection(
             decoded.source_wheel_slip[corner].extend((0..length).map(|_| None));
         }
     }
+    backfill_lmu_wheel_channels(decoded, batch, start, length, projection_start);
     if decoded.track_length_m.is_none()
         && let Ok(index) = batch.schema().index_of("native_float_fields")
         && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
@@ -1728,6 +1729,112 @@ fn extend_projection(
             .find_map(|row| native_text_value(native, row, "static.track_configuration"));
     }
     Ok(())
+}
+
+fn backfill_lmu_wheel_channels(
+    decoded: &mut TelemetryColumns,
+    batch: &RecordBatch,
+    start: usize,
+    length: usize,
+    projection_start: usize,
+) {
+    let Ok(schema_index) = batch.schema().index_of("native_schema") else {
+        return;
+    };
+    let Ok(payload_index) = batch.schema().index_of("native_payload") else {
+        return;
+    };
+    let Some(schemas) = batch
+        .column(schema_index)
+        .as_any()
+        .downcast_ref::<StringArray>()
+    else {
+        return;
+    };
+    let Some(payloads) = batch
+        .column(payload_index)
+        .as_any()
+        .downcast_ref::<BinaryArray>()
+    else {
+        return;
+    };
+    for offset in 0..length {
+        let source_row = start + offset;
+        if schemas.is_null(source_row)
+            || schemas.value(source_row) != "le-mans-ultimate.shared-memory/v01"
+            || payloads.is_null(source_row)
+        {
+            continue;
+        }
+        let Some(wheels) = lmu_native_wheel_channels(payloads.value(source_row)) else {
+            continue;
+        };
+        let projected_row = projection_start + offset;
+        for (corner, (load, slip_angle)) in wheels.into_iter().enumerate() {
+            if decoded.tyre_load_n[corner][projected_row].is_none() {
+                decoded.tyre_load_n[corner][projected_row] = load;
+            }
+            if decoded.tyre_slip_angle_rad[corner][projected_row].is_none() {
+                decoded.tyre_slip_angle_rad[corner][projected_row] = slip_angle;
+            }
+        }
+    }
+}
+
+fn lmu_native_wheel_channels(payload: &[u8]) -> Option<[(Option<f32>, Option<f32>); 4]> {
+    const HEADER_BYTES: usize = 8;
+    const SCORING_INFO_BYTES: usize = 548;
+    const VEHICLE_SCORING_BYTES: usize = 584;
+    const TELEMETRY_BYTES: usize = 1_888;
+    const WHEEL_OFFSET: usize = 848;
+    const WHEEL_BYTES: usize = 260;
+    if payload.get(..4)? != b"LMUS" || u16::from_le_bytes(payload.get(4..6)?.try_into().ok()?) != 1
+    {
+        return None;
+    }
+    let mut cursor = HEADER_BYTES;
+    for expected in [SCORING_INFO_BYTES, VEHICLE_SCORING_BYTES] {
+        let length = usize::try_from(u32::from_le_bytes(
+            payload.get(cursor..cursor + 4)?.try_into().ok()?,
+        ))
+        .ok()?;
+        if length != expected {
+            return None;
+        }
+        cursor = cursor.checked_add(4 + length)?;
+    }
+    let telemetry_length = usize::try_from(u32::from_le_bytes(
+        payload.get(cursor..cursor + 4)?.try_into().ok()?,
+    ))
+    .ok()?;
+    cursor = cursor.checked_add(4)?;
+    if telemetry_length != TELEMETRY_BYTES || payload.len() < cursor + telemetry_length {
+        return None;
+    }
+    let telemetry = &payload[cursor..cursor + telemetry_length];
+    Some(std::array::from_fn(|corner| {
+        let wheel = WHEEL_OFFSET + corner * WHEEL_BYTES;
+        let lateral = read_lmu_f64(telemetry, wheel + 64);
+        let longitudinal = read_lmu_f64(telemetry, wheel + 72);
+        let load = read_lmu_f64(telemetry, wheel + 104)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(narrow_native_float);
+        let slip_angle = lateral
+            .zip(longitudinal)
+            .and_then(|(lateral, longitudinal)| {
+                (lateral.is_finite()
+                    && longitudinal.is_finite()
+                    && lateral.hypot(longitudinal) >= 1.0)
+                    .then(|| narrow_native_float(lateral.atan2(longitudinal.abs())))
+            });
+        (load, slip_angle)
+    }))
+}
+
+fn read_lmu_f64(bytes: &[u8], offset: usize) -> Option<f64> {
+    Some(f64::from_le_bytes(
+        bytes.get(offset..offset + 8)?.try_into().ok()?,
+    ))
 }
 
 fn backfill_native_float(destination: &mut Option<f32>, native: &MapArray, row: usize, key: &str) {
@@ -2783,5 +2890,36 @@ mod tests {
         assert_eq!(metrics.tyre_wear_start, [Some(99.0); 4]);
         assert_eq!(metrics.tyre_wear_end, [Some(97.0); 4]);
         assert_eq!(metrics.tyre_wear_minimum, [Some(97.0); 4]);
+    }
+
+    #[test]
+    fn recovers_lmu_wheel_channels_from_preserved_native_payload() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"LMUS");
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        payload.extend_from_slice(&0_u16.to_le_bytes());
+        for length in [548_usize, 584, 1_888] {
+            payload.extend_from_slice(&u32::try_from(length).unwrap().to_le_bytes());
+            let start = payload.len();
+            payload.resize(start + length, 0);
+        }
+        let telemetry_start = 8 + 4 + 548 + 4 + 584 + 4;
+        for corner in 0..4 {
+            let corner_value = f64::from(u8::try_from(corner).expect("four wheels"));
+            let wheel = telemetry_start + 848 + corner * 260;
+            payload[wheel + 64..wheel + 72].copy_from_slice(&(2.0 + corner_value).to_le_bytes());
+            payload[wheel + 72..wheel + 80].copy_from_slice(&50.0_f64.to_le_bytes());
+            payload[wheel + 104..wheel + 112]
+                .copy_from_slice(&(3_000.0 + corner_value).to_le_bytes());
+        }
+
+        let wheels = lmu_native_wheel_channels(&payload).expect("valid LMU payload");
+        assert_eq!(wheels[0].0, Some(3_000.0));
+        assert!(
+            wheels[0]
+                .1
+                .is_some_and(|angle| angle > 0.039 && angle < 0.041)
+        );
+        assert_eq!(wheels[3].0, Some(3_003.0));
     }
 }

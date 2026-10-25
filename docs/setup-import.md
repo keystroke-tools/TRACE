@@ -15,6 +15,11 @@ The Assetto Corsa provider installs standalone setup INIs or setup INIs from ZIP
 archives into the game's normal saved-setup tree. This is a local workflow: it does not
 upload setup data.
 
+Le Mans Ultimate does not yet have a setup provider. Its setup locations, file format,
+and reliable association with the setup actually used in a recorded session require a
+separate simulator-specific implementation; TRACE does not treat an arbitrary nearby
+file as session provenance.
+
 The behavior is a native Rust port of the workflow first explored in
 [`ac-setup-importer-proto`](https://github.com/aosasona/ac-setup-importer-proto). TRACE
 uses its existing desktop UI and filesystem boundary rather than starting the

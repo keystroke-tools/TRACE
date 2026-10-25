@@ -1394,6 +1394,7 @@ function drivingObservationCopy(observation: DrivingObservation): [string, strin
 	const speed = `${Math.abs(Math.round(observation.meanDifference))} km/h`;
 	const seconds = `${Math.abs(observation.meanDifference).toFixed(3)} s total`;
 	const count = `${Math.abs(observation.meanDifference).toFixed(1)} extra reversals on average`;
+	const balance = `${Math.round(Math.abs(observation.meanDifference) * 100)} balance points across ${corners}`;
 	switch (observation.kind) {
 		case "braking_earlier":
 			return ["Braking starts earlier", `${distance} earlier across ${corners}`];
@@ -1415,6 +1416,10 @@ function drivingObservationCopy(observation: DrivingObservation): [string, strin
 			return ["Most repeated loss is on exit", `${seconds} across ${corners}`];
 		case "more_steering_corrections":
 			return ["More steering corrections detected", `${count} across ${corners}`];
+		case "more_understeer":
+			return ["More front-limited than Reference", balance];
+		case "more_oversteer":
+			return ["More rear-limited than Reference", balance];
 	}
 }
 

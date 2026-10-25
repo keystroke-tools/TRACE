@@ -101,6 +101,13 @@ speed are omitted because their direction is unstable. This enables the rule-bas
 corner balance estimate while preserving the underlying per-wheel signal for future
 analysis.
 
+Recordings created before this canonical mapping retain the complete player telemetry
+record in their native payload. TRACE recovers wheel load and slip angle from that
+payload while reading a lap, so existing local LMU sessions can use balance analysis
+without rewriting their Arrow files. Compact shared packages intentionally omit opaque
+native payloads; an older package therefore cannot recover channels it did not already
+store canonically.
+
 In multiclass races, LMU can switch the global game phase to session-over when the
 overall winner finishes while the player is still completing a final lap. TRACE keeps
 recording in that state until LMU marks the player finished or removes them from

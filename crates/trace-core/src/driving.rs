@@ -11,12 +11,13 @@ use crate::{
 };
 use trace_domain::{ChannelId, Unit};
 
-const ALGORITHM_VERSION: u32 = 1;
+const ALGORITHM_VERSION: u32 = 2;
 const MINIMUM_PATTERN_CORNERS: usize = 2;
 const HIGH_CONFIDENCE_CORNERS: usize = 3;
 const DISTANCE_DIFFERENCE_M: f64 = 5.0;
 const MINIMUM_SPEED_DIFFERENCE_KMH: f64 = 3.0;
 const STEERING_DERIVATIVE_THRESHOLD: f64 = 2.5;
+const BALANCE_INDEX_DIFFERENCE: f64 = 0.12;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +32,8 @@ pub enum DrivingObservationKind {
     MidCornerLoss,
     ExitLoss,
     MoreSteeringCorrections,
+    MoreUndersteer,
+    MoreOversteer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -47,6 +50,7 @@ pub enum ObservationUnit {
     KilometresPerHour,
     Second,
     Count,
+    Ratio,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -161,6 +165,25 @@ pub fn analyze_driving_comparison(
     );
     add_dominant_loss(&mut observations, corner_comparison);
     add_steering_corrections(&mut observations, corner_comparison, samples);
+    add_signed_pattern(
+        &mut observations,
+        corners.iter().filter_map(|corner| {
+            corner
+                .metrics
+                .comparison_balance
+                .zip(corner.metrics.reference_balance)
+                .map(|(analysed, reference)| {
+                    (
+                        corner.index,
+                        analysed.balance_index - reference.balance_index,
+                    )
+                })
+        }),
+        DrivingObservationKind::MoreOversteer,
+        DrivingObservationKind::MoreUndersteer,
+        BALANCE_INDEX_DIFFERENCE,
+        ObservationUnit::Ratio,
+    );
 
     finalize_analysis(algorithm, observations, context)
 }
@@ -452,6 +475,7 @@ const fn evidence_unit(unit: ObservationUnit) -> Unit {
         ObservationUnit::KilometresPerHour => Unit::KilometresPerHour,
         ObservationUnit::Second => Unit::Second,
         ObservationUnit::Count => Unit::Count,
+        ObservationUnit::Ratio => Unit::Ratio,
     }
 }
 
@@ -468,6 +492,14 @@ fn source_channels(kind: DrivingObservationKind) -> Vec<ChannelId> {
         | DrivingObservationKind::ExitLoss => channels(&["lap.elapsed_time", "lap.distance"]),
         DrivingObservationKind::MoreSteeringCorrections => {
             channels(&["inputs.steering", "lap.distance"])
+        }
+        DrivingObservationKind::MoreUndersteer | DrivingObservationKind::MoreOversteer => {
+            channels(&[
+                "wheels.front_left.tyre_slip_angle",
+                "wheels.front_right.tyre_slip_angle",
+                "wheels.rear_left.tyre_slip_angle",
+                "wheels.rear_right.tyre_slip_angle",
+            ])
         }
     }
 }
@@ -488,7 +520,10 @@ fn confidence(value: f64) -> Confidence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::corners::{CornerAnalysis, CornerMetrics, CornerPhaseAnalysis};
+    use crate::corners::{
+        CornerAnalysis, CornerBalanceEstimate, CornerBalanceState, CornerMetrics,
+        CornerPhaseAnalysis,
+    };
 
     fn context() -> ComparisonContext {
         ComparisonContext {
@@ -580,6 +615,42 @@ mod tests {
                 .iter()
                 .any(|value| value.kind == DrivingObservationKind::ExitLoss)
         );
+    }
+
+    #[test]
+    fn repeated_balance_difference_becomes_an_insight() {
+        let mut corners = vec![
+            corner(1, 0.0, 0.0, 0.02),
+            corner(2, 0.0, 0.0, 0.02),
+            corner(3, 0.0, 0.0, 0.02),
+        ];
+        for corner in &mut corners {
+            corner.metrics.reference_balance = Some(CornerBalanceEstimate {
+                state: CornerBalanceState::Neutral,
+                front_slip_angle_degrees: 4.0,
+                rear_slip_angle_degrees: 4.0,
+                balance_index: 0.0,
+                confidence: 0.8,
+            });
+            corner.metrics.comparison_balance = Some(CornerBalanceEstimate {
+                state: CornerBalanceState::Understeer,
+                front_slip_angle_degrees: 7.0,
+                rear_slip_angle_degrees: 3.0,
+                balance_index: -0.4,
+                confidence: 0.8,
+            });
+        }
+        let result =
+            analyze_driving_comparison(Some(&CornerComparison { corners }), &[], context());
+        let observation = result
+            .value
+            .expect("available")
+            .observations
+            .into_iter()
+            .find(|observation| observation.kind == DrivingObservationKind::MoreUndersteer)
+            .expect("balance insight");
+        assert_eq!(observation.tier, ObservationConfidenceTier::High);
+        assert_eq!(observation.corner_indices, vec![1, 2, 3]);
     }
 
     #[test]
