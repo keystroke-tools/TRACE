@@ -24,7 +24,27 @@ interface SimulatorGroup {
 	cars: CarGroup[];
 }
 
-export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
+export interface SetupExplorerDestination {
+	simulatorId: string;
+	simulatorName: string;
+	sourceCarId: string;
+	carName: string;
+	sourceTrackId: string;
+	trackName: string;
+	layoutId?: string | null;
+}
+
+export function SetupExplorer({
+	refreshKey,
+	dropActive,
+	importing,
+	onDestinationChange,
+}: {
+	refreshKey: number;
+	dropActive: boolean;
+	importing: boolean;
+	onDestinationChange: (destination: SetupExplorerDestination | null) => void;
+}) {
 	const [entries, setEntries] = useState<SetupLibraryEntry[]>([]);
 	const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 	const [query, setQuery] = useState("");
@@ -90,6 +110,31 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 	useEffect(() => {
 		if (selectedTrack && selectedTrack.key !== selectedTrackKey) setSelectedTrackKey(selectedTrack.key);
 	}, [selectedTrack, selectedTrackKey]);
+
+	useEffect(() => {
+		onDestinationChange(
+			activeSimulator && selectedCar && selectedTrack
+				? {
+						simulatorId: activeSimulator.key,
+						simulatorName: activeSimulator.name,
+						sourceCarId: selectedCar.rawName,
+						carName: selectedCar.name,
+						sourceTrackId: selectedTrack.rawName,
+						trackName: selectedTrack.name,
+						layoutId: selectedTrack.layoutId,
+					}
+				: null,
+		);
+	}, [
+		activeSimulator?.key,
+		activeSimulator?.name,
+		onDestinationChange,
+		selectedCar?.name,
+		selectedCar?.rawName,
+		selectedTrack?.layoutId,
+		selectedTrack?.name,
+		selectedTrack?.rawName,
+	]);
 
 	if (editingSetup) {
 		return (
@@ -218,7 +263,7 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 						</div>
 					</section>
 
-					<section className="flex min-h-0 min-w-0 flex-col" aria-label="Setup files">
+					<section className="relative flex min-h-0 min-w-0 flex-col" aria-label="Setup files">
 						<ExplorerHeading label="Setup files" count={selectedTrack?.setups.length ?? 0} />
 						{selectedTrack && (
 							<div className="bg-trace-deep px-4 py-3">
@@ -227,6 +272,9 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 									{selectedCar?.name} · {selectedTrack.rawName}
 									{selectedTrack.layoutId ? ` · ${selectedTrack.layoutId}` : ""}
 								</span>
+								<span className="mt-2 block font-mono text-[8px] font-bold tracking-[.08em] text-trace-muted">
+									DROP SETUP FILES HERE TO IMPORT INTO THIS TRACK
+								</span>
 							</div>
 						)}
 						<div className="min-h-0 flex-1 overflow-y-auto py-1">
@@ -234,6 +282,21 @@ export function SetupExplorer({ refreshKey }: { refreshKey: number }) {
 								<SetupFileRow setup={setup} onOpen={() => setEditingSetup(setup)} key={setup.id} />
 							))}
 						</div>
+						{dropActive && selectedTrack && (
+							<div className="absolute inset-0 z-10 grid place-items-center border-2 border-trace-accent bg-trace-black/90 p-6 text-center">
+								<div>
+									<strong className="block text-[17px] font-black tracking-[.04em] text-white">
+										{importing ? "IMPORTING SETUP…" : "DROP INTO THIS TRACK"}
+									</strong>
+									<span className="mt-2 block text-[12px] text-trace-accent">
+										{selectedCar?.name} · {selectedTrack.name}
+									</span>
+									<span className="mt-2 block font-mono text-[9px] text-trace-dim">
+										{activeSimulator?.name} · {selectedCar?.rawName} · {selectedTrack.rawName}
+									</span>
+								</div>
+							</div>
+						)}
 					</section>
 				</div>
 			)}

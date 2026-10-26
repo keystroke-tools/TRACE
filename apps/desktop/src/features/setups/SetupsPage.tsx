@@ -5,7 +5,7 @@ import { telemetryDataSource, type SetupImporterDescriptor, type SetupImportResu
 import { PageIntro } from "../../components/layout";
 import { useToast } from "../../Toast";
 import { saveSetupFolder, savedSetupFolder } from "./setup-preferences";
-import { SetupExplorer } from "./SetupExplorer";
+import { SetupExplorer, type SetupExplorerDestination } from "./SetupExplorer";
 
 export function SetupsPage() {
 	const showToast = useToast();
@@ -25,6 +25,7 @@ export function SetupsPage() {
 	const [results, setResults] = useState<SetupImportResult[]>([]);
 	const [workspace, setWorkspace] = useState<"library" | "import">("library");
 	const [libraryVersion, setLibraryVersion] = useState(0);
+	const [explorerDestination, setExplorerDestination] = useState<SetupExplorerDestination | null>(null);
 	const importer = importers.find((value) => value.simulatorId === simulatorId) ?? null;
 
 	useEffect(() => {
@@ -137,37 +138,49 @@ export function SetupsPage() {
 		}
 	}
 
-	async function importFiles(paths: string[]) {
-		if (!importer) return;
-		const files = paths.filter((path) => importer.fileExtensions.some((extension) => path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)));
+	async function importFiles(paths: string[], destination?: SetupExplorerDestination) {
+		const selectedImporter = destination ? importers.find((value) => value.simulatorId === destination.simulatorId) : importer;
+		if (!selectedImporter) return;
+		const files = paths.filter((path) => selectedImporter.fileExtensions.some((extension) => path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)));
 		if (files.length === 0) {
 			showToast({
 				kind: "error",
 				title: "No setup files found",
-				message: `Choose ${importer.fileExtensions.map((value) => `.${value}`).join(" or ")} files.`,
+				message: `Choose ${selectedImporter.fileExtensions.map((value) => `.${value}`).join(" or ")} files.`,
 				timeoutMs: 5_000,
-			});
-			return;
-		}
-		if (!setupsFolder.trim() || !sourceTrackId.trim()) {
-			showToast({
-				kind: "error",
-				title: "Setup destination incomplete",
-				message:
-					"Choose the setups folder and enter the simulator's source track identifier. Enter a car identifier only when the file does not declare one.",
-				timeoutMs: 7_000,
 			});
 			return;
 		}
 		setImporting(true);
 		try {
+			let destinationFolder = setupsFolder.trim();
+			if (destination) {
+				destinationFolder = savedSetupFolder(destination.simulatorId) ?? (destination.simulatorId === simulatorId ? setupsFolder.trim() : "");
+				if (!destinationFolder) {
+					const detected = await telemetryDataSource.detectSetupFolder(destination.simulatorId);
+					destinationFolder = detected.path?.trim() ?? "";
+					if (detected.found && destinationFolder) saveSetupFolder(destination.simulatorId, destinationFolder);
+				}
+			}
+			const destinationTrack = destination?.sourceTrackId ?? sourceTrackId.trim();
+			if (!destinationFolder || !destinationTrack) {
+				showToast({
+					kind: "error",
+					title: "Setup destination incomplete",
+					message: destination
+						? `Set the ${selectedImporter.simulatorName} setup directory under Import before dropping files into the library.`
+						: "Choose the setups folder and enter the simulator's source track identifier. Enter a car identifier only when the file does not declare one.",
+					timeoutMs: 7_000,
+				});
+				return;
+			}
 			const nextResults = await telemetryDataSource.importSetupFiles({
-				simulatorId: importer.simulatorId,
+				simulatorId: selectedImporter.simulatorId,
 				setupPaths: files,
-				setupsFolder: setupsFolder.trim(),
-				sourceCarId: sourceCarId.trim() || null,
-				sourceTrackId: sourceTrackId.trim(),
-				layoutId: layoutId.trim() || null,
+				setupsFolder: destinationFolder,
+				sourceCarId: destination?.sourceCarId ?? (sourceCarId.trim() || null),
+				sourceTrackId: destinationTrack,
+				layoutId: destination?.layoutId ?? (layoutId.trim() || null),
 				overwrite,
 			});
 			setResults(nextResults);
@@ -175,8 +188,9 @@ export function SetupsPage() {
 			const failures = nextResults.filter((result) => !result.success || result.indexWarning).length;
 			showToast({
 				kind: failures > 0 ? "error" : "success",
-				title: failures > 0 ? "Some setup files could not be imported" : "Setup files imported",
-				message: `${nextResults.reduce((total, result) => total + result.files.length, 0)} installed · ${nextResults.reduce((total, result) => total + result.skipped.length, 0)} already existed.`,
+				title:
+					failures > 0 ? "Some setup files could not be imported" : destination ? `Imported into ${destination.trackName}` : "Setup files imported",
+				message: `${nextResults.reduce((total, result) => total + result.files.length, 0)} installed · ${nextResults.reduce((total, result) => total + result.skipped.length, 0)} already existed${destination ? ` · ${destination.carName}` : ""}.`,
 				timeoutMs: failures > 0 ? 8_000 : 5_000,
 			});
 		} catch (error) {
@@ -192,19 +206,24 @@ export function SetupsPage() {
 		let unlisten: (() => void) | undefined;
 		void getCurrentWebview()
 			.onDragDropEvent((event) => {
+				const dropImporter = workspace === "library" ? importers.find((value) => value.simulatorId === explorerDestination?.simulatorId) : importer;
+				const extensions =
+					workspace === "library" ? dropImporter?.fileExtensions : importMode === "archives" ? importer?.archiveExtensions : importer?.fileExtensions;
 				if (event.payload.type === "enter")
 					setDragging(
 						event.payload.paths.some(
-							(path) =>
-								(importMode === "archives" ? importer?.archiveExtensions : importer?.fileExtensions)?.some((extension) =>
-									path.toLowerCase().endsWith(`.${extension.toLowerCase()}`),
-								) ?? false,
+							(path) => extensions?.some((extension) => path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) ?? false,
 						),
 					);
 				if (event.payload.type === "leave") setDragging(false);
 				if (event.payload.type === "drop") {
 					setDragging(false);
-					if (!importing) void (importMode === "archives" ? importArchives(event.payload.paths) : importFiles(event.payload.paths));
+					if (importing) return;
+					if (workspace === "library") {
+						if (explorerDestination) void importFiles(event.payload.paths, explorerDestination);
+						return;
+					}
+					void (importMode === "archives" ? importArchives(event.payload.paths) : importFiles(event.payload.paths));
 				}
 			})
 			.then((stop) => {
@@ -215,7 +234,7 @@ export function SetupsPage() {
 			disposed = true;
 			unlisten?.();
 		};
-	}, [importMode, importer, importing, overwrite, setupsFolder, sourceCarId, sourceTrackId]);
+	}, [explorerDestination, importMode, importer, importers, importing, layoutId, overwrite, setupsFolder, sourceCarId, sourceTrackId, workspace]);
 
 	async function chooseSetupsFolder() {
 		if (!importer) return;
@@ -297,7 +316,12 @@ export function SetupsPage() {
 				))}
 			</div>
 			{workspace === "library" ? (
-				<SetupExplorer refreshKey={libraryVersion} />
+				<SetupExplorer
+					refreshKey={libraryVersion}
+					dropActive={dragging || importing}
+					importing={importing}
+					onDestinationChange={setExplorerDestination}
+				/>
 			) : (
 				<>
 					<div className="mt-4 border border-trace-divider bg-trace-surface">
