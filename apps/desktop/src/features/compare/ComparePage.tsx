@@ -40,6 +40,7 @@ import {
 	filterSamplesBySector,
 	filterSamplesByTelemetryWindow,
 	nextTelemetryWindow,
+	panTelemetryWindow,
 	type TelemetryWindow,
 } from "../telemetry/telemetry-window";
 
@@ -344,6 +345,11 @@ export function ComparePage({
 		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchorM, direction));
 		setCursorIndex(null);
 	};
+	const panTelemetry = (deltaM: number) => {
+		setComparisonPlaying(false);
+		setTelemetryWindow((current) => panTelemetryWindow(baseSamples, current, deltaM));
+		setCursorIndex(null);
+	};
 
 	async function saveCurrentComparison(name: string) {
 		if (referenceLap == null || comparisonLap == null) return false;
@@ -533,6 +539,7 @@ export function ComparePage({
 													cursorIndex={cursorIndex}
 													onCursor={setCursorIndex}
 													onZoom={zoomTelemetry}
+													onPan={panTelemetry}
 													series={comparisonSeries(
 														"referenceSpeedKmh",
 														"comparisonSpeedKmh",
@@ -547,6 +554,7 @@ export function ComparePage({
 													cursorIndex={cursorIndex}
 													onCursor={setCursorIndex}
 													onZoom={zoomTelemetry}
+													onPan={panTelemetry}
 													fixedRange={deltaRange(samples)}
 													series={[
 														{
@@ -591,6 +599,7 @@ export function ComparePage({
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
+												onPan={panTelemetry}
 												fixedRange={[0, 100]}
 												series={comparisonSeries(
 													"referenceThrottlePercent",
@@ -606,6 +615,7 @@ export function ComparePage({
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
+												onPan={panTelemetry}
 												fixedRange={[0, 100]}
 												series={comparisonSeries(
 													"referenceBrakePercent",
@@ -621,6 +631,7 @@ export function ComparePage({
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
+												onPan={panTelemetry}
 												fixedRange={steeringAngleRange(samples)}
 												zeroLine
 												series={comparisonSeries(
@@ -639,6 +650,7 @@ export function ComparePage({
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
+												onPan={panTelemetry}
 												series={comparisonSeries("referenceRpm", "comparisonRpm", channelColours.rpm, comparisonIsFaster)}
 											/>
 											<ComparisonChart
@@ -648,6 +660,7 @@ export function ComparePage({
 												cursorIndex={cursorIndex}
 												onCursor={setCursorIndex}
 												onZoom={zoomTelemetry}
+												onPan={panTelemetry}
 												fixedRange={[-1, 8]}
 												formatValue={(value) => formatGear(value)}
 												series={comparisonSeries("referenceGear", "comparisonGear", channelColours.gear, comparisonIsFaster)}

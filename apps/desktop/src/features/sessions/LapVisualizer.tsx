@@ -4,7 +4,13 @@ import { telemetryDataSource, type LapComparisonSample, type LapTrace, type Reco
 import { PageIntro } from "../../components/layout";
 import { channelColours, ComparisonChart, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
-import { filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "../telemetry/telemetry-window";
+import {
+	filterSamplesBySector,
+	filterSamplesByTelemetryWindow,
+	nextTelemetryWindow,
+	panTelemetryWindow,
+	type TelemetryWindow,
+} from "../telemetry/telemetry-window";
 import { ConsistencyChart } from "./ConsistencyChart";
 
 export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary; lapIndex: number }) {
@@ -98,6 +104,10 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchorM, direction));
 		setCursorIndex(null);
 	};
+	const panTelemetry = (deltaM: number) => {
+		setTelemetryWindow((current) => panTelemetryWindow(baseSamples, current, deltaM));
+		setCursorIndex(null);
+	};
 
 	return (
 		<>
@@ -159,6 +169,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 									cursorIndex={cursorIndex}
 									onCursor={setCursorIndex}
 									onZoom={zoomTelemetry}
+									onPan={panTelemetry}
 									series={singleSeries("referenceSpeedKmh", channelColours.speed)}
 								/>
 								<ComparisonChart
@@ -168,6 +179,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 									cursorIndex={cursorIndex}
 									onCursor={setCursorIndex}
 									onZoom={zoomTelemetry}
+									onPan={panTelemetry}
 									fixedRange={[-1, 8]}
 									formatValue={(value) => formatGear(value)}
 									series={singleSeries("referenceGear", channelColours.gear)}
@@ -201,6 +213,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								cursorIndex={cursorIndex}
 								onCursor={setCursorIndex}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								fixedRange={[0, 100]}
 								series={singleSeries("referenceThrottlePercent", channelColours.throttle)}
 							/>
@@ -211,6 +224,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								cursorIndex={cursorIndex}
 								onCursor={setCursorIndex}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								fixedRange={[0, 100]}
 								series={singleSeries("referenceBrakePercent", channelColours.brake)}
 							/>
@@ -221,6 +235,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								cursorIndex={cursorIndex}
 								onCursor={setCursorIndex}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								fixedRange={steeringAngleRange(samples)}
 								zeroLine
 								series={singleSeries("referenceSteeringDegrees", channelColours.steering)}
@@ -235,6 +250,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 											cursorIndex={cursorIndex}
 											onCursor={setCursorIndex}
 											onZoom={zoomTelemetry}
+											onPan={panTelemetry}
 											series={tyreLoadReaders.map((value, index) => ({ label: tyreLabels[index], colour: tyreColours[index], value }))}
 										/>
 									)}
@@ -246,6 +262,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 											cursorIndex={cursorIndex}
 											onCursor={setCursorIndex}
 											onZoom={zoomTelemetry}
+											onPan={panTelemetry}
 											zeroLine
 											series={tyreSlipReaders.map((value, index) => ({ label: tyreLabels[index], colour: tyreColours[index], value }))}
 										/>

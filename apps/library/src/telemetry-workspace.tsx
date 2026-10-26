@@ -18,6 +18,7 @@ import {
 	formatGear,
 	telemetryPlaybackTimeline,
 	nextTelemetryWindow,
+	panTelemetryWindow,
 	singleSeries,
 	steeringAngleRange,
 	type LapComparisonSample,
@@ -262,6 +263,11 @@ function TelemetryWorkspace() {
 		setTelemetryWindow((current) => nextTelemetryWindow(sectorSamples, current, anchor, direction, 2));
 		setCursorIndex(null);
 	};
+	const panTelemetry = (delta: number) => {
+		setPlaying(false);
+		setTelemetryWindow((current) => panTelemetryWindow(sectorSamples, current, delta));
+		setCursorIndex(null);
+	};
 	const seek = (index: number | null) => {
 		setPlaying(false);
 		setCursorIndex(index);
@@ -427,6 +433,7 @@ function TelemetryWorkspace() {
 								cursorIndex={cursorIndex}
 								onCursor={seek}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								distanceUnit="%"
 							/>
 							{comparison && (
@@ -438,6 +445,7 @@ function TelemetryWorkspace() {
 									cursorIndex={cursorIndex}
 									onCursor={seek}
 									onZoom={zoomTelemetry}
+									onPan={panTelemetry}
 									fixedRange={deltaRange(samples)}
 									zeroLine
 									distanceUnit="%"
@@ -467,6 +475,7 @@ function TelemetryWorkspace() {
 								cursorIndex={cursorIndex}
 								onCursor={seek}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								fixedRange={[0, 100]}
 								distanceUnit="%"
 							/>
@@ -480,6 +489,7 @@ function TelemetryWorkspace() {
 								cursorIndex={cursorIndex}
 								onCursor={seek}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								fixedRange={[0, 100]}
 								distanceUnit="%"
 							/>
@@ -493,6 +503,7 @@ function TelemetryWorkspace() {
 								cursorIndex={cursorIndex}
 								onCursor={seek}
 								onZoom={zoomTelemetry}
+								onPan={panTelemetry}
 								fixedRange={steeringAngleRange(samples)}
 								zeroLine
 								distanceUnit="%"
@@ -506,6 +517,7 @@ function TelemetryWorkspace() {
 							cursorIndex={cursorIndex}
 							onCursor={seek}
 							onZoom={zoomTelemetry}
+							onPan={panTelemetry}
 							distanceUnit="%"
 						/>
 						<ComparisonChart
@@ -516,6 +528,7 @@ function TelemetryWorkspace() {
 							cursorIndex={cursorIndex}
 							onCursor={seek}
 							onZoom={zoomTelemetry}
+							onPan={panTelemetry}
 							fixedRange={[-1, 8]}
 							formatValue={(value) => formatGear(value)}
 							distanceUnit="%"

@@ -15,7 +15,14 @@ export {
 	type ComparisonChartSeries,
 	type LapComparisonSample,
 } from "./telemetry-chart";
-export { filterSamplesByDistance, filterSamplesBySector, filterSamplesByTelemetryWindow, nextTelemetryWindow, type TelemetryWindow } from "./telemetry-window";
+export {
+	filterSamplesByDistance,
+	filterSamplesBySector,
+	filterSamplesByTelemetryWindow,
+	nextTelemetryWindow,
+	panTelemetryWindow,
+	type TelemetryWindow,
+} from "./telemetry-window";
 export { nearestTelemetryPlaybackIndex, telemetryPlaybackSpeeds, telemetryPlaybackTimeline } from "./telemetry-playback";
 export { SectorPicker } from "./sector-picker";
 export {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export interface LapComparisonSample {
 	distanceM: number;
@@ -124,6 +124,7 @@ export function ComparisonChart({
 	cursorIndex,
 	onCursor,
 	onZoom,
+	onPan,
 	fixedRange,
 	zeroLine = false,
 	compact = false,
@@ -137,6 +138,7 @@ export function ComparisonChart({
 	cursorIndex: number | null;
 	onCursor: (index: number | null) => void;
 	onZoom?: (anchorM: number, direction: "in" | "out") => void;
+	onPan?: (deltaM: number) => void;
 	fixedRange?: [number, number];
 	zeroLine?: boolean;
 	compact?: boolean;
@@ -144,7 +146,10 @@ export function ComparisonChart({
 	formatValue?: (value: number, unit: string) => string;
 }) {
 	const chart = useRef<HTMLDivElement>(null);
+	const dragClientX = useRef<number | null>(null);
 	const [width, setWidth] = useState(1_000);
+	const [pointerInside, setPointerInside] = useState(false);
+	const [dragging, setDragging] = useState(false);
 	const height = compact ? 82 : 220;
 	const plot = { left: 58, right: 18, top: compact ? 10 : 24, bottom: compact ? 20 : 30 };
 	const values = series.flatMap((item) =>
@@ -199,6 +204,36 @@ export function ComparisonChart({
 		observer.observe(element);
 		return () => observer.disconnect();
 	}, []);
+	useEffect(() => {
+		if (!pointerInside || !onZoom) return;
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.ctrlKey || event.metaKey || event.altKey) return;
+			const target = event.target;
+			if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) return;
+			const direction =
+				event.key === "+" || event.key === "=" || event.code === "NumpadAdd"
+					? "in"
+					: event.key === "-" || event.code === "NumpadSubtract"
+						? "out"
+						: null;
+			if (!direction) return;
+			event.preventDefault();
+			onZoom(zoomAnchorM, direction);
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [onZoom, pointerInside, zoomAnchorM]);
+	const updateCursor = (element: SVGSVGElement, clientX: number) => {
+		const bounds = element.getBoundingClientRect();
+		const pointerX = ((clientX - bounds.left) / bounds.width) * width;
+		const ratio = Math.min(1, Math.max(0, (pointerX - plot.left) / (width - plot.left - plot.right)));
+		onCursor(Math.round(ratio * (samples.length - 1)));
+	};
+	const finishDrag = (element: SVGSVGElement, pointerId: number) => {
+		dragClientX.current = null;
+		setDragging(false);
+		if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+	};
 	return (
 		<div
 			ref={chart}
@@ -238,17 +273,31 @@ export function ComparisonChart({
 				</div>
 			</div>
 			<svg
-				className={`trace-chart__plot block w-full touch-none ${compact ? "h-[82px]" : "h-56"}`}
+				className={`trace-chart__plot block w-full touch-none ${onPan ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""} ${compact ? "h-[82px]" : "h-56"}`}
 				viewBox={`0 0 ${width} ${height}`}
 				preserveAspectRatio="none"
 				role="img"
 				aria-label={`${label} telemetry by lap distance`}
-				onMouseMove={(event) => {
-					const bounds = event.currentTarget.getBoundingClientRect();
-					const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
-					const ratio = Math.min(1, Math.max(0, (pointerX - plot.left) / (width - plot.left - plot.right)));
-					onCursor(Math.round(ratio * (samples.length - 1)));
+				onPointerEnter={() => setPointerInside(true)}
+				onPointerLeave={() => setPointerInside(false)}
+				onPointerDown={(event) => {
+					updateCursor(event.currentTarget, event.clientX);
+					if (!onPan || event.button !== 0) return;
+					dragClientX.current = event.clientX;
+					setDragging(true);
+					event.currentTarget.setPointerCapture(event.pointerId);
 				}}
+				onPointerMove={(event) => {
+					updateCursor(event.currentTarget, event.clientX);
+					if (!onPan || dragClientX.current == null) return;
+					const bounds = event.currentTarget.getBoundingClientRect();
+					const plotWidth = Math.max(1, bounds.width * ((width - plot.left - plot.right) / width));
+					const deltaPixels = event.clientX - dragClientX.current;
+					dragClientX.current = event.clientX;
+					onPan((-deltaPixels / plotWidth) * distanceRange);
+				}}
+				onPointerUp={(event) => finishDrag(event.currentTarget, event.pointerId)}
+				onPointerCancel={(event) => finishDrag(event.currentTarget, event.pointerId)}
 			>
 				{[0, 0.5, 1].map((ratio) => (
 					<line

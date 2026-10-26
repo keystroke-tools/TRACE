@@ -46,3 +46,13 @@ export function nextTelemetryWindow(
 	}
 	return { startM: nextStart, endM: nextEnd };
 }
+
+export function panTelemetryWindow(samples: LapComparisonSample[], current: TelemetryWindow | null, deltaM: number): TelemetryWindow | null {
+	const baseStart = samples[0]?.distanceM;
+	const baseEnd = samples.at(-1)?.distanceM;
+	if (current == null || baseStart == null || baseEnd == null || baseEnd <= baseStart || !Number.isFinite(deltaM)) return current;
+	const span = Math.min(baseEnd - baseStart, Math.max(0, current.endM - current.startM));
+	if (span >= baseEnd - baseStart) return null;
+	const startM = Math.min(baseEnd - span, Math.max(baseStart, current.startM + deltaM));
+	return { startM, endM: startM + span };
+}

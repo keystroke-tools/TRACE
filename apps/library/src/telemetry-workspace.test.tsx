@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nearestTelemetryPlaybackIndex, telemetryPlaybackTimeline } from "@trace/ui";
@@ -21,6 +21,19 @@ const points = [
 	},
 	{
 		elapsed_seconds: 1,
+		sector_index: 1,
+		lap_position: 0.5,
+		speed_kph: 180,
+		throttle: 0.8,
+		brake: 0,
+		engine_rpm: 6500,
+		steering_angle_rad: 0.1,
+		gear: 4,
+		position_x_m: 5,
+		position_z_m: 2,
+	},
+	{
+		elapsed_seconds: 2,
 		sector_index: 2,
 		lap_position: 1,
 		speed_kph: 210.4,
@@ -95,12 +108,18 @@ describe("telemetry workspace", () => {
 		expect(seek.closest(".trace-telemetry-hud--embedded")).toBeTruthy();
 		expect(seek.closest(".trace-telemetry-seek")).toBeTruthy();
 		expect((screen.getByRole("combobox", { name: "Telemetry playback speed" }) as HTMLSelectElement).value).toBe("1");
-		expect(screen.getByRole("img", { name: "SPEED telemetry by lap distance" })).toBeTruthy();
+		const speedChart = screen.getByRole("img", { name: "SPEED telemetry by lap distance" });
+		expect(speedChart).toBeTruthy();
 		expect(screen.getByRole("img", { name: "THROTTLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "BRAKE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "STEERING ANGLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "GEAR telemetry by lap distance" })).toBeTruthy();
 		expect(screen.queryByText("TIME DELTA · ANALYSED VS REFERENCE")).toBeNull();
+		fireEvent.pointerEnter(speedChart);
+		fireEvent.keyDown(window, { key: "+" });
+		expect(screen.getByText(/15–85% · RESET ZOOM/)).toBeTruthy();
+		fireEvent.keyDown(window, { key: "-" });
+		expect(screen.queryByText(/RESET ZOOM/)).toBeNull();
 		await userEvent.click(screen.getAllByRole("button", { name: /Zoom all telemetry in around 50 %/ })[0]);
 		expect(screen.getByText(/RESET ZOOM/)).toBeTruthy();
 	});
