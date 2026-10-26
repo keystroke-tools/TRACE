@@ -95,8 +95,8 @@ export function ComparisonTelemetryHud({
 	const showConditions = referenceHasConditions || comparisonHasConditions;
 	const frame =
 		layout === "fixed"
-			? `fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[204px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[40px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`
-			: "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(110px,1fr))] items-center gap-x-3 gap-y-3 overflow-hidden border border-trace-divider bg-trace-black px-4 py-3";
+			? `trace-telemetry-hud trace-telemetry-hud--comparison trace-telemetry-hud--fixed fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[204px] ${showConditions ? "grid-cols-[120px_72px_minmax(160px,260px)_112px_minmax(120px,1fr)_112px_minmax(160px,260px)_72px_120px]" : "grid-cols-[120px_72px_minmax(180px,320px)_minmax(120px,1fr)_minmax(180px,320px)_72px_120px]"} grid-rows-[40px_45px_44px_27px] items-center justify-center gap-x-3 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`
+			: "trace-telemetry-hud trace-telemetry-hud--comparison trace-telemetry-hud--embedded grid min-w-0 grid-cols-[repeat(auto-fit,minmax(110px,1fr))] items-center gap-x-3 gap-y-3 overflow-hidden border border-trace-divider bg-trace-black px-4 py-3";
 	const gapTone =
 		sample?.deltaSeconds == null || Math.abs(sample.deltaSeconds) < 0.0005
 			? "text-trace-text"
@@ -107,7 +107,7 @@ export function ComparisonTelemetryHud({
 	const comparisonColour = comparisonIsFaster ? channelColours.faster : "var(--trace-accent)";
 	return (
 		<div className={frame}>
-			<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
+			<div className="trace-telemetry-hud__seek col-span-full min-w-0 border-b border-trace-divider pb-2">
 				<TelemetrySeek
 					samples={samples}
 					cursorIndex={cursorIndex}
@@ -119,7 +119,7 @@ export function ComparisonTelemetryHud({
 					onPlaybackSpeed={onPlaybackSpeed}
 				/>
 			</div>
-			<div className="col-span-full grid grid-cols-[1fr_52px_1fr] items-center gap-3 border-b border-trace-divider pb-2">
+			<div className="trace-telemetry-hud__comparison-identities col-span-full grid grid-cols-[1fr_52px_1fr] items-center gap-3 border-b border-trace-divider pb-2">
 				{referenceChoice ?? (
 					<HudIdentity label={referenceLabel} role={comparisonIsFaster ? "SLOWER BASELINE" : "FASTER REFERENCE"} colour={referenceColour} />
 				)}
@@ -164,7 +164,7 @@ export function ComparisonTelemetryHud({
 				value={sample?.comparisonSpeedKmh == null ? "—" : `${Math.round(sample.comparisonSpeedKmh)} · ${formatGear(sample.comparisonGear)}`}
 				colour={comparisonColour}
 			/>
-			<div className="col-span-full min-w-0 border-t border-trace-divider pt-2">
+			<div className="trace-telemetry-hud__sectors col-span-full min-w-0 border-t border-trace-divider pt-2">
 				<ComparisonSectorStrip sectors={sectorDeltas} value={sector} onChange={onSector} trackCarLabel={trackCarLabel} onClose={onClose} />
 			</div>
 		</div>

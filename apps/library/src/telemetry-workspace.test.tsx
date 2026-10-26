@@ -91,7 +91,9 @@ describe("telemetry workspace", () => {
 		expect(screen.getByRole("button", { name: "Play telemetry playback" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "SECTOR 1" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "SECTOR 2" })).toBeTruthy();
-		expect(screen.getByRole("slider", { name: "Seek through lap distance" })).toBeTruthy();
+		const seek = screen.getByRole("slider", { name: "Seek through lap distance" });
+		expect(seek.closest(".trace-telemetry-hud--embedded")).toBeTruthy();
+		expect(seek.closest(".trace-telemetry-seek")).toBeTruthy();
 		expect((screen.getByRole("combobox", { name: "Telemetry playback speed" }) as HTMLSelectElement).value).toBe("1");
 		expect(screen.getByRole("img", { name: "SPEED telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "THROTTLE telemetry by lap distance" })).toBeTruthy();

@@ -38,11 +38,11 @@ export function LapTelemetryHud({
 	const showConditions = hasHudConditions(airTemperature, trackTemperature);
 	const frame =
 		layout === "fixed"
-			? `fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[108px] ${showConditions ? "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`
-			: "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(105px,1fr))] items-center gap-x-4 gap-y-3 overflow-hidden border border-trace-divider bg-trace-black px-4 py-3";
+			? `trace-telemetry-hud trace-telemetry-hud--single trace-telemetry-hud--fixed fixed bottom-12 left-[calc(var(--trace-sidebar)+24px)] right-6 z-30 grid h-[108px] ${showConditions ? "trace-telemetry-hud--with-conditions grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px_150px]" : "grid-cols-[minmax(190px,1fr)_95px_130px_90px_100px_130px_130px]"} grid-rows-[28px_48px] items-center gap-x-4 gap-y-2 overflow-hidden border border-trace-divider bg-trace-black/95 px-5 py-3 shadow-[0_12px_40px_rgba(0,0,0,.55)] backdrop-blur`
+			: `trace-telemetry-hud trace-telemetry-hud--single trace-telemetry-hud--embedded ${showConditions ? "trace-telemetry-hud--with-conditions" : ""} grid min-w-0 grid-cols-[repeat(auto-fit,minmax(105px,1fr))] items-center gap-x-4 gap-y-3 overflow-hidden border border-trace-divider bg-trace-black px-4 py-3`;
 	return (
 		<div className={frame}>
-			<div className="col-span-full min-w-0 border-b border-trace-divider pb-2">
+			<div className="trace-telemetry-hud__seek col-span-full min-w-0 border-b border-trace-divider pb-2">
 				<TelemetrySeek
 					samples={samples}
 					cursorIndex={cursorIndex}
@@ -54,7 +54,7 @@ export function LapTelemetryHud({
 					onPlaybackSpeed={onPlaybackSpeed}
 				/>
 			</div>
-			<div className="min-w-0">
+			<div className="trace-telemetry-hud__identity min-w-0">
 				<span className="block truncate text-[13px] font-black">{identity}</span>
 				<span className="block truncate font-mono text-[11px] text-trace-dim">{secondary}</span>
 			</div>
@@ -90,7 +90,7 @@ export function TelemetrySeek({
 	const end = samples.at(-1)?.distanceM ?? 0;
 	return (
 		<div
-			className={`grid h-8 ${onTogglePlayback ? "grid-cols-[auto_48px_minmax(0,1fr)_52px]" : "grid-cols-[52px_minmax(0,1fr)_56px]"} items-center gap-2 font-mono text-[10px] tabular-nums text-trace-dim`}
+			className={`trace-telemetry-seek grid h-8 ${onTogglePlayback ? "grid-cols-[auto_48px_minmax(0,1fr)_52px]" : "grid-cols-[52px_minmax(0,1fr)_56px]"} items-center gap-2 font-mono text-[10px] tabular-nums text-trace-dim`}
 		>
 			{onTogglePlayback && (
 				<div className="mr-1 flex items-center gap-2 border-r border-trace-divider pr-3">
