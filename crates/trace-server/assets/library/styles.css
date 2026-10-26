@@ -146,7 +146,7 @@ main {
 
 #review-view {
 	width: 100%;
-	padding: 14px clamp(12px, 1.3vw, 24px) 32px;
+	padding: 18px clamp(16px, 1.5vw, 28px) 40px;
 }
 
 .state-panel {
@@ -687,8 +687,8 @@ button.primary:hover {
 }
 
 .review-head {
-	min-height: 40px;
-	margin-bottom: 12px;
+	min-height: 44px;
+	margin-bottom: 16px;
 }
 
 .review-actions {
@@ -803,14 +803,14 @@ button.primary:hover {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 40px;
-	padding: 0 15px;
+	min-height: 42px;
+	padding: 0 16px;
 	border: 1px solid #353535;
 	border-radius: 0;
 	background: transparent;
 	color: #d6d6d6;
 	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-	font-size: 11px;
+	font-size: 12px;
 	font-weight: 800;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -830,14 +830,15 @@ button.primary:hover {
 
 .review-title {
 	align-items: center;
-	min-height: 84px;
-	padding: 14px 18px;
-	border: 1px solid var(--trace-divider);
-	background: var(--trace-surface);
+	min-height: 96px;
+	padding: 18px 4px 20px;
+	border: 0;
+	border-bottom: 1px solid var(--trace-divider);
+	background: transparent;
 }
 
 .review-title h1 {
-	font-size: clamp(21px, 2vw, 30px);
+	font-size: clamp(26px, 2.2vw, 36px);
 	font-weight: 900;
 }
 
@@ -1103,11 +1104,11 @@ button.primary:hover {
 
 .review-layout {
 	display: grid;
-	grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+	grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
 	align-items: start;
-	gap: 12px;
+	gap: 16px;
 	min-height: 590px;
-	margin-top: 12px;
+	margin-top: 16px;
 }
 
 .lap-panel {
@@ -1116,13 +1117,14 @@ button.primary:hover {
 	min-width: 0;
 	max-height: calc(100dvh - 76px);
 	overflow: hidden;
-	border: 1px solid var(--trace-divider);
-	background: var(--trace-surface);
+	border: 0;
+	border-right: 1px solid var(--trace-divider);
+	background: var(--trace-deep);
 }
 
 .panel-heading {
-	min-height: 52px;
-	padding: 0 16px;
+	min-height: 56px;
+	padding: 0 18px;
 	border-bottom: 1px solid #2c2c2c;
 	color: #8e8e8e;
 	font-size: 11px;
@@ -1140,8 +1142,8 @@ button.primary:hover {
 	grid-template-columns: auto minmax(0, 1fr);
 	align-items: center;
 	gap: 14px;
-	min-height: 68px;
-	padding: 11px 14px;
+	min-height: 72px;
+	padding: 12px 16px;
 	border: 0;
 	border-bottom: 1px solid #292929;
 	border-radius: 0;
@@ -1255,11 +1257,12 @@ button.primary:hover {
 }
 
 .telemetry-head {
-	min-height: 56px;
-	margin-bottom: 10px;
-	padding: 0 14px;
-	border: 1px solid var(--trace-divider);
-	background: var(--trace-surface);
+	min-height: 64px;
+	margin-bottom: 12px;
+	padding: 0 4px 10px;
+	border: 0;
+	border-bottom: 1px solid var(--trace-divider);
+	background: transparent;
 }
 
 .telemetry-head > div:first-child {
@@ -1276,7 +1279,7 @@ button.primary:hover {
 }
 
 .telemetry-head > div:first-child strong {
-	font-size: 23px;
+	font-size: 26px;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1292,7 +1295,7 @@ button.primary:hover {
 }
 
 .telemetry-stats strong {
-	font-size: 13px;
+	font-size: 14px;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1311,10 +1314,11 @@ button.primary:hover {
 }
 
 .telemetry-range {
-	margin-bottom: 10px;
-	padding: 9px 12px;
-	border: 1px solid var(--trace-divider);
-	background: var(--trace-black);
+	margin-bottom: 12px;
+	padding: 10px 2px 12px;
+	border: 0;
+	border-bottom: 1px solid var(--trace-divider);
+	background: transparent;
 }
 
 .comparison-review-layout.with-analysis {
@@ -1459,6 +1463,8 @@ button.primary:hover {
 	.lap-panel {
 		position: static;
 		max-height: none;
+		border-right: 0;
+		border-bottom: 1px solid var(--trace-divider);
 	}
 
 	.lap-list {
