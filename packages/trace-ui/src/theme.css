@@ -33,7 +33,23 @@
 	background: var(--trace-divider);
 }
 
+.trace-seek::-moz-range-track {
+	height: 3px;
+	border: 0;
+	background: var(--trace-divider);
+}
+
 .trace-value-slider::-webkit-slider-runnable-track {
+	background: linear-gradient(
+		to right,
+		var(--trace-accent) 0,
+		var(--trace-accent) var(--trace-slider-fill, 0%),
+		var(--trace-divider) var(--trace-slider-fill, 0%),
+		var(--trace-divider) 100%
+	);
+}
+
+.trace-value-slider::-moz-range-track {
 	background: linear-gradient(
 		to right,
 		var(--trace-accent) 0,
@@ -52,10 +68,23 @@
 	background: var(--trace-accent);
 }
 
+.trace-seek::-moz-range-thumb {
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--trace-black);
+	border-radius: 0;
+	background: var(--trace-accent);
+}
+
 .trace-seek-lg::-webkit-slider-thumb {
 	width: 16px;
 	height: 16px;
 	margin-top: -6.5px;
+}
+
+.trace-seek-lg::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
 }
 
 .trace-seek:focus-visible {

@@ -1,3 +1,4 @@
+@import "@trace/ui/theme.css";
 @import "tailwindcss/theme" layer(theme);
 @import "tailwindcss/utilities" layer(utilities);
 @source "../../../packages/trace-ui/src/*.tsx";
@@ -8,15 +9,21 @@
 	--color-trace-raised: var(--trace-raised);
 	--color-trace-divider: var(--trace-divider);
 	--color-trace-accent: var(--trace-accent);
+	--color-trace-accent-dark: var(--trace-accent-dark);
 	--color-trace-accent-muted: var(--trace-accent-muted);
 	--color-trace-accent-wash: var(--trace-accent-wash);
 	--color-trace-text: var(--trace-text);
 	--color-trace-soft: var(--trace-soft);
 	--color-trace-muted: var(--trace-muted);
+	--color-trace-faint: var(--trace-faint);
 	--color-trace-dim: var(--trace-dim);
 	--color-trace-deep: var(--trace-deep);
 	--color-trace-black: var(--trace-black);
 	--color-trace-warning: var(--trace-warning);
 	--color-trace-purple: var(--trace-purple);
+	--color-trace-purple-wash: var(--trace-purple-wash);
+	--color-trace-sector-yellow: var(--trace-sector-yellow);
+	--color-trace-danger: var(--trace-danger);
+	--font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
 	--font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
