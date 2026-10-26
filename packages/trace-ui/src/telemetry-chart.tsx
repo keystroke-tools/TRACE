@@ -146,6 +146,7 @@ export function ComparisonChart({
 	formatValue?: (value: number, unit: string) => string;
 }) {
 	const chart = useRef<HTMLDivElement>(null);
+	const plotElement = useRef<SVGSVGElement>(null);
 	const dragClientX = useRef<number | null>(null);
 	const [width, setWidth] = useState(1_000);
 	const [pointerInside, setPointerInside] = useState(false);
@@ -223,6 +224,25 @@ export function ComparisonChart({
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [onZoom, pointerInside, zoomAnchorM]);
+	useEffect(() => {
+		const element = plotElement.current;
+		if (!element || !onZoom) return;
+		const handleWheel = (event: WheelEvent) => {
+			if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+			event.preventDefault();
+			event.stopPropagation();
+			const bounds = element.getBoundingClientRect();
+			let anchorM = zoomAnchorM;
+			if (bounds.width > 0) {
+				const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+				const ratio = Math.min(1, Math.max(0, (pointerX - plot.left) / (width - plot.left - plot.right)));
+				anchorM = firstDistance + ratio * distanceRange;
+			}
+			onZoom(anchorM, event.deltaY < 0 ? "in" : "out");
+		};
+		element.addEventListener("wheel", handleWheel, { passive: false });
+		return () => element.removeEventListener("wheel", handleWheel);
+	}, [distanceRange, firstDistance, onZoom, width, zoomAnchorM]);
 	const updateCursor = (element: SVGSVGElement, clientX: number) => {
 		const bounds = element.getBoundingClientRect();
 		const pointerX = ((clientX - bounds.left) / bounds.width) * width;
@@ -273,6 +293,7 @@ export function ComparisonChart({
 				</div>
 			</div>
 			<svg
+				ref={plotElement}
 				className={`trace-chart__plot block w-full touch-none ${onPan ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""} ${compact ? "h-[82px]" : "h-56"}`}
 				viewBox={`0 0 ${width} ${height}`}
 				preserveAspectRatio="none"

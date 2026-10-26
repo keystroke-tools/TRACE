@@ -120,6 +120,12 @@ describe("telemetry workspace", () => {
 		expect(screen.getByText(/15–85% · RESET ZOOM/)).toBeTruthy();
 		fireEvent.keyDown(window, { key: "-" });
 		expect(screen.queryByText(/RESET ZOOM/)).toBeNull();
+		fireEvent.wheel(speedChart, { ctrlKey: true, deltaY: -100, clientX: 200 });
+		expect(screen.getByText(/RESET ZOOM/)).toBeTruthy();
+		fireEvent.wheel(speedChart, { ctrlKey: true, deltaY: 100, clientX: 200 });
+		expect(screen.queryByText(/RESET ZOOM/)).toBeNull();
+		fireEvent.wheel(speedChart, { deltaY: -100, clientX: 200 });
+		expect(screen.queryByText(/RESET ZOOM/)).toBeNull();
 		await userEvent.click(screen.getAllByRole("button", { name: /Zoom all telemetry in around 50 %/ })[0]);
 		expect(screen.getByText(/RESET ZOOM/)).toBeTruthy();
 	});
