@@ -3839,8 +3839,8 @@ mod tests {
             .await
             .expect("home body");
         let body = String::from_utf8(body.to_vec()).expect("home HTML");
-        assert!(body.contains("The pit wall,"));
-        assert!(body.contains("TRACE Go Live — The pit wall, in your browser"));
+        assert!(body.contains("Your telemetry,"));
+        assert!(body.contains("TRACE Live — Your telemetry, available anywhere"));
         assert!(body.contains("https://live.simtrace.run/live-assets/trace-live-og.png"));
         assert!(body.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))));
         assert!(!body.contains("{{TRACE_"));
@@ -4008,7 +4008,9 @@ mod tests {
             "https://live.simtrace.run",
         );
         assert!(landing.contains("class=\"button primary\" href=\"/app\""));
-        assert!(landing.contains("Open web app"));
+        assert!(landing.contains("Open web library"));
+        assert!(landing.contains("ONE BINARY"));
+        assert!(landing.contains("Developed with disclosed LLM assistance"));
         assert!(landing.contains(&format!(
             "/live-assets/site.css?v={}",
             env!("CARGO_PKG_VERSION")
