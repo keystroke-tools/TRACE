@@ -282,14 +282,14 @@ impl ActiveSession {
                 Some(open) if completed_laps == open.index + 1 => {
                     let open = self.current_lap.take().expect("open lap exists");
                     let partial = !open.started_at_boundary || !open.has_full_position_coverage();
+                    let boundary_offset_ns = inferred_lap_start_offset(frame);
                     self.laps.push(RecordedLap {
                         lap_index: open.index.saturating_add(1),
                         started_offset_ns: open.started_offset_ns,
                         duration_ns: (!partial).then_some(
-                            frame
-                                .lap
-                                .last_lap_time_ns
-                                .unwrap_or(frame.elapsed.0 - open.started_offset_ns),
+                            frame.lap.last_lap_time_ns.unwrap_or_else(|| {
+                                boundary_offset_ns.saturating_sub(open.started_offset_ns)
+                            }),
                         ),
                         sample_start: open.sample_start,
                         sample_count: sample_index - open.sample_start,
@@ -302,7 +302,7 @@ impl ActiveSession {
                     self.current_lap = Some(OpenLap {
                         index: completed_laps,
                         sample_start: sample_index,
-                        started_offset_ns: frame.elapsed.0,
+                        started_offset_ns: boundary_offset_ns,
                         started_at_boundary: true,
                         validity_observed: false,
                         invalidated: false,
@@ -371,7 +371,7 @@ impl ActiveSession {
         if current_time < previous_time {
             open.initial_boundary_candidate = Some(InitialBoundaryCandidate {
                 sample_start: sample_index,
-                started_offset_ns: frame.elapsed.0,
+                started_offset_ns: inferred_lap_start_offset(frame),
                 sector: frame.lap.current_sector_index,
                 lap_position: frame.lap.normalized_position,
             });
@@ -474,6 +474,14 @@ impl ActiveSession {
             end_reason,
         }
     }
+}
+
+fn inferred_lap_start_offset(frame: &TelemetryFrame) -> u64 {
+    frame
+        .lap
+        .current_lap_time_ns
+        .and_then(|lap_time| frame.elapsed.0.checked_sub(lap_time))
+        .unwrap_or(frame.elapsed.0)
 }
 
 impl OpenLap {
@@ -630,6 +638,36 @@ mod tests {
             panic!("expected completed session");
         };
         assert_eq!(session.laps[1].duration_ns, Some(273));
+    }
+
+    #[test]
+    fn removes_completed_counter_delay_from_fallback_lap_time() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for value in [
+            frame(1, 100, 0, 0),
+            frame(2, 200, 0, 100),
+            frame(3, 300, 0, 200),
+            frame(4, 450, 1, 50),
+            frame(5, 500, 1, 100),
+            frame(6, 600, 1, 200),
+            frame(7, 735, 2, 35),
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps[1].started_offset_ns, 400);
+        assert_eq!(session.laps[1].duration_ns, Some(300));
     }
 
     #[test]
