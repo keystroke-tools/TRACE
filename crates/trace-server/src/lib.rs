@@ -2992,6 +2992,10 @@ mod tests {
     }
 
     fn shared_package() -> Vec<u8> {
+        shared_package_with_session_id("shared-session")
+    }
+
+    fn shared_package_with_session_id(session_id: &str) -> Vec<u8> {
         let telemetry = encode_frames(&[TelemetryFrame {
             sequence: FrameSequence(1),
             elapsed: ElapsedNanoseconds(1),
@@ -3015,7 +3019,7 @@ mod tests {
             format_version: PACKAGE_VERSION,
             telemetry_schema_version: TELEMETRY_SCHEMA_VERSION,
             session: SessionSummary {
-                id: "shared-session".into(),
+                id: session_id.into(),
                 simulator_key: "assetto-corsa".into(),
                 source_track_id: Some("zandvoort".into()),
                 layout_id: None,
@@ -4346,16 +4350,16 @@ mod tests {
             .with_registration_policy(RegistrationPolicy::Open);
         let application = app(config.clone());
         let owner_cookie = registered_account_cookie(&application, "retention-owner").await;
-        let package = shared_package();
-
         let mut session_ids = Vec::new();
-        for _ in 0..2 {
+        for package_index in 0..2 {
+            let package =
+                shared_package_with_session_id(&format!("retention-session-{package_index}"));
             let response = application
                 .clone()
                 .oneshot(
                     Request::post("/api/v1/library/sessions")
                         .header(header::COOKIE, &owner_cookie)
-                        .body(Body::from(package.clone()))
+                        .body(Body::from(package))
                         .expect("library upload request"),
                 )
                 .await
@@ -4472,12 +4476,13 @@ mod tests {
         .expect("persisted settings");
         assert_eq!(persisted["library_max_sessions_per_account"], 1);
 
+        let retained_package = shared_package_with_session_id("retention-session-after-restart");
         let uploaded = restarted
             .clone()
             .oneshot(
                 Request::post("/api/v1/library/sessions")
                     .header(header::COOKIE, &owner_cookie)
-                    .body(Body::from(package))
+                    .body(Body::from(retained_package))
                     .expect("retained upload request"),
             )
             .await
