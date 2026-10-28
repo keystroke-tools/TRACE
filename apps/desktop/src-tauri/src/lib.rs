@@ -107,11 +107,20 @@ struct LiveSettings {
     discord_activity_enabled: bool,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum LibrarySyncMode {
+    Ask,
+    Automatic,
+    Never,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LibraryConnectionSettings {
     endpoint: String,
     token_configured: bool,
+    sync_mode: LibrarySyncMode,
 }
 
 #[derive(Deserialize)]
@@ -886,10 +895,31 @@ fn library_connection_settings(app: tauri::AppHandle) -> Result<LibraryConnectio
         .library_access_token()
         .map_err(|error| format!("failed to read library access setting: {error:?}"))?
         .is_some();
+    let sync_mode = load_library_sync_mode(&store, &endpoint)?;
     Ok(LibraryConnectionSettings {
         endpoint,
         token_configured,
+        sync_mode,
     })
+}
+
+fn load_library_sync_mode(
+    store: &MetadataStore,
+    endpoint: &str,
+) -> Result<LibrarySyncMode, String> {
+    let encoded = store
+        .library_sync_preferences()
+        .map_err(|error| format!("failed to read library sync preference: {error:?}"))?;
+    let preferences = encoded
+        .as_deref()
+        .map(serde_json::from_str::<std::collections::BTreeMap<String, LibrarySyncMode>>)
+        .transpose()
+        .map_err(|error| format!("library sync preferences are invalid: {error}"))?
+        .unwrap_or_default();
+    Ok(preferences
+        .get(endpoint)
+        .copied()
+        .unwrap_or(LibrarySyncMode::Ask))
 }
 
 #[tauri::command]
@@ -907,6 +937,42 @@ fn set_library_access_token(
     store
         .set_library_access_token(token.as_deref())
         .map_err(|error| format!("failed to save library access token: {error:?}"))?;
+    drop(store);
+    library_connection_settings(app)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_library_sync_mode(
+    app: tauri::AppHandle,
+    sync_mode: LibrarySyncMode,
+) -> Result<LibraryConnectionSettings, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read service settings: {error:?}"))?
+        .filter(|value| value != LEGACY_SERVICE_ENDPOINT)
+        .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let encoded = store
+        .library_sync_preferences()
+        .map_err(|error| format!("failed to read library sync preference: {error:?}"))?;
+    let mut preferences = encoded
+        .as_deref()
+        .map(serde_json::from_str::<std::collections::BTreeMap<String, LibrarySyncMode>>)
+        .transpose()
+        .map_err(|error| format!("library sync preferences are invalid: {error}"))?
+        .unwrap_or_default();
+    preferences.insert(endpoint, sync_mode);
+    let encoded = serde_json::to_string(&preferences)
+        .map_err(|error| format!("failed to encode library sync preference: {error}"))?;
+    store
+        .set_library_sync_preferences(&encoded)
+        .map_err(|error| format!("failed to save library sync preference: {error:?}"))?;
     drop(store);
     library_connection_settings(app)
 }
@@ -3591,6 +3657,7 @@ pub fn run() {
             set_live_settings,
             library_connection_settings,
             set_library_access_token,
+            set_library_sync_mode,
             set_discord_review_activity,
             live_broadcast_status,
             start_active_live_broadcast,

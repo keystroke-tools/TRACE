@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
 	telemetryDataSource,
 	type GameInstallDirectory,
+	type LibrarySyncMode,
 	type LiveBroadcastOptions,
 	type LiveSettings,
 	type StartupSettings,
@@ -63,6 +64,8 @@ export function SettingsPage() {
 	const [libraryToken, setLibraryToken] = useState("");
 	const [libraryTokenConfigured, setLibraryTokenConfigured] = useState(false);
 	const [savingLibraryToken, setSavingLibraryToken] = useState(false);
+	const [librarySyncMode, setLibrarySyncMode] = useState<LibrarySyncMode>("ask");
+	const [savingLibrarySyncMode, setSavingLibrarySyncMode] = useState(false);
 	const [localSpectatorPort, setLocalSpectatorPort] = useState("0");
 	const [autoStreamEnabled, setAutoStreamEnabled] = useState(false);
 	const [discordActivityEnabled, setDiscordActivityEnabled] = useState(false);
@@ -168,6 +171,7 @@ export function SettingsPage() {
 				setCloseToTrayEnabled(behaviorSettings.closeToTrayEnabled);
 				setConfirmExitEnabled(behaviorSettings.confirmExitEnabled);
 				setLibraryTokenConfigured(librarySettings.tokenConfigured);
+				setLibrarySyncMode(librarySettings.syncMode);
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -203,6 +207,37 @@ export function SettingsPage() {
 			});
 		} finally {
 			setSavingLibraryToken(false);
+		}
+	}
+
+	async function changeLibrarySyncMode(syncMode: LibrarySyncMode) {
+		const previous = librarySyncMode;
+		setLibrarySyncMode(syncMode);
+		setSavingLibrarySyncMode(true);
+		try {
+			const settings = await telemetryDataSource.setLibrarySyncMode(syncMode);
+			setLibrarySyncMode(settings.syncMode);
+			showToast({
+				kind: "success",
+				title: "Private library sync updated",
+				message:
+					settings.syncMode === "automatic"
+						? "Completed sessions will upload their valid timed laps automatically."
+						: settings.syncMode === "ask"
+							? "TRACE will offer to sync each completed session."
+							: "TRACE will not prompt to sync completed sessions.",
+				timeoutMs: 5_000,
+			});
+		} catch (error) {
+			setLibrarySyncMode(previous);
+			showToast({
+				kind: "error",
+				title: "Could not update library sync",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setSavingLibrarySyncMode(false);
 		}
 	}
 
@@ -377,6 +412,9 @@ export function SettingsPage() {
 			setDiscordActivityEnabled(settings.discordActivityEnabled);
 			setLiveMode(settings.autoStream.mode);
 			setAcSessionTypes(settings.autoStream.simulatorSessionTypes["assetto-corsa"] ?? []);
+			const librarySettings = await telemetryDataSource.getLibraryConnectionSettings();
+			setLibraryTokenConfigured(librarySettings.tokenConfigured);
+			setLibrarySyncMode(librarySettings.syncMode);
 			window.dispatchEvent(new CustomEvent<LiveSettings>("trace:live-settings", { detail: settings }));
 			showToast({
 				kind: "success",
@@ -657,6 +695,35 @@ export function SettingsPage() {
 								>
 									DISCONNECT
 								</button>
+							)}
+						</div>
+						<div className="mt-5 max-w-3xl border-t border-trace-divider pt-4">
+							<span className="font-mono text-[10px] font-bold tracking-[.1em] text-trace-dim">COMPLETED SESSION SYNC</span>
+							<p className="mt-1 text-[11px] leading-5 text-trace-dim">
+								Choose what TRACE should do after a recording finishes. Automatic sync uploads valid timed laps only and keeps the session
+								private.
+							</p>
+							<div className="mt-3 grid grid-cols-3 border border-trace-divider p-1" role="group" aria-label="Completed session library sync">
+								{(
+									[
+										["ask", "ASK"],
+										["automatic", "AUTOMATIC"],
+										["never", "NEVER"],
+									] as const
+								).map(([mode, label]) => (
+									<button
+										type="button"
+										key={mode}
+										disabled={!libraryTokenConfigured || savingLibrarySyncMode}
+										onClick={() => void changeLibrarySyncMode(mode)}
+										className={`h-9 border-0 font-mono text-[10px] font-bold tracking-[.06em] ${librarySyncMode === mode ? "bg-trace-accent text-trace-black" : "bg-transparent text-trace-muted hover:bg-trace-raised hover:text-white"} disabled:text-trace-dim`}
+									>
+										{label}
+									</button>
+								))}
+							</div>
+							{!libraryTokenConfigured && (
+								<span className="mt-2 block text-[10px] text-trace-dim">Connect a private library to enable sync.</span>
 							)}
 						</div>
 					</section>

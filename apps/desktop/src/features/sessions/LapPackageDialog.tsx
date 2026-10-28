@@ -89,7 +89,7 @@ export function LapPackageDialog({ session, action, onClose }: { session: Record
 
 	return createPortal(
 		<div
-			className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-5"
+			className="fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5"
 			onMouseDown={(event) => event.target === event.currentTarget && !submitting && onClose()}
 		>
 			<section

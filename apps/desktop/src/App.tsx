@@ -48,6 +48,7 @@ export function App() {
 	const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 	const [openLapIndex, setOpenLapIndex] = useState<number | null>(null);
 	const [summarySessionId, setSummarySessionId] = useState<string | null>(null);
+	const [summaryIsCompletion, setSummaryIsCompletion] = useState(false);
 	const [comparisonSelection, setComparisonSelection] = useState<ComparisonSelection | null>(null);
 	const [sharedImportProgress, setSharedImportProgress] = useState<SharedSessionImportProgress | null>(null);
 	const announcedAutomaticSession = useRef<string | null>(null);
@@ -252,6 +253,7 @@ export function App() {
 			setSection("SESSIONS");
 			setOpenSessionId(completedSessionId);
 			setOpenLapIndex(null);
+			setSummaryIsCompletion(true);
 			setSummarySessionId(completedSessionId);
 		});
 	}, [status?.completedSessionId]);
@@ -350,7 +352,10 @@ export function App() {
 									setSection("COMPARE");
 								}}
 								liveBroadcast={liveBroadcast}
-								onShowSummary={() => setSummarySessionId(openSession.id)}
+								onShowSummary={() => {
+									setSummaryIsCompletion(false);
+									setSummarySessionId(openSession.id);
+								}}
 								onStartLive={() => void startRecordedBroadcast(openSession.id, liveOptions())}
 								onStopLive={() => void stopLiveBroadcast()}
 								onCopyLiveLink={() => void copyLiveLink()}
@@ -388,7 +393,17 @@ export function App() {
 				{section === "SETTINGS" && <SettingsPage />}
 			</section>
 			<Footer status={status} />
-			{summarySession && <SessionSummaryModal session={summarySession} sessions={sessions} onClose={() => setSummarySessionId(null)} />}
+			{summarySession && (
+				<SessionSummaryModal
+					session={summarySession}
+					sessions={sessions}
+					completed={summaryIsCompletion}
+					onClose={() => {
+						setSummarySessionId(null);
+						setSummaryIsCompletion(false);
+					}}
+				/>
+			)}
 			{sharedImportProgress && <SharedSessionImportOverlay progress={sharedImportProgress} />}
 		</main>
 	);

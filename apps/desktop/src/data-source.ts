@@ -554,7 +554,10 @@ export interface LiveSettings {
 export interface LibraryConnectionSettings {
 	endpoint: string;
 	tokenConfigured: boolean;
+	syncMode: LibrarySyncMode;
 }
+
+export type LibrarySyncMode = "ask" | "automatic" | "never";
 
 export interface LibraryUploadResult {
 	sessionId: string;
@@ -651,6 +654,7 @@ export interface TelemetryDataSource {
 	setLiveSettings(settings: LiveSettings): Promise<LiveSettings>;
 	getLibraryConnectionSettings(): Promise<LibraryConnectionSettings>;
 	setLibraryAccessToken(token: string | null): Promise<LibraryConnectionSettings>;
+	setLibrarySyncMode(syncMode: LibrarySyncMode): Promise<LibraryConnectionSettings>;
 	setDiscordReviewActivity(activity: DiscordReviewActivity | null): Promise<void>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
 	startActiveLiveBroadcast(options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
@@ -703,6 +707,11 @@ let fixtureLiveSettings: LiveSettings = {
 			"assetto-corsa": ["practice", "qualifying", "race", "hotlap", "time attack", "drift", "drag"],
 		},
 	},
+};
+let fixtureLibrarySettings: LibraryConnectionSettings = {
+	endpoint: fixtureLiveSettings.endpoint,
+	tokenConfigured: false,
+	syncMode: "ask",
 };
 let fixtureLiveBroadcastStatus: LiveBroadcastStatus = {
 	phase: "idle",
@@ -1434,10 +1443,15 @@ export const fixtureDataSource: TelemetryDataSource = {
 		return fixtureLiveSettings;
 	},
 	async getLibraryConnectionSettings() {
-		return { endpoint: fixtureLiveSettings.endpoint, tokenConfigured: false };
+		return { ...fixtureLibrarySettings, endpoint: fixtureLiveSettings.endpoint };
 	},
 	async setLibraryAccessToken(token) {
-		return { endpoint: fixtureLiveSettings.endpoint, tokenConfigured: Boolean(token) };
+		fixtureLibrarySettings = { ...fixtureLibrarySettings, endpoint: fixtureLiveSettings.endpoint, tokenConfigured: Boolean(token) };
+		return fixtureLibrarySettings;
+	},
+	async setLibrarySyncMode(syncMode) {
+		fixtureLibrarySettings = { ...fixtureLibrarySettings, endpoint: fixtureLiveSettings.endpoint, syncMode };
+		return fixtureLibrarySettings;
 	},
 	async setDiscordReviewActivity(_activity) {},
 	async getLiveBroadcastStatus() {
@@ -1634,6 +1648,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	setLibraryAccessToken(token) {
 		return invoke<LibraryConnectionSettings>("set_library_access_token", { token });
+	},
+	setLibrarySyncMode(syncMode) {
+		return invoke<LibraryConnectionSettings>("set_library_sync_mode", { syncMode });
 	},
 	setDiscordReviewActivity(activity) {
 		return invoke<void>("set_discord_review_activity", { activity });

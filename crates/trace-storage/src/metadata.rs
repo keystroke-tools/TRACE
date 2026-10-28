@@ -444,6 +444,42 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns the endpoint-keyed private-library sync preferences as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn library_sync_preferences(&self) -> Result<Option<String>, MetadataError> {
+        self.service_endpoint("library_sync_preferences")
+    }
+
+    /// Persists a bounded JSON object containing private-library sync preferences.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the value is not a bounded JSON object or `SQLite`
+    /// cannot persist it.
+    pub fn set_library_sync_preferences(&mut self, preferences: &str) -> Result<(), MetadataError> {
+        let preferences = preferences.trim();
+        let valid = !preferences.is_empty()
+            && preferences.len() <= 8_192
+            && serde_json::from_str::<serde_json::Value>(preferences)
+                .is_ok_and(|value| value.is_object());
+        if !valid {
+            return Err(MetadataError::InvalidRecord(
+                "library sync preferences must be a JSON object no larger than 8192 bytes".into(),
+            ));
+        }
+        self.connection
+            .execute(
+                "INSERT INTO app_settings (key, value) VALUES ('library_sync_preferences', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [preferences],
+            )
+            .map_err(MetadataError::from)?;
+        Ok(())
+    }
+
     /// Returns the simulator-specific Go Live automation configuration as JSON.
     ///
     /// `None` means automation has never been configured.
@@ -2386,6 +2422,26 @@ mod tests {
         assert!(store.set_library_access_token(Some("wrong-token")).is_err());
         store.set_library_access_token(None).expect("clear token");
         assert_eq!(store.library_access_token().expect("token"), None);
+    }
+
+    #[test]
+    fn library_sync_preferences_are_persisted_and_bounded() {
+        let mut store = MetadataStore::open_in_memory().expect("metadata store");
+        assert_eq!(store.library_sync_preferences().expect("preferences"), None);
+        store
+            .set_library_sync_preferences(
+                r#"{"https://live.simtrace.run":"ask","https://team.example.test":"automatic"}"#,
+            )
+            .expect("save preferences");
+        assert_eq!(
+            store.library_sync_preferences().expect("preferences"),
+            Some(
+                r#"{"https://live.simtrace.run":"ask","https://team.example.test":"automatic"}"#
+                    .into()
+            )
+        );
+        assert!(store.set_library_sync_preferences("[]").is_err());
+        assert!(store.set_library_sync_preferences("not json").is_err());
     }
 
     #[test]

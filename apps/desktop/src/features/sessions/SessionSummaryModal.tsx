@@ -1,24 +1,75 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatLapDurationNs, sessionOverview } from "@trace/ui";
-import type { RecordedSessionSummary } from "../../data-source";
+import { telemetryDataSource, type LibraryConnectionSettings, type RecordedSessionSummary } from "../../data-source";
+import { useToast } from "../../Toast";
 import { formatSessionDate, friendlySessionType, lapDuration, lapIsInvalid } from "./session-components";
+import { LapPackageDialog } from "./LapPackageDialog";
 
 export function SessionSummaryModal({
 	session,
 	sessions,
+	completed = false,
 	onClose,
 }: {
 	session: RecordedSessionSummary;
 	sessions: RecordedSessionSummary[];
+	completed?: boolean;
 	onClose: () => void;
 }) {
+	const showToast = useToast();
+	const [library, setLibrary] = useState<LibraryConnectionSettings | null>(null);
+	const [showUploadPicker, setShowUploadPicker] = useState(false);
+	const [automaticUpload, setAutomaticUpload] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
+	const [automaticError, setAutomaticError] = useState<string | null>(null);
+	const automaticStarted = useRef<string | null>(null);
+	const validLapIndices = useMemo(() => session.laps.filter((lap) => lap.durationNs != null && !lapIsInvalid(lap)).map((lap) => lap.index), [session.laps]);
+
 	useEffect(() => {
 		function closeOnEscape(event: KeyboardEvent) {
-			if (event.key === "Escape") onClose();
+			if (event.key === "Escape" && !showUploadPicker) onClose();
 		}
 		document.addEventListener("keydown", closeOnEscape);
 		return () => document.removeEventListener("keydown", closeOnEscape);
-	}, [onClose]);
+	}, [onClose, showUploadPicker]);
+
+	useEffect(() => {
+		let active = true;
+		void telemetryDataSource
+			.getLibraryConnectionSettings()
+			.then((settings) => active && setLibrary(settings))
+			.catch(() => active && setLibrary(null));
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	const uploadAutomatically = useCallback(async () => {
+		if (validLapIndices.length === 0) return;
+		setAutomaticUpload("uploading");
+		setAutomaticError(null);
+		try {
+			const result = await telemetryDataSource.uploadLibrarySession(session.id, validLapIndices);
+			setAutomaticUpload("uploaded");
+			showToast({
+				kind: "success",
+				title: "Session synced privately",
+				message: `${result.lapCount} ${result.lapCount === 1 ? "lap" : "laps"} added to ${result.endpoint}.`,
+				timeoutMs: 7_000,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			setAutomaticUpload("failed");
+			setAutomaticError(message);
+			showToast({ kind: "error", title: "Private library sync failed", message, timeoutMs: 9_000 });
+		}
+	}, [session.id, showToast, validLapIndices]);
+
+	useEffect(() => {
+		if (!completed || !library?.tokenConfigured || library.syncMode !== "automatic") return;
+		if (automaticStarted.current === session.id) return;
+		automaticStarted.current = session.id;
+		void uploadAutomatically();
+	}, [completed, library, session.id, uploadAutomatically]);
 
 	const summary = useMemo(() => sessionSummary(session, sessions), [session, sessions]);
 
@@ -91,6 +142,49 @@ export function SessionSummaryModal({
 							completed lap.
 						</p>
 					)}
+
+					{completed && library?.tokenConfigured && library.syncMode !== "never" && (
+						<section className="mt-5 border-t border-trace-divider pt-5" aria-label="Private library sync">
+							<div className="flex flex-wrap items-center justify-between gap-4">
+								<div className="min-w-0">
+									<span className="font-mono text-[10px] font-bold tracking-[.12em] text-trace-accent">PRIVATE LIBRARY</span>
+									<strong className="mt-1 block text-[13px] text-trace-text">
+										{library.syncMode === "automatic"
+											? validLapIndices.length === 0
+												? "No valid timed laps to sync"
+												: automaticUpload === "uploaded"
+													? "Session synced"
+													: automaticUpload === "failed"
+														? "Session could not be synced"
+														: "Syncing completed session…"
+											: "Keep this session in your private library?"}
+									</strong>
+									<p className="mt-1 max-w-lg text-[11px] leading-5 text-trace-dim">
+										{automaticError ??
+											`${validLapIndices.length} valid timed ${validLapIndices.length === 1 ? "lap" : "laps"} · ${library.endpoint}`}
+									</p>
+								</div>
+								{library.syncMode === "ask" ? (
+									<button
+										type="button"
+										disabled={session.laps.every((lap) => lap.durationNs == null)}
+										onClick={() => setShowUploadPicker(true)}
+										className="h-9 shrink-0 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[10px] font-black tracking-[.08em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+									>
+										CHOOSE LAPS
+									</button>
+								) : automaticUpload === "failed" ? (
+									<button
+										type="button"
+										onClick={() => void uploadAutomatically()}
+										className="h-9 shrink-0 border border-trace-divider px-4 font-mono text-[10px] font-black tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white"
+									>
+										RETRY
+									</button>
+								) : null}
+							</div>
+						</section>
+					)}
 				</div>
 
 				<footer className="flex justify-end border-t border-trace-divider px-7 py-4">
@@ -103,6 +197,7 @@ export function SessionSummaryModal({
 					</button>
 				</footer>
 			</section>
+			{showUploadPicker && <LapPackageDialog session={session} action="upload" onClose={() => setShowUploadPicker(false)} />}
 		</div>
 	);
 }
