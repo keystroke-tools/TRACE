@@ -8,6 +8,7 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use trace_storage::{
     ipc::{TelemetryColumns, read_columns_range},
     metadata::{LapSummary, SectorSummary, SessionConditions},
@@ -124,6 +125,7 @@ impl LibraryStore {
                      lap_count INTEGER NOT NULL,
                      size_bytes INTEGER NOT NULL,
                      download_name TEXT NOT NULL,
+                     content_sha256 BLOB,
                      created_at_unix_ms INTEGER NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS web_library_sessions_owner_created
@@ -136,6 +138,32 @@ impl LibraryStore {
                          REFERENCES web_accounts(account_id) ON DELETE CASCADE,
                      created_at_unix_ms INTEGER NOT NULL
                  );",
+            )
+            .map_err(|_| LibraryStoreError::Database)?;
+        let has_content_digest = connection
+            .prepare("PRAGMA table_info(web_library_sessions)")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(1))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|_| LibraryStoreError::Database)?
+            .iter()
+            .any(|column| column == "content_sha256");
+        if !has_content_digest {
+            connection
+                .execute(
+                    "ALTER TABLE web_library_sessions ADD COLUMN content_sha256 BLOB",
+                    [],
+                )
+                .map_err(|_| LibraryStoreError::Database)?;
+        }
+        connection
+            .execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS web_library_sessions_owner_content
+                 ON web_library_sessions(account_id, content_sha256)
+                 WHERE content_sha256 IS NOT NULL",
+                [],
             )
             .map_err(|_| LibraryStoreError::Database)?;
         Ok(Self {
@@ -162,6 +190,10 @@ impl LibraryStore {
                 crate::shares::ShareStoreError::NotFound => LibraryStoreError::NotFound,
                 crate::shares::ShareStoreError::Unavailable => LibraryStoreError::Unavailable,
             })?;
+        let content_sha256: [u8; 32] = Sha256::digest(contents).into();
+        if let Some(existing) = self.find_by_content_digest(account_id, &content_sha256)? {
+            return Ok(existing);
+        }
         let session_id = Uuid::new_v4().simple().to_string();
         let owner_root = self.root.join(account_id);
         fs::create_dir_all(&owner_root).map_err(|_| LibraryStoreError::Unavailable)?;
@@ -196,8 +228,8 @@ impl LibraryStore {
                 "INSERT INTO web_library_sessions
                  (session_id, account_id, title, driver_name, simulator, track, layout, car,
                   session_type, started_at, tags_json, lap_count, size_bytes, download_name,
-                  created_at_unix_ms)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                  created_at_unix_ms, content_sha256)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     summary.session_id,
                     account_id,
@@ -213,14 +245,41 @@ impl LibraryStore {
                     lap_count,
                     size,
                     download_name,
-                    summary.created_at_unix_ms
+                    summary.created_at_unix_ms,
+                    content_sha256.as_slice()
                 ],
             );
         if inserted.is_err() {
             let _ = fs::remove_file(destination);
+            if let Some(existing) = self.find_by_content_digest(account_id, &content_sha256)? {
+                return Ok(existing);
+            }
             return Err(LibraryStoreError::Database);
         }
         Ok(summary)
+    }
+
+    fn find_by_content_digest(
+        &self,
+        account_id: &str,
+        content_sha256: &[u8; 32],
+    ) -> Result<Option<LibrarySessionSummary>, LibraryStoreError> {
+        self.connection
+            .lock()
+            .map_err(|_| LibraryStoreError::Database)?
+            .query_row(
+                "SELECT session_id, title, driver_name, simulator, track, layout, car,
+                        session_type, started_at, tags_json, lap_count, size_bytes,
+                        created_at_unix_ms,
+                        (SELECT share_id FROM web_library_shares
+                         WHERE web_library_shares.session_id = web_library_sessions.session_id)
+                 FROM web_library_sessions
+                 WHERE account_id = ?1 AND content_sha256 = ?2",
+                params![account_id, content_sha256.as_slice()],
+                summary_from_row,
+            )
+            .optional()
+            .map_err(|_| LibraryStoreError::Database)
     }
 
     pub(crate) fn list(

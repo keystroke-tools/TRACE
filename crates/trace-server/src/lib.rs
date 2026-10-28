@@ -4196,6 +4196,25 @@ mod tests {
             .expect("library session ID")
             .to_owned();
 
+        let duplicate = application
+            .clone()
+            .oneshot(
+                Request::post("/api/v1/library/sessions")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(package.clone()))
+                    .expect("duplicate library upload request"),
+            )
+            .await
+            .expect("duplicate library upload response");
+        assert_eq!(duplicate.status(), StatusCode::CREATED);
+        let duplicate: serde_json::Value = serde_json::from_slice(
+            &to_bytes(duplicate.into_body(), 64 * 1024)
+                .await
+                .expect("duplicate library upload body"),
+        )
+        .expect("duplicate library summary");
+        assert_eq!(duplicate["session_id"], session_id);
+
         let hidden = application
             .clone()
             .oneshot(
