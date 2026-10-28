@@ -120,40 +120,6 @@ function comparisonName(entry: Entry) {
 	return entry.detail.summary.driver_name || entry.detail.summary.title || `Lap ${entry.lap.index}`;
 }
 
-function ComparisonSummary() {
-	const snapshot = useWorkspace();
-	const comparison = snapshot?.comparison;
-	if (!comparison) return null;
-	const { reference, analysed, alignment } = comparison;
-	const deltaSeconds = ((analysed.lap.duration_ns || 0) - (reference.lap.duration_ns || 0)) / 1_000_000_000;
-	return (
-		<div className="comparison-summary">
-			<div className="comparison-driver reference">
-				<small>REFERENCE · FASTER</small>
-				<strong>{comparisonName(reference)}</strong>
-				<span>
-					Lap {reference.lap.index} · {formatDuration(reference.lap.duration_ns)}
-				</span>
-			</div>
-			<div className="comparison-delta">
-				<small>LAP DELTA</small>
-				<strong>+{deltaSeconds.toFixed(3)}</strong>
-				<span>{alignment === "distance" ? "DISTANCE ALIGNED" : "NORMALISED TIME · DISTANCE UNAVAILABLE"}</span>
-			</div>
-			<div className="comparison-driver analysed">
-				<small>ANALYSED LAP</small>
-				<strong>{comparisonName(analysed)}</strong>
-				<span>
-					Lap {analysed.lap.index} · {formatDuration(analysed.lap.duration_ns)}
-				</span>
-			</div>
-			<button className="quiet" type="button" onClick={() => window.dispatchEvent(new Event("trace:comparison-clear"))}>
-				Close comparison
-			</button>
-		</div>
-	);
-}
-
 function percentage(value?: number | null) {
 	if (value == null || !Number.isFinite(value)) return value;
 	return Math.abs(value) <= 1.001 ? value * 100 : value;
@@ -228,6 +194,11 @@ function TelemetryWorkspace() {
 		setTelemetryWindow(null);
 		setPlaying(false);
 	}, [snapshot?.lap?.id, snapshot?.comparison]);
+	useEffect(() => {
+		const review = document.querySelector("#review-view");
+		review?.classList.toggle("comparison-active", Boolean(snapshot?.comparison));
+		return () => review?.classList.remove("comparison-active");
+	}, [snapshot?.comparison]);
 	useEffect(() => {
 		if (!playing) return;
 		if (samples.length < 2) {
@@ -317,35 +288,37 @@ function TelemetryWorkspace() {
 
 	return (
 		<>
-			<div className="telemetry-head">
-				<div>
-					<span>LAP {lap.index}</span>
-					<strong>{formatDuration(lap.duration_ns)}</strong>
+			{!comparison && (
+				<div className="telemetry-head">
+					<div>
+						<span>LAP {lap.index}</span>
+						<strong>{formatDuration(lap.duration_ns)}</strong>
+					</div>
+					<div className="telemetry-stats">
+						{telemetryWindow && (
+							<button
+								type="button"
+								onClick={() => {
+									setPlaying(false);
+									setTelemetryWindow(null);
+									setCursorIndex(null);
+								}}
+								className="telemetry-reset-zoom"
+							>
+								{Math.round(telemetryWindow.startM)}–{Math.round(telemetryWindow.endM)}% · RESET ZOOM
+							</button>
+						)}
+						<span>
+							<strong>{Math.round(maximumSpeed)} km/h</strong>
+							<small>MAX SPEED</small>
+						</span>
+						<span>
+							<strong>{Math.round(maximumRpm)} rpm</strong>
+							<small>MAX RPM</small>
+						</span>
+					</div>
 				</div>
-				<div className="telemetry-stats">
-					{telemetryWindow && (
-						<button
-							type="button"
-							onClick={() => {
-								setPlaying(false);
-								setTelemetryWindow(null);
-								setCursorIndex(null);
-							}}
-							className="telemetry-reset-zoom"
-						>
-							{Math.round(telemetryWindow.startM)}–{Math.round(telemetryWindow.endM)}% · RESET ZOOM
-						</button>
-					)}
-					<span>
-						<strong>{Math.round(maximumSpeed)} km/h</strong>
-						<small>MAX SPEED</small>
-					</span>
-					<span>
-						<strong>{Math.round(maximumRpm)} rpm</strong>
-						<small>MAX RPM</small>
-					</span>
-				</div>
-			</div>
+			)}
 			<div className={`comparison-review-layout ${comparison ? "with-analysis" : "single"}`}>
 				{comparison && (
 					<div className="comparison-analysis-column">
@@ -371,18 +344,20 @@ function TelemetryWorkspace() {
 					</div>
 				)}
 				<div className="comparison-telemetry-content">
-					<div className="telemetry-range">
-						<SectorPicker
-							samples={baseSamples}
-							value={sector}
-							onChange={(value) => {
-								setPlaying(false);
-								setSector(value);
-								setTelemetryWindow(null);
-								setCursorIndex(null);
-							}}
-						/>
-					</div>
+					{!comparison && (
+						<div className="telemetry-range">
+							<SectorPicker
+								samples={baseSamples}
+								value={sector}
+								onChange={(value) => {
+									setPlaying(false);
+									setSector(value);
+									setTelemetryWindow(null);
+									setCursorIndex(null);
+								}}
+							/>
+						</div>
+					)}
 					{comparison ? (
 						<ComparisonTelemetryHud
 							samples={samples}
@@ -543,4 +518,4 @@ function TelemetryWorkspace() {
 const workspaceRoot = document.querySelector("#telemetry-workspace-root");
 if (workspaceRoot) createRoot(workspaceRoot).render(<TelemetryWorkspace />);
 
-export { ComparisonSummary, TelemetryWorkspace };
+export { TelemetryWorkspace };

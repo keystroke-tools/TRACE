@@ -61,6 +61,8 @@ function LapList() {
 			<div className="lap-list">
 				{laps.map((lap) => {
 					const timingLap = timingLaps.find((candidate) => candidate.id === lap.id)!;
+					const visibleSectors = lap.sectors.slice(0, 3);
+					const hiddenSectorCount = Math.max(0, lap.sectors.length - visibleSectors.length);
 					const classes = [
 						"lap-row",
 						lap.id === selectedLapId ? "active" : "",
@@ -81,13 +83,14 @@ function LapList() {
 								<strong>{formatLapDurationNs(lap.duration_ns)}</strong>
 							</span>
 							<span className="sector-list">
-								{lap.sectors.length
-									? lap.sectors.map((sector) => (
+								{visibleSectors.length
+									? visibleSectors.map((sector) => (
 											<span className={`sector-time ${sectorPerformance(timingLaps, timingLap, sector.index)}`} key={sector.index}>
 												<i aria-hidden="true" /> S{sector.index} {formatLapDurationNs(sector.duration_ns)}
 											</span>
 										))
 									: "No sectors"}
+								{hiddenSectorCount > 0 && <span className="sector-overflow">+{hiddenSectorCount} more</span>}
 							</span>
 						</button>
 					);

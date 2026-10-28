@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nearestTelemetryPlaybackIndex, telemetryPlaybackTimeline } from "@trace/ui";
-import { ComparisonSummary, TelemetryWorkspace } from "./telemetry-workspace";
+import { TelemetryWorkspace } from "./telemetry-workspace";
 
 const lap = { id: "lap-one", index: 4, duration_ns: 91_250_000_000 };
 const points = [
@@ -130,33 +130,6 @@ describe("telemetry workspace", () => {
 		expect(screen.getByText(/RESET ZOOM/)).toBeTruthy();
 	});
 
-	it("renders comparison identity and bridges closing it", async () => {
-		const reference = { detail: { summary: { title: null, driver_name: "Sam" } }, lap: { ...lap, duration_ns: 90_000_000_000 }, telemetry: { points } };
-		const analysed = { detail: { summary: { title: null, driver_name: "Alex" } }, lap, telemetry: { points } };
-		window.traceTelemetrySnapshot = {
-			detail: null,
-			lap,
-			telemetry: { points },
-			comparison: { reference, analysed, samples: [], alignment: "distance" },
-			message: "",
-		};
-		let closed = false;
-		window.addEventListener(
-			"trace:comparison-clear",
-			() => {
-				closed = true;
-			},
-			{ once: true },
-		);
-		render(<ComparisonSummary />);
-		expect(screen.getByText("Sam")).toBeTruthy();
-		expect(screen.getByText("Alex")).toBeTruthy();
-		expect(screen.getByText("+1.250")).toBeTruthy();
-		expect(screen.getByText("DISTANCE ALIGNED")).toBeTruthy();
-		await userEvent.click(screen.getByText("Close comparison"));
-		expect(closed).toBe(true);
-	});
-
 	it("renders the shared comparison HUD, analysis, and complete channel set", async () => {
 		const reference = {
 			detail: { summary: { title: null, driver_name: "Sam", track: "Spa", car: "LMP3" } },
@@ -229,7 +202,11 @@ describe("telemetry workspace", () => {
 			},
 			message: "",
 		};
-		render(<TelemetryWorkspace />);
+		render(
+			<div id="review-view">
+				<TelemetryWorkspace />
+			</div>,
+		);
 		expect(screen.getByText("FASTER REFERENCE")).toBeTruthy();
 		expect(screen.getByText("LAP TO IMPROVE")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Swap Reference and Analysed Lap" })).toBeTruthy();
@@ -238,5 +215,8 @@ describe("telemetry workspace", () => {
 		expect(screen.getByRole("img", { name: "STEERING ANGLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "GEAR telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByText(/may be incomplete or incorrect/)).toBeTruthy();
+		expect(document.querySelector("#review-view")?.classList.contains("comparison-active")).toBe(true);
+		expect(screen.queryByRole("button", { name: "SECTOR 1" })).toBeNull();
+		expect(screen.getByRole("button", { name: "S1+1.250" })).toBeTruthy();
 	});
 });

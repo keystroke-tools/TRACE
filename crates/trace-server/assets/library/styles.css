@@ -146,7 +146,7 @@ main {
 
 #review-view {
 	width: 100%;
-	padding: 18px clamp(16px, 1.5vw, 28px) 40px;
+	padding: 0 clamp(14px, 1.4vw, 24px) 40px;
 }
 
 .state-panel {
@@ -687,8 +687,14 @@ button.primary:hover {
 }
 
 .review-head {
-	min-height: 44px;
-	margin-bottom: 16px;
+	position: sticky;
+	top: 48px;
+	z-index: 9;
+	min-height: 52px;
+	margin: 0;
+	padding: 7px 10px;
+	border-bottom: 1px solid var(--trace-divider);
+	background: var(--trace-black);
 }
 
 .review-actions {
@@ -700,6 +706,9 @@ button.primary:hover {
 
 .review-actions > * {
 	flex: 0 0 auto;
+	min-height: 36px;
+	padding-inline: 12px;
+	font-size: 10px;
 }
 
 .metadata-panel {
@@ -830,8 +839,8 @@ button.primary:hover {
 
 .review-title {
 	align-items: center;
-	min-height: 96px;
-	padding: 18px 4px 20px;
+	min-height: 88px;
+	padding: 16px 4px 18px;
 	border: 0;
 	border-bottom: 1px solid var(--trace-divider);
 	background: transparent;
@@ -882,73 +891,18 @@ button.primary:hover {
 	color: var(--trace-soft);
 }
 
-.comparison-summary {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 24px;
-	margin-top: 14px;
-	padding: 14px 16px;
-	border: 1px solid #34303c;
-	background: #17151a;
-}
-
-.comparison-driver,
-.comparison-delta {
-	display: grid;
-	gap: 3px;
-	min-width: 0;
-}
-
-.comparison-driver.analysed {
-	justify-items: end;
-	text-align: right;
-}
-
-.comparison-driver small,
-.comparison-delta small,
-.comparison-delta span {
-	color: #797979;
-	font-size: 9px;
-	font-weight: 800;
-	letter-spacing: 0.1em;
-}
-
-.comparison-driver.reference small,
-.comparison-driver.reference strong {
-	color: #b49cff;
-}
-
-.comparison-driver strong {
-	overflow: hidden;
-	font-size: 14px;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.comparison-driver span {
-	color: #8a8a8a;
-	font-size: 11px;
-}
-
-.comparison-delta {
-	justify-items: center;
-	min-width: 150px;
-}
-
-.comparison-delta strong {
-	font-size: 22px;
-	font-variant-numeric: tabular-nums;
-}
-
-.comparison-delta span {
-	font-size: 8px;
-}
-
 .compare-picker {
-	margin-top: 14px;
+	position: fixed;
+	top: 72px;
+	left: 50%;
+	z-index: 25;
+	width: min(920px, calc(100vw - 32px));
+	max-height: calc(100dvh - 96px);
+	margin: 0;
+	transform: translateX(-50%);
 	border: 1px solid #343434;
 	background: #151515;
+	box-shadow: 0 0 0 100vmax rgb(0 0 0 / 76%);
 }
 
 .picker-head {
@@ -985,7 +939,7 @@ button.primary:hover {
 	display: grid;
 	grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.8fr);
 	min-height: 280px;
-	max-height: 440px;
+	max-height: min(520px, calc(100dvh - 232px));
 }
 
 .picker-sessions,
@@ -1104,18 +1058,27 @@ button.primary:hover {
 
 .review-layout {
 	display: grid;
-	grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+	grid-template-columns: minmax(250px, 280px) minmax(0, 1fr);
 	align-items: start;
 	gap: 16px;
 	min-height: 590px;
-	margin-top: 16px;
+	margin-top: 12px;
+}
+
+#review-view.comparison-active .review-title,
+#review-view.comparison-active .lap-panel {
+	display: none;
+}
+
+#review-view.comparison-active .review-layout {
+	grid-template-columns: minmax(0, 1fr);
 }
 
 .lap-panel {
 	position: sticky;
-	top: 62px;
+	top: 112px;
 	min-width: 0;
-	max-height: calc(100dvh - 76px);
+	max-height: calc(100dvh - 126px);
 	overflow: hidden;
 	border: 0;
 	border-right: 1px solid var(--trace-divider);
@@ -1133,7 +1096,7 @@ button.primary:hover {
 
 .lap-list {
 	display: grid;
-	max-height: calc(100dvh - 130px);
+	max-height: calc(100dvh - 182px);
 	overflow: auto;
 }
 
@@ -1208,6 +1171,12 @@ button.primary:hover {
 
 .sector-time.yellow i {
 	background: var(--trace-sector-yellow);
+}
+
+.sector-overflow {
+	color: var(--trace-dim);
+	font-size: 9px;
+	text-transform: uppercase;
 }
 
 .lap-identity strong {
@@ -1330,9 +1299,9 @@ button.primary:hover {
 
 .comparison-analysis-column {
 	position: sticky;
-	top: 62px;
+	top: 112px;
 	min-width: 0;
-	max-height: calc(100dvh - 76px);
+	max-height: calc(100dvh - 126px);
 	overflow: auto;
 }
 
@@ -1434,7 +1403,7 @@ button.primary:hover {
 	}
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1120px) {
 	.comparison-review-layout.with-analysis {
 		grid-template-columns: 1fr;
 	}
@@ -1488,9 +1457,12 @@ button.primary:hover {
 		padding: 0;
 	}
 
-	#library-home,
-	#review-view {
+	#library-home {
 		padding: 18px 16px 40px;
+	}
+
+	#review-view {
+		padding: 0 16px 40px;
 	}
 
 	.auth-layout {
@@ -1558,19 +1530,6 @@ button.primary:hover {
 		grid-template-columns: 1fr;
 	}
 
-	.comparison-summary {
-		grid-template-columns: 1fr 1fr;
-	}
-
-	.comparison-delta {
-		grid-column: 1 / -1;
-		grid-row: 2;
-	}
-
-	.comparison-summary > button {
-		grid-column: 1 / -1;
-	}
-
 	.picker-layout {
 		grid-template-columns: 1fr;
 		max-height: 580px;
@@ -1620,6 +1579,12 @@ button.primary:hover {
 
 	.comparison-analysis-column {
 		position: static;
+	}
+
+	.compare-picker {
+		top: 60px;
+		width: calc(100vw - 20px);
+		max-height: calc(100dvh - 70px);
 	}
 
 	.visual-card.delta-card {

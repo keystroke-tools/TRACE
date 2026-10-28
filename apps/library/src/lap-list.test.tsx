@@ -11,7 +11,9 @@ const laps = [
 		validity: "invalid",
 		sectors: [
 			{ index: 1, duration_ns: 30_000_000_000 },
-			{ index: 2, duration_ns: 62_000_000_000 },
+			{ index: 2, duration_ns: 25_000_000_000 },
+			{ index: 3, duration_ns: 20_000_000_000 },
+			{ index: 4, duration_ns: 17_000_000_000 },
 		],
 	},
 	{
@@ -37,6 +39,8 @@ describe("lap list", () => {
 		expect(screen.getByText("LAP 1").closest("button")?.className).toContain("invalid");
 		expect(screen.getByText("LAP 2").closest("button")?.className).toContain("best");
 		expect(screen.getByText("S1 0:30.000")).toBeTruthy();
+		expect(screen.getByText("+1 more")).toBeTruthy();
+		expect(screen.queryByText("S4 0:17.000")).toBeNull();
 	});
 
 	it("bridges lap selection to the telemetry loader", async () => {
