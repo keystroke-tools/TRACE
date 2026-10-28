@@ -66,6 +66,8 @@ export function SettingsPage() {
 	const [savingLibraryToken, setSavingLibraryToken] = useState(false);
 	const [librarySyncMode, setLibrarySyncMode] = useState<LibrarySyncMode>("ask");
 	const [savingLibrarySyncMode, setSavingLibrarySyncMode] = useState(false);
+	const [libraryPendingUploads, setLibraryPendingUploads] = useState(0);
+	const [retryingLibraryUploads, setRetryingLibraryUploads] = useState(false);
 	const [localSpectatorPort, setLocalSpectatorPort] = useState("0");
 	const [autoStreamEnabled, setAutoStreamEnabled] = useState(false);
 	const [discordActivityEnabled, setDiscordActivityEnabled] = useState(false);
@@ -172,6 +174,7 @@ export function SettingsPage() {
 				setConfirmExitEnabled(behaviorSettings.confirmExitEnabled);
 				setLibraryTokenConfigured(librarySettings.tokenConfigured);
 				setLibrarySyncMode(librarySettings.syncMode);
+				setLibraryPendingUploads(librarySettings.pendingUploadCount);
 				setLoading(false);
 			})
 			.catch((error) => {
@@ -190,6 +193,7 @@ export function SettingsPage() {
 			const settings = await telemetryDataSource.setLibraryAccessToken(token);
 			setLibraryToken("");
 			setLibraryTokenConfigured(settings.tokenConfigured);
+			setLibraryPendingUploads(settings.pendingUploadCount);
 			showToast({
 				kind: "success",
 				title: settings.tokenConfigured ? "Private library connected" : "Private library disconnected",
@@ -217,6 +221,7 @@ export function SettingsPage() {
 		try {
 			const settings = await telemetryDataSource.setLibrarySyncMode(syncMode);
 			setLibrarySyncMode(settings.syncMode);
+			setLibraryPendingUploads(settings.pendingUploadCount);
 			showToast({
 				kind: "success",
 				title: "Private library sync updated",
@@ -238,6 +243,29 @@ export function SettingsPage() {
 			});
 		} finally {
 			setSavingLibrarySyncMode(false);
+		}
+	}
+
+	async function retryLibraryUploads() {
+		setRetryingLibraryUploads(true);
+		try {
+			const result = await telemetryDataSource.retryLibrarySyncQueue(true);
+			setLibraryPendingUploads(result.pendingCount);
+			showToast({
+				kind: result.pendingCount === 0 ? "success" : "error",
+				title: result.pendingCount === 0 ? "Private library is up to date" : "Some uploads are still waiting",
+				message: `${result.uploaded.length} uploaded · ${result.pendingCount} still queued for ${liveEndpoint}.`,
+				timeoutMs: 7_000,
+			});
+		} catch (error) {
+			showToast({
+				kind: "error",
+				title: "Could not retry private library uploads",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		} finally {
+			setRetryingLibraryUploads(false);
 		}
 	}
 
@@ -415,6 +443,7 @@ export function SettingsPage() {
 			const librarySettings = await telemetryDataSource.getLibraryConnectionSettings();
 			setLibraryTokenConfigured(librarySettings.tokenConfigured);
 			setLibrarySyncMode(librarySettings.syncMode);
+			setLibraryPendingUploads(librarySettings.pendingUploadCount);
 			window.dispatchEvent(new CustomEvent<LiveSettings>("trace:live-settings", { detail: settings }));
 			showToast({
 				kind: "success",
@@ -724,6 +753,21 @@ export function SettingsPage() {
 							</div>
 							{!libraryTokenConfigured && (
 								<span className="mt-2 block text-[10px] text-trace-dim">Connect a private library to enable sync.</span>
+							)}
+							{libraryPendingUploads > 0 && (
+								<div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-l-2 border-trace-warning bg-trace-raised px-3 py-2.5">
+									<span className="text-[11px] leading-5 text-trace-soft">
+										{libraryPendingUploads} private-library {libraryPendingUploads === 1 ? "upload is" : "uploads are"} waiting to retry.
+									</span>
+									<button
+										type="button"
+										disabled={!libraryTokenConfigured || retryingLibraryUploads}
+										onClick={() => void retryLibraryUploads()}
+										className="h-8 border border-trace-divider px-3 font-mono text-[10px] font-black tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white disabled:text-trace-dim"
+									>
+										{retryingLibraryUploads ? "RETRYING…" : "RETRY NOW"}
+									</button>
+								</div>
 							)}
 						</div>
 					</section>

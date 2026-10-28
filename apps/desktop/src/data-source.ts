@@ -555,6 +555,7 @@ export interface LibraryConnectionSettings {
 	endpoint: string;
 	tokenConfigured: boolean;
 	syncMode: LibrarySyncMode;
+	pendingUploadCount: number;
 }
 
 export type LibrarySyncMode = "ask" | "automatic" | "never";
@@ -563,6 +564,13 @@ export interface LibraryUploadResult {
 	sessionId: string;
 	lapCount: number;
 	endpoint: string;
+	reviewUrl: string;
+}
+
+export interface LibrarySyncRetryResult {
+	attempted: number;
+	uploaded: LibraryUploadResult[];
+	pendingCount: number;
 }
 
 export interface DiscordReviewActivity {
@@ -655,6 +663,7 @@ export interface TelemetryDataSource {
 	getLibraryConnectionSettings(): Promise<LibraryConnectionSettings>;
 	setLibraryAccessToken(token: string | null): Promise<LibraryConnectionSettings>;
 	setLibrarySyncMode(syncMode: LibrarySyncMode): Promise<LibraryConnectionSettings>;
+	retryLibrarySyncQueue(includePermanent?: boolean): Promise<LibrarySyncRetryResult>;
 	setDiscordReviewActivity(activity: DiscordReviewActivity | null): Promise<void>;
 	getLiveBroadcastStatus(): Promise<LiveBroadcastStatus>;
 	startActiveLiveBroadcast(options: LiveBroadcastOptions): Promise<LiveBroadcastStatus>;
@@ -712,6 +721,7 @@ let fixtureLibrarySettings: LibraryConnectionSettings = {
 	endpoint: fixtureLiveSettings.endpoint,
 	tokenConfigured: false,
 	syncMode: "ask",
+	pendingUploadCount: 0,
 };
 let fixtureLiveBroadcastStatus: LiveBroadcastStatus = {
 	phase: "idle",
@@ -978,7 +988,12 @@ export const fixtureDataSource: TelemetryDataSource = {
 		};
 	},
 	async uploadLibrarySession(_sessionId, lapIndices) {
-		return { sessionId: "library-fixture", lapCount: lapIndices.length, endpoint: "https://live.simtrace.run" };
+		return {
+			sessionId: "library-fixture",
+			lapCount: lapIndices.length,
+			endpoint: "https://live.simtrace.run",
+			reviewUrl: "https://live.simtrace.run/app/sessions/library-fixture",
+		};
 	},
 	async importSession(_path) {
 		return { sessionId: "imported-fixture", lapCount: 3, sampleCount: 3_600, setupName: "shared-race.ini" };
@@ -1453,6 +1468,9 @@ export const fixtureDataSource: TelemetryDataSource = {
 		fixtureLibrarySettings = { ...fixtureLibrarySettings, endpoint: fixtureLiveSettings.endpoint, syncMode };
 		return fixtureLibrarySettings;
 	},
+	async retryLibrarySyncQueue(_includePermanent) {
+		return { attempted: 0, uploaded: [], pendingCount: 0 };
+	},
 	async setDiscordReviewActivity(_activity) {},
 	async getLiveBroadcastStatus() {
 		return fixtureLiveBroadcastStatus;
@@ -1651,6 +1669,9 @@ export const tauriDataSource: TelemetryDataSource = {
 	},
 	setLibrarySyncMode(syncMode) {
 		return invoke<LibraryConnectionSettings>("set_library_sync_mode", { syncMode });
+	},
+	retryLibrarySyncQueue(includePermanent = false) {
+		return invoke<LibrarySyncRetryResult>("retry_library_sync_queue", { includePermanent });
 	},
 	setDiscordReviewActivity(activity) {
 		return invoke<void>("set_discord_review_activity", { activity });

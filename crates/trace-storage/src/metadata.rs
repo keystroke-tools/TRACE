@@ -480,6 +480,53 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns the durable private-library upload retry queue as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when `SQLite` cannot read the setting.
+    pub fn library_sync_queue(&self) -> Result<Option<String>, MetadataError> {
+        self.service_endpoint("library_sync_queue")
+    }
+
+    /// Persists or clears the durable private-library upload retry queue.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetadataError`] when the value is not a bounded JSON array or `SQLite`
+    /// cannot persist it.
+    pub fn set_library_sync_queue(&mut self, queue: Option<&str>) -> Result<(), MetadataError> {
+        match queue.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(value)
+                if value.len() <= 262_144
+                    && serde_json::from_str::<serde_json::Value>(value)
+                        .is_ok_and(|decoded| decoded.is_array()) =>
+            {
+                self.connection
+                    .execute(
+                        "INSERT INTO app_settings (key, value) VALUES ('library_sync_queue', ?1)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        [value],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+            Some(_) => {
+                return Err(MetadataError::InvalidRecord(
+                    "library sync queue must be a JSON array no larger than 262144 bytes".into(),
+                ));
+            }
+            None => {
+                self.connection
+                    .execute(
+                        "DELETE FROM app_settings WHERE key = 'library_sync_queue'",
+                        [],
+                    )
+                    .map_err(MetadataError::from)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Returns the simulator-specific Go Live automation configuration as JSON.
     ///
     /// `None` means automation has never been configured.
@@ -2442,6 +2489,23 @@ mod tests {
         );
         assert!(store.set_library_sync_preferences("[]").is_err());
         assert!(store.set_library_sync_preferences("not json").is_err());
+    }
+
+    #[test]
+    fn library_sync_queue_is_persisted_cleared_and_bounded() {
+        let mut store = MetadataStore::open_in_memory().expect("metadata store");
+        assert_eq!(store.library_sync_queue().expect("queue"), None);
+        let queued = r#"[{"sessionId":"session-1","lapIndices":[1,2],"endpoint":"https://live.simtrace.run","attempts":1,"lastError":"offline"}]"#;
+        store
+            .set_library_sync_queue(Some(queued))
+            .expect("save queue");
+        assert_eq!(
+            store.library_sync_queue().expect("queue"),
+            Some(queued.into())
+        );
+        assert!(store.set_library_sync_queue(Some("{}")).is_err());
+        store.set_library_sync_queue(None).expect("clear queue");
+        assert_eq!(store.library_sync_queue().expect("queue"), None);
     }
 
     #[test]

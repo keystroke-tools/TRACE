@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { telemetryDataSource, type RecordedLapSummary, type RecordedSessionSummary } from "../../data-source";
 import { useToast } from "../../Toast";
 import { rememberSharedSession, sharedSessionsFor, type StoredSharedSession } from "./share-history";
@@ -72,14 +73,28 @@ export function LapPackageDialog({ session, action, onClose }: { session: Record
 					title: "Session added to your library",
 					message: `${result.lapCount} ${result.lapCount === 1 ? "lap" : "laps"} uploaded to ${result.endpoint}.`,
 					timeoutMs: 7_000,
+					action: {
+						label: "OPEN LIBRARY",
+						onClick: () => {
+							void openUrl(result.reviewUrl).catch((error) =>
+								showToast({
+									kind: "error",
+									title: "Could not open private library",
+									message: error instanceof Error ? error.message : String(error),
+									timeoutMs: 8_000,
+								}),
+							);
+						},
+					},
 				});
 				onClose();
 			}
 		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
 			showToast({
 				kind: "error",
-				title: action === "share" ? "Could not share session" : action === "upload" ? "Library upload failed" : "Export failed",
-				message: error instanceof Error ? error.message : String(error),
+				title: action === "share" ? "Could not share session" : action === "upload" ? "Library upload queued" : "Export failed",
+				message: action === "upload" ? `${message} TRACE kept this upload for retry.` : message,
 				timeoutMs: 9_000,
 			});
 		} finally {

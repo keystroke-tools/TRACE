@@ -229,6 +229,59 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		if (!isTauri()) return;
+		void telemetryDataSource
+			.getLibraryConnectionSettings()
+			.then((settings) => {
+				if (!settings.tokenConfigured || settings.pendingUploadCount === 0) return null;
+				return telemetryDataSource.retryLibrarySyncQueue();
+			})
+			.then((result) => {
+				if (!result) return;
+				if (result.uploaded.length > 0) {
+					const first = result.uploaded[0];
+					showToast({
+						kind: "success",
+						title: "Private library upload resumed",
+						message: `${result.uploaded.length} queued ${result.uploaded.length === 1 ? "session" : "sessions"} uploaded successfully.`,
+						timeoutMs: 7_000,
+						action: first
+							? {
+									label: "OPEN LIBRARY",
+									onClick: () => {
+										void openUrl(first.reviewUrl).catch((error) =>
+											showToast({
+												kind: "error",
+												title: "Could not open private library",
+												message: error instanceof Error ? error.message : String(error),
+												timeoutMs: 8_000,
+											}),
+										);
+									},
+								}
+							: undefined,
+					});
+				}
+				if (result.pendingCount > 0) {
+					showToast({
+						kind: "error",
+						title: "Private library uploads still waiting",
+						message: `${result.pendingCount} ${result.pendingCount === 1 ? "upload remains" : "uploads remain"} queued. Retry from Settings → Connectivity.`,
+						timeoutMs: 9_000,
+					});
+				}
+			})
+			.catch((error) => {
+				showToast({
+					kind: "error",
+					title: "Could not resume private library uploads",
+					message: error instanceof Error ? error.message : String(error),
+					timeoutMs: 9_000,
+				});
+			});
+	}, [showToast]);
+
+	useEffect(() => {
 		const timer = window.setInterval(() => {
 			void telemetryDataSource.getStatus().then(setStatus);
 			void telemetryDataSource.getLiveBroadcastStatus().then(setLiveBroadcast);

@@ -7,6 +7,10 @@ export interface ToastInput {
 	title?: string;
 	kind?: ToastKind;
 	timeoutMs?: number | null;
+	action?: {
+		label: string;
+		onClick: () => void;
+	};
 }
 
 interface ToastRecord extends ToastInput {
@@ -85,6 +89,10 @@ function Toast({ toast, onRemove }: { toast: ToastRecord; onRemove: (id: number)
 
 	const accent = toast.kind === "success" ? "border-l-trace-accent" : toast.kind === "error" ? "border-l-trace-warning" : "border-l-trace-purple";
 	const label = toast.title ?? (toast.kind === "success" ? "Done" : toast.kind === "error" ? "Action failed" : "TRACE");
+	const runAction = () => {
+		toast.action?.onClick();
+		dismiss();
+	};
 
 	return (
 		<div
@@ -95,6 +103,15 @@ function Toast({ toast, onRemove }: { toast: ToastRecord; onRemove: (id: number)
 				<div className="min-w-0 flex-1">
 					<strong className="block font-mono text-[12px] tracking-[.1em] text-trace-soft">{label.toUpperCase()}</strong>
 					<p className="mt-1.5 break-words text-[12px] leading-5 text-trace-faint">{toast.message}</p>
+					{toast.action && (
+						<button
+							type="button"
+							onClick={runAction}
+							className="mt-3 h-8 border border-trace-divider px-3 font-mono text-[10px] font-black tracking-[.08em] text-trace-accent hover:border-trace-accent hover:bg-trace-accent hover:text-trace-black"
+						>
+							{toast.action.label}
+						</button>
+					)}
 				</div>
 				<button
 					type="button"

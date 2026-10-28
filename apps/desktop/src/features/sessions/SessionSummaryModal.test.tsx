@@ -43,6 +43,7 @@ describe("completed session private-library sync", () => {
 			endpoint: "https://library.example.test",
 			tokenConfigured: true,
 			syncMode: "ask",
+			pendingUploadCount: 0,
 		});
 
 		render(
@@ -62,11 +63,13 @@ describe("completed session private-library sync", () => {
 			endpoint: "https://library.example.test",
 			tokenConfigured: true,
 			syncMode: "automatic",
+			pendingUploadCount: 0,
 		});
 		const upload = vi.spyOn(telemetryDataSource, "uploadLibrarySession").mockResolvedValue({
 			sessionId: "remote-session",
 			lapCount: 1,
 			endpoint: "https://library.example.test",
+			reviewUrl: "https://library.example.test/app/sessions/remote-session",
 		});
 
 		render(
@@ -77,5 +80,6 @@ describe("completed session private-library sync", () => {
 
 		await waitFor(() => expect(upload).toHaveBeenCalledWith("completed-session", [1]));
 		expect(await screen.findByText("Session synced")).toBeInTheDocument();
+		expect(screen.getAllByRole("button", { name: "OPEN LIBRARY" })).toHaveLength(2);
 	});
 });

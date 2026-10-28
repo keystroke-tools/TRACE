@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatLapDurationNs, sessionOverview } from "@trace/ui";
-import { telemetryDataSource, type LibraryConnectionSettings, type RecordedSessionSummary } from "../../data-source";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { telemetryDataSource, type LibraryConnectionSettings, type LibraryUploadResult, type RecordedSessionSummary } from "../../data-source";
 import { useToast } from "../../Toast";
 import { formatSessionDate, friendlySessionType, lapDuration, lapIsInvalid } from "./session-components";
 import { LapPackageDialog } from "./LapPackageDialog";
@@ -21,6 +22,7 @@ export function SessionSummaryModal({
 	const [showUploadPicker, setShowUploadPicker] = useState(false);
 	const [automaticUpload, setAutomaticUpload] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
 	const [automaticError, setAutomaticError] = useState<string | null>(null);
+	const [uploadedResult, setUploadedResult] = useState<LibraryUploadResult | null>(null);
 	const automaticStarted = useRef<string | null>(null);
 	const validLapIndices = useMemo(() => session.laps.filter((lap) => lap.durationNs != null && !lapIsInvalid(lap)).map((lap) => lap.index), [session.laps]);
 
@@ -49,20 +51,53 @@ export function SessionSummaryModal({
 		setAutomaticError(null);
 		try {
 			const result = await telemetryDataSource.uploadLibrarySession(session.id, validLapIndices);
+			setUploadedResult(result);
 			setAutomaticUpload("uploaded");
 			showToast({
 				kind: "success",
 				title: "Session synced privately",
 				message: `${result.lapCount} ${result.lapCount === 1 ? "lap" : "laps"} added to ${result.endpoint}.`,
 				timeoutMs: 7_000,
+				action: {
+					label: "OPEN LIBRARY",
+					onClick: () => {
+						void openUrl(result.reviewUrl).catch((error) =>
+							showToast({
+								kind: "error",
+								title: "Could not open private library",
+								message: error instanceof Error ? error.message : String(error),
+								timeoutMs: 8_000,
+							}),
+						);
+					},
+				},
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			setAutomaticUpload("failed");
 			setAutomaticError(message);
-			showToast({ kind: "error", title: "Private library sync failed", message, timeoutMs: 9_000 });
+			showToast({
+				kind: "error",
+				title: "Private library sync queued",
+				message: `${message} TRACE kept this upload for retry.`,
+				timeoutMs: 9_000,
+			});
 		}
 	}, [session.id, showToast, validLapIndices]);
+
+	async function openUploadedSession() {
+		if (!uploadedResult) return;
+		try {
+			await openUrl(uploadedResult.reviewUrl);
+		} catch (error) {
+			showToast({
+				kind: "error",
+				title: "Could not open private library",
+				message: error instanceof Error ? error.message : String(error),
+				timeoutMs: 8_000,
+			});
+		}
+	}
 
 	useEffect(() => {
 		if (!completed || !library?.tokenConfigured || library.syncMode !== "automatic") return;
@@ -155,7 +190,7 @@ export function SessionSummaryModal({
 												: automaticUpload === "uploaded"
 													? "Session synced"
 													: automaticUpload === "failed"
-														? "Session could not be synced"
+														? "Session queued for retry"
 														: "Syncing completed session…"
 											: "Keep this session in your private library?"}
 									</strong>
@@ -180,6 +215,14 @@ export function SessionSummaryModal({
 										className="h-9 shrink-0 border border-trace-divider px-4 font-mono text-[10px] font-black tracking-[.08em] text-trace-soft hover:border-trace-soft hover:text-white"
 									>
 										RETRY
+									</button>
+								) : automaticUpload === "uploaded" ? (
+									<button
+										type="button"
+										onClick={() => void openUploadedSession()}
+										className="h-9 shrink-0 border border-trace-divider px-4 font-mono text-[10px] font-black tracking-[.08em] text-trace-accent hover:border-trace-accent hover:bg-trace-accent hover:text-trace-black"
+									>
+										OPEN LIBRARY
 									</button>
 								) : null}
 							</div>

@@ -121,6 +121,7 @@ struct LibraryConnectionSettings {
     endpoint: String,
     token_configured: bool,
     sync_mode: LibrarySyncMode,
+    pending_upload_count: u32,
 }
 
 #[derive(Deserialize)]
@@ -129,12 +130,42 @@ struct LibraryUploadResponse {
     lap_count: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LibraryUploadResult {
     session_id: String,
     lap_count: u32,
     endpoint: String,
+    review_url: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySyncQueueEntry {
+    session_id: String,
+    lap_indices: Vec<u32>,
+    endpoint: String,
+    attempts: u32,
+    last_error: Option<String>,
+    #[serde(default = "default_retryable")]
+    retryable: bool,
+}
+
+const fn default_retryable() -> bool {
+    true
+}
+
+struct LibraryUploadFailure {
+    message: String,
+    retryable: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySyncRetryResult {
+    attempted: u32,
+    uploaded: Vec<LibraryUploadResult>,
+    pending_count: u32,
 }
 
 #[derive(serde::Deserialize)]
@@ -896,10 +927,17 @@ fn library_connection_settings(app: tauri::AppHandle) -> Result<LibraryConnectio
         .map_err(|error| format!("failed to read library access setting: {error:?}"))?
         .is_some();
     let sync_mode = load_library_sync_mode(&store, &endpoint)?;
+    let pending_upload_count = load_library_sync_queue(&store)?
+        .iter()
+        .filter(|entry| entry.endpoint == endpoint)
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX);
     Ok(LibraryConnectionSettings {
         endpoint,
         token_configured,
         sync_mode,
+        pending_upload_count,
     })
 }
 
@@ -920,6 +958,33 @@ fn load_library_sync_mode(
         .get(endpoint)
         .copied()
         .unwrap_or(LibrarySyncMode::Ask))
+}
+
+fn load_library_sync_queue(store: &MetadataStore) -> Result<Vec<LibrarySyncQueueEntry>, String> {
+    store
+        .library_sync_queue()
+        .map_err(|error| format!("failed to read library sync queue: {error:?}"))?
+        .as_deref()
+        .map(serde_json::from_str::<Vec<LibrarySyncQueueEntry>>)
+        .transpose()
+        .map_err(|error| format!("library sync queue is invalid: {error}"))
+        .map(Option::unwrap_or_default)
+}
+
+fn save_library_sync_queue(
+    store: &mut MetadataStore,
+    queue: &[LibrarySyncQueueEntry],
+) -> Result<(), String> {
+    if queue.is_empty() {
+        return store
+            .set_library_sync_queue(None)
+            .map_err(|error| format!("failed to clear library sync queue: {error:?}"));
+    }
+    let encoded = serde_json::to_string(queue)
+        .map_err(|error| format!("failed to encode library sync queue: {error}"))?;
+    store
+        .set_library_sync_queue(Some(&encoded))
+        .map_err(|error| format!("failed to save library sync queue: {error:?}"))
 }
 
 #[tauri::command]
@@ -2321,11 +2386,25 @@ async fn upload_library_session(
     session_id: String,
     lap_indices: Vec<u32>,
 ) -> Result<LibraryUploadResult, String> {
+    upload_library_session_inner(&app, session_id, lap_indices).await
+}
+
+async fn upload_library_session_inner(
+    app: &tauri::AppHandle,
+    session_id: String,
+    mut lap_indices: Vec<u32>,
+) -> Result<LibraryUploadResult, String> {
+    lap_indices.sort_unstable();
+    lap_indices.dedup();
+    if lap_indices.is_empty() {
+        return Err("choose at least one lap to upload".to_owned());
+    }
     let data_directory = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
-    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+    let database_path = data_directory.join("trace.sqlite");
+    let mut store = MetadataStore::open(&database_path)
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
     let endpoint = store
         .live_service_endpoint()
@@ -2338,7 +2417,76 @@ async fn upload_library_session(
         .ok_or_else(|| {
             "Connect TRACE to your session library in Settings → Connectivity first".to_owned()
         })?;
-    let contents = build_share_package(&data_directory, &store, &session_id, &lap_indices)?;
+    let mut queue = load_library_sync_queue(&store)?;
+    let queued = queue.iter_mut().find(|entry| {
+        entry.session_id == session_id
+            && entry.endpoint == endpoint
+            && entry.lap_indices == lap_indices
+    });
+    if let Some(queued) = queued {
+        queued.attempts = queued.attempts.saturating_add(1);
+        queued.last_error = None;
+    } else {
+        queue.push(LibrarySyncQueueEntry {
+            session_id: session_id.clone(),
+            lap_indices: lap_indices.clone(),
+            endpoint: endpoint.clone(),
+            attempts: 1,
+            last_error: None,
+            retryable: true,
+        });
+    }
+    save_library_sync_queue(&mut store, &queue)?;
+    let contents = match build_share_package(&data_directory, &store, &session_id, &lap_indices) {
+        Ok(contents) => contents,
+        Err(error) => {
+            drop(store);
+            record_library_sync_failure(
+                &database_path,
+                &session_id,
+                &lap_indices,
+                &endpoint,
+                &error,
+                false,
+            )?;
+            return Err(error);
+        }
+    };
+    drop(store);
+    let upload = upload_library_package(&endpoint, &token, contents).await;
+    match upload {
+        Ok(uploaded) => {
+            remove_library_sync_queue_entry(&database_path, &session_id, &lap_indices, &endpoint)?;
+            Ok(LibraryUploadResult {
+                session_id: uploaded.session_id.clone(),
+                lap_count: uploaded.lap_count,
+                endpoint: endpoint.clone(),
+                review_url: format!(
+                    "{}/app/sessions/{}",
+                    endpoint.trim_end_matches('/'),
+                    uploaded.session_id
+                ),
+            })
+        }
+        Err(error) => {
+            record_library_sync_failure(
+                &database_path,
+                &session_id,
+                &lap_indices,
+                &endpoint,
+                &error.message,
+                error.retryable,
+            )?;
+            Err(error.message)
+        }
+    }
+}
+
+async fn upload_library_package(
+    endpoint: &str,
+    token: &str,
+    contents: Vec<u8>,
+) -> Result<LibraryUploadResponse, LibraryUploadFailure> {
     let response = reqwest::Client::new()
         .post(format!(
             "{}/api/v1/library/sessions",
@@ -2349,20 +2497,110 @@ async fn upload_library_session(
         .body(contents)
         .send()
         .await
-        .map_err(|error| format!("library upload failed: {error}"))?;
+        .map_err(|error| LibraryUploadFailure {
+            message: format!("library upload failed: {error}"),
+            retryable: true,
+        })?;
     let status = response.status();
     if !status.is_success() {
         let detail = response.text().await.unwrap_or_default();
-        return Err(format!("library upload failed with {status}: {detail}"));
+        return Err(LibraryUploadFailure {
+            message: format!("library upload failed with {status}: {detail}"),
+            retryable: status.is_server_error()
+                || status.as_u16() == 408
+                || status.as_u16() == 425
+                || status.as_u16() == 429,
+        });
     }
     let uploaded = response
         .json::<LibraryUploadResponse>()
         .await
-        .map_err(|error| format!("library returned an invalid response: {error}"))?;
-    Ok(LibraryUploadResult {
-        session_id: uploaded.session_id,
-        lap_count: uploaded.lap_count,
-        endpoint,
+        .map_err(|error| LibraryUploadFailure {
+            message: format!("library returned an invalid response: {error}"),
+            retryable: true,
+        })?;
+    Ok(uploaded)
+}
+
+fn record_library_sync_failure(
+    database_path: &Path,
+    session_id: &str,
+    lap_indices: &[u32],
+    endpoint: &str,
+    error: &str,
+    retryable: bool,
+) -> Result<(), String> {
+    let mut store = MetadataStore::open(database_path)
+        .map_err(|open_error| format!("failed to reopen TRACE metadata: {open_error:?}"))?;
+    let mut queue = load_library_sync_queue(&store)?;
+    if let Some(entry) = queue.iter_mut().find(|entry| {
+        entry.session_id == session_id
+            && entry.endpoint == endpoint
+            && entry.lap_indices == lap_indices
+    }) {
+        entry.last_error = Some(error.chars().take(500).collect());
+        entry.retryable = retryable;
+    }
+    save_library_sync_queue(&mut store, &queue)
+}
+
+fn remove_library_sync_queue_entry(
+    database_path: &Path,
+    session_id: &str,
+    lap_indices: &[u32],
+    endpoint: &str,
+) -> Result<(), String> {
+    let mut store = MetadataStore::open(database_path)
+        .map_err(|error| format!("failed to reopen TRACE metadata: {error:?}"))?;
+    let mut queue = load_library_sync_queue(&store)?;
+    queue.retain(|entry| {
+        entry.session_id != session_id
+            || entry.endpoint != endpoint
+            || entry.lap_indices != lap_indices
+    });
+    save_library_sync_queue(&mut store, &queue)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+async fn retry_library_sync_queue(
+    app: tauri::AppHandle,
+    include_permanent: bool,
+) -> Result<LibrarySyncRetryResult, String> {
+    let data_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let store = MetadataStore::open(&data_directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let endpoint = store
+        .live_service_endpoint()
+        .map_err(|error| format!("failed to read service settings: {error:?}"))?
+        .filter(|value| value != LEGACY_SERVICE_ENDPOINT)
+        .unwrap_or_else(|| DEFAULT_LIVE_SERVICE_ENDPOINT.to_owned());
+    let entries = load_library_sync_queue(&store)?
+        .into_iter()
+        .filter(|entry| {
+            entry.endpoint == endpoint
+                && (include_permanent || entry.last_error.is_none() || entry.retryable)
+        })
+        .collect::<Vec<_>>();
+    drop(store);
+
+    let attempted = entries.len().try_into().unwrap_or(u32::MAX);
+    let mut uploaded = Vec::new();
+    for entry in entries {
+        if let Ok(result) =
+            upload_library_session_inner(&app, entry.session_id, entry.lap_indices).await
+        {
+            uploaded.push(result);
+        }
+    }
+    let settings = library_connection_settings(app)?;
+    Ok(LibrarySyncRetryResult {
+        attempted,
+        uploaded,
+        pending_count: settings.pending_upload_count,
     })
 }
 
@@ -3670,6 +3908,7 @@ pub fn run() {
             export_session,
             share_session,
             upload_library_session,
+            retry_library_sync_queue,
             preview_motec_import,
             scan_motec_folder,
             import_session,
