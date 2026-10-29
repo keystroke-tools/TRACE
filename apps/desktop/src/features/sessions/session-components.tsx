@@ -91,10 +91,10 @@ export function StintUsage({ state, metrics }: { state: "loading" | "ready" | "e
 const tyreLabels = ["FL", "FR", "RL", "RR"];
 
 function tyreColour(remaining: number) {
-	if (remaining >= 75) return "bg-trace-accent text-trace-black";
-	if (remaining >= 50) return "bg-trace-sector-yellow text-trace-black";
-	if (remaining >= 25) return "bg-orange-500 text-trace-black";
-	return "bg-trace-danger text-white";
+	if (remaining >= 75) return "border-trace-accent text-trace-accent";
+	if (remaining >= 50) return "border-trace-sector-yellow text-trace-sector-yellow";
+	if (remaining >= 25) return "border-orange-500 text-orange-300";
+	return "border-trace-danger text-red-300";
 }
 
 export function TyreState({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
@@ -121,11 +121,11 @@ export function TyreState({ state, metrics }: { state: "loading" | "ready" | "er
 							: `${label}: ${Math.round(remaining)}% remaining${start != null ? ` · started at ${Math.round(start)}%` : ""}${minimum != null ? ` · minimum ${Math.round(minimum)}%` : ""}`;
 				return (
 					<Tooltip
-						className={`grid size-9 place-items-center rounded-full font-mono text-[10px] font-black ${detached || flat ? "bg-trace-danger text-white" : remaining == null ? "bg-trace-divider text-trace-dim" : tyreColour(remaining)}`}
+						className={`grid size-9 place-items-center rounded-full border-2 bg-trace-deep font-mono text-[9px] font-black leading-none ${detached || flat ? "border-trace-danger bg-trace-danger/15 text-red-200" : remaining == null ? "border-trace-divider text-trace-dim" : tyreColour(remaining)}`}
 						content={detail}
 						key={label}
 					>
-						{detached || flat ? "!" : remaining == null ? label : Math.round(remaining)}
+						{detached || flat ? "!" : remaining == null ? label : `${Math.round(remaining)}%`}
 					</Tooltip>
 				);
 			})}

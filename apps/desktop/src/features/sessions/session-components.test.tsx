@@ -74,8 +74,8 @@ describe("session telemetry summaries", () => {
 
 		render(<TyreState state="ready" metrics={metrics} />);
 
-		expect(screen.getByText("94")).toBeInTheDocument();
-		expect(screen.getByText("93")).toBeInTheDocument();
+		expect(screen.getByText("94%")).toBeInTheDocument();
+		expect(screen.getByText("93%")).toBeInTheDocument();
 		expect(formatVirtualEnergyUsed(metrics)).toBe("8.0% VE");
 	});
 
