@@ -77,6 +77,7 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 | speed, RPM, gear, fuel            | player telemetry                                                                                                              |
 | position, velocity, acceleration  | player world/vehicle vectors                                                                                                  |
 | tyres                             | life remaining, flat/detached state, compound IDs, angular speed, slip angle, load, pressure, carcass temperature, suspension |
+| damage                            | eight body-zone dent severities, impacts, overheating, detached body parts, flat tyres, and detached wheels                   |
 | conditions                        | ambient and track temperature                                                                                                 |
 | pit state                         | scoring pit flags/state                                                                                                       |
 | electronics settings              | TC, TC slip/cut, ABS, motor map, brake migration, and available ranges                                                        |
@@ -105,6 +106,14 @@ is a remaining-life fraction and is displayed as a percentage; the SDK explicitl
 that this value is not necessarily proportional to grip loss. Older LMU recordings retain
 the required fields in their native payload, so TRACE can derive these summaries without
 re-recording the session.
+
+Damage is retained using the simulator's native meaning rather than inventing a vehicle
+health percentage. LMU reports eight body zones with severity `0` (none), `1` (some), or
+`2` (more), plus explicit overheating, detached-part, flat-tyre, and detached-wheel flags.
+TRACE also counts changes to LMU's last-impact event during each lap and retains the peak
+reported magnitude. The session view only displays damage badges when something was
+observed. Existing recordings can recover the values from their retained native payload;
+older compact packages that omitted both named fields and native payloads cannot.
 
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
 Its SDK world coordinates are left-handed with Y pointing up. The adapter reflects

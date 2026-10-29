@@ -470,6 +470,17 @@ fn native_fields(
     integer_fields.insert("in_pits".into(), i64::from(page.u8(scoring + 198)?));
     integer_fields.insert("control_source".into(), i64::from(page.i8(scoring + 197)?));
     integer_fields.insert("pit_state".into(), i64::from(page.u8(scoring + 457)?));
+    integer_fields.insert("overheating".into(), i64::from(page.u8(telemetry + 541)?));
+    integer_fields.insert(
+        "body_part_detached".into(),
+        i64::from(page.u8(telemetry + 542)?),
+    );
+    for zone in 0..8 {
+        integer_fields.insert(
+            format!("dent_severity.{zone}"),
+            i64::from(page.u8(telemetry + 544 + zone)?),
+        );
+    }
     for (key, offset) in [
         ("front_flap_active", 616),
         ("rear_flap_active", 617),
@@ -506,6 +517,11 @@ fn native_fields(
         f64::from(page.f32(telemetry + 660)?),
     );
     float_fields.insert("fuel_capacity_litres".into(), page.f64(telemetry + 608)?);
+    float_fields.insert(
+        "last_impact_elapsed_seconds".into(),
+        page.f64(telemetry + 552)?,
+    );
+    float_fields.insert("last_impact_magnitude".into(), page.f64(telemetry + 560)?);
     float_fields.insert("delta_best_seconds".into(), page.f64(telemetry + 696)?);
     float_fields.insert("rear_brake_bias".into(), page.f64(telemetry + 664)?);
     float_fields.insert("turbo_boost_pressure".into(), page.f64(telemetry + 672)?);
@@ -789,6 +805,12 @@ mod tests {
         write_f64(&mut bytes, telemetry + 404, -0.5);
         write_f64(&mut bytes, telemetry + 412, 0.0);
         write_f64(&mut bytes, telemetry + 524, 57.0);
+        bytes[telemetry + 541] = 1;
+        bytes[telemetry + 542] = 1;
+        bytes[telemetry + 544] = 1;
+        bytes[telemetry + 547] = 2;
+        write_f64(&mut bytes, telemetry + 552, 680.0);
+        write_f64(&mut bytes, telemetry + 560, 14.5);
         write_i32(&mut bytes, telemetry + 600, 1);
         write_f64(&mut bytes, scoring + 176, 31.0);
         write_f32(&mut bytes, telemetry + 692, 540.0);
@@ -902,11 +924,23 @@ mod tests {
         assert_eq!(native.integer_fields.get("tc_active"), Some(&1));
         assert_eq!(native.integer_fields.get("abs_active"), Some(&1));
         assert_eq!(native.integer_fields.get("rear_flap_active"), Some(&1));
+        assert_eq!(native.integer_fields.get("overheating"), Some(&1));
+        assert_eq!(native.integer_fields.get("body_part_detached"), Some(&1));
+        assert_eq!(native.integer_fields.get("dent_severity.0"), Some(&1));
+        assert_eq!(native.integer_fields.get("dent_severity.3"), Some(&2));
         assert_eq!(
             native.float_fields.get("battery_charge_fraction"),
             Some(&0.63)
         );
         assert_eq!(native.float_fields.get("regeneration_kw"), Some(&112.5));
+        assert_eq!(
+            native.float_fields.get("last_impact_elapsed_seconds"),
+            Some(&680.0)
+        );
+        assert_eq!(
+            native.float_fields.get("last_impact_magnitude"),
+            Some(&14.5)
+        );
         assert_eq!(
             native.float_fields.get("tyre_remaining_fraction.0"),
             Some(&0.94)

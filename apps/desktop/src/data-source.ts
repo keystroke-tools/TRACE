@@ -70,6 +70,11 @@ export interface RecordedLapMetrics {
 	tyreWearMinimum: Array<number | null>;
 	tyreFlatObserved?: boolean[];
 	wheelDetachedObserved?: boolean[];
+	dentSeverityMaximum?: number[];
+	overheatingObserved?: boolean;
+	bodyPartDetachedObserved?: boolean;
+	impactCount?: number;
+	maximumImpactMagnitude?: number | null;
 	virtualEnergyStart?: number | null;
 	virtualEnergyEnd?: number | null;
 	virtualEnergyUsed?: number | null;

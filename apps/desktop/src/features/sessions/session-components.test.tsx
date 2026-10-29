@@ -1,9 +1,26 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { RecordedLapMetrics } from "../../data-source";
-import { ElectronicsSummary, TyreState, enduranceEstimates, formatVirtualEnergyUsed, friendlySetupLabel } from "./session-components";
+import { DamageSummary, ElectronicsSummary, TyreState, enduranceEstimates, formatVirtualEnergyUsed, friendlySetupLabel } from "./session-components";
 
 describe("session telemetry summaries", () => {
+	it("only surfaces damage that was observed", () => {
+		const metrics: RecordedLapMetrics = {
+			lapIndex: 4,
+			tyreWearStart: [null, null, null, null],
+			tyreWearEnd: [null, null, null, null],
+			tyreWearMinimum: [null, null, null, null],
+			dentSeverityMaximum: [0, 1, 2, 0, 0, 0, 0, 0],
+			overheatingObserved: true,
+			impactCount: 2,
+			maximumImpactMagnitude: 14.5,
+		};
+		render(<DamageSummary metrics={metrics} />);
+		expect(screen.getByText("BODY 2/8")).toBeInTheDocument();
+		expect(screen.getByText("IMPACT ×2")).toBeInTheDocument();
+		expect(screen.getByText("OVERHEAT")).toBeInTheDocument();
+	});
+
 	it("shows LMU electronics changes and intervention activity", () => {
 		const metrics: RecordedLapMetrics = {
 			lapIndex: 3,

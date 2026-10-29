@@ -20,6 +20,7 @@ import { savedSetupFolder } from "../setups/setup-preferences";
 import {
 	DeleteConfirmation,
 	EnduranceSummary,
+	DamageSummary,
 	ElectronicsSummary,
 	EmptySessions,
 	ExportOption,
@@ -534,6 +535,7 @@ export function SessionDetail({
 										<span className="text-[12px] text-trace-dim">SECTORS UNAVAILABLE</span>
 									)}
 									<ElectronicsSummary metrics={lapMetrics} />
+									<DamageSummary metrics={lapMetrics} />
 								</div>
 								<div className="flex min-h-16 items-center border-l border-trace-divider pl-5">
 									<TyreState state={metricsState} metrics={lapMetrics} />

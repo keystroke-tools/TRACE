@@ -40,10 +40,12 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 44] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 46] = [
     "static.max_fuel_litres",
     "Max Fuel",
     "fuel_capacity_litres",
+    "last_impact_elapsed_seconds",
+    "last_impact_magnitude",
     "static.track_spline_length_m",
     "trace.derived_track_length_m",
     "Last Sector Time",
@@ -86,7 +88,17 @@ const SHARED_NATIVE_FLOAT_FIELDS: [&str; 44] = [
     "tyre_remaining_fraction.2",
     "tyre_remaining_fraction.3",
 ];
-const SHARED_NATIVE_INTEGER_FIELDS: [&str; 34] = [
+const SHARED_NATIVE_INTEGER_FIELDS: [&str; 44] = [
+    "overheating",
+    "body_part_detached",
+    "dent_severity.0",
+    "dent_severity.1",
+    "dent_severity.2",
+    "dent_severity.3",
+    "dent_severity.4",
+    "dent_severity.5",
+    "dent_severity.6",
+    "dent_severity.7",
     "rear_flap_active",
     "rear_flap_legal_status",
     "electric_motor_state",
@@ -200,11 +212,17 @@ pub struct LapTelemetryMetrics {
     pub tyre_wear_minimum: [Option<f32>; 4],
     pub tyre_flat_observed: [bool; 4],
     pub wheel_detached_observed: [bool; 4],
+    pub dent_severity_maximum: [u8; 8],
+    pub overheating_observed: bool,
+    pub body_part_detached_observed: bool,
+    pub impact_count: u32,
+    pub maximum_impact_magnitude: Option<f32>,
     pub virtual_energy_start: Option<f32>,
     pub virtual_energy_end: Option<f32>,
     pub virtual_energy_minimum: Option<f32>,
     pub virtual_energy_maximum: Option<f32>,
     pub electronics: LapElectronicsMetrics,
+    last_impact_elapsed_seconds: Option<f64>,
 }
 
 impl TelemetryColumns {
@@ -1499,9 +1517,59 @@ fn observe_lap_metrics(
             .filter(|payloads| !payloads.is_null(row))
             .and_then(|payloads| lmu_native_telemetry(payloads.value(row)));
         observe_lap_resources(metrics, native, native_integers, payload, row);
+        observe_lap_damage(metrics, native, native_integers, payload, row);
         observe_lap_electronics(&mut metrics.electronics, native_integers, payload, row);
     }
     Ok(())
+}
+
+fn observe_lap_damage(
+    metrics: &mut LapTelemetryMetrics,
+    native: Option<&MapArray>,
+    native_integers: Option<&MapArray>,
+    payload: Option<&[u8]>,
+    row: usize,
+) {
+    let integer = |key: &str, offset: usize| {
+        native_integers
+            .and_then(|values| native_integer_value(values, row, key))
+            .and_then(|value| u8::try_from(value).ok())
+            .or_else(|| payload.and_then(|bytes| bytes.get(offset).copied()))
+    };
+    metrics.overheating_observed |= integer("overheating", 541).is_some_and(|value| value != 0);
+    metrics.body_part_detached_observed |=
+        integer("body_part_detached", 542).is_some_and(|value| value != 0);
+    for zone in 0..8 {
+        if let Some(severity) = integer(&format!("dent_severity.{zone}"), 544 + zone) {
+            metrics.dent_severity_maximum[zone] =
+                metrics.dent_severity_maximum[zone].max(severity.min(2));
+        }
+    }
+
+    let impact_time = native
+        .and_then(|values| native_float_value(values, row, "last_impact_elapsed_seconds"))
+        .or_else(|| payload.and_then(|bytes| read_lmu_f64(bytes, 552)))
+        .filter(|value| value.is_finite() && *value >= 0.0);
+    let impact_magnitude = native
+        .and_then(|values| native_float_value(values, row, "last_impact_magnitude"))
+        .or_else(|| payload.and_then(|bytes| read_lmu_f64(bytes, 560)))
+        .filter(|value| value.is_finite() && *value >= 0.0);
+    if let Some(event_time) = impact_time {
+        if metrics
+            .last_impact_elapsed_seconds
+            .is_some_and(|previous| (event_time - previous).abs() > f64::EPSILON)
+        {
+            metrics.impact_count = metrics.impact_count.saturating_add(1);
+            if let Some(magnitude) = impact_magnitude.map(narrow_native_float) {
+                metrics.maximum_impact_magnitude = Some(
+                    metrics
+                        .maximum_impact_magnitude
+                        .map_or(magnitude, |maximum| maximum.max(magnitude)),
+                );
+            }
+        }
+        metrics.last_impact_elapsed_seconds = Some(event_time);
+    }
 }
 
 fn observe_lap_resources(
@@ -3159,6 +3227,11 @@ mod tests {
                             .chain([
                                 ("static.max_fuel_litres".into(), 30.0),
                                 ("virtual_energy".into(), f64::from(1.0 - value * 0.1)),
+                                (
+                                    "last_impact_elapsed_seconds".into(),
+                                    if sequence < 3 { 10.0 } else { 20.0 },
+                                ),
+                                ("last_impact_magnitude".into(), 12.5),
                             ])
                             .collect(),
                         integer_fields: BTreeMap::from([
@@ -3180,6 +3253,10 @@ mod tests {
                             ("tc_active".into(), i64::from(sequence == 2)),
                             ("abs_active".into(), i64::from(sequence == 3)),
                             ("rear_flap_active".into(), 0),
+                            ("overheating".into(), i64::from(sequence == 3)),
+                            ("body_part_detached".into(), i64::from(sequence == 3)),
+                            ("dent_severity.0".into(), i64::from(sequence >= 2)),
+                            ("dent_severity.1".into(), i64::from(sequence >= 3) * 2),
                             ("tyre_flat.0".into(), i64::from(sequence == 2)),
                             ("wheel_detached.3".into(), i64::from(sequence == 3)),
                         ]),
@@ -3207,6 +3284,11 @@ mod tests {
         assert_eq!(metrics.virtual_energy_maximum, Some(0.9));
         assert_eq!(metrics.tyre_flat_observed, [true, false, false, false]);
         assert_eq!(metrics.wheel_detached_observed, [false, false, false, true]);
+        assert_eq!(metrics.dent_severity_maximum, [1, 2, 0, 0, 0, 0, 0, 0]);
+        assert!(metrics.overheating_observed);
+        assert!(metrics.body_part_detached_observed);
+        assert_eq!(metrics.impact_count, 1);
+        assert_eq!(metrics.maximum_impact_magnitude, Some(12.5));
         assert_eq!(metrics.electronics.tc.start, Some(1));
         assert_eq!(metrics.electronics.tc.end, Some(2));
         assert_eq!(metrics.electronics.tc.changes, 1);

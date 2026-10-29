@@ -323,6 +323,47 @@ export function ElectronicsSummary({ metrics }: { metrics?: RecordedLapMetrics }
 	);
 }
 
+export function DamageSummary({ metrics }: { metrics?: RecordedLapMetrics }) {
+	if (!metrics) return null;
+	const dent = metrics.dentSeverityMaximum ?? [];
+	const damagedZones = dent.filter((severity) => severity > 0).length;
+	const severeZones = dent.filter((severity) => severity >= 2).length;
+	const failures = [
+		metrics.overheatingObserved ? "OVERHEAT" : null,
+		metrics.bodyPartDetachedObserved ? "PART LOST" : null,
+		metrics.tyreFlatObserved?.some(Boolean) ? "PUNCTURE" : null,
+		metrics.wheelDetachedObserved?.some(Boolean) ? "WHEEL LOST" : null,
+	].filter((value): value is string => value != null);
+	if (damagedZones === 0 && failures.length === 0 && !metrics.impactCount) return null;
+	const dentDetail = damagedZones > 0 ? `${damagedZones}/8 body zones damaged${severeZones > 0 ? ` · ${severeZones} severe` : ""}` : null;
+	const impactDetail = metrics.impactCount
+		? `${metrics.impactCount} impact${metrics.impactCount === 1 ? "" : "s"} detected during this lap${metrics.maximumImpactMagnitude != null ? ` · peak magnitude ${metrics.maximumImpactMagnitude.toFixed(1)}` : ""}`
+		: null;
+	return (
+		<div className="mt-1.5 flex min-w-0 flex-wrap gap-1.5" aria-label="Damage observed during this lap">
+			{damagedZones > 0 && (
+				<Tooltip className="border border-red-500/60 px-1.5 py-1 text-[9px] font-bold leading-none text-red-300" content={dentDetail}>
+					BODY {damagedZones}/8
+				</Tooltip>
+			)}
+			{metrics.impactCount ? (
+				<Tooltip className="border border-trace-warning/60 px-1.5 py-1 text-[9px] font-bold leading-none text-trace-warning" content={impactDetail}>
+					IMPACT ×{metrics.impactCount}
+				</Tooltip>
+			) : null}
+			{failures.map((failure) => (
+				<Tooltip
+					className="border border-red-500/70 px-1.5 py-1 text-[9px] font-bold leading-none text-red-300"
+					content={`${failure} was observed during this lap`}
+					key={failure}
+				>
+					{failure}
+				</Tooltip>
+			))}
+		</div>
+	);
+}
+
 function sessionTimingLaps(laps: RecordedSessionSummary["laps"]): SessionOverviewLap[] {
 	return laps.map((lap) => ({
 		id: String(lap.index),
