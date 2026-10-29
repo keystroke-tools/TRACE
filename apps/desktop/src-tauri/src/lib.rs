@@ -26,7 +26,7 @@ use trace_storage::{
     BlobCommit, BlobFormat, FileBlobStore, RelativeBlobPath, TelemetryBlobStore,
     ipc::{
         TELEMETRY_SCHEMA_VERSION, TelemetryColumns, TelemetrySampleRange, derive_sector_durations,
-        export_core_csv, read_columns_range, read_lap_metrics, sample_count,
+        export_core_csv, read_columns_range, read_lap_metrics_ranges, sample_count,
     },
     metadata::{
         CompatibleSetup, LapSummary, MetadataStore, NewSetupImport, SavedComparison, SectorSummary,
@@ -1202,7 +1202,7 @@ fn resolve_saved_comparison_names(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle and deserializes the id.
-fn session_lap_metrics(
+async fn session_lap_metrics(
     app: tauri::AppHandle,
     session_id: String,
 ) -> Result<Vec<RecordedLapMetrics>, String> {
@@ -1210,6 +1210,15 @@ fn session_lap_metrics(
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || load_session_lap_metrics(&directory, &session_id))
+        .await
+        .map_err(|error| format!("lap metric worker failed: {error}"))?
+}
+
+fn load_session_lap_metrics(
+    directory: &Path,
+    session_id: &str,
+) -> Result<Vec<RecordedLapMetrics>, String> {
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
     let session = store
@@ -1219,63 +1228,93 @@ fn session_lap_metrics(
         .find(|session| session.id == session_id)
         .ok_or_else(|| "recorded session was not found".to_owned())?;
     let is_lmu = session.simulator_key == "le-mans-ultimate";
-    let mut result = Vec::with_capacity(session.laps.len());
-
-    for lap in session.laps {
+    let mut groups =
+        std::collections::BTreeMap::<String, Vec<(usize, u32, TelemetrySampleRange)>>::new();
+    for (order, lap) in session.laps.into_iter().enumerate() {
         let Ok(locator) = store.lap_telemetry(&lap.id) else {
             continue;
         };
-        let path = directory.join("telemetry").join(locator.blob_path.as_str());
-        let file =
-            File::open(path).map_err(|error| format!("failed to open lap telemetry: {error}"))?;
-        let metrics = read_lap_metrics(file, locator.sample_start, locator.sample_count)
-            .map_err(|error| format!("failed to derive lap metrics: {error:?}"))?;
-        let fuel_used_litres = metrics
-            .fuel_start_litres
-            .zip(metrics.fuel_end_litres)
-            .filter(|(start, end)| start >= end)
-            .filter(|(start, _)| {
-                metrics
-                    .fuel_maximum_litres
-                    .is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
-            })
-            .map(|(start, end)| start - end);
-        let virtual_energy_used = metrics
-            .virtual_energy_start
-            .zip(metrics.virtual_energy_end)
-            .filter(|(start, end)| start >= end)
-            .filter(|(start, _)| {
-                metrics
-                    .virtual_energy_maximum
-                    .is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
-            })
-            .map(|(start, end)| start - end);
-        result.push(RecordedLapMetrics {
-            lap_index: lap.index,
-            fuel_start_litres: metrics.fuel_start_litres,
-            fuel_end_litres: metrics.fuel_end_litres,
-            fuel_used_litres,
-            fuel_capacity_litres: metrics.fuel_capacity_litres,
-            max_speed_kmh: metrics.max_speed_mps.map(|value| value * 3.6),
-            tyre_wear_start: metrics.tyre_wear_start,
-            tyre_wear_end: metrics.tyre_wear_end,
-            tyre_wear_minimum: metrics.tyre_wear_minimum,
-            tyre_flat_observed: metrics.tyre_flat_observed,
-            wheel_detached_observed: metrics.wheel_detached_observed,
-            dent_severity_maximum: metrics.dent_severity_maximum,
-            overheating_observed: metrics.overheating_observed,
-            body_part_detached_observed: metrics.body_part_detached_observed,
-            impact_count: metrics.impact_count,
-            maximum_impact_magnitude: metrics.maximum_impact_magnitude,
-            virtual_energy_start: metrics.virtual_energy_start,
-            virtual_energy_end: metrics.virtual_energy_end,
-            virtual_energy_used,
-            electronics: is_lmu
-                .then(|| recorded_lap_electronics(metrics.electronics))
-                .flatten(),
-        });
+        groups
+            .entry(locator.blob_path.as_str().to_owned())
+            .or_default()
+            .push((
+                order,
+                lap.index,
+                TelemetrySampleRange {
+                    sample_start: locator.sample_start,
+                    sample_count: locator.sample_count,
+                },
+            ));
     }
-    Ok(result)
+    let mut result = Vec::new();
+    for (blob_path, laps) in groups {
+        let path = directory.join("telemetry").join(blob_path);
+        let file = File::open(path)
+            .map_err(|error| format!("failed to open session telemetry: {error}"))?;
+        let ranges = laps.iter().map(|(_, _, range)| *range).collect::<Vec<_>>();
+        let metrics = read_lap_metrics_ranges(file, &ranges)
+            .map_err(|error| format!("failed to derive lap metrics: {error:?}"))?;
+        result.extend(
+            laps.into_iter()
+                .zip(metrics)
+                .map(|((order, lap_index, _), metrics)| {
+                    (order, recorded_lap_metrics(lap_index, &metrics, is_lmu))
+                }),
+        );
+    }
+    result.sort_unstable_by_key(|(order, _)| *order);
+    Ok(result.into_iter().map(|(_, metrics)| metrics).collect())
+}
+
+fn recorded_lap_metrics(
+    lap_index: u32,
+    metrics: &trace_storage::ipc::LapTelemetryMetrics,
+    is_lmu: bool,
+) -> RecordedLapMetrics {
+    let fuel_used_litres = metrics
+        .fuel_start_litres
+        .zip(metrics.fuel_end_litres)
+        .filter(|(start, end)| start >= end)
+        .filter(|(start, _)| {
+            metrics
+                .fuel_maximum_litres
+                .is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
+        })
+        .map(|(start, end)| start - end);
+    let virtual_energy_used = metrics
+        .virtual_energy_start
+        .zip(metrics.virtual_energy_end)
+        .filter(|(start, end)| start >= end)
+        .filter(|(start, _)| {
+            metrics
+                .virtual_energy_maximum
+                .is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
+        })
+        .map(|(start, end)| start - end);
+    RecordedLapMetrics {
+        lap_index,
+        fuel_start_litres: metrics.fuel_start_litres,
+        fuel_end_litres: metrics.fuel_end_litres,
+        fuel_used_litres,
+        fuel_capacity_litres: metrics.fuel_capacity_litres,
+        max_speed_kmh: metrics.max_speed_mps.map(|value| value * 3.6),
+        tyre_wear_start: metrics.tyre_wear_start,
+        tyre_wear_end: metrics.tyre_wear_end,
+        tyre_wear_minimum: metrics.tyre_wear_minimum,
+        tyre_flat_observed: metrics.tyre_flat_observed,
+        wheel_detached_observed: metrics.wheel_detached_observed,
+        dent_severity_maximum: metrics.dent_severity_maximum,
+        overheating_observed: metrics.overheating_observed,
+        body_part_detached_observed: metrics.body_part_detached_observed,
+        impact_count: metrics.impact_count,
+        maximum_impact_magnitude: metrics.maximum_impact_magnitude,
+        virtual_energy_start: metrics.virtual_energy_start,
+        virtual_energy_end: metrics.virtual_energy_end,
+        virtual_energy_used,
+        electronics: is_lmu
+            .then(|| recorded_lap_electronics(metrics.electronics))
+            .flatten(),
+    }
 }
 
 fn recorded_lap_electronics(

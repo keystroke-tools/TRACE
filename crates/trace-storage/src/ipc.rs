@@ -1420,17 +1420,52 @@ pub fn read_lap_metrics<R: Read + Seek>(
     sample_start: u64,
     sample_count: u64,
 ) -> Result<LapTelemetryMetrics, IpcError> {
-    if sample_count == 0 {
+    read_lap_metrics_ranges(
+        reader,
+        &[TelemetrySampleRange {
+            sample_start,
+            sample_count,
+        }],
+    )?
+    .pop()
+    .ok_or(IpcError::InvalidSampleRange)
+}
+
+/// Derives metrics for several lap ranges while decoding the Arrow stream only once.
+///
+/// This is materially faster for race and endurance sessions, whose laps usually share
+/// one telemetry blob. Ranges may overlap or arrive in any order; each result corresponds
+/// to the range at the same input index.
+///
+/// # Errors
+///
+/// Rejects empty, malformed, or out-of-bounds sample ranges and invalid telemetry.
+pub fn read_lap_metrics_ranges<R: Read + Seek>(
+    reader: R,
+    ranges: &[TelemetrySampleRange],
+) -> Result<Vec<LapTelemetryMetrics>, IpcError> {
+    if ranges.is_empty() || ranges.iter().any(|range| range.sample_count == 0) {
         return Err(IpcError::InvalidSampleRange);
     }
-    let requested_end = sample_start
-        .checked_add(sample_count)
+    let requested_ends = ranges
+        .iter()
+        .map(|range| {
+            range
+                .sample_start
+                .checked_add(range.sample_count)
+                .ok_or(IpcError::InvalidSampleRange)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let requested_end = requested_ends
+        .iter()
+        .copied()
+        .max()
         .ok_or(IpcError::InvalidSampleRange)?;
     let mut reader = FileReader::try_new_buffered(reader, None).map_err(IpcError::from)?;
     validate_schema(reader.schema().as_ref())?;
-    let mut metrics = LapTelemetryMetrics::default();
+    let mut metrics = vec![LapTelemetryMetrics::default(); ranges.len()];
     let mut batch_start = 0_u64;
-    let mut observed = 0_u64;
+    let mut observed = vec![0_u64; ranges.len()];
 
     for batch in &mut reader {
         let batch = batch.map_err(IpcError::from)?;
@@ -1438,24 +1473,30 @@ pub fn read_lap_metrics<R: Read + Seek>(
         let batch_end = batch_start
             .checked_add(rows)
             .ok_or(IpcError::SampleOverflow)?;
-        let overlap_start = sample_start.max(batch_start);
-        let overlap_end = requested_end.min(batch_end);
-        if overlap_start < overlap_end {
-            let local_start = usize::try_from(overlap_start - batch_start)
-                .map_err(|_| IpcError::SampleOverflow)?;
-            let length = usize::try_from(overlap_end - overlap_start)
-                .map_err(|_| IpcError::SampleOverflow)?;
-            observe_lap_metrics(&mut metrics, &batch, local_start, length)?;
-            observed = observed
-                .checked_add(u64::try_from(length).map_err(|_| IpcError::SampleOverflow)?)
-                .ok_or(IpcError::SampleOverflow)?;
+        for (index, range) in ranges.iter().enumerate() {
+            let overlap_start = range.sample_start.max(batch_start);
+            let overlap_end = requested_ends[index].min(batch_end);
+            if overlap_start < overlap_end {
+                let local_start = usize::try_from(overlap_start - batch_start)
+                    .map_err(|_| IpcError::SampleOverflow)?;
+                let length = usize::try_from(overlap_end - overlap_start)
+                    .map_err(|_| IpcError::SampleOverflow)?;
+                observe_lap_metrics(&mut metrics[index], &batch, local_start, length)?;
+                observed[index] = observed[index]
+                    .checked_add(u64::try_from(length).map_err(|_| IpcError::SampleOverflow)?)
+                    .ok_or(IpcError::SampleOverflow)?;
+            }
         }
         batch_start = batch_end;
         if batch_start >= requested_end {
             break;
         }
     }
-    if observed != sample_count {
+    if observed
+        .iter()
+        .zip(ranges)
+        .any(|(observed, range)| *observed != range.sample_count)
+    {
         return Err(IpcError::InvalidSampleRange);
     }
     Ok(metrics)
@@ -3268,7 +3309,7 @@ mod tests {
             .collect::<Vec<_>>();
         let bytes = encode_frames(&frames).expect("encoded");
 
-        let metrics = read_lap_metrics(Cursor::new(bytes), 1, 3).expect("metrics");
+        let metrics = read_lap_metrics(Cursor::new(&bytes), 1, 3).expect("metrics");
         assert_eq!(metrics.fuel_start_litres, Some(9.0));
         assert_eq!(metrics.fuel_end_litres, Some(7.0));
         assert_eq!(metrics.fuel_minimum_litres, Some(7.0));
@@ -3297,6 +3338,26 @@ mod tests {
         assert_eq!(metrics.electronics.observed_samples, 3);
         assert_eq!(metrics.electronics.tc_active_samples, 1);
         assert_eq!(metrics.electronics.abs_active_samples, 1);
+
+        let ranges = read_lap_metrics_ranges(
+            Cursor::new(bytes),
+            &[
+                TelemetrySampleRange {
+                    sample_start: 0,
+                    sample_count: 2,
+                },
+                TelemetrySampleRange {
+                    sample_start: 3,
+                    sample_count: 2,
+                },
+            ],
+        )
+        .expect("metrics from one stream pass");
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(ranges[0].fuel_start_litres, Some(10.0));
+        assert_eq!(ranges[0].fuel_end_litres, Some(9.0));
+        assert_eq!(ranges[1].fuel_start_litres, Some(7.0));
+        assert_eq!(ranges[1].fuel_end_litres, Some(6.0));
     }
 
     #[test]
