@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { RecordedLapMetrics } from "../../data-source";
-import { ElectronicsSummary, friendlySetupLabel } from "./session-components";
+import { ElectronicsSummary, TyreState, enduranceEstimates, formatVirtualEnergyUsed, friendlySetupLabel } from "./session-components";
 
 describe("session telemetry summaries", () => {
 	it("shows LMU electronics changes and intervention activity", () => {
@@ -39,5 +39,46 @@ describe("session telemetry summaries", () => {
 
 	it("turns LMU setting keys into readable labels", () => {
 		expect(friendlySetupLabel("TractionControlMapSetting")).toBe("Traction Control Map");
+	});
+
+	it("shows LMU tyre life and converts fractional virtual energy to percentages", () => {
+		const metrics: RecordedLapMetrics = {
+			lapIndex: 4,
+			fuelStartLitres: 40,
+			fuelEndLitres: 37.5,
+			fuelUsedLitres: 2.5,
+			tyreWearStart: [96, 95, 97, 96],
+			tyreWearEnd: [94, 93, 96, 95],
+			tyreWearMinimum: [94, 93, 96, 95],
+			virtualEnergyStart: 0.82,
+			virtualEnergyEnd: 0.74,
+			virtualEnergyUsed: 0.08,
+		};
+
+		render(<TyreState state="ready" metrics={metrics} />);
+
+		expect(screen.getByText("94")).toBeInTheDocument();
+		expect(screen.getByText("93")).toBeInTheDocument();
+		expect(formatVirtualEnergyUsed(metrics)).toBe("8.0% VE");
+	});
+
+	it("derives conservative endurance estimates from clean lap consumption", () => {
+		const lap = (index: number, fuelUsedLitres: number, fuelEndLitres: number, tyreEnd: number): RecordedLapMetrics => ({
+			lapIndex: index,
+			fuelUsedLitres,
+			fuelEndLitres,
+			tyreWearStart: [tyreEnd + 1, tyreEnd + 1, tyreEnd + 1, tyreEnd + 1],
+			tyreWearEnd: [tyreEnd, tyreEnd, tyreEnd, tyreEnd],
+			tyreWearMinimum: [tyreEnd, tyreEnd, tyreEnd, tyreEnd],
+			virtualEnergyStart: 0.8,
+			virtualEnergyEnd: 0.75,
+			virtualEnergyUsed: 0.05,
+		});
+		const estimates = enduranceEstimates([lap(1, 2.4, 30, 98), lap(2, 2.6, 27.4, 97)]);
+
+		expect(estimates.fuelPerLap).toBe(2.5);
+		expect(estimates.fuelLapsRemaining).toBeCloseTo(10.96);
+		expect(estimates.virtualEnergyPerLap).toBeCloseTo(5);
+		expect(estimates.tyreLapsRemaining).toBe(97);
 	});
 });

@@ -19,15 +19,17 @@ import { fasterReferenceSuggestions, type ComparisonSelection, validComparisonLa
 import { savedSetupFolder } from "../setups/setup-preferences";
 import {
 	DeleteConfirmation,
+	EnduranceSummary,
 	ElectronicsSummary,
 	EmptySessions,
 	ExportOption,
-	FuelUsage,
 	LapMetricValue,
 	OwnershipBadge,
 	SectorBars,
 	SectorLegend,
 	SessionDetailsEditor,
+	StintUsage,
+	TyreState,
 	formatCompactSessionDate,
 	formatFuelUsed,
 	formatLapDurationNs,
@@ -79,6 +81,10 @@ export function SessionDetail({
 	const [compareOpen, setCompareOpen] = useState(false);
 	const actionsMenu = useRef<HTMLDivElement>(null);
 	const metricsByLap = useMemo(() => new Map(metrics.map((value) => [value.lapIndex, value])), [metrics]);
+	const planningMetrics = useMemo(
+		() => metrics.filter((value) => session.laps.some((lap) => lap.index === value.lapIndex && !lapIsInvalid(lap))),
+		[metrics, session.laps],
+	);
 	const overview = sessionOverview(
 		session.laps.map((lap) => ({
 			id: String(lap.index),
@@ -473,6 +479,7 @@ export function SessionDetail({
 					Lap times are available, but the additional fuel and speed summaries could not be loaded.
 				</div>
 			)}
+			{metricsState === "ready" && <EnduranceSummary metrics={planningMetrics} />}
 
 			<div className="mt-4">
 				<ConsistencyChart series={[{ label: "This session", session }]} />
@@ -483,12 +490,13 @@ export function SessionDetail({
 					<h2 className="text-[13px] font-black tracking-[.04em]">LAPS</h2>
 					<span className="font-mono text-[12px] text-trace-faint">{session.laps.length} TOTAL</span>
 				</div>
-				<div className="grid grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
+				<div className="grid grid-cols-[60px_100px_minmax(250px,1fr)_96px_180px_126px_20px] items-center gap-5 border-b border-trace-divider bg-trace-deep px-6 py-3 font-mono text-[12px] font-bold tracking-[.08em] text-trace-dim">
 					<span>LAP</span>
 					<span>TIME</span>
 					<span>SECTORS / ELECTRONICS</span>
-					<span className="border-l border-trace-divider pl-6">FUEL</span>
-					<span className="border-l border-trace-divider pl-6">TOP SPEED</span>
+					<span className="border-l border-trace-divider pl-5">TYRES</span>
+					<span className="border-l border-trace-divider pl-5">STINT USE</span>
+					<span className="border-l border-trace-divider pl-5">TOP SPEED</span>
 					<span aria-hidden="true" />
 				</div>
 				{session.laps.length === 0 ? (
@@ -500,7 +508,7 @@ export function SessionDetail({
 						const fastest = !invalid && lap.time !== "—" && lapDuration(lap) === fastestDuration;
 						return (
 							<div
-								className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(280px,1fr)_168px_126px_20px] items-center gap-6 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
+								className={`grid min-h-[108px] grid-cols-[60px_100px_minmax(250px,1fr)_96px_180px_126px_20px] items-center gap-5 border-b border-l-2 border-b-trace-divider px-6 py-4 font-mono text-[12px] last:border-b-0 ${invalid ? "border-l-trace-danger bg-trace-danger/15" : fastest ? "border-l-trace-purple bg-trace-purple/10 shadow-[inset_0_0_28px_rgba(184,124,255,0.04)]" : "border-l-transparent"}`}
 								key={lap.index}
 								role="button"
 								tabIndex={0}
@@ -527,10 +535,13 @@ export function SessionDetail({
 									)}
 									<ElectronicsSummary metrics={lapMetrics} />
 								</div>
-								<div className="flex min-h-16 items-center border-l border-trace-divider pl-6">
-									<FuelUsage state={metricsState} metrics={lapMetrics} />
+								<div className="flex min-h-16 items-center border-l border-trace-divider pl-5">
+									<TyreState state={metricsState} metrics={lapMetrics} />
 								</div>
-								<div className="flex min-h-16 items-center border-l border-trace-divider pl-6">
+								<div className="flex min-h-16 items-center border-l border-trace-divider pl-5">
+									<StintUsage state={metricsState} metrics={lapMetrics} />
+								</div>
+								<div className="flex min-h-16 items-center border-l border-trace-divider pl-5">
 									<LapMetricValue
 										state={metricsState}
 										value={lapMetrics?.maxSpeedKmh != null ? `${lapMetrics.maxSpeedKmh.toFixed(1)} km/h` : null}

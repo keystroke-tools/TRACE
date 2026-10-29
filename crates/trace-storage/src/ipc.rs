@@ -40,9 +40,10 @@ pub enum IpcCompression {
 /// Compression used by TRACE capture writers unless a caller selects another policy.
 pub const DEFAULT_IPC_COMPRESSION: IpcCompression = IpcCompression::Zstd;
 
-const SHARED_NATIVE_FLOAT_FIELDS: [&str; 39] = [
+const SHARED_NATIVE_FLOAT_FIELDS: [&str; 44] = [
     "static.max_fuel_litres",
     "Max Fuel",
+    "fuel_capacity_litres",
     "static.track_spline_length_m",
     "trace.derived_track_length_m",
     "Last Sector Time",
@@ -80,8 +81,12 @@ const SHARED_NATIVE_FLOAT_FIELDS: [&str; 39] = [
     "regeneration_kw",
     "state_of_charge",
     "virtual_energy",
+    "tyre_remaining_fraction.0",
+    "tyre_remaining_fraction.1",
+    "tyre_remaining_fraction.2",
+    "tyre_remaining_fraction.3",
 ];
-const SHARED_NATIVE_INTEGER_FIELDS: [&str; 18] = [
+const SHARED_NATIVE_INTEGER_FIELDS: [&str; 34] = [
     "rear_flap_active",
     "rear_flap_legal_status",
     "electric_motor_state",
@@ -100,6 +105,22 @@ const SHARED_NATIVE_INTEGER_FIELDS: [&str; 18] = [
     "motor_map_max",
     "brake_migration",
     "brake_migration_max",
+    "tyre_flat.0",
+    "tyre_flat.1",
+    "tyre_flat.2",
+    "tyre_flat.3",
+    "wheel_detached.0",
+    "wheel_detached.1",
+    "wheel_detached.2",
+    "wheel_detached.3",
+    "tyre_compound_index.0",
+    "tyre_compound_index.1",
+    "tyre_compound_index.2",
+    "tyre_compound_index.3",
+    "tyre_compound_type.0",
+    "tyre_compound_type.1",
+    "tyre_compound_type.2",
+    "tyre_compound_type.3",
 ];
 const SHARED_NATIVE_TEXT_FIELDS: [&str; 1] = ["static.track_configuration"];
 
@@ -170,11 +191,19 @@ pub struct LapElectronicsMetrics {
 pub struct LapTelemetryMetrics {
     pub fuel_start_litres: Option<f32>,
     pub fuel_end_litres: Option<f32>,
+    pub fuel_minimum_litres: Option<f32>,
+    pub fuel_maximum_litres: Option<f32>,
     pub fuel_capacity_litres: Option<f32>,
     pub max_speed_mps: Option<f32>,
     pub tyre_wear_start: [Option<f32>; 4],
     pub tyre_wear_end: [Option<f32>; 4],
     pub tyre_wear_minimum: [Option<f32>; 4],
+    pub tyre_flat_observed: [bool; 4],
+    pub wheel_detached_observed: [bool; 4],
+    pub virtual_energy_start: Option<f32>,
+    pub virtual_energy_end: Option<f32>,
+    pub virtual_energy_minimum: Option<f32>,
+    pub virtual_energy_maximum: Option<f32>,
     pub electronics: LapElectronicsMetrics,
 }
 
@@ -1451,40 +1480,115 @@ fn observe_lap_metrics(
             let value = fuel.value(row);
             metrics.fuel_start_litres.get_or_insert(value);
             metrics.fuel_end_litres = Some(value);
+            metrics.fuel_minimum_litres = Some(
+                metrics
+                    .fuel_minimum_litres
+                    .map_or(value, |minimum| minimum.min(value)),
+            );
+            metrics.fuel_maximum_litres = Some(
+                metrics
+                    .fuel_maximum_litres
+                    .map_or(value, |maximum| maximum.max(value)),
+            );
         }
         if !speed.is_null(row) && speed.value(row).is_finite() {
             let value = speed.value(row);
             metrics.max_speed_mps = Some(metrics.max_speed_mps.map_or(value, |max| max.max(value)));
         }
-        if let Some(native) = native {
-            if let Some(value) = native_float_value(native, row, "static.max_fuel_litres")
-                .or_else(|| native_float_value(native, row, "Max Fuel"))
-                .filter(|value| value.is_finite() && *value > 0.0)
-                .map(narrow_native_float)
-            {
-                metrics.fuel_capacity_litres.get_or_insert(value);
-            }
-            for corner in 0..4 {
-                let key = format!("physics.tyre_wear.{corner}");
-                if let Some(value) = native_float_value(native, row, &key)
-                    .filter(|value| value.is_finite())
-                    .map(narrow_native_float)
-                {
-                    metrics.tyre_wear_start[corner].get_or_insert(value);
-                    metrics.tyre_wear_end[corner] = Some(value);
-                    metrics.tyre_wear_minimum[corner] = Some(
-                        metrics.tyre_wear_minimum[corner]
-                            .map_or(value, |minimum| minimum.min(value)),
-                    );
-                }
-            }
-        }
         let payload = native_payloads
             .filter(|payloads| !payloads.is_null(row))
             .and_then(|payloads| lmu_native_telemetry(payloads.value(row)));
+        observe_lap_resources(metrics, native, native_integers, payload, row);
         observe_lap_electronics(&mut metrics.electronics, native_integers, payload, row);
     }
     Ok(())
+}
+
+fn observe_lap_resources(
+    metrics: &mut LapTelemetryMetrics,
+    native: Option<&MapArray>,
+    native_integers: Option<&MapArray>,
+    payload: Option<&[u8]>,
+    row: usize,
+) {
+    let fuel_capacity = native
+        .and_then(|values| native_float_value(values, row, "static.max_fuel_litres"))
+        .or_else(|| native.and_then(|values| native_float_value(values, row, "Max Fuel")))
+        .or_else(|| {
+            native.and_then(|values| native_float_value(values, row, "fuel_capacity_litres"))
+        })
+        .or_else(|| payload.and_then(|telemetry| read_lmu_f64(telemetry, 608)))
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(narrow_native_float);
+    if let Some(value) = fuel_capacity {
+        metrics.fuel_capacity_litres.get_or_insert(value);
+    }
+
+    let virtual_energy = native
+        .and_then(|values| native_float_value(values, row, "virtual_energy"))
+        .or_else(|| payload.and_then(|telemetry| read_lmu_f32(telemetry, 776).map(f64::from)))
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(narrow_native_float);
+    if let Some(value) = virtual_energy {
+        metrics.virtual_energy_start.get_or_insert(value);
+        metrics.virtual_energy_end = Some(value);
+        metrics.virtual_energy_minimum = Some(
+            metrics
+                .virtual_energy_minimum
+                .map_or(value, |minimum| minimum.min(value)),
+        );
+        metrics.virtual_energy_maximum = Some(
+            metrics
+                .virtual_energy_maximum
+                .map_or(value, |maximum| maximum.max(value)),
+        );
+    }
+    for corner in 0..4 {
+        observe_lap_tyre(metrics, native, native_integers, payload, row, corner);
+    }
+}
+
+fn observe_lap_tyre(
+    metrics: &mut LapTelemetryMetrics,
+    native: Option<&MapArray>,
+    native_integers: Option<&MapArray>,
+    payload: Option<&[u8]>,
+    row: usize,
+    corner: usize,
+) {
+    let ac_key = format!("physics.tyre_wear.{corner}");
+    let lmu_key = format!("tyre_remaining_fraction.{corner}");
+    let wear = native
+        .and_then(|values| native_float_value(values, row, &ac_key))
+        .filter(|value| value.is_finite())
+        .map(narrow_native_float)
+        .or_else(|| {
+            native
+                .and_then(|values| native_float_value(values, row, &lmu_key))
+                .or_else(|| {
+                    payload.and_then(|telemetry| read_lmu_f64(telemetry, 848 + corner * 260 + 152))
+                })
+                .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                .map(|value| narrow_native_float(value * 100.0))
+        });
+    if let Some(value) = wear {
+        metrics.tyre_wear_start[corner].get_or_insert(value);
+        metrics.tyre_wear_end[corner] = Some(value);
+        metrics.tyre_wear_minimum[corner] =
+            Some(metrics.tyre_wear_minimum[corner].map_or(value, |minimum| minimum.min(value)));
+    }
+    let flat_key = format!("tyre_flat.{corner}");
+    let detached_key = format!("wheel_detached.{corner}");
+    metrics.tyre_flat_observed[corner] |= native_integers
+        .and_then(|values| native_integer_value(values, row, &flat_key))
+        .is_some_and(|value| value != 0)
+        || payload
+            .is_some_and(|telemetry| telemetry.get(848 + corner * 260 + 177).copied() == Some(1));
+    metrics.wheel_detached_observed[corner] |= native_integers
+        .and_then(|values| native_integer_value(values, row, &detached_key))
+        .is_some_and(|value| value != 0)
+        || payload
+            .is_some_and(|telemetry| telemetry.get(848 + corner * 260 + 178).copied() == Some(1));
 }
 
 fn observe_lap_electronics(
@@ -1992,6 +2096,12 @@ fn lmu_native_telemetry(payload: &[u8]) -> Option<&[u8]> {
 fn read_lmu_f64(bytes: &[u8], offset: usize) -> Option<f64> {
     Some(f64::from_le_bytes(
         bytes.get(offset..offset + 8)?.try_into().ok()?,
+    ))
+}
+
+fn read_lmu_f32(bytes: &[u8], offset: usize) -> Option<f32> {
+    Some(f32::from_le_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
 }
 
@@ -3046,7 +3156,10 @@ mod tests {
                                     f64::from(100.0 - value),
                                 )
                             })
-                            .chain([("static.max_fuel_litres".into(), 30.0)])
+                            .chain([
+                                ("static.max_fuel_litres".into(), 30.0),
+                                ("virtual_energy".into(), f64::from(1.0 - value * 0.1)),
+                            ])
                             .collect(),
                         integer_fields: BTreeMap::from([
                             (
@@ -3067,6 +3180,8 @@ mod tests {
                             ("tc_active".into(), i64::from(sequence == 2)),
                             ("abs_active".into(), i64::from(sequence == 3)),
                             ("rear_flap_active".into(), 0),
+                            ("tyre_flat.0".into(), i64::from(sequence == 2)),
+                            ("wheel_detached.3".into(), i64::from(sequence == 3)),
                         ]),
                         ..NativeTelemetrySample::default()
                     })),
@@ -3079,11 +3194,19 @@ mod tests {
         let metrics = read_lap_metrics(Cursor::new(bytes), 1, 3).expect("metrics");
         assert_eq!(metrics.fuel_start_litres, Some(9.0));
         assert_eq!(metrics.fuel_end_litres, Some(7.0));
+        assert_eq!(metrics.fuel_minimum_litres, Some(7.0));
+        assert_eq!(metrics.fuel_maximum_litres, Some(9.0));
         assert_eq!(metrics.fuel_capacity_litres, Some(30.0));
         assert_eq!(metrics.max_speed_mps, Some(3.0));
         assert_eq!(metrics.tyre_wear_start, [Some(99.0); 4]);
         assert_eq!(metrics.tyre_wear_end, [Some(97.0); 4]);
         assert_eq!(metrics.tyre_wear_minimum, [Some(97.0); 4]);
+        assert_eq!(metrics.virtual_energy_start, Some(0.9));
+        assert_eq!(metrics.virtual_energy_end, Some(0.7));
+        assert_eq!(metrics.virtual_energy_minimum, Some(0.7));
+        assert_eq!(metrics.virtual_energy_maximum, Some(0.9));
+        assert_eq!(metrics.tyre_flat_observed, [true, false, false, false]);
+        assert_eq!(metrics.wheel_detached_observed, [false, false, false, true]);
         assert_eq!(metrics.electronics.tc.start, Some(1));
         assert_eq!(metrics.electronics.tc.end, Some(2));
         assert_eq!(metrics.electronics.tc.changes, 1);
@@ -3106,6 +3229,8 @@ mod tests {
             payload.resize(start + length, 0);
         }
         let telemetry_start = 8 + 4 + 548 + 4 + 584 + 4;
+        payload[telemetry_start + 608..telemetry_start + 616]
+            .copy_from_slice(&75.0_f64.to_le_bytes());
         for corner in 0..4 {
             let corner_value = f64::from(u8::try_from(corner).expect("four wheels"));
             let wheel = telemetry_start + 848 + corner * 260;
@@ -3129,6 +3254,19 @@ mod tests {
             .enumerate()
             .map(|(index, tc)| {
                 let mut sample_payload = payload.clone();
+                let index_f64 = f64::from(u8::try_from(index).expect("three samples"));
+                for corner in 0..4 {
+                    let wheel = telemetry_start + 848 + corner * 260;
+                    sample_payload[wheel + 152..wheel + 160]
+                        .copy_from_slice(&(0.96 - index_f64 * 0.01).to_le_bytes());
+                }
+                if index == 1 {
+                    sample_payload[telemetry_start + 848 + 177] = 1;
+                }
+                sample_payload[telemetry_start + 776..telemetry_start + 780].copy_from_slice(
+                    &(0.8_f32 - f32::from(u8::try_from(index).expect("three samples")) * 0.1)
+                        .to_le_bytes(),
+                );
                 sample_payload[telemetry_start + 750] = tc;
                 sample_payload[telemetry_start + 751] = 10;
                 sample_payload[telemetry_start + 752] = 2;
@@ -3153,5 +3291,13 @@ mod tests {
         assert_eq!(metrics.electronics.tc.end, Some(3));
         assert_eq!(metrics.electronics.tc.changes, 1);
         assert_eq!(metrics.electronics.tc_active_samples, 1);
+        assert_eq!(metrics.fuel_capacity_litres, Some(75.0));
+        assert_eq!(metrics.tyre_wear_start, [Some(96.0); 4]);
+        assert_eq!(metrics.tyre_wear_end, [Some(94.0); 4]);
+        assert_eq!(metrics.tyre_wear_minimum, [Some(94.0); 4]);
+        assert_eq!(metrics.tyre_flat_observed, [true, false, false, false]);
+        assert_eq!(metrics.wheel_detached_observed, [false; 4]);
+        assert_eq!(metrics.virtual_energy_start, Some(0.8));
+        assert_eq!(metrics.virtual_energy_end, Some(0.6));
     }
 }

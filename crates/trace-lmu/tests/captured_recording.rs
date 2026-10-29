@@ -43,6 +43,11 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
     let mut min_steering = f32::INFINITY;
     let mut max_steering = f32::NEG_INFINITY;
     let mut tyre_slip_samples = 0_u64;
+    let mut tyre_life_samples = 0_u64;
+    let mut minimum_tyre_life = f64::INFINITY;
+    let mut maximum_tyre_life = f64::NEG_INFINITY;
+    let mut minimum_fuel = f32::INFINITY;
+    let mut maximum_fuel = f32::NEG_INFINITY;
     let mut session_seed = None;
     let mut frames = Vec::new();
 
@@ -72,6 +77,10 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
         max_speed = max_speed.max(frame.vehicle.speed_mps.unwrap_or_default());
         max_throttle = max_throttle.max(frame.inputs.throttle.unwrap_or_default());
         max_brake = max_brake.max(frame.inputs.brake.unwrap_or_default());
+        if let Some(fuel) = frame.vehicle.fuel_litres {
+            minimum_fuel = minimum_fuel.min(fuel);
+            maximum_fuel = maximum_fuel.max(fuel);
+        }
         if let Some(steering) = frame.inputs.steering_angle_rad {
             min_steering = min_steering.min(steering);
             max_steering = max_steering.max(steering);
@@ -87,6 +96,16 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
         saw_realtime |= realtime;
         saw_monitor |= !realtime;
         let native = frame.native.as_ref().expect("native LMU payload");
+        for corner in 0..4 {
+            if let Some(value) = native
+                .float_fields
+                .get(&format!("tyre_remaining_fraction.{corner}"))
+            {
+                tyre_life_samples += 1;
+                minimum_tyre_life = minimum_tyre_life.min(*value);
+                maximum_tyre_life = maximum_tyre_life.max(*value);
+            }
+        }
         saw_pits |= native.integer_fields.get("in_pits") == Some(&1);
         pit_states.extend(native.integer_fields.get("pit_state").copied());
         frames.push(frame);
@@ -102,6 +121,15 @@ fn captured_lmu_v01_run_maps_through_the_canonical_boundary() {
     assert!(
         tyre_slip_samples > 1_000,
         "expected useful LMU tyre slip coverage"
+    );
+    assert_eq!(tyre_life_samples, samples * 4);
+    assert!(
+        (0.0..=1.0).contains(&minimum_tyre_life) && (0.0..=1.0).contains(&maximum_tyre_life),
+        "tyre life range was {minimum_tyre_life}..{maximum_tyre_life}"
+    );
+    assert!(
+        minimum_fuel.is_finite() && maximum_fuel > minimum_fuel,
+        "fuel range was {minimum_fuel}..{maximum_fuel} L"
     );
     assert!(
         min_steering < -0.1 && max_steering > 0.1,

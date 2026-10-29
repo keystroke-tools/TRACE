@@ -55,6 +55,177 @@ export function FuelUsage({ state, metrics }: { state: "loading" | "ready" | "er
 	);
 }
 
+function virtualEnergyScale(metrics?: RecordedLapMetrics) {
+	const values = [metrics?.virtualEnergyStart, metrics?.virtualEnergyEnd].filter((value): value is number => value != null && Number.isFinite(value));
+	return values.length > 0 && values.every((value) => value >= 0 && value <= 1.001) ? 100 : 1;
+}
+
+export function formatVirtualEnergyUsed(metrics?: RecordedLapMetrics) {
+	if (metrics?.virtualEnergyUsed == null || !Number.isFinite(metrics.virtualEnergyUsed)) return null;
+	const scale = virtualEnergyScale(metrics);
+	return `${(metrics.virtualEnergyUsed * scale).toFixed(1)}${scale === 100 ? "%" : ""} VE`;
+}
+
+export function VirtualEnergyUsage({ metrics }: { metrics?: RecordedLapMetrics }) {
+	const used = formatVirtualEnergyUsed(metrics);
+	if (!used) return null;
+	const scale = virtualEnergyScale(metrics);
+	const start = metrics?.virtualEnergyStart;
+	const end = metrics?.virtualEnergyEnd;
+	const detail =
+		start != null && end != null
+			? `${(start * scale).toFixed(1)}${scale === 100 ? "%" : ""} → ${(end * scale).toFixed(1)}${scale === 100 ? "%" : ""} virtual energy`
+			: null;
+	return <LapMetricValue state="ready" value={`${used} USED`} detail={detail} />;
+}
+
+export function StintUsage({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
+	return (
+		<div className="flex w-full min-w-0 flex-col gap-2">
+			<FuelUsage state={state} metrics={metrics} />
+			{state !== "loading" && <VirtualEnergyUsage metrics={metrics} />}
+		</div>
+	);
+}
+
+const tyreLabels = ["FL", "FR", "RL", "RR"];
+
+function tyreColour(remaining: number) {
+	if (remaining >= 75) return "bg-trace-accent text-trace-black";
+	if (remaining >= 50) return "bg-trace-sector-yellow text-trace-black";
+	if (remaining >= 25) return "bg-orange-500 text-trace-black";
+	return "bg-trace-danger text-white";
+}
+
+export function TyreState({ state, metrics }: { state: "loading" | "ready" | "error"; metrics?: RecordedLapMetrics }) {
+	if (state === "loading") return <span className="text-[12px] text-trace-dim">LOADING…</span>;
+	const values = metrics?.tyreWearEnd ?? [];
+	if (!values.some((value) => value != null && Number.isFinite(value))) {
+		return <LapMetricValue state={state} value={null} />;
+	}
+	return (
+		<div className="grid grid-cols-2 gap-1.5" aria-label="Tyre life remaining at the end of the lap">
+			{tyreLabels.map((label, index) => {
+				const value = values[index];
+				const remaining = value == null || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value));
+				const flat = metrics?.tyreFlatObserved?.[index] ?? false;
+				const detached = metrics?.wheelDetachedObserved?.[index] ?? false;
+				const start = metrics?.tyreWearStart[index];
+				const minimum = metrics?.tyreWearMinimum[index];
+				const detail = detached
+					? `${label}: wheel detached during this lap`
+					: flat
+						? `${label}: tyre was reported flat during this lap`
+						: remaining == null
+							? `${label}: unavailable`
+							: `${label}: ${Math.round(remaining)}% remaining${start != null ? ` · started at ${Math.round(start)}%` : ""}${minimum != null ? ` · minimum ${Math.round(minimum)}%` : ""}`;
+				return (
+					<Tooltip
+						className={`grid size-9 place-items-center rounded-full font-mono text-[10px] font-black ${detached || flat ? "bg-trace-danger text-white" : remaining == null ? "bg-trace-divider text-trace-dim" : tyreColour(remaining)}`}
+						content={detail}
+						key={label}
+					>
+						{detached || flat ? "!" : remaining == null ? label : Math.round(remaining)}
+					</Tooltip>
+				);
+			})}
+		</div>
+	);
+}
+
+function median(values: number[]) {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+export function enduranceEstimates(metrics: RecordedLapMetrics[]) {
+	const fuelPerLap = median(metrics.map((lap) => lap.fuelUsedLitres).filter((value): value is number => value != null && value > 0));
+	const lastFuel = [...metrics].reverse().find((lap) => lap.fuelEndLitres != null)?.fuelEndLitres ?? null;
+	const virtualEnergyPerLap = median(metrics.map((lap) => lap.virtualEnergyUsed).filter((value): value is number => value != null && value > 0));
+	const lastEnergyMetrics = [...metrics].reverse().find((lap) => lap.virtualEnergyEnd != null);
+	const lastVirtualEnergy = lastEnergyMetrics?.virtualEnergyEnd ?? null;
+	const energyScale = virtualEnergyScale(lastEnergyMetrics);
+	const tyreLosses = metrics.flatMap((lap) =>
+		lap.tyreWearStart.flatMap((start, index) => {
+			const end = lap.tyreWearEnd[index];
+			return start != null && end != null && start > end ? [start - end] : [];
+		}),
+	);
+	const tyreWearPerLap = median(tyreLosses);
+	const lastTyreMetrics = [...metrics].reverse().find((lap) => lap.tyreWearEnd.some((value) => value != null));
+	const lowestTyre = lastTyreMetrics?.tyreWearEnd.reduce<number | null>(
+		(lowest, value) => (value == null ? lowest : lowest == null ? value : Math.min(lowest, value)),
+		null,
+	);
+	return {
+		fuelPerLap,
+		fuelLapsRemaining: fuelPerLap && lastFuel != null ? lastFuel / fuelPerLap : null,
+		lastFuel,
+		virtualEnergyPerLap: virtualEnergyPerLap == null ? null : virtualEnergyPerLap * energyScale,
+		virtualEnergyLapsRemaining: virtualEnergyPerLap && lastVirtualEnergy != null ? lastVirtualEnergy / virtualEnergyPerLap : null,
+		lastVirtualEnergy: lastVirtualEnergy == null ? null : lastVirtualEnergy * energyScale,
+		virtualEnergyIsPercentage: energyScale === 100,
+		tyreWearPerLap,
+		tyreLapsRemaining: tyreWearPerLap && lowestTyre != null ? lowestTyre / tyreWearPerLap : null,
+		lowestTyre,
+	};
+}
+
+export function EnduranceSummary({ metrics }: { metrics: RecordedLapMetrics[] }) {
+	const estimates = enduranceEstimates(metrics);
+	const cards = [
+		estimates.fuelPerLap != null
+			? {
+					label: "FUEL / LAP",
+					value: `${estimates.fuelPerLap.toFixed(2)} L`,
+					detail:
+						estimates.fuelLapsRemaining != null
+							? `${estimates.lastFuel?.toFixed(1)} L remaining · approximately ${estimates.fuelLapsRemaining.toFixed(1)} laps`
+							: "Median recorded fuel use",
+				}
+			: null,
+		estimates.virtualEnergyPerLap != null
+			? {
+					label: "VE / LAP",
+					value: `${estimates.virtualEnergyPerLap.toFixed(1)}${estimates.virtualEnergyIsPercentage ? "%" : ""}`,
+					detail:
+						estimates.virtualEnergyLapsRemaining != null
+							? `${estimates.lastVirtualEnergy?.toFixed(1)}${estimates.virtualEnergyIsPercentage ? "%" : ""} remaining · approximately ${estimates.virtualEnergyLapsRemaining.toFixed(1)} laps`
+							: "Median recorded virtual-energy use",
+				}
+			: null,
+		estimates.lowestTyre != null
+			? {
+					label: "LOWEST TYRE",
+					value: `${Math.round(estimates.lowestTyre)}%`,
+					detail:
+						estimates.tyreLapsRemaining != null
+							? `${estimates.tyreWearPerLap?.toFixed(2)} percentage points per lap · approximately ${estimates.tyreLapsRemaining.toFixed(1)} laps`
+							: "Lowest remaining tyre life at the end of the latest measured lap",
+				}
+			: null,
+	].filter((card): card is { label: string; value: string; detail: string } => card != null);
+	if (cards.length === 0) return null;
+	return (
+		<section className="mt-4 border border-trace-divider bg-trace-surface" aria-label="Endurance estimates">
+			<header className="flex items-center justify-between gap-4 border-b border-trace-divider px-5 py-3">
+				<strong className="font-mono text-[11px] tracking-[.08em] text-trace-soft">STINT ESTIMATE</strong>
+				<span className="text-[10px] text-trace-dim">Median clean-lap use · pit and refill increases excluded</span>
+			</header>
+			<div className="grid divide-x divide-trace-divider" style={{ gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))` }}>
+				{cards.map((card) => (
+					<Tooltip className="min-w-0 px-5 py-3" content={card.detail} key={card.label}>
+						<small className="block font-mono text-[9px] font-bold tracking-[.1em] text-trace-dim">{card.label}</small>
+						<strong className="mt-1 block font-mono text-[16px] text-trace-text">{card.value}</strong>
+					</Tooltip>
+				))}
+			</div>
+		</section>
+	);
+}
+
 export function lapIsInvalid(lap: RecordedSessionSummary["laps"][number]) {
 	return lap.validity === "invalid" || (lap.maxTyresOut != null && lap.maxTyresOut >= 3);
 }

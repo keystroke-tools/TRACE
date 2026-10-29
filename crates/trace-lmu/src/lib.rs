@@ -525,6 +525,26 @@ fn native_fields(
     );
     for (index, suffix) in ["FL", "FR", "RL", "RR"].into_iter().enumerate() {
         let wheel = telemetry + WHEEL_OFFSET + index * WHEEL_SIZE;
+        let wear = page.f64(wheel + 152)?;
+        if wear.is_finite() && (0.0..=1.0).contains(&wear) {
+            float_fields.insert(format!("tyre_remaining_fraction.{index}"), wear);
+        }
+        integer_fields.insert(
+            format!("tyre_flat.{index}"),
+            i64::from(page.u8(wheel + 177)?),
+        );
+        integer_fields.insert(
+            format!("wheel_detached.{index}"),
+            i64::from(page.u8(wheel + 178)?),
+        );
+        integer_fields.insert(
+            format!("tyre_compound_index.{index}"),
+            i64::from(page.u8(wheel + 240)?),
+        );
+        integer_fields.insert(
+            format!("tyre_compound_type.{index}"),
+            i64::from(page.u8(wheel + 241)?),
+        );
         let load = page.f64(wheel + 104)?;
         if load.is_finite() && load >= 0.0 {
             float_fields.insert(format!("Tire Load {suffix}"), load);
@@ -798,6 +818,10 @@ mod tests {
             write_f64(&mut bytes, wheel + 72, 50.0);
             write_f64(&mut bytes, wheel + 104, 3_200.0);
             write_f64(&mut bytes, wheel + 120, 180.0);
+            let index_value = f64::from(u8::try_from(index).expect("four wheels"));
+            write_f64(&mut bytes, wheel + 152, 0.94 - index_value * 0.01);
+            bytes[wheel + 240] = 2;
+            bytes[wheel + 241] = 1;
             write_f64(&mut bytes, wheel + 204, 363.15);
         }
         LmuSnapshot::from_bytes(bytes).expect("valid synthetic LMU snapshot")
@@ -883,6 +907,14 @@ mod tests {
             Some(&0.63)
         );
         assert_eq!(native.float_fields.get("regeneration_kw"), Some(&112.5));
+        assert_eq!(
+            native.float_fields.get("tyre_remaining_fraction.0"),
+            Some(&0.94)
+        );
+        assert_eq!(native.integer_fields.get("tyre_flat.0"), Some(&0));
+        assert_eq!(native.integer_fields.get("wheel_detached.0"), Some(&0));
+        assert_eq!(native.integer_fields.get("tyre_compound_index.0"), Some(&2));
+        assert_eq!(native.integer_fields.get("tyre_compound_type.0"), Some(&1));
     }
 
     #[test]

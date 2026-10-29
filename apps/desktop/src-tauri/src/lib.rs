@@ -272,6 +272,11 @@ struct RecordedLapMetrics {
     tyre_wear_start: [Option<f32>; 4],
     tyre_wear_end: [Option<f32>; 4],
     tyre_wear_minimum: [Option<f32>; 4],
+    tyre_flat_observed: [bool; 4],
+    wheel_detached_observed: [bool; 4],
+    virtual_energy_start: Option<f32>,
+    virtual_energy_end: Option<f32>,
+    virtual_energy_used: Option<f32>,
     electronics: Option<RecordedLapElectronics>,
 }
 
@@ -1223,7 +1228,23 @@ fn session_lap_metrics(
         let fuel_used_litres = metrics
             .fuel_start_litres
             .zip(metrics.fuel_end_litres)
-            .and_then(|(start, end)| (start >= end).then_some(start - end));
+            .filter(|(start, end)| start >= end)
+            .filter(|(start, _)| {
+                metrics
+                    .fuel_maximum_litres
+                    .is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
+            })
+            .map(|(start, end)| start - end);
+        let virtual_energy_used = metrics
+            .virtual_energy_start
+            .zip(metrics.virtual_energy_end)
+            .filter(|(start, end)| start >= end)
+            .filter(|(start, _)| {
+                metrics
+                    .virtual_energy_maximum
+                    .is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
+            })
+            .map(|(start, end)| start - end);
         result.push(RecordedLapMetrics {
             lap_index: lap.index,
             fuel_start_litres: metrics.fuel_start_litres,
@@ -1234,6 +1255,11 @@ fn session_lap_metrics(
             tyre_wear_start: metrics.tyre_wear_start,
             tyre_wear_end: metrics.tyre_wear_end,
             tyre_wear_minimum: metrics.tyre_wear_minimum,
+            tyre_flat_observed: metrics.tyre_flat_observed,
+            wheel_detached_observed: metrics.wheel_detached_observed,
+            virtual_energy_start: metrics.virtual_energy_start,
+            virtual_energy_end: metrics.virtual_energy_end,
+            virtual_energy_used,
             electronics: is_lmu
                 .then(|| recorded_lap_electronics(metrics.electronics))
                 .flatten(),

@@ -64,25 +64,25 @@ the player flag or vehicle ID. It never assumes both arrays use the same index.
 
 ## Canonical data mapped now
 
-| TRACE data                        | LMU source                                                                 |
-| --------------------------------- | -------------------------------------------------------------------------- |
-| track, vehicle, driver            | scoring and player telemetry identity                                      |
-| session type                      | test day, practice, qualifying, warmup, or race                            |
-| lap count and normalized position | scoring lap count/distance plus reported track length                      |
-| current lap and sector timing     | elapsed/lap-start time plus current and last scoring splits                |
-| lap validity                      | authoritative `lap invalidated` flag                                       |
-| track-limit progression           | simulator track-limit steps                                                |
-| throttle, brake, clutch           | normalized player inputs                                                   |
-| steering angle                    | normalized input × physical range, falling back to visual range            |
-| speed, RPM, gear, fuel            | player telemetry                                                           |
-| position, velocity, acceleration  | player world/vehicle vectors                                               |
-| tyres                             | angular speed, slip angle, load, pressure, carcass temperature, suspension |
-| conditions                        | ambient and track temperature                                              |
-| pit state                         | scoring pit flags/state                                                    |
-| electronics settings              | TC, TC slip/cut, ABS, motor map, brake migration, and available ranges     |
-| electronics activity              | TC/ABS intervention, DRS/flap, limiter, ignition, and hybrid motor state   |
-| hybrid/energy                     | battery charge, state of charge, regeneration, and virtual energy          |
-| additional native values          | fuel capacity, best-lap delta, brake bias, boost, and steering ranges      |
+| TRACE data                        | LMU source                                                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| track, vehicle, driver            | scoring and player telemetry identity                                                                                         |
+| session type                      | test day, practice, qualifying, warmup, or race                                                                               |
+| lap count and normalized position | scoring lap count/distance plus reported track length                                                                         |
+| current lap and sector timing     | elapsed/lap-start time plus current and last scoring splits                                                                   |
+| lap validity                      | authoritative `lap invalidated` flag                                                                                          |
+| track-limit progression           | simulator track-limit steps                                                                                                   |
+| throttle, brake, clutch           | normalized player inputs                                                                                                      |
+| steering angle                    | normalized input × physical range, falling back to visual range                                                               |
+| speed, RPM, gear, fuel            | player telemetry                                                                                                              |
+| position, velocity, acceleration  | player world/vehicle vectors                                                                                                  |
+| tyres                             | life remaining, flat/detached state, compound IDs, angular speed, slip angle, load, pressure, carcass temperature, suspension |
+| conditions                        | ambient and track temperature                                                                                                 |
+| pit state                         | scoring pit flags/state                                                                                                       |
+| electronics settings              | TC, TC slip/cut, ABS, motor map, brake migration, and available ranges                                                        |
+| electronics activity              | TC/ABS intervention, DRS/flap, limiter, ignition, and hybrid motor state                                                      |
+| hybrid/energy                     | battery charge, state of charge, regeneration, and virtual energy                                                             |
+| additional native values          | fuel capacity, best-lap delta, brake bias, boost, and steering ranges                                                         |
 
 The scoring stream exposes both a friendly vehicle model and a vehicle-class field.
 LMU setup files use a separate class/package identity and live beneath simulator-owned
@@ -96,6 +96,15 @@ an entire session. Session lap rows show the setting at the start and end of eac
 flag mid-lap changes. Recordings made before these named fields were added can recover
 the same values from the bounded native LMU telemetry payload retained in their Arrow
 stream.
+
+Lap summaries derive fuel consumed, virtual energy consumed, and four-corner tyre life
+from each lap's bounded sample range. Mid-lap fuel or energy increases are treated as a
+pit/refill lap rather than misleading consumption. The session view uses median clean-lap
+consumption for conservative fuel, virtual-energy, and tyre-life estimates. LMU tyre wear
+is a remaining-life fraction and is displayed as a percentage; the SDK explicitly notes
+that this value is not necessarily proportional to grip loss. Older LMU recordings retain
+the required fields in their native payload, so TRACE can derive these summaries without
+re-recording the session.
 
 LMU uses `-1` for reverse, `0` for neutral, and positive values for forward gears.
 Its SDK world coordinates are left-handed with Y pointing up. The adapter reflects

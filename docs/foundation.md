@@ -278,8 +278,8 @@ splits, and unavailable data. Persisted invalid laps and laps with three-plus-ty
 evidence use a red row treatment and are excluded from clean fastest-lap/sector
 comparisons. Export formats remain behind a per-session action popover.
 
-The detail command derives fuel used, maximum speed, and tyre condition independently
-for each lap from its bounded Arrow sample range. Canonical columns provide fuel and
+The detail command derives fuel used, virtual-energy use, maximum speed, and tyre
+condition independently for each lap from its bounded Arrow sample range. Canonical columns provide fuel and
 speed; the AC-native float map provides the four `tyreWear` values. Hotlap mode can
 reset tyre condition near a boundary, so TRACE reports start-to-lowest-observed wear
 within the lap rather than a misleading start-to-end recovery. These metrics are read

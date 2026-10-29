@@ -68,6 +68,11 @@ export interface RecordedLapMetrics {
 	tyreWearStart: Array<number | null>;
 	tyreWearEnd: Array<number | null>;
 	tyreWearMinimum: Array<number | null>;
+	tyreFlatObserved?: boolean[];
+	wheelDetachedObserved?: boolean[];
+	virtualEnergyStart?: number | null;
+	virtualEnergyEnd?: number | null;
+	virtualEnergyUsed?: number | null;
 	electronics?: RecordedLapElectronics | null;
 }
 
