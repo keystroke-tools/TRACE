@@ -168,6 +168,9 @@ pub struct TelemetryColumns {
     pub last_sector_time_ns: Vec<Option<u64>>,
     pub in_pit: Vec<Option<bool>>,
     pub in_pit_lane: Vec<Option<bool>>,
+    pub tc_active: Vec<Option<bool>>,
+    pub abs_active: Vec<Option<bool>>,
+    pub rear_flap_active: Vec<Option<bool>>,
     pub track_length_m: Option<f64>,
     pub track_configuration: Option<String>,
     pub native_schema: Option<String>,
@@ -311,6 +314,18 @@ impl TelemetryColumns {
                 .iter()
                 .map(|frame| native_boolean(frame, "graphics.is_in_pit_lane"))
                 .collect(),
+            tc_active: frames
+                .iter()
+                .map(|frame| native_boolean(frame, "tc_active"))
+                .collect(),
+            abs_active: frames
+                .iter()
+                .map(|frame| native_boolean(frame, "abs_active"))
+                .collect(),
+            rear_flap_active: frames
+                .iter()
+                .map(|frame| native_boolean(frame, "rear_flap_active"))
+                .collect(),
             track_length_m: frames.iter().find_map(native_track_length),
             track_configuration: frames.iter().find_map(|frame| {
                 frame
@@ -364,6 +379,9 @@ impl TelemetryColumns {
             last_sector_time_ns: Vec::new(),
             in_pit: Vec::new(),
             in_pit_lane: Vec::new(),
+            tc_active: Vec::new(),
+            abs_active: Vec::new(),
+            rear_flap_active: Vec::new(),
             track_length_m: None,
             track_configuration: None,
             native_schema: None,
@@ -1996,6 +2014,7 @@ fn extend_projection(
         decoded.in_pit.extend((0..length).map(|_| None));
         decoded.in_pit_lane.extend((0..length).map(|_| None));
     }
+    extend_electronic_activity(decoded, batch, start, length);
     if let Ok(index) = batch.schema().index_of("native_float_fields")
         && let Some(native) = batch.column(index).as_any().downcast_ref::<MapArray>()
     {
@@ -2096,6 +2115,42 @@ fn extend_projection(
             .find_map(|row| native_text_value(native, row, "static.track_configuration"));
     }
     Ok(())
+}
+
+fn extend_electronic_activity(
+    decoded: &mut TelemetryColumns,
+    batch: &RecordBatch,
+    start: usize,
+    length: usize,
+) {
+    let schema = batch.schema();
+    let native = schema
+        .index_of("native_integer_fields")
+        .ok()
+        .and_then(|index| batch.column(index).as_any().downcast_ref::<MapArray>());
+    let payloads = schema
+        .index_of("native_payload")
+        .ok()
+        .and_then(|index| batch.column(index).as_any().downcast_ref::<BinaryArray>());
+    let activity = |row: usize, key: &str, offset: usize| {
+        native
+            .and_then(|values| native_integer_value(values, row, key))
+            .map(|value| value != 0)
+            .or_else(|| {
+                payloads
+                    .filter(|values| !values.is_null(row))
+                    .and_then(|values| lmu_native_telemetry(values.value(row)))
+                    .and_then(|payload| payload.get(offset))
+                    .map(|value| *value != 0)
+            })
+    };
+    for row in start..start + length {
+        decoded.tc_active.push(activity(row, "tc_active", 747));
+        decoded.abs_active.push(activity(row, "abs_active", 746));
+        decoded
+            .rear_flap_active
+            .push(activity(row, "rear_flap_active", 617));
+    }
 }
 
 fn backfill_lmu_wheel_channels(
@@ -3244,6 +3299,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn lap_metrics_are_derived_from_a_bounded_sample_range() {
         let frames = (0..5_u64)
             .map(|sequence| {
@@ -3338,6 +3394,17 @@ mod tests {
         assert_eq!(metrics.electronics.observed_samples, 3);
         assert_eq!(metrics.electronics.tc_active_samples, 1);
         assert_eq!(metrics.electronics.abs_active_samples, 1);
+
+        let projection = read_columns_range(Cursor::new(&bytes), 1, 3).expect("projected lap");
+        assert_eq!(
+            projection.tc_active,
+            vec![Some(false), Some(true), Some(false)]
+        );
+        assert_eq!(
+            projection.abs_active,
+            vec![Some(false), Some(false), Some(true)]
+        );
+        assert_eq!(projection.rear_flap_active, vec![Some(false); 3]);
 
         let ranges = read_lap_metrics_ranges(
             Cursor::new(bytes),

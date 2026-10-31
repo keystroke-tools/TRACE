@@ -34,6 +34,9 @@ export interface LapComparisonSample {
 	referenceTyreSlipFrontRight?: number | null;
 	referenceTyreSlipRearLeft?: number | null;
 	referenceTyreSlipRearRight?: number | null;
+	referenceTcActive?: boolean | null;
+	referenceAbsActive?: boolean | null;
+	referenceRearFlapActive?: boolean | null;
 	comparisonTyreLoadFrontLeftN?: number | null;
 	comparisonTyreLoadFrontRightN?: number | null;
 	comparisonTyreLoadRearLeftN?: number | null;
@@ -60,7 +63,12 @@ type ComparisonValueKey = keyof Pick<
 	| "referenceGear"
 	| "comparisonGear"
 >;
-export type ComparisonChartSeries = { label: string; colour: string; value: (sample: LapComparisonSample) => number | null | undefined };
+export type ComparisonChartSeries = {
+	label: string;
+	colour: string;
+	value: (sample: LapComparisonSample) => number | null | undefined;
+	strokeWidth?: number;
+};
 
 export const channelColours = {
 	speed: "#45d6e8",
@@ -72,6 +80,7 @@ export const channelColours = {
 	faster: "var(--color-trace-purple)",
 	delta: "#e8eaed",
 	mapBrake: "#c13b4a",
+	intervention: "#f2c94c",
 };
 
 export function comparisonSeries(
@@ -348,7 +357,7 @@ export function ComparisonChart({
 						d={comparisonPath(samples, item.value, x, y)}
 						fill="none"
 						stroke={item.colour}
-						strokeWidth="2"
+						strokeWidth={item.strokeWidth ?? 2}
 						vectorEffect="non-scaling-stroke"
 						key={item.label}
 					/>

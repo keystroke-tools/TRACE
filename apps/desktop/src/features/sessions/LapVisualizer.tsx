@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatSessionType, LapTelemetryHud, SectorPicker } from "@trace/ui";
-import { telemetryDataSource, type LapComparisonSample, type LapTrace, type RecordedSessionSummary } from "../../data-source";
+import { telemetryDataSource, type LapComparisonSample, type LapTrace, type RecordedLapMetrics, type RecordedSessionSummary } from "../../data-source";
 import { PageIntro } from "../../components/layout";
 import { channelColours, ComparisonChart, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
@@ -12,9 +12,12 @@ import {
 	type TelemetryWindow,
 } from "../telemetry/telemetry-window";
 import { ConsistencyChart } from "./ConsistencyChart";
+import { DamageSummary, ElectronicsSummary, StintUsage, TyreState } from "./session-components";
 
 export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionSummary; lapIndex: number }) {
 	const [trace, setTrace] = useState<LapTrace | null>(null);
+	const [lapMetrics, setLapMetrics] = useState<RecordedLapMetrics | undefined>();
+	const [metricsState, setMetricsState] = useState<"loading" | "ready" | "error">("loading");
 	const [error, setError] = useState<string | null>(null);
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
 	const [sector, setSector] = useState<number | null>(null);
@@ -34,6 +37,25 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 			})
 			.catch((reason) => {
 				if (active) setError(reason instanceof Error ? reason.message : String(reason));
+			});
+		return () => {
+			active = false;
+		};
+	}, [lapIndex, session.id]);
+
+	useEffect(() => {
+		let active = true;
+		setLapMetrics(undefined);
+		setMetricsState("loading");
+		void telemetryDataSource
+			.getSessionLapMetrics(session.id)
+			.then((metrics) => {
+				if (!active) return;
+				setLapMetrics(metrics.find((value) => value.lapIndex === lapIndex));
+				setMetricsState("ready");
+			})
+			.catch(() => {
+				if (active) setMetricsState("error");
 			});
 		return () => {
 			active = false;
@@ -63,6 +85,9 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 				referenceTyreSlipFrontRight: sample.tyreSlipFrontRight,
 				referenceTyreSlipRearLeft: sample.tyreSlipRearLeft,
 				referenceTyreSlipRearRight: sample.tyreSlipRearRight,
+				referenceTcActive: sample.tcActive,
+				referenceAbsActive: sample.absActive,
+				referenceRearFlapActive: sample.rearFlapActive,
 			})) ?? [],
 		[trace],
 	);
@@ -100,6 +125,26 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 			: trace?.tyreSlipKind === "ratio"
 				? `TYRE SLIP RATIO · PEAK ${trace.maximumAbsTyreSlip?.toFixed(1) ?? "—"}%`
 				: "AC WHEEL SLIP · SOURCE VALUE";
+	const hasTcIntervention = chartSamples.some((sample) => sample.referenceTcActive);
+	const hasAbsIntervention = chartSamples.some((sample) => sample.referenceAbsActive);
+	const throttleSeries = singleSeries("referenceThrottlePercent", channelColours.throttle);
+	if (hasTcIntervention) {
+		throttleSeries.push({
+			label: "TC ACTIVE",
+			colour: channelColours.intervention,
+			strokeWidth: 3.5,
+			value: (sample) => (sample.referenceTcActive ? sample.referenceThrottlePercent : null),
+		});
+	}
+	const brakeSeries = singleSeries("referenceBrakePercent", channelColours.brake);
+	if (hasAbsIntervention) {
+		brakeSeries.push({
+			label: "ABS ACTIVE",
+			colour: channelColours.intervention,
+			strokeWidth: 3.5,
+			value: (sample) => (sample.referenceAbsActive ? sample.referenceBrakePercent : null),
+		});
+	}
 	const zoomTelemetry = (anchorM: number, direction: "in" | "out") => {
 		setTelemetryWindow((current) => nextTelemetryWindow(baseSamples, current, anchorM, direction));
 		setCursorIndex(null);
@@ -159,6 +204,23 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 							</span>
 						</div>
 					</div>
+					{(lapMetrics || metricsState === "loading") && (
+						<section className="mt-3 grid grid-cols-[112px_minmax(180px,1fr)_minmax(220px,2fr)] divide-x divide-trace-divider border border-trace-divider bg-trace-surface">
+							<div className="flex min-h-24 flex-col justify-center px-4 py-3">
+								<small className="mb-2 font-mono text-[9px] font-bold tracking-[.1em] text-trace-dim">TYRE LIFE</small>
+								<TyreState state={metricsState} metrics={lapMetrics} />
+							</div>
+							<div className="flex min-h-24 flex-col justify-center px-4 py-3">
+								<small className="mb-2 font-mono text-[9px] font-bold tracking-[.1em] text-trace-dim">STINT USE</small>
+								<StintUsage state={metricsState} metrics={lapMetrics} />
+							</div>
+							<div className="flex min-h-24 flex-col justify-center px-4 py-3">
+								<small className="font-mono text-[9px] font-bold tracking-[.1em] text-trace-dim">ELECTRONICS / DAMAGE</small>
+								<ElectronicsSummary metrics={lapMetrics} />
+								<DamageSummary metrics={lapMetrics} />
+							</div>
+						</section>
+					)}
 					<div className="mt-3 pb-32">
 						<div className="grid grid-cols-[minmax(0,3fr)_minmax(380px,1fr)] gap-3">
 							<div className="grid gap-3">
@@ -215,7 +277,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								onZoom={zoomTelemetry}
 								onPan={panTelemetry}
 								fixedRange={[0, 100]}
-								series={singleSeries("referenceThrottlePercent", channelColours.throttle)}
+								series={throttleSeries}
 							/>
 							<ComparisonChart
 								label="BRAKE"
@@ -226,7 +288,7 @@ export function LapVisualizer({ session, lapIndex }: { session: RecordedSessionS
 								onZoom={zoomTelemetry}
 								onPan={panTelemetry}
 								fixedRange={[0, 100]}
-								series={singleSeries("referenceBrakePercent", channelColours.brake)}
+								series={brakeSeries}
 							/>
 							<ComparisonChart
 								label="STEERING ANGLE"

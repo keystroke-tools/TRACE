@@ -31,6 +31,7 @@ const points = [
 		gear: 4,
 		position_x_m: 5,
 		position_z_m: 2,
+		tc_active: true,
 	},
 	{
 		elapsed_seconds: 2,
@@ -44,6 +45,7 @@ const points = [
 		gear: 4,
 		position_x_m: 10,
 		position_z_m: 5,
+		abs_active: true,
 	},
 ];
 
@@ -144,6 +146,8 @@ describe("telemetry workspace", () => {
 		expect(speedChart).toBeTruthy();
 		expect(screen.getByRole("img", { name: "THROTTLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "BRAKE telemetry by lap distance" })).toBeTruthy();
+		expect(screen.getByText("TC ACTIVE")).toBeTruthy();
+		expect(screen.getByText("ABS ACTIVE")).toBeTruthy();
 		expect(screen.getByRole("img", { name: "STEERING ANGLE telemetry by lap distance" })).toBeTruthy();
 		expect(screen.getByRole("img", { name: "GEAR telemetry by lap distance" })).toBeTruthy();
 		expect(screen.queryByText("TIME DELTA · ANALYSED VS REFERENCE")).toBeNull();

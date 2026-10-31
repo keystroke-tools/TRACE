@@ -131,6 +131,9 @@ pub(crate) struct LibraryTelemetryPoint {
     pub(crate) gear: Option<i16>,
     pub(crate) position_x_m: Option<f64>,
     pub(crate) position_z_m: Option<f64>,
+    pub(crate) tc_active: Option<bool>,
+    pub(crate) abs_active: Option<bool>,
+    pub(crate) rear_flap_active: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]
@@ -948,6 +951,9 @@ fn telemetry_point(
         gear: columns.gear_value[index],
         position_x_m: columns.position_x_m[index],
         position_z_m: columns.position_z_m[index],
+        tc_active: columns.tc_active[index],
+        abs_active: columns.abs_active[index],
+        rear_flap_active: columns.rear_flap_active[index],
     }
 }
 

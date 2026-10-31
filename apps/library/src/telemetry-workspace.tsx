@@ -37,6 +37,9 @@ type Point = {
 	gear?: number | null;
 	position_x_m?: number | null;
 	position_z_m?: number | null;
+	tc_active?: boolean | null;
+	abs_active?: boolean | null;
+	rear_flap_active?: boolean | null;
 };
 
 type Telemetry = { points: Point[] };
@@ -178,6 +181,9 @@ function lapSamples(points: Point[]): LapComparisonSample[] {
 		referenceGear: point.gear,
 		referencePositionXM: point.position_x_m,
 		referencePositionZM: point.position_z_m,
+		referenceTcActive: point.tc_active,
+		referenceAbsActive: point.abs_active,
+		referenceRearFlapActive: point.rear_flap_active,
 	}));
 }
 
@@ -458,9 +464,25 @@ function TelemetryWorkspace() {
 	const throttleSeries = comparison
 		? comparisonSeries("referenceThrottlePercent", "comparisonThrottlePercent", channelColours.throttle, comparisonIsFaster)
 		: singleSeries("referenceThrottlePercent", channelColours.throttle);
+	if (!comparison && baseSamples.some((sample) => sample.referenceTcActive)) {
+		throttleSeries.push({
+			label: "TC ACTIVE",
+			colour: channelColours.intervention,
+			strokeWidth: 3.5,
+			value: (sample) => (sample.referenceTcActive ? sample.referenceThrottlePercent : null),
+		});
+	}
 	const brakeSeries = comparison
 		? comparisonSeries("referenceBrakePercent", "comparisonBrakePercent", channelColours.brake, comparisonIsFaster)
 		: singleSeries("referenceBrakePercent", channelColours.brake);
+	if (!comparison && baseSamples.some((sample) => sample.referenceAbsActive)) {
+		brakeSeries.push({
+			label: "ABS ACTIVE",
+			colour: channelColours.intervention,
+			strokeWidth: 3.5,
+			value: (sample) => (sample.referenceAbsActive ? sample.referenceBrakePercent : null),
+		});
+	}
 	const steeringSeries = comparison
 		? comparisonSeries("referenceSteeringDegrees", "comparisonSteeringDegrees", channelColours.steering, comparisonIsFaster)
 		: singleSeries("referenceSteeringDegrees", channelColours.steering);

@@ -405,6 +405,9 @@ struct LapTraceSample {
     tyre_slip_front_right: Option<f64>,
     tyre_slip_rear_left: Option<f64>,
     tyre_slip_rear_right: Option<f64>,
+    tc_active: Option<bool>,
+    abs_active: Option<bool>,
+    rear_flap_active: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -1756,6 +1759,9 @@ fn visualize_session_lap(
     let rpm = interpolate_channel(channels.rpm.as_ref(), &grid, 1.0)?;
     let sector = interpolate_discrete(channels.sector.as_ref(), &grid)?;
     let gear = interpolate_discrete(channels.gear.as_ref(), &grid)?;
+    let tc_active = interpolate_discrete(channels.tc_active.as_ref(), &grid)?;
+    let abs_active = interpolate_discrete(channels.abs_active.as_ref(), &grid)?;
+    let rear_flap_active = interpolate_discrete(channels.rear_flap_active.as_ref(), &grid)?;
     let position_x = interpolate_channel(channels.position_x.as_ref(), &grid, 1.0)?;
     let position_z = interpolate_channel(channels.position_z.as_ref(), &grid, 1.0)?;
     let air_temperature = interpolate_channel(channels.air_temperature.as_ref(), &grid, 1.0)?;
@@ -1787,6 +1793,9 @@ fn visualize_session_lap(
             tyre_slip_front_right: tyres.slip[1][index],
             tyre_slip_rear_left: tyres.slip[2][index],
             tyre_slip_rear_right: tyres.slip[3][index],
+            tc_active: active_state(tc_active[index]),
+            abs_active: active_state(abs_active[index]),
+            rear_flap_active: active_state(rear_flap_active[index]),
         })
         .collect();
     let lap_time = format_optional_lap_time(lap.duration_ns);
@@ -2015,6 +2024,9 @@ struct AlignedLapChannels {
     rpm: Option<DistanceSeries>,
     sector: Option<DistanceSeries>,
     gear: Option<DistanceSeries>,
+    tc_active: Option<DistanceSeries>,
+    abs_active: Option<DistanceSeries>,
+    rear_flap_active: Option<DistanceSeries>,
     position_x: Option<DistanceSeries>,
     position_z: Option<DistanceSeries>,
     air_temperature: Option<DistanceSeries>,
@@ -2073,6 +2085,13 @@ impl AlignedLapChannels {
                     .iter()
                     .zip(&columns.gear_value)
                     .map(|(kind, value)| resolved_gear(*kind, *value).map(f64::from)),
+                lap_length_m,
+            ),
+            tc_active: boolean_series(&lap_positions, &columns.tc_active, lap_length_m),
+            abs_active: boolean_series(&lap_positions, &columns.abs_active, lap_length_m),
+            rear_flap_active: boolean_series(
+                &lap_positions,
+                &columns.rear_flap_active,
                 lap_length_m,
             ),
             position_x: numeric_series(
@@ -2190,6 +2209,24 @@ fn numeric_series(
     (samples.len() >= 2)
         .then(|| DistanceSeries::new(samples).ok())
         .flatten()
+}
+
+fn boolean_series(
+    positions: &[Option<f32>],
+    values: &[Option<bool>],
+    lap_length_m: f64,
+) -> Option<DistanceSeries> {
+    numeric_series(
+        positions,
+        values
+            .iter()
+            .map(|value| value.map(|value| if value { 1.0 } else { 0.0 })),
+        lap_length_m,
+    )
+}
+
+fn active_state(value: Option<f64>) -> Option<bool> {
+    value.map(|value| value >= 0.5)
 }
 
 fn resolved_gear(kind: Option<i8>, value: Option<i16>) -> Option<i16> {

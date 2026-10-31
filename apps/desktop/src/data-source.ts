@@ -155,6 +155,9 @@ export interface LapComparisonSample {
 	referenceTyreSlipFrontRight?: number | null;
 	referenceTyreSlipRearLeft?: number | null;
 	referenceTyreSlipRearRight?: number | null;
+	referenceTcActive?: boolean | null;
+	referenceAbsActive?: boolean | null;
+	referenceRearFlapActive?: boolean | null;
 }
 
 export type CornerPhase = "entry" | "mid" | "exit";
@@ -261,6 +264,9 @@ export interface LapTraceSample {
 	tyreSlipFrontRight?: number | null;
 	tyreSlipRearLeft?: number | null;
 	tyreSlipRearRight?: number | null;
+	tcActive?: boolean | null;
+	absActive?: boolean | null;
+	rearFlapActive?: boolean | null;
 }
 
 export interface TrackMapAsset {
