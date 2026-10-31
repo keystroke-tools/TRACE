@@ -241,11 +241,15 @@
 	display: grid;
 	width: 28px;
 	height: 28px;
+	min-width: 0;
+	min-height: 0;
+	padding: 0;
 	place-items: center;
 	border: 1px solid var(--trace-divider);
 	background: var(--trace-deep);
 	color: var(--trace-muted);
 	font-size: 14px;
+	line-height: 1;
 }
 
 .trace-chart__zoom-button + .trace-chart__zoom-button {

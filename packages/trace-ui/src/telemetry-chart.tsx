@@ -275,7 +275,7 @@ export function ComparisonChart({
 							<button
 								type="button"
 								onClick={() => onZoom(zoomAnchorM, "out")}
-								className="trace-chart__zoom-button grid size-7 place-items-center border border-trace-divider bg-trace-deep text-sm text-trace-muted hover:border-trace-soft hover:text-trace-text"
+								className="trace-chart__zoom-button grid size-7 min-h-0 place-items-center border border-trace-divider bg-trace-deep p-0 text-sm leading-none text-trace-muted hover:border-trace-soft hover:text-trace-text"
 								aria-label={`Zoom all telemetry out from ${Math.round(zoomAnchorM)} ${distanceUnit}`}
 							>
 								−
@@ -283,7 +283,7 @@ export function ComparisonChart({
 							<button
 								type="button"
 								onClick={() => onZoom(zoomAnchorM, "in")}
-								className="trace-chart__zoom-button grid size-7 place-items-center border border-l-0 border-trace-divider bg-trace-deep text-sm text-trace-muted hover:border-trace-soft hover:text-trace-text"
+								className="trace-chart__zoom-button grid size-7 min-h-0 place-items-center border border-l-0 border-trace-divider bg-trace-deep p-0 text-sm leading-none text-trace-muted hover:border-trace-soft hover:text-trace-text"
 								aria-label={`Zoom all telemetry in around ${Math.round(zoomAnchorM)} ${distanceUnit}`}
 							>
 								+

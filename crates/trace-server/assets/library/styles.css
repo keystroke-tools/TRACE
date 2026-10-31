@@ -1203,12 +1203,36 @@ button.primary:hover {
    names and playback controls from competing for the same auto-fit column. */
 #telemetry-workspace-root .trace-telemetry-hud--single.trace-telemetry-hud--embedded:not(.trace-telemetry-hud--with-conditions) {
 	grid-template-columns:
-		minmax(180px, 1.5fr) minmax(82px, 0.7fr) minmax(110px, 0.85fr)
-		minmax(76px, 0.6fr) minmax(92px, 0.7fr) minmax(120px, 1fr) minmax(120px, 1fr);
+		minmax(130px, 1.4fr) 58px 82px
+		58px 72px minmax(72px, 1fr) minmax(72px, 1fr);
+	column-gap: 8px;
 }
 
 #telemetry-workspace-root .trace-telemetry-hud__seek {
 	overflow: visible;
+}
+
+/* The library shell uses deliberately large form controls. Shared telemetry
+   widgets define compact geometry of their own and must not inherit it. */
+#telemetry-workspace-root .trace-telemetry-hud button,
+#telemetry-workspace-root .trace-chart__zoom-button {
+	min-width: 0;
+	min-height: 0;
+	padding: 0;
+	letter-spacing: normal;
+	line-height: 1;
+	text-transform: none;
+}
+
+#telemetry-workspace-root .trace-chart__zoom-button {
+	width: 28px;
+	height: 28px;
+}
+
+#telemetry-workspace-root .trace-telemetry-hud input[type="range"] {
+	min-height: 0;
+	padding: 0;
+	border: 0;
 }
 
 #telemetry-workspace-root .trace-telemetry-seek,

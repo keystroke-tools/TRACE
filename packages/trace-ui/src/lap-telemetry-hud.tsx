@@ -98,7 +98,7 @@ export function TelemetrySeek({
 						type="button"
 						onClick={onTogglePlayback}
 						disabled={samples.length < 2}
-						className={`grid h-8 w-11 place-items-center border ${playing ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text"} disabled:cursor-not-allowed disabled:opacity-35`}
+						className={`grid h-8 min-h-0 w-11 place-items-center border p-0 leading-none ${playing ? "border-trace-accent bg-trace-accent-wash text-trace-accent" : "border-trace-divider bg-trace-deep text-trace-muted hover:border-trace-soft hover:text-trace-text"} disabled:cursor-not-allowed disabled:opacity-35`}
 						aria-label={playing ? "Pause telemetry playback" : "Play telemetry playback"}
 					>
 						{playing ? (
@@ -131,7 +131,7 @@ export function TelemetrySeek({
 				{Math.round(start)} {distanceUnit}
 			</span>
 			<input
-				className="trace-seek trace-seek-lg w-full"
+				className="trace-seek trace-seek-lg min-h-0 w-full border-0 p-0"
 				type="range"
 				min="0"
 				max={Math.max(samples.length - 1, 0)}

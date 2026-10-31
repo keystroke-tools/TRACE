@@ -3997,6 +3997,8 @@ mod tests {
         assert!(styles.contains("button {"));
         assert!(styles.contains("border-radius: 0"));
         assert!(styles.contains("main {\n\twidth: 100%;"));
+        assert!(styles.contains(".trace-chart__zoom-button {\n\tmin-width: 0;"));
+        assert!(styles.contains(".trace-telemetry-hud input[type=\"range\"]"));
         assert!(!styles.contains("width: min(1280px"));
         assert!(!styles.contains("#68e997"));
 
