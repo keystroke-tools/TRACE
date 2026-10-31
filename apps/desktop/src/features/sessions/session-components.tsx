@@ -121,7 +121,7 @@ export function TyreState({ state, metrics }: { state: "loading" | "ready" | "er
 							: `${label}: ${Math.round(remaining)}% remaining${start != null ? ` · started at ${Math.round(start)}%` : ""}${minimum != null ? ` · minimum ${Math.round(minimum)}%` : ""}`;
 				return (
 					<Tooltip
-						className={`grid size-9 place-items-center rounded-full border-2 bg-trace-deep font-mono text-[9px] font-black leading-none ${detached || flat ? "border-trace-danger bg-trace-danger/15 text-red-200" : remaining == null ? "border-trace-divider text-trace-dim" : tyreColour(remaining)}`}
+						className={`size-9 items-center justify-center rounded-full border-2 bg-trace-deep text-center font-mono text-[9px] font-black leading-none tabular-nums ${detached || flat ? "border-trace-danger bg-trace-danger/15 text-red-200" : remaining == null ? "border-trace-divider text-trace-dim" : tyreColour(remaining)}`}
 						content={detail}
 						key={label}
 					>

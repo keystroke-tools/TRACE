@@ -109,7 +109,7 @@ button {
 .eyebrow,
 .list-head {
 	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-	font-size: 11px;
+	font-size: 12px;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 }
@@ -283,7 +283,7 @@ button {
 	background: var(--trace-deep);
 	color: var(--trace-soft);
 	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-	font-size: 11px;
+	font-size: 12px;
 	font-weight: 800;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -502,7 +502,7 @@ button.primary:hover {
 .library-tools {
 	display: grid;
 	grid-template-columns: minmax(320px, 1.15fr) minmax(260px, 0.85fr);
-	gap: 16px;
+	gap: 12px;
 	margin-bottom: 24px;
 }
 
@@ -512,8 +512,8 @@ button.primary:hover {
 	grid-template-columns: 38px 1fr;
 	grid-template-rows: auto auto;
 	gap: 2px 12px;
-	min-height: 88px;
-	padding: 17px 20px;
+	min-height: 96px;
+	padding: 20px;
 	border: 1px dashed #3c3c3c;
 	border-radius: 0;
 	background: #171717;
@@ -562,7 +562,7 @@ button.primary:hover {
 
 .search-field {
 	align-content: center;
-	padding: 14px 16px;
+	padding: 16px 18px;
 	border: 1px solid #2d2d2d;
 	border-radius: 0;
 	background: #171717;
@@ -572,7 +572,7 @@ button.primary:hover {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	padding-bottom: 12px;
+	padding: 0 2px 12px;
 	border-bottom: 1px solid #313131;
 	color: #989898;
 }
@@ -599,8 +599,8 @@ button.primary:hover {
 	grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 1fr) auto;
 	align-items: center;
 	gap: 28px;
-	min-height: 86px;
-	padding: 16px 18px;
+	min-height: 96px;
+	padding: 18px 20px;
 	border-bottom: 1px solid #292929;
 	cursor: pointer;
 }
@@ -644,8 +644,8 @@ button.primary:hover {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 38px;
-	padding: 0 13px;
+	min-height: 40px;
+	padding: 0 14px;
 	border: 1px solid #333;
 	border-radius: 0;
 	background: transparent;
@@ -1105,8 +1105,8 @@ button.primary:hover {
 	grid-template-columns: auto minmax(0, 1fr);
 	align-items: center;
 	gap: 14px;
-	min-height: 72px;
-	padding: 12px 16px;
+	min-height: 78px;
+	padding: 14px 16px;
 	border: 0;
 	border-bottom: 1px solid #292929;
 	border-radius: 0;
@@ -1144,7 +1144,7 @@ button.primary:hover {
 .sector-list {
 	color: #797979;
 	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-	font-size: 10px;
+	font-size: 11px;
 	letter-spacing: 0.08em;
 }
 
@@ -1180,7 +1180,7 @@ button.primary:hover {
 }
 
 .lap-identity strong {
-	font-size: 14px;
+	font-size: 15px;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1242,7 +1242,7 @@ button.primary:hover {
 .telemetry-head > div:first-child span,
 .telemetry-stats small {
 	color: #7f7f7f;
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 800;
 	letter-spacing: 0.12em;
 }
