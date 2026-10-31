@@ -2168,19 +2168,28 @@ fn normalized_lap_positions(positions: &[Option<f32>]) -> Vec<Option<f32>> {
         previous = Some(position);
     }
     let reversed = reverse_travel > forward_travel;
-    let origin = positions
-        .iter()
-        .flatten()
-        .copied()
-        .find(|position| position.is_finite() && (0.0..=1.0).contains(position))
-        .map(|position| if reversed { 1.0 - position } else { position });
+    let mut origin = None;
+    let mut previous = None;
+    let mut wrap_offset = 0.0_f32;
     positions
         .iter()
         .map(|position| {
-            position.map(|position| {
-                let position = if reversed { 1.0 - position } else { position };
-                origin.map_or(position, |origin| (position - origin).rem_euclid(1.0))
-            })
+            let mut position =
+                position.filter(|value| value.is_finite() && (0.0..=1.0).contains(value))?;
+            if reversed {
+                position = 1.0 - position;
+            }
+            let origin = *origin.get_or_insert(position);
+            if let Some(previous) = previous {
+                let delta = position - previous;
+                if delta < -0.5 {
+                    wrap_offset += 1.0;
+                } else if delta > 0.5 {
+                    wrap_offset -= 1.0;
+                }
+            }
+            previous = Some(position);
+            Some((position + wrap_offset - origin).clamp(0.0, 1.0))
         })
         .collect()
 }
@@ -4107,6 +4116,24 @@ mod tests {
         for (actual, expected) in normalized.into_iter().flatten().zip(expected) {
             assert!((actual - expected).abs() < 0.000_01);
         }
+    }
+
+    #[test]
+    fn lap_position_jitter_near_the_origin_does_not_fake_a_boundary_crossing() {
+        let positions = [
+            Some(0.015_236_246),
+            Some(0.015_236_246),
+            Some(0.015_235_531),
+            Some(0.015_3),
+            Some(0.5),
+            Some(0.998),
+        ];
+        let normalized = normalized_lap_positions(&positions);
+        assert_eq!(normalized[0], Some(0.0));
+        assert_eq!(normalized[2], Some(0.0));
+        assert!(normalized[3].is_some_and(|position| position < 0.001));
+        assert!(normalized[4].is_some_and(|position| (0.48..0.49).contains(&position)));
+        assert!(normalized[5].is_some_and(|position| (0.98..0.99).contains(&position)));
     }
 
     #[test]
