@@ -86,7 +86,34 @@ describe("telemetry workspace", () => {
 
 	it("renders selected-lap statistics and keeps shared chart zoom synchronized", async () => {
 		window.traceTelemetrySnapshot = {
-			detail: { summary: { title: null, driver_name: "Alex", track: "Zandvoort", car: "Mazda MX-5 Cup", session_type: "Hotlap" } },
+			detail: {
+				summary: { title: null, driver_name: "Alex", track: "Zandvoort", car: "Mazda MX-5 Cup", session_type: "Hotlap" },
+				lap_metrics: [
+					{
+						lap_id: "lap-one",
+						lap_index: 4,
+						fuel_end_litres: 22.4,
+						fuel_used_litres: 2.15,
+						fuel_capacity_litres: 45,
+						tyre_wear_start: [100, 100, 100, 100],
+						tyre_wear_end: [96, 95, 97, 96],
+						tyre_wear_minimum: [96, 95, 97, 96],
+						tyre_flat_observed: [false, false, false, false],
+						wheel_detached_observed: [false, false, false, false],
+						dent_severity_maximum: [0, 0, 0, 0, 0, 0, 0, 0],
+						overheating_observed: false,
+						body_part_detached_observed: false,
+						impact_count: 0,
+						virtual_energy_start: 0.8,
+						virtual_energy_end: 0.65,
+						virtual_energy_used: 0.15,
+						electronics: {
+							settings: [{ key: "tc", label: "TC", start: 3, end: 4, minimum: 3, maximum: 4, changes: 1 }],
+							tc_active_percent: 12.4,
+						},
+					},
+				],
+			},
 			lap,
 			telemetry: { points },
 			comparison: null,
@@ -98,6 +125,11 @@ describe("telemetry workspace", () => {
 		expect(screen.getByText("210 km/h")).toBeTruthy();
 		expect(screen.getByText("7500 rpm")).toBeTruthy();
 		expect(screen.getByText("Zandvoort · Mazda MX-5 Cup")).toBeTruthy();
+		expect(screen.getByText("LAP STATE")).toBeTruthy();
+		expect(screen.getByText("22.4 L")).toBeTruthy();
+		expect(screen.getByText(/2.15 L used/)).toBeTruthy();
+		expect(screen.getByText("65.0%")).toBeTruthy();
+		expect(screen.getByText("TC 3→4")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Zoom map in" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Zoom map out" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Reset map pan and spatial zoom" })).toBeTruthy();

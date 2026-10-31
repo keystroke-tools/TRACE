@@ -10,7 +10,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use trace_storage::{
-    ipc::{TelemetryColumns, read_columns_range},
+    ipc::{
+        LapElectronicsMetrics, LapSettingMetrics, LapTelemetryMetrics, TelemetryColumns,
+        TelemetrySampleRange, read_columns_range, read_lap_metrics_ranges,
+    },
     metadata::{LapSummary, SectorSummary, SessionConditions},
     package::{SessionPackageManifest, read_package},
 };
@@ -57,7 +60,53 @@ pub(crate) struct LibrarySessionDetail {
     pub(crate) source_kind: String,
     pub(crate) conditions: SessionConditions,
     pub(crate) laps: Vec<LapSummary>,
+    pub(crate) lap_metrics: Vec<LibraryLapMetrics>,
     pub(crate) setup_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LibraryLapMetrics {
+    pub(crate) lap_id: String,
+    pub(crate) lap_index: u32,
+    pub(crate) fuel_start_litres: Option<f32>,
+    pub(crate) fuel_end_litres: Option<f32>,
+    pub(crate) fuel_used_litres: Option<f32>,
+    pub(crate) fuel_capacity_litres: Option<f32>,
+    pub(crate) max_speed_kmh: Option<f32>,
+    pub(crate) tyre_wear_start: [Option<f32>; 4],
+    pub(crate) tyre_wear_end: [Option<f32>; 4],
+    pub(crate) tyre_wear_minimum: [Option<f32>; 4],
+    pub(crate) tyre_flat_observed: [bool; 4],
+    pub(crate) wheel_detached_observed: [bool; 4],
+    pub(crate) dent_severity_maximum: [u8; 8],
+    pub(crate) overheating_observed: bool,
+    pub(crate) body_part_detached_observed: bool,
+    pub(crate) impact_count: u32,
+    pub(crate) maximum_impact_magnitude: Option<f32>,
+    pub(crate) virtual_energy_start: Option<f32>,
+    pub(crate) virtual_energy_end: Option<f32>,
+    pub(crate) virtual_energy_used: Option<f32>,
+    pub(crate) electronics: Option<LibraryLapElectronics>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LibraryLapElectronics {
+    pub(crate) settings: Vec<LibraryElectronicSetting>,
+    pub(crate) tc_active_percent: Option<f32>,
+    pub(crate) abs_active_percent: Option<f32>,
+    pub(crate) rear_flap_active_percent: Option<f32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LibraryElectronicSetting {
+    pub(crate) key: &'static str,
+    pub(crate) label: &'static str,
+    pub(crate) start: u8,
+    pub(crate) end: u8,
+    pub(crate) minimum: u8,
+    pub(crate) maximum: u8,
+    pub(crate) available_maximum: Option<u8>,
+    pub(crate) changes: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -97,6 +146,114 @@ pub(crate) enum LibraryStoreError {
     NotFound,
     TooLarge,
     Unavailable,
+}
+
+fn library_lap_metrics(summary: &LapSummary, metrics: &LapTelemetryMetrics) -> LibraryLapMetrics {
+    let fuel_used_litres = resource_used(
+        metrics.fuel_start_litres,
+        metrics.fuel_end_litres,
+        metrics.fuel_maximum_litres,
+    );
+    let virtual_energy_used = resource_used(
+        metrics.virtual_energy_start,
+        metrics.virtual_energy_end,
+        metrics.virtual_energy_maximum,
+    );
+    LibraryLapMetrics {
+        lap_id: summary.id.clone(),
+        lap_index: summary.index,
+        fuel_start_litres: metrics.fuel_start_litres,
+        fuel_end_litres: metrics.fuel_end_litres,
+        fuel_used_litres,
+        fuel_capacity_litres: metrics.fuel_capacity_litres,
+        max_speed_kmh: metrics.max_speed_mps.map(|value| value * 3.6),
+        tyre_wear_start: metrics.tyre_wear_start,
+        tyre_wear_end: metrics.tyre_wear_end,
+        tyre_wear_minimum: metrics.tyre_wear_minimum,
+        tyre_flat_observed: metrics.tyre_flat_observed,
+        wheel_detached_observed: metrics.wheel_detached_observed,
+        dent_severity_maximum: metrics.dent_severity_maximum,
+        overheating_observed: metrics.overheating_observed,
+        body_part_detached_observed: metrics.body_part_detached_observed,
+        impact_count: metrics.impact_count,
+        maximum_impact_magnitude: metrics.maximum_impact_magnitude,
+        virtual_energy_start: metrics.virtual_energy_start,
+        virtual_energy_end: metrics.virtual_energy_end,
+        virtual_energy_used,
+        electronics: library_lap_electronics(metrics.electronics),
+    }
+}
+
+fn resource_used(
+    start: Option<f32>,
+    end: Option<f32>,
+    observed_maximum: Option<f32>,
+) -> Option<f32> {
+    start
+        .zip(end)
+        .filter(|(start, end)| start >= end)
+        .filter(|(start, _)| {
+            observed_maximum.is_none_or(|maximum| maximum <= *start + f32::EPSILON * 8.0)
+        })
+        .map(|(start, end)| start - end)
+}
+
+fn library_lap_electronics(electronics: LapElectronicsMetrics) -> Option<LibraryLapElectronics> {
+    let settings = [
+        ("tc", "TC", electronics.tc),
+        ("tc_slip", "TC SLIP", electronics.tc_slip),
+        ("tc_cut", "TC CUT", electronics.tc_cut),
+        ("abs", "ABS", electronics.abs),
+        ("motor_map", "MOTOR", electronics.motor_map),
+        ("brake_migration", "MIGRATION", electronics.brake_migration),
+    ]
+    .into_iter()
+    .filter_map(|(key, label, setting)| library_electronic_setting(key, label, setting))
+    .collect::<Vec<_>>();
+    let percentage = |samples: u64| {
+        (electronics.observed_samples > 0).then(|| {
+            #[allow(clippy::cast_precision_loss)]
+            let percent = samples as f32 / electronics.observed_samples as f32 * 100.0;
+            percent.clamp(0.0, 100.0)
+        })
+    };
+    let result = LibraryLapElectronics {
+        settings,
+        tc_active_percent: percentage(electronics.tc_active_samples),
+        abs_active_percent: percentage(electronics.abs_active_samples),
+        rear_flap_active_percent: percentage(electronics.rear_flap_active_samples),
+    };
+    (!result.settings.is_empty()
+        || electronics.tc_active_samples > 0
+        || electronics.abs_active_samples > 0
+        || electronics.rear_flap_active_samples > 0)
+        .then_some(result)
+}
+
+fn library_electronic_setting(
+    key: &'static str,
+    label: &'static str,
+    setting: LapSettingMetrics,
+) -> Option<LibraryElectronicSetting> {
+    let supported = setting.available_maximum.is_some_and(|maximum| maximum > 0)
+        || setting.minimum.is_some_and(|value| value > 0)
+        || setting.maximum.is_some_and(|value| value > 0);
+    let (start, end, minimum, maximum) = (
+        setting.start?,
+        setting.end?,
+        setting.minimum?,
+        setting.maximum?,
+    );
+    supported.then_some(LibraryElectronicSetting {
+        key,
+        label,
+        start,
+        end,
+        minimum,
+        maximum,
+        available_maximum: setting.available_maximum,
+        changes: setting.changes,
+    })
 }
 
 impl LibraryStore {
@@ -532,6 +689,32 @@ impl LibraryStore {
             .confirmed_setup
             .as_ref()
             .map(|setup| setup.name.clone());
+        let metric_laps = package
+            .manifest
+            .laps
+            .iter()
+            .filter(|lap| lap.sample_count > 0)
+            .collect::<Vec<_>>();
+        let metric_ranges = metric_laps
+            .iter()
+            .map(|lap| TelemetrySampleRange {
+                sample_start: lap.sample_start,
+                sample_count: lap.sample_count,
+            })
+            .collect::<Vec<_>>();
+        let lap_metrics = if metric_ranges.is_empty() {
+            Vec::new()
+        } else {
+            read_lap_metrics_ranges(package.telemetry, &metric_ranges)
+                .map(|metrics| {
+                    metric_laps
+                        .into_iter()
+                        .zip(metrics)
+                        .map(|(lap, metrics)| library_lap_metrics(&lap.summary, &metrics))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         Ok(LibrarySessionDetail {
             summary: stored.summary,
             source_track_id: package.manifest.session.source_track_id.clone(),
@@ -544,6 +727,7 @@ impl LibraryStore {
                 .iter()
                 .map(|lap| lap.summary.clone())
                 .collect(),
+            lap_metrics,
             setup_name,
         })
     }

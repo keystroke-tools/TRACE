@@ -41,6 +41,44 @@ type Point = {
 
 type Telemetry = { points: Point[] };
 type Lap = { id: string; index: number; duration_ns: number | null; sectors?: Array<{ index: number; duration_ns: number | null }> };
+type ElectronicSetting = {
+	key: string;
+	label: string;
+	start: number;
+	end: number;
+	minimum: number;
+	maximum: number;
+	available_maximum?: number | null;
+	changes: number;
+};
+type LapMetrics = {
+	lap_id: string;
+	lap_index: number;
+	fuel_start_litres?: number | null;
+	fuel_end_litres?: number | null;
+	fuel_used_litres?: number | null;
+	fuel_capacity_litres?: number | null;
+	max_speed_kmh?: number | null;
+	tyre_wear_start: Array<number | null>;
+	tyre_wear_end: Array<number | null>;
+	tyre_wear_minimum: Array<number | null>;
+	tyre_flat_observed: boolean[];
+	wheel_detached_observed: boolean[];
+	dent_severity_maximum: number[];
+	overheating_observed: boolean;
+	body_part_detached_observed: boolean;
+	impact_count: number;
+	maximum_impact_magnitude?: number | null;
+	virtual_energy_start?: number | null;
+	virtual_energy_end?: number | null;
+	virtual_energy_used?: number | null;
+	electronics?: {
+		settings: ElectronicSetting[];
+		tc_active_percent?: number | null;
+		abs_active_percent?: number | null;
+		rear_flap_active_percent?: number | null;
+	} | null;
+};
 type Detail = {
 	summary: {
 		title: string | null;
@@ -49,6 +87,7 @@ type Detail = {
 		car?: string | null;
 		session_type?: string | null;
 	};
+	lap_metrics?: LapMetrics[];
 };
 type Entry = { detail: Detail; lap: Lap; telemetry: Telemetry };
 
@@ -171,6 +210,151 @@ function alignedSamples(samples: Sample[]): LapComparisonSample[] {
 	}));
 }
 
+function median(values: number[]) {
+	if (!values.length) return null;
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function finite(value?: number | null): value is number {
+	return value != null && Number.isFinite(value);
+}
+
+function tyreTone(remaining: number) {
+	if (remaining >= 75) return "healthy";
+	if (remaining >= 50) return "used";
+	if (remaining >= 25) return "worn";
+	return "critical";
+}
+
+function LapMetricsSummary({ metric, allMetrics }: { metric?: LapMetrics; allMetrics: LapMetrics[] }) {
+	if (!metric) return null;
+	const tyreLabels = ["FL", "FR", "RL", "RR"];
+	const hasTyres = metric.tyre_wear_end.some(finite);
+	const fuelPerLap = median(
+		allMetrics
+			.map((item) => item.fuel_used_litres)
+			.filter(finite)
+			.filter((value) => value > 0),
+	);
+	const energyScale = [metric.virtual_energy_start, metric.virtual_energy_end].filter(finite).every((value) => value <= 1.001) ? 100 : 1;
+	const energyPerLap = median(
+		allMetrics
+			.map((item) => item.virtual_energy_used)
+			.filter(finite)
+			.filter((value) => value > 0),
+	);
+	const damagedZones = metric.dent_severity_maximum.filter((value) => value > 0).length;
+	const failures = [
+		metric.overheating_observed ? "OVERHEAT" : null,
+		metric.body_part_detached_observed ? "PART LOST" : null,
+		metric.tyre_flat_observed.some(Boolean) ? "PUNCTURE" : null,
+		metric.wheel_detached_observed.some(Boolean) ? "WHEEL LOST" : null,
+	].filter((value): value is string => Boolean(value));
+	const electronics = metric.electronics;
+	const hasFuel = finite(metric.fuel_end_litres) || finite(metric.fuel_used_litres);
+	const hasEnergy = finite(metric.virtual_energy_end) || finite(metric.virtual_energy_used);
+	const hasDamage = damagedZones > 0 || metric.impact_count > 0 || failures.length > 0;
+	if (!hasTyres && !hasFuel && !hasEnergy && !electronics && !hasDamage) return null;
+	const fuelPercent =
+		finite(metric.fuel_end_litres) && finite(metric.fuel_capacity_litres) && metric.fuel_capacity_litres > 0
+			? Math.min(100, Math.max(0, (metric.fuel_end_litres / metric.fuel_capacity_litres) * 100))
+			: null;
+	return (
+		<section className="lap-metrics" aria-label={`Lap ${metric.lap_index} vehicle state`}>
+			<header>
+				<strong>LAP STATE</strong>
+				<span>Recorded at the end of lap {metric.lap_index}</span>
+			</header>
+			<div className="lap-metrics-grid">
+				{hasTyres && (
+					<div className="lap-metric-block tyre-state">
+						<small>TYRE LIFE</small>
+						<div className="tyre-state-grid">
+							{tyreLabels.map((label, index) => {
+								const value = metric.tyre_wear_end[index];
+								const remaining = finite(value) ? Math.min(100, Math.max(0, value)) : null;
+								const failed = metric.tyre_flat_observed[index] || metric.wheel_detached_observed[index];
+								return (
+									<span className={`tyre-state-wheel ${failed ? "failed" : remaining == null ? "unknown" : tyreTone(remaining)}`} key={label}>
+										<b>{failed ? "!" : remaining == null ? "—" : `${Math.round(remaining)}%`}</b>
+										<em>{label}</em>
+									</span>
+								);
+							})}
+						</div>
+					</div>
+				)}
+				{hasFuel && (
+					<div className="lap-metric-block resource-state">
+						<small>FUEL</small>
+						<strong>{finite(metric.fuel_end_litres) ? `${metric.fuel_end_litres.toFixed(1)} L` : "—"}</strong>
+						<span>
+							{finite(metric.fuel_used_litres) ? `${metric.fuel_used_litres.toFixed(2)} L used` : "Usage unavailable"}
+							{fuelPerLap != null ? ` · ${fuelPerLap.toFixed(2)} L/lap median` : ""}
+						</span>
+						{fuelPercent != null && (
+							<i aria-hidden="true">
+								<b style={{ width: `${fuelPercent}%` }} />
+							</i>
+						)}
+					</div>
+				)}
+				{hasEnergy && (
+					<div className="lap-metric-block resource-state">
+						<small>VIRTUAL ENERGY</small>
+						<strong>
+							{finite(metric.virtual_energy_end)
+								? `${(metric.virtual_energy_end * energyScale).toFixed(1)}${energyScale === 100 ? "%" : ""}`
+								: "—"}
+						</strong>
+						<span>
+							{finite(metric.virtual_energy_used)
+								? `${(metric.virtual_energy_used * energyScale).toFixed(1)}${energyScale === 100 ? "%" : ""} used`
+								: "Usage unavailable"}
+							{energyPerLap != null ? ` · ${(energyPerLap * energyScale).toFixed(1)}${energyScale === 100 ? "%" : ""}/lap median` : ""}
+						</span>
+					</div>
+				)}
+				{electronics && (
+					<div className="lap-metric-block electronics-state">
+						<small>ELECTRONICS</small>
+						<div>
+							{electronics.settings.map((setting) => (
+								<span key={setting.key}>
+									{setting.label} {setting.changes ? `${setting.start}→${setting.end}` : setting.start}
+								</span>
+							))}
+							{finite(electronics.tc_active_percent) && electronics.tc_active_percent >= 0.1 && (
+								<span>TC {Math.round(electronics.tc_active_percent)}%</span>
+							)}
+							{finite(electronics.abs_active_percent) && electronics.abs_active_percent >= 0.1 && (
+								<span>ABS {Math.round(electronics.abs_active_percent)}%</span>
+							)}
+							{finite(electronics.rear_flap_active_percent) && electronics.rear_flap_active_percent >= 0.1 && (
+								<span>DRS {Math.round(electronics.rear_flap_active_percent)}%</span>
+							)}
+						</div>
+					</div>
+				)}
+				{hasDamage && (
+					<div className="lap-metric-block damage-state">
+						<small>DAMAGE</small>
+						<div>
+							{damagedZones > 0 && <span>BODY {damagedZones}/8</span>}
+							{metric.impact_count > 0 && <span>IMPACT ×{metric.impact_count}</span>}
+							{failures.map((failure) => (
+								<span key={failure}>{failure}</span>
+							))}
+						</div>
+					</div>
+				)}
+			</div>
+		</section>
+	);
+}
+
 function TelemetryWorkspace() {
 	const snapshot = useWorkspace();
 	const [cursorIndex, setCursorIndex] = useState<number | null>(null);
@@ -227,6 +411,7 @@ function TelemetryWorkspace() {
 	if (!snapshot?.lap || !snapshot.telemetry)
 		return <div className="telemetry-empty">{snapshot?.message || "Select a recorded lap to review its telemetry."}</div>;
 	const { detail, lap, telemetry, comparison } = snapshot;
+	const lapMetric = detail?.lap_metrics?.find((metric) => metric.lap_id === lap.id);
 	const maximumSpeed = Math.max(0, ...telemetry.points.map((point) => point.speed_kph || 0));
 	const maximumRpm = Math.max(0, ...telemetry.points.map((point) => point.engine_rpm || 0));
 	const zoomTelemetry = (anchor: number, direction: "in" | "out") => {
@@ -398,6 +583,7 @@ function TelemetryWorkspace() {
 							onPlaybackSpeed={changePlaybackSpeed}
 						/>
 					)}
+					{!comparison && <LapMetricsSummary metric={lapMetric} allMetrics={detail?.lap_metrics || []} />}
 					<div className="telemetry-primary-grid">
 						<div className="telemetry-primary-charts">
 							<ComparisonChart

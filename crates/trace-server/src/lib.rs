@@ -3119,6 +3119,8 @@ mod tests {
         assert_eq!(review["source_track_id"], "zandvoort");
         assert_eq!(review["laps"][0]["id"], "lap-1");
         assert_eq!(review["laps"][0]["duration_ns"], 90_000_000_000_u64);
+        assert_eq!(review["lap_metrics"][0]["lap_id"], "lap-1");
+        assert_eq!(review["lap_metrics"][0]["lap_index"], 1);
 
         let telemetry = application
             .clone()

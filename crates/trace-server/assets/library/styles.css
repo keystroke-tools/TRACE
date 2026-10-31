@@ -1314,6 +1314,163 @@ button.primary:hover {
 	background: transparent;
 }
 
+.lap-metrics {
+	margin: 12px 0;
+	border-top: 1px solid var(--trace-divider);
+	border-bottom: 1px solid var(--trace-divider);
+	background: #171717;
+}
+
+.lap-metrics > header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	min-height: 38px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--trace-divider);
+}
+
+.lap-metrics > header strong,
+.lap-metric-block > small {
+	color: var(--trace-soft);
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 10px;
+	font-style: normal;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+}
+
+.lap-metrics > header span {
+	color: var(--trace-dim);
+	font-size: 11px;
+}
+
+.lap-metrics-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.lap-metric-block {
+	min-width: 0;
+	min-height: 94px;
+	padding: 12px;
+	border-right: 1px solid var(--trace-divider);
+}
+
+.lap-metric-block:last-child {
+	border-right: 0;
+}
+
+.lap-metric-block > small {
+	display: block;
+	margin-bottom: 9px;
+	color: var(--trace-dim);
+	font-size: 9px;
+}
+
+.tyre-state-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 40px);
+	gap: 7px;
+}
+
+.tyre-state-wheel {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	border: 2px solid var(--trace-divider);
+	border-radius: 50%;
+	background: var(--trace-deep);
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-variant-numeric: tabular-nums;
+}
+
+.tyre-state-wheel b {
+	font-size: 10px;
+	line-height: 1;
+}
+
+.tyre-state-wheel em {
+	color: var(--trace-dim);
+	font-size: 7px;
+	font-style: normal;
+	line-height: 1;
+}
+
+.tyre-state-wheel.healthy {
+	border-color: var(--trace-accent);
+	color: var(--trace-accent);
+}
+
+.tyre-state-wheel.used {
+	border-color: var(--trace-sector-yellow);
+	color: var(--trace-sector-yellow);
+}
+
+.tyre-state-wheel.worn {
+	border-color: #d98345;
+	color: #e5a36f;
+}
+
+.tyre-state-wheel.critical,
+.tyre-state-wheel.failed {
+	border-color: var(--trace-danger);
+	color: #ef8585;
+}
+
+.resource-state > strong {
+	display: block;
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 18px;
+	font-variant-numeric: tabular-nums;
+}
+
+.resource-state > span {
+	display: block;
+	margin-top: 4px;
+	color: var(--trace-dim);
+	font-size: 10px;
+	line-height: 1.35;
+}
+
+.resource-state > i {
+	display: block;
+	height: 3px;
+	margin-top: 9px;
+	background: var(--trace-divider);
+}
+
+.resource-state > i b {
+	display: block;
+	height: 100%;
+	background: var(--trace-accent);
+}
+
+.electronics-state > div,
+.damage-state > div {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+}
+
+.electronics-state span,
+.damage-state span {
+	padding: 4px 6px;
+	border: 1px solid var(--trace-divider);
+	color: var(--trace-muted);
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 9px;
+	font-weight: 800;
+	line-height: 1;
+}
+
+.damage-state span {
+	border-color: #783f3f;
+	color: #ef8585;
+}
+
 .comparison-review-layout.with-analysis {
 	display: grid;
 	grid-template-columns: minmax(220px, 272px) minmax(0, 1fr);
