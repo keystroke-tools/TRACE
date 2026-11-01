@@ -1,0 +1,13 @@
+.git
+.github
+.cache
+.idea
+.vscode
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+target
+secrets
+*.swp
+*.tmp
+.DS_Store

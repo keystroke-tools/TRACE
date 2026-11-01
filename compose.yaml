@@ -1,0 +1,48 @@
+name: trace
+
+services:
+    server:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        image: trace-server:local
+        restart: unless-stopped
+        ports:
+            - "${TRACE_SERVER_PORT:-8080}:8080"
+        environment:
+            TRACE_BIND: "0.0.0.0:8080"
+            TRACE_DATA_DIR: "/var/lib/trace-server"
+            TRACE_PUBLIC_BASE_URL: "${TRACE_PUBLIC_BASE_URL:-http://localhost:8080}"
+            TRACE_INSTANCE_NAME: "${TRACE_INSTANCE_NAME:-TRACE}"
+            TRACE_REGISTRATION_POLICY: "${TRACE_REGISTRATION_POLICY:-disabled}"
+            TRACE_SHARE_TTL_DAYS: "${TRACE_SHARE_TTL_DAYS:-7}"
+            TRACE_LIVE_RETENTION_MINUTES: "${TRACE_LIVE_RETENTION_MINUTES:-10}"
+            TRACE_TRUST_PROXY_HEADERS: "${TRACE_TRUST_PROXY_HEADERS:-false}"
+        volumes:
+            - trace-server-data:/var/lib/trace-server
+        read_only: true
+        tmpfs:
+            - /tmp:size=64m,mode=1777
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+
+    site:
+        build:
+            context: .
+            dockerfile: apps/web/Dockerfile
+        image: trace-site:local
+        restart: unless-stopped
+        ports:
+            - "${TRACE_SITE_PORT:-8081}:8080"
+        read_only: true
+        tmpfs:
+            - /tmp:size=32m,mode=1777
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+
+volumes:
+    trace-server-data:

@@ -71,6 +71,9 @@ at a reverse proxy that forwards HTTP and WebSocket upgrade requests to `TRACE_B
 For unattended provisioning, set `TRACE_INSTALL_NONINTERACTIVE=1`; missing options
 then use their documented defaults instead of opening the wizard.
 
+For Docker or Compose deployments, including the persistent volume, health checks,
+and optional static product site, see [Container deployment](containers.md).
+
 Completed `.trace` shares are stored beneath `/var/lib/trace-server` and expire after
 seven days by default. Set `TRACE_SHARE_TTL_DAYS` in `/etc/trace-server.env` to retain
 them for 1–365 days. Uploads are validated before publication and limited to 128 MiB.

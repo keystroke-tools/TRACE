@@ -39,23 +39,24 @@ tested code.
 
 ## Documentation
 
-| Document                                                          | Contents                                                         |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [Documentation index](docs/README.md)                             | Guide to all technical documentation                             |
-| [Specification](SPEC.md)                                          | Product and implementation direction                             |
-| [Development guide](docs/development.md)                          | Toolchains, commands, repository layout, and troubleshooting     |
-| [Architecture review](docs/phase-1-architecture.md)               | Boundaries, dependency rules, risks, and design decisions        |
-| [Assetto Corsa integration](docs/assetto-corsa.md)                | Capture boundary, mappings, and known omissions                  |
-| [Assetto Corsa API reference](docs/ac-shared-memory-reference.md) | Shared-memory pages, fields, offsets, units, and storage keys    |
-| [Le Mans Ultimate integration](docs/le-mans-ultimate.md)          | Official shared-memory foundation, synchronization, and channels |
-| [Corner analysis](docs/corner-analysis.md)                        | Deterministic corner detection and time-loss analysis            |
-| [Tracer driving cues](docs/tracer.md)                             | CSP Lua HUD, reference profile, and braking-zone extraction      |
-| [Session package](docs/session-package.md)                        | Portable `.trace` format and import safety limits                |
-| [Setup imports](docs/setup-import.md)                             | Simulator-aware setup archive handling                           |
+| Document                                                          | Contents                                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [Documentation index](docs/README.md)                             | Guide to all technical documentation                               |
+| [Specification](SPEC.md)                                          | Product and implementation direction                               |
+| [Development guide](docs/development.md)                          | Toolchains, commands, repository layout, and troubleshooting       |
+| [Architecture review](docs/phase-1-architecture.md)               | Boundaries, dependency rules, risks, and design decisions          |
+| [Assetto Corsa integration](docs/assetto-corsa.md)                | Capture boundary, mappings, and known omissions                    |
+| [Assetto Corsa API reference](docs/ac-shared-memory-reference.md) | Shared-memory pages, fields, offsets, units, and storage keys      |
+| [Le Mans Ultimate integration](docs/le-mans-ultimate.md)          | Official shared-memory foundation, synchronization, and channels   |
+| [Corner analysis](docs/corner-analysis.md)                        | Deterministic corner detection and time-loss analysis              |
+| [Tracer driving cues](docs/tracer.md)                             | CSP Lua HUD, reference profile, and braking-zone extraction        |
+| [Session package](docs/session-package.md)                        | Portable `.trace` format and import safety limits                  |
+| [Setup imports](docs/setup-import.md)                             | Simulator-aware setup archive handling                             |
 | [MoTeC telemetry import](docs/motec-import.md)                    | Paired `.ld`/`.ldx` import, fixtures, mappings, and CSV foundation |
-| [Live protocol](docs/protocol-v1.md)                              | Versioned live telemetry messages and validation                 |
-| [Storage benchmark](docs/storage-benchmark.md)                    | Arrow IPC compression measurements and decisions                 |
-| [Contributing](CONTRIBUTING.md)                                   | Change quality, testing, safety, and LLM-assistance expectations |
+| [Live protocol](docs/protocol-v1.md)                              | Versioned live telemetry messages and validation                   |
+| [Container deployment](docs/containers.md)                        | Docker and Compose deployment for self-hosted services             |
+| [Storage benchmark](docs/storage-benchmark.md)                    | Arrow IPC compression measurements and decisions                   |
+| [Contributing](CONTRIBUTING.md)                                   | Change quality, testing, safety, and LLM-assistance expectations   |
 
 ## Principles
 
