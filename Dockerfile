@@ -51,9 +51,7 @@ RUN apt-get update && \
 
 COPY --from=server-builder /usr/local/bin/trace-server /usr/local/bin/trace-server
 
-ENV TRACE_BIND="0.0.0.0:8080" \
-    TRACE_DATA_DIR="/var/lib/trace-server" \
-    TRACE_PUBLIC_BASE_URL="http://localhost:8080"
+ENV TRACE_BIND="0.0.0.0:8080"
 
 VOLUME ["/var/lib/trace-server"]
 EXPOSE 8080
