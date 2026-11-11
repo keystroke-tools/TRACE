@@ -6,7 +6,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use futures_util::StreamExt;
@@ -29,8 +29,7 @@ use trace_storage::{
         export_core_csv, read_columns_range, read_lap_metrics_ranges, sample_count,
     },
     metadata::{
-        CompatibleSetup, LapSummary, MetadataStore, NewSetupImport, SavedComparison, SectorSummary,
-        SessionSummary,
+        CompatibleSetup, LapSummary, MetadataStore, NewSetupImport, SavedComparison, SessionSummary,
     },
     package::{
         MAX_SETUP_PAYLOAD_BYTES, PACKAGE_VERSION, SessionPackageLap, SessionPackageManifest,
@@ -511,11 +510,14 @@ async fn recent_sessions(
         .lock()
         .ok()
         .and_then(|value| value.active_session_id.clone());
-    tokio::task::spawn_blocking(move || {
+    let backfill_directory = directory.clone();
+    let sessions = tokio::task::spawn_blocking(move || {
         load_recent_sessions(&directory, active_session_id.as_deref(), limit)
     })
     .await
-    .map_err(|error| format!("session library worker failed: {error}"))?
+    .map_err(|error| format!("session library worker failed: {error}"))??;
+    schedule_legacy_motec_sector_backfill(backfill_directory);
+    Ok(sessions)
 }
 
 fn load_recent_sessions(
@@ -524,12 +526,11 @@ fn load_recent_sessions(
     limit: Option<usize>,
 ) -> Result<Vec<RecordedSessionSummary>, String> {
     std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
-    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+    let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let mut sessions = store
+    let sessions = store
         .recent_sessions(limit.unwrap_or(100).clamp(1, 10_000))
         .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
-    enrich_legacy_motec_sectors(directory, &mut store, &mut sessions);
     let profile_name = store
         .driver_profile_name()
         .map_err(|error| format!("failed to read driver profile: {error:?}"))?;
@@ -603,23 +604,37 @@ fn load_recent_sessions(
         .collect())
 }
 
-fn enrich_legacy_motec_sectors(
-    directory: &Path,
-    store: &mut MetadataStore,
-    sessions: &mut [SessionSummary],
-) {
+fn schedule_legacy_motec_sector_backfill(directory: PathBuf) {
     static BACKFILL_STARTED: AtomicBool = AtomicBool::new(false);
     if BACKFILL_STARTED.swap(true, Ordering::Relaxed) {
         return;
     }
-    for session in sessions.iter_mut().filter(|session| {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let result =
+            tokio::task::spawn_blocking(move || backfill_legacy_motec_sectors(&directory)).await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("TRACE could not backfill legacy MoTeC sectors: {error}"),
+            Err(error) => eprintln!("TRACE MoTeC sector backfill worker stopped: {error}"),
+        }
+    });
+}
+
+fn backfill_legacy_motec_sectors(directory: &Path) -> Result<(), String> {
+    let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
+        .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
+    let sessions = store
+        .recent_sessions(100)
+        .map_err(|error| format!("failed to query TRACE sessions: {error:?}"))?;
+    for session in sessions.iter().filter(|session| {
         session.source_kind == "imported" && session.tags.iter().any(|tag| tag == "MoTeC")
     }) {
-        for lap in session.laps.iter_mut().filter(|lap| lap.sectors.is_empty()) {
+        for lap in session.laps.iter().filter(|lap| lap.sectors.is_empty()) {
             let Some(duration_ns) = lap.duration_ns else {
                 continue;
             };
-            let Ok(columns) = read_recorded_lap(directory, store, &lap.id, None) else {
+            let Ok(columns) = read_recorded_lap(directory, &store, &lap.id, None) else {
                 continue;
             };
             let sectors = derive_sector_durations(&columns, duration_ns)
@@ -630,18 +645,12 @@ fn enrich_legacy_motec_sectors(
                     duration_ns,
                 })
                 .collect::<Vec<_>>();
-            if sectors.is_empty() || store.replace_lap_sectors(&lap.id, &sectors).is_err() {
-                continue;
+            if !sectors.is_empty() {
+                let _ = store.replace_lap_sectors(&lap.id, &sectors);
             }
-            lap.sectors = sectors
-                .into_iter()
-                .map(|sector| SectorSummary {
-                    index: sector.index,
-                    duration_ns: sector.duration_ns,
-                })
-                .collect();
         }
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -707,11 +716,19 @@ fn clear_session_setup(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri injects AppHandle by value.
-fn game_install_directories(app: tauri::AppHandle) -> Result<Vec<GameInstallDirectory>, String> {
+async fn game_install_directories(
+    app: tauri::AppHandle,
+) -> Result<Vec<GameInstallDirectory>, String> {
     let directory = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
+    tokio::task::spawn_blocking(move || load_game_install_directories(&directory))
+        .await
+        .map_err(|error| format!("game directory detection worker failed: {error}"))?
+}
+
+fn load_game_install_directories(directory: &Path) -> Result<Vec<GameInstallDirectory>, String> {
     let store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
     Ok(vec![game_install_directory(&store)?])
@@ -719,24 +736,33 @@ fn game_install_directories(app: tauri::AppHandle) -> Result<Vec<GameInstallDire
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri deserializes command arguments by value.
-fn set_game_install_directory(
+async fn set_game_install_directory(
     app: tauri::AppHandle,
     simulator_id: String,
     custom_path: Option<String>,
 ) -> Result<GameInstallDirectory, String> {
-    if simulator_id != "assetto-corsa" {
-        return Err("that simulator does not have configurable install metadata yet".into());
-    }
     let directory = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        save_game_install_directory(&directory, &simulator_id, custom_path.as_deref())
+    })
+    .await
+    .map_err(|error| format!("game directory settings worker failed: {error}"))?
+}
+
+fn save_game_install_directory(
+    directory: &Path,
+    simulator_id: &str,
+    custom_path: Option<&str>,
+) -> Result<GameInstallDirectory, String> {
+    if simulator_id != "assetto-corsa" {
+        return Err("that simulator does not have configurable install metadata yet".into());
+    }
     let mut store = MetadataStore::open(&directory.join("trace.sqlite"))
         .map_err(|error| format!("failed to open TRACE metadata: {error:?}"))?;
-    let normalized = custom_path
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let normalized = custom_path.map(str::trim).filter(|value| !value.is_empty());
     if let Some(path) = normalized {
         let path = Path::new(path);
         if !path.join("content/cars").is_dir() || !path.join("content/tracks").is_dir() {
@@ -747,7 +773,7 @@ fn set_game_install_directory(
         }
     }
     store
-        .set_simulator_install_path(&simulator_id, normalized)
+        .set_simulator_install_path(simulator_id, normalized)
         .map_err(|error| format!("failed to save simulator settings: {error:?}"))?;
     game_install_directory(&store)
 }
@@ -3930,7 +3956,13 @@ fn setup_app(
     app.state::<CloseToTrayState>()
         .set_enabled(close_to_tray_enabled);
     tray::setup(app)?;
-    tracer::refresh_if_installed(app.handle());
+    let tracer_app = app.handle().clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name("trace-tracer-refresh".into())
+        .spawn(move || tracer::refresh_if_installed(&tracer_app))
+    {
+        eprintln!("TRACE could not start the Tracer refresh worker: {error}");
+    }
     discord_activity::spawn(discord_activity, status.clone(), live_broadcast.clone());
     obs_overlay::spawn(app.handle().clone(), status.clone());
     let adapter_status = status.clone();

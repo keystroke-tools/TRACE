@@ -55,12 +55,9 @@ export function App() {
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
 	const handledSharedImport = useRef<string | null>(null);
+	const startupSetupIndexStarted = useRef(false);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
 	const summarySession = sessions.find((session) => session.id === summarySessionId) ?? null;
-
-	useEffect(() => {
-		if (autoIndexSetupsEnabled()) void indexDetectedSetupLibraries();
-	}, []);
 
 	useEffect(() => {
 		if (!isTauri()) return undefined;
@@ -215,18 +212,44 @@ export function App() {
 	}
 
 	useEffect(() => {
+		let disposed = false;
+		let setupIndexTimer: number | undefined;
 		void Promise.all([
 			telemetryDataSource.getStatus(),
 			telemetryDataSource.getSessions(),
 			telemetryDataSource.getLiveBroadcastStatus(),
 			telemetryDataSource.getLiveSettings(),
-		]).then(([nextStatus, nextSessions, nextLiveBroadcast, nextLiveSettings]) => {
-			setStatus(nextStatus);
-			setSessions(nextSessions);
-			setLiveBroadcast(nextLiveBroadcast);
-			setLiveSettings(nextLiveSettings);
-		});
-	}, []);
+		])
+			.then(([nextStatus, nextSessions, nextLiveBroadcast, nextLiveSettings]) => {
+				if (disposed) return;
+				setStatus(nextStatus);
+				setSessions(nextSessions);
+				setLiveBroadcast(nextLiveBroadcast);
+				setLiveSettings(nextLiveSettings);
+			})
+			.catch((error) => {
+				if (disposed) return;
+				showToast({
+					kind: "error",
+					title: "Could not finish starting TRACE",
+					message: error instanceof Error ? error.message : String(error),
+					timeoutMs: 8_000,
+				});
+			})
+			.finally(() => {
+				if (disposed || !autoIndexSetupsEnabled() || startupSetupIndexStarted.current) return;
+				startupSetupIndexStarted.current = true;
+				setupIndexTimer = window.setTimeout(() => {
+					void indexDetectedSetupLibraries().catch(() => {
+						// Setup discovery is maintenance work and must not interrupt startup.
+					});
+				}, 1_000);
+			});
+		return () => {
+			disposed = true;
+			if (setupIndexTimer !== undefined) window.clearTimeout(setupIndexTimer);
+		};
+	}, [showToast]);
 
 	useEffect(() => {
 		if (!isTauri()) return;

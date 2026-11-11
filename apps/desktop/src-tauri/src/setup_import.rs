@@ -121,13 +121,22 @@ impl SetupImportResult {
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri IPC owns deserialized strings.
-pub(crate) fn detect_setup_folder(
+pub(crate) async fn detect_setup_folder(
     app: tauri::AppHandle,
     simulator_id: String,
 ) -> Result<SetupFolder, String> {
-    let candidates = match simulator_id.as_str() {
+    tokio::task::spawn_blocking(move || detect_setup_folder_blocking(&app, &simulator_id))
+        .await
+        .map_err(|error| format!("setup folder detection worker failed: {error}"))?
+}
+
+fn detect_setup_folder_blocking(
+    app: &tauri::AppHandle,
+    simulator_id: &str,
+) -> Result<SetupFolder, String> {
+    let candidates = match simulator_id {
         ASSETTO_CORSA_ID => setup_folder_candidates(),
-        LE_MANS_ULTIMATE_ID => lmu_setup_folder_candidates(&app),
+        LE_MANS_ULTIMATE_ID => lmu_setup_folder_candidates(app),
         _ => {
             return Err(format!(
                 "setup importing is not available for {simulator_id}"
@@ -466,14 +475,26 @@ fn lmu_setup_provider_identity(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri IPC owns deserialized strings.
-pub(crate) fn index_existing_setups(
+pub(crate) async fn index_existing_setups(
     app: tauri::AppHandle,
     simulator_id: String,
     setups_folder: String,
 ) -> Result<SetupDiscoveryResult, String> {
-    match simulator_id.as_str() {
-        ASSETTO_CORSA_ID => discover_assetto_corsa_setups(&app, Path::new(setups_folder.trim())),
-        LE_MANS_ULTIMATE_ID => discover_lmu_setups(&app, Path::new(setups_folder.trim())),
+    tokio::task::spawn_blocking(move || {
+        index_existing_setups_blocking(&app, &simulator_id, &setups_folder)
+    })
+    .await
+    .map_err(|error| format!("setup discovery worker failed: {error}"))?
+}
+
+fn index_existing_setups_blocking(
+    app: &tauri::AppHandle,
+    simulator_id: &str,
+    setups_folder: &str,
+) -> Result<SetupDiscoveryResult, String> {
+    match simulator_id {
+        ASSETTO_CORSA_ID => discover_assetto_corsa_setups(app, Path::new(setups_folder.trim())),
+        LE_MANS_ULTIMATE_ID => discover_lmu_setups(app, Path::new(setups_folder.trim())),
         _ => Err(format!(
             "setup discovery is not available for {simulator_id}"
         )),
