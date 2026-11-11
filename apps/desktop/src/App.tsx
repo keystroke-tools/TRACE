@@ -51,6 +51,7 @@ export function App() {
 	const [summaryIsCompletion, setSummaryIsCompletion] = useState(false);
 	const [comparisonSelection, setComparisonSelection] = useState<ComparisonSelection | null>(null);
 	const [sharedImportProgress, setSharedImportProgress] = useState<SharedSessionImportProgress | null>(null);
+	const [starting, setStarting] = useState(true);
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
@@ -237,7 +238,9 @@ export function App() {
 				});
 			})
 			.finally(() => {
-				if (disposed || !autoIndexSetupsEnabled() || startupSetupIndexStarted.current) return;
+				if (disposed) return;
+				setStarting(false);
+				if (!autoIndexSetupsEnabled() || startupSetupIndexStarted.current) return;
 				startupSetupIndexStarted.current = true;
 				setupIndexTimer = window.setTimeout(() => {
 					void indexDetectedSetupLibraries().catch(() => {
@@ -372,7 +375,7 @@ export function App() {
 	}, [liveBroadcast, showToast]);
 
 	return (
-		<main className="grid h-screen grid-cols-[var(--trace-sidebar)_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text [--trace-sidebar:200px] max-[900px]:[--trace-sidebar:156px]">
+		<main className="relative grid h-screen grid-cols-[var(--trace-sidebar)_1fr] grid-rows-[48px_minmax(0,1fr)_38px] bg-trace-base text-trace-text [--trace-sidebar:200px] max-[900px]:[--trace-sidebar:156px]">
 			<TitleBar
 				status={status}
 				liveBroadcast={liveBroadcast}
@@ -469,6 +472,7 @@ export function App() {
 				{section === "SETTINGS" && <SettingsPage />}
 			</section>
 			<Footer status={status} />
+			{starting && <StartupOverlay />}
 			{summarySession && (
 				<SessionSummaryModal
 					session={summarySession}
@@ -482,6 +486,31 @@ export function App() {
 			)}
 			{sharedImportProgress && <SharedSessionImportOverlay progress={sharedImportProgress} />}
 		</main>
+	);
+}
+
+function StartupOverlay() {
+	return (
+		<div
+			className="absolute bottom-[38px] left-[var(--trace-sidebar)] right-0 top-[48px] z-50 grid place-items-center bg-trace-base"
+			role="status"
+			aria-live="polite"
+			aria-label="TRACE is starting"
+		>
+			<div className="w-full max-w-md border-y border-trace-divider bg-trace-surface px-8 py-7">
+				<div className="flex items-center gap-3 font-mono text-[10px] font-black tracking-[.16em] text-trace-accent">
+					<span className="size-2 animate-pulse bg-trace-accent" aria-hidden="true" />
+					STARTING TRACE
+				</div>
+				<strong className="mt-4 block text-xl font-black tracking-[-.02em] text-trace-text">Loading your local library</strong>
+				<p className="mt-2 text-[13px] leading-6 text-trace-muted">
+					Detecting simulators and reading session metadata. Telemetry stays on disk until you open a lap.
+				</p>
+				<div className="mt-5 h-1 overflow-hidden bg-trace-deep" aria-hidden="true">
+					<div className="h-full w-2/5 animate-pulse bg-trace-accent" />
+				</div>
+			</div>
+		</div>
 	);
 }
 

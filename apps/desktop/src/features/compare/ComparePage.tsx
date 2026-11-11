@@ -25,6 +25,7 @@ import {
 import { channelColours, comparisonSeries, ComparisonChart, deltaRange, formatGear, singleSeries, steeringAngleRange } from "../telemetry/ComparisonChart";
 import { FloatingTrackMap, TrackMap, useTrackMapPip } from "../telemetry/TrackMap";
 import { ComparisonSessionPicker } from "./ComparisonSessionPicker";
+import { comparisonConditionWarning } from "./comparison-conditions";
 import { fasterReferenceSuggestions, type ComparisonSelection, type ReferenceSuggestion, validComparisonLaps } from "./comparison-selection";
 import { FEATURE_FLAGS_CHANGED_EVENT, richComparisonPickerEnabled } from "../settings/feature-flags";
 import {
@@ -92,6 +93,7 @@ export function ComparePage({
 		[eligibleSessions, referenceSession],
 	);
 	const comparisonSession = compatibleSessions.find((candidate) => candidate.id === comparisonSessionId) ?? null;
+	const conditionWarning = comparisonConditionWarning(referenceSession, comparisonSession);
 	const referenceLaps = useMemo(() => (referenceSession ? validComparisonLaps(referenceSession) : []), [referenceSession]);
 	const comparisonLaps = useMemo(() => (comparisonSession ? validComparisonLaps(comparisonSession) : []), [comparisonSession]);
 	const referenceSuggestions = fasterReferenceSuggestions(
@@ -510,6 +512,7 @@ export function ComparePage({
 								>
 									<div className="w-full"></div>
 									<div className="min-w-0">
+										{conditionWarning && <ComparisonConditionNotice warning={conditionWarning} />}
 										{(sector != null || selectedCorner != null || telemetryWindow != null) && (
 											<div className="mb-3 flex h-10 items-center justify-between border border-trace-accent/45 bg-trace-accent-wash px-4 font-mono">
 												<span className="text-[11px] font-black tracking-[.1em] text-trace-accent">
@@ -744,6 +747,22 @@ export function ComparePage({
 				</>
 			)}
 		</>
+	);
+}
+
+function ComparisonConditionNotice({ warning }: { warning: { title: string; details: string[] } }) {
+	return (
+		<div className="mb-3 flex items-start gap-3 border border-trace-warning/55 bg-trace-warning/10 px-4 py-3" role="status">
+			<span className="mt-0.5 grid size-5 shrink-0 place-items-center border border-trace-warning/60 font-mono text-[11px] font-black text-trace-warning">
+				!
+			</span>
+			<div className="min-w-0">
+				<strong className="block text-[12px] font-black tracking-[.04em] text-trace-warning">{warning.title}</strong>
+				<p className="mt-1 text-[11px] leading-5 text-trace-muted">
+					{warning.details.join(" · ")}. Time differences may reflect the conditions as well as the driving.
+				</p>
+			</div>
+		</div>
 	);
 }
 
