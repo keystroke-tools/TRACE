@@ -512,6 +512,7 @@ export interface SetupImportResult {
 	files: string[];
 	destination?: string | null;
 	skipped: string[];
+	olderVersionsSkipped: number;
 	error?: string | null;
 	indexWarning?: string | null;
 	success: boolean;
@@ -656,7 +657,13 @@ export interface TelemetryDataSource {
 	setGameInstallDirectory(simulatorId: string, customPath: string | null): Promise<GameInstallDirectory>;
 	getSetupImporters(): Promise<SetupImporterDescriptor[]>;
 	detectSetupFolder(simulatorId: string): Promise<SetupFolder>;
-	importSetupArchives(simulatorId: string, archivePaths: string[], setupsFolder: string, overwrite: boolean): Promise<SetupImportResult[]>;
+	importSetupArchives(
+		simulatorId: string,
+		archivePaths: string[],
+		setupsFolder: string,
+		overwrite: boolean,
+		latestOnly: boolean,
+	): Promise<SetupImportResult[]>;
 	importSetupFiles(options: SetupFileImportOptions): Promise<SetupImportResult[]>;
 	attachSessionSetup(options: SessionSetupAttachmentOptions): Promise<CompatibleSetup[]>;
 	indexExistingSetups(simulatorId: string, setupsFolder: string): Promise<SetupDiscoveryResult>;
@@ -1286,7 +1293,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 	async detectSetupFolder(_simulatorId) {
 		return { path: "C:\\Users\\Driver\\Documents\\Assetto Corsa\\setups", found: true, source: "detected" };
 	},
-	async importSetupArchives(_simulatorId, archivePaths, setupsFolder, _overwrite) {
+	async importSetupArchives(_simulatorId, archivePaths, setupsFolder, _overwrite, _latestOnly) {
 		return archivePaths.map((path) => ({
 			archiveName: path.split(/[\\/]/).at(-1) ?? path,
 			car: "ks_mazda_mx5_cup",
@@ -1294,6 +1301,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			files: ["shared-race.ini"],
 			destination: `${setupsFolder}\\ks_mazda_mx5_cup\\ks_zandvoort`,
 			skipped: [],
+			olderVersionsSkipped: 0,
 			success: true,
 		}));
 	},
@@ -1305,6 +1313,7 @@ export const fixtureDataSource: TelemetryDataSource = {
 			files: [path.split(/[\\/]/).pop() ?? path],
 			destination: `${options.setupsFolder}\\${options.sourceCarId || "ks_mazda_mx5_cup"}\\${options.sourceTrackId}`,
 			skipped: [],
+			olderVersionsSkipped: 0,
 			success: true,
 		}));
 	},
@@ -1610,8 +1619,8 @@ export const tauriDataSource: TelemetryDataSource = {
 	detectSetupFolder(simulatorId) {
 		return invoke<SetupFolder>("detect_setup_folder", { simulatorId });
 	},
-	importSetupArchives(simulatorId, archivePaths, setupsFolder, overwrite) {
-		return invoke<SetupImportResult[]>("import_setup_archives", { simulatorId, archivePaths, setupsFolder, overwrite });
+	importSetupArchives(simulatorId, archivePaths, setupsFolder, overwrite, latestOnly) {
+		return invoke<SetupImportResult[]>("import_setup_archives", { simulatorId, archivePaths, setupsFolder, overwrite, latestOnly });
 	},
 	importSetupFiles(options) {
 		return invoke<SetupImportResult[]>("import_setup_files", { options });

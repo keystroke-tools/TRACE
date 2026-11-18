@@ -20,6 +20,17 @@ upload setup data.
 TRACE detects LMU's setup tree beneath the configured installation at
 `UserData\player\Settings`. Individual `.svm` files can be installed into a selected
 track folder, and **Index existing** scans the existing `<track>\<setup>.svm` layout.
+ZIP setup packs can be selected or dropped in batches. Each `.svm` is installed beneath
+the track folder declared by its path inside the archive; replay, ghost, and telemetry
+extras are ignored.
+
+**Latest version only** is enabled by default for LMU ZIP packs. TRACE recognises version
+tokens such as `V1.3.3`, `V1.4`, and `V1.4.3` and keeps every setup variant belonging to
+the newest version in each archive. The filter is applied independently per ZIP, so a
+batch may safely contain packs released at different versions. Unversioned `.svm` files
+are retained because TRACE cannot safely classify them as obsolete. Disable the option
+to install every version included by the pack author.
+
 The bounded text parser reads `VehicleClassSetting` and, when present, the package name
 from LMU's `//VEH=` header. It does not infer car identity from community filenames.
 
@@ -41,10 +52,13 @@ prototype's local HTTP server.
 
 ### Using the importer
 
-1. Open **Setups** and choose **Assetto Corsa** as the importer.
-2. Verify the detected `Documents\Assetto Corsa\setups` folder, or choose another
-   setups folder.
-3. Drop one or more ZIP files onto the import area, or click it to use the file picker.
+1. Open **Setups → Import** and choose the target simulator.
+2. Verify its detected setups folder, or choose another setups folder. LMU normally uses
+   `<install>\UserData\player\Settings`; AC normally uses
+   `Documents\Assetto Corsa\setups`.
+3. Drop one or more ZIP files onto the import area, or click it to use the multi-file
+   picker. For LMU, leave **Latest version only** enabled unless older pack revisions are
+   deliberately required.
 4. Review the destination, installed-file count, and skipped-file count per archive.
 
 For a standalone file, choose **Individual files**, enter the source track identifier,

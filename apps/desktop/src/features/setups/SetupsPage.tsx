@@ -15,6 +15,7 @@ export function SetupsPage() {
 	const [folderFound, setFolderFound] = useState(false);
 	const [detecting, setDetecting] = useState(true);
 	const [overwrite, setOverwrite] = useState(false);
+	const [latestOnly, setLatestOnly] = useState(true);
 	const [importMode, setImportMode] = useState<"archives" | "files">("archives");
 	const [sourceCarId, setSourceCarId] = useState("");
 	const [sourceTrackId, setSourceTrackId] = useState("");
@@ -27,6 +28,7 @@ export function SetupsPage() {
 	const [libraryVersion, setLibraryVersion] = useState(0);
 	const [explorerDestination, setExplorerDestination] = useState<SetupExplorerDestination | null>(null);
 	const importer = importers.find((value) => value.simulatorId === simulatorId) ?? null;
+	const supportsLatestArchiveFilter = simulatorId === "le-mans-ultimate" && importMode === "archives";
 
 	useEffect(() => {
 		if (importer && importer.archiveExtensions.length === 0) setImportMode("files");
@@ -118,17 +120,18 @@ export function SetupsPage() {
 		}
 		setImporting(true);
 		try {
-			const nextResults = await telemetryDataSource.importSetupArchives(importer.simulatorId, archives, setupsFolder.trim(), overwrite);
+			const nextResults = await telemetryDataSource.importSetupArchives(importer.simulatorId, archives, setupsFolder.trim(), overwrite, latestOnly);
 			setResults(nextResults);
 			if (nextResults.some((result) => result.success && !result.indexWarning)) setLibraryVersion((value) => value + 1);
 			const installed = nextResults.reduce((total, result) => total + result.files.length, 0);
 			const skipped = nextResults.reduce((total, result) => total + result.skipped.length, 0);
 			const failures = nextResults.filter((result) => !result.success).length;
 			const warnings = nextResults.filter((result) => result.indexWarning).length;
+			const olderVersionsSkipped = nextResults.reduce((total, result) => total + result.olderVersionsSkipped, 0);
 			showToast({
 				kind: failures > 0 || warnings > 0 ? "error" : "success",
 				title: failures > 0 ? "Some setups could not be imported" : warnings > 0 ? "Setups installed but not indexed" : "Setups imported",
-				message: `${installed} file${installed === 1 ? "" : "s"} installed${skipped > 0 ? ` · ${skipped} kept because they already exist` : ""}${warnings > 0 ? " · Review the setup-library warning." : ""}.`,
+				message: `${installed} file${installed === 1 ? "" : "s"} installed${olderVersionsSkipped > 0 ? ` · ${olderVersionsSkipped} older version${olderVersionsSkipped === 1 ? "" : "s"} omitted` : ""}${skipped > 0 ? ` · ${skipped} kept because they already exist` : ""}${warnings > 0 ? " · Review the setup-library warning." : ""}.`,
 				timeoutMs: failures > 0 || warnings > 0 ? 8_000 : 5_000,
 			});
 		} catch (error) {
@@ -234,7 +237,7 @@ export function SetupsPage() {
 			disposed = true;
 			unlisten?.();
 		};
-	}, [explorerDestination, importMode, importer, importers, importing, layoutId, overwrite, setupsFolder, sourceCarId, sourceTrackId, workspace]);
+	}, [explorerDestination, importMode, importer, importers, importing, latestOnly, layoutId, overwrite, setupsFolder, sourceCarId, sourceTrackId, workspace]);
 
 	async function chooseSetupsFolder() {
 		if (!importer) return;
@@ -347,7 +350,9 @@ export function SetupsPage() {
 								{importers.length === 0 && <option value="">No setup importers available</option>}
 							</select>
 						</div>
-						<div className="grid gap-px bg-trace-divider lg:grid-cols-[minmax(0,1fr)_220px]">
+						<div
+							className={`grid gap-px bg-trace-divider ${supportsLatestArchiveFilter ? "lg:grid-cols-[minmax(0,1fr)_220px_220px]" : "lg:grid-cols-[minmax(0,1fr)_220px]"}`}
+						>
 							<div className="bg-trace-surface p-5">
 								<label className="font-mono text-[11px] font-black tracking-[.12em] text-trace-soft" htmlFor="setups-folder">
 									{importer?.folderLabel.toUpperCase() ?? "SETUPS FOLDER"}
@@ -402,6 +407,22 @@ export function SetupsPage() {
 									</span>
 								</span>
 							</label>
+							{supportsLatestArchiveFilter && (
+								<label className="flex cursor-pointer items-center gap-3 bg-trace-deep px-5 py-4 hover:bg-trace-raised">
+									<input
+										type="checkbox"
+										checked={latestOnly}
+										onChange={(event) => setLatestOnly(event.target.checked)}
+										className="size-4 accent-[var(--color-trace-accent)]"
+									/>
+									<span>
+										<strong className="block text-[12px] text-trace-text">Latest version only</strong>
+										<span className="mt-1 block text-[11px] leading-4 text-trace-dim">
+											On by default. Older V1.3, V1.4, and similar sets in each ZIP are omitted.
+										</span>
+									</span>
+								</label>
+							)}
 						</div>
 						<div className="grid grid-cols-2 border-t border-trace-divider" role="tablist" aria-label="Setup import type">
 							{(
@@ -521,6 +542,9 @@ export function SetupsPage() {
 										<div className="font-mono text-[10px] leading-5 text-right text-trace-muted">
 											<span className="block">{result.files.length} INSTALLED</span>
 											{result.skipped.length > 0 && <span className="block text-trace-dim">{result.skipped.length} SKIPPED</span>}
+											{result.olderVersionsSkipped > 0 && (
+												<span className="block text-trace-dim">{result.olderVersionsSkipped} OLDER OMITTED</span>
+											)}
 										</div>
 									</article>
 								))}

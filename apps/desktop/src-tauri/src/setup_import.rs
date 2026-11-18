@@ -70,10 +70,10 @@ pub(crate) fn setup_importers() -> Vec<SetupImporterDescriptor> {
             simulator_id: LE_MANS_ULTIMATE_ID,
             simulator_name: "Le Mans Ultimate",
             archive_label: "LMU setup archives",
-            archive_extensions: Vec::new(),
+            archive_extensions: vec!["zip"],
             folder_label: "LMU setup settings folder",
             folder_hint: "Usually <LMU install>\\UserData\\player\\Settings. Set the LMU install directory in Settings if detection fails.",
-            archive_hint: "Archive import is not available yet; choose individual .svm files.",
+            archive_hint: "Drop one or more ZIP packs. TRACE installs .svm files into the track folders declared by the archive and ignores replay or telemetry extras.",
             file_label: "Le Mans Ultimate setup files",
             file_extensions: vec!["svm"],
             file_hint: "Choose .svm files and the destination track. TRACE reads the declared vehicle package and never guesses from the filename.",
@@ -90,6 +90,7 @@ pub(crate) struct SetupImportResult {
     files: Vec<String>,
     destination: Option<String>,
     skipped: Vec<String>,
+    older_versions_skipped: usize,
     error: Option<String>,
     index_warning: Option<String>,
     success: bool,
@@ -107,6 +108,7 @@ impl SetupImportResult {
             files: Vec::new(),
             destination: None,
             skipped: Vec::new(),
+            older_versions_skipped: 0,
             error: None,
             index_warning: None,
             success: false,
@@ -161,14 +163,42 @@ fn detect_setup_folder_blocking(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri IPC owns deserialized strings.
-pub(crate) fn import_setup_archives(
+pub(crate) async fn import_setup_archives(
     app: tauri::AppHandle,
     simulator_id: String,
     archive_paths: Vec<String>,
     setups_folder: String,
     overwrite: bool,
+    latest_only: bool,
 ) -> Vec<SetupImportResult> {
-    if simulator_id != ASSETTO_CORSA_ID {
+    tokio::task::spawn_blocking(move || {
+        import_setup_archives_inner(
+            &app,
+            &simulator_id,
+            archive_paths,
+            &setups_folder,
+            overwrite,
+            latest_only,
+        )
+    })
+    .await
+    .unwrap_or_else(|error| {
+        vec![
+            SetupImportResult::for_path(Path::new("setup archives"))
+                .fail(format!("setup archive worker failed: {error}")),
+        ]
+    })
+}
+
+fn import_setup_archives_inner(
+    app: &tauri::AppHandle,
+    simulator_id: &str,
+    archive_paths: Vec<String>,
+    setups_folder: &str,
+    overwrite: bool,
+    latest_only: bool,
+) -> Vec<SetupImportResult> {
+    if !matches!(simulator_id, ASSETTO_CORSA_ID | LE_MANS_ULTIMATE_ID) {
         return vec![
             SetupImportResult::for_path(Path::new("setup archives")).fail(format!(
                 "setup importing is not available for {simulator_id}"
@@ -192,15 +222,21 @@ pub(crate) fn import_setup_archives(
     if setups_folder.trim().is_empty() || destination.as_os_str().is_empty() {
         return vec![
             SetupImportResult::for_path(Path::new("setup archives"))
-                .fail("choose an Assetto Corsa setups folder"),
+                .fail("choose the simulator's setups folder"),
         ];
     }
     let mut results: Vec<_> = archive_paths
         .into_iter()
         .map(PathBuf::from)
-        .map(|path| import_archive(&path, &destination, overwrite))
+        .map(|path| {
+            if simulator_id == LE_MANS_ULTIMATE_ID {
+                import_lmu_archive(&path, &destination, overwrite, latest_only)
+            } else {
+                import_archive(&path, &destination, overwrite)
+            }
+        })
         .collect();
-    index_imported_setups(&app, &simulator_id, &mut results, None, true);
+    index_imported_setups(app, simulator_id, &mut results, None, true);
     results
 }
 
@@ -1106,6 +1142,200 @@ fn setup_id(simulator_id: &str, path: &Path) -> String {
     format!("setup-{:x}", identity.finalize())
 }
 
+struct LmuArchiveSetup {
+    track: String,
+    name: String,
+    version: Option<[u32; 4]>,
+    car: String,
+    contents: Vec<u8>,
+}
+
+#[allow(clippy::too_many_lines)] // Validation remains linear so no archive entry is written before the pack is accepted.
+fn import_lmu_archive(
+    path: &Path,
+    setups_folder: &Path,
+    overwrite: bool,
+    latest_only: bool,
+) -> SetupImportResult {
+    let mut result = SetupImportResult::for_path(path);
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+    {
+        return result.fail("LMU setup archive must have a .zip extension");
+    }
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) => return result.fail(format!("could not open archive: {error}")),
+    };
+    if !metadata.is_file() {
+        return result.fail("setup archive is not a file");
+    }
+    if metadata.len() > MAX_ARCHIVE_BYTES {
+        return result.fail("setup archive exceeds the 512 MiB limit");
+    }
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) => return result.fail(format!("could not open archive: {error}")),
+    };
+    let mut archive = match ZipArchive::new(file) {
+        Ok(archive) => archive,
+        Err(error) => return result.fail(format!("could not read ZIP archive: {error}")),
+    };
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return result.fail("setup archive contains too many entries");
+    }
+
+    let mut setups = Vec::new();
+    let mut names = BTreeSet::new();
+    let mut total_setup_bytes = 0_u64;
+    for index in 0..archive.len() {
+        let mut entry = match archive.by_index(index) {
+            Ok(entry) => entry,
+            Err(error) => return result.fail(format!("could not inspect ZIP entry: {error}")),
+        };
+        if entry.is_dir()
+            || !Path::new(entry.name())
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("svm"))
+        {
+            continue;
+        }
+        if setups.len() >= MAX_SETUP_FILES {
+            return result.fail("setup archive contains too many .svm files");
+        }
+        if entry.size() > MAX_SETUP_BYTES {
+            return result.fail(format!(
+                "setup file {} exceeds the 4 MiB limit",
+                entry.name()
+            ));
+        }
+        total_setup_bytes = total_setup_bytes.saturating_add(entry.size());
+        if total_setup_bytes > MAX_TOTAL_SETUP_BYTES {
+            return result.fail("setup files exceed the 64 MiB expanded-size limit");
+        }
+        let Some(enclosed) = entry.enclosed_name() else {
+            return result.fail(format!(
+                "setup archive contains an unsafe path: {}",
+                entry.name()
+            ));
+        };
+        let Some(name) = enclosed
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .filter(|value| valid_windows_component(value))
+        else {
+            return result.fail("setup archive contains an unsafe setup name");
+        };
+        let Some(track) = enclosed
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .and_then(Path::file_name)
+            .map(|value| value.to_string_lossy().into_owned())
+            .filter(|value| valid_windows_component(value))
+        else {
+            return result.fail(format!(
+                "setup {name} is not inside a track folder; expected Track\\{name}"
+            ));
+        };
+        if !names.insert((track.clone(), name.clone())) {
+            return result.fail(format!("setup archive repeats {track}\\{name}"));
+        }
+        let contents = match read_bounded(&mut entry, MAX_SETUP_BYTES) {
+            Ok(contents) => contents,
+            Err(error) => return result.fail(format!("could not read setup file {name}: {error}")),
+        };
+        let identity = match parse_setup_identity(&contents) {
+            Ok(identity) => identity,
+            Err(error) => return result.fail(format!("could not inspect setup {name}: {error}")),
+        };
+        let car = identity.vehicle_package.unwrap_or(identity.vehicle_class);
+        if !valid_windows_component(&car) {
+            return result.fail(format!("setup {name} declares an unsafe vehicle identity"));
+        }
+        setups.push(LmuArchiveSetup {
+            track,
+            version: setup_version(&name),
+            name,
+            car,
+            contents,
+        });
+    }
+    if setups.is_empty() {
+        return result.fail("no .svm setup files were found in the archive");
+    }
+
+    let latest_version = latest_only
+        .then(|| setups.iter().filter_map(|setup| setup.version).max())
+        .flatten();
+    if let Some(latest_version) = latest_version {
+        let before = setups.len();
+        setups.retain(|setup| {
+            setup
+                .version
+                .is_none_or(|version| version == latest_version)
+        });
+        result.older_versions_skipped = before.saturating_sub(setups.len());
+    }
+    let Some(track) = setups.first().map(|setup| setup.track.clone()) else {
+        return result.fail("no setup files matched the latest version");
+    };
+    if setups.iter().any(|setup| setup.track != track) {
+        return result.fail("setup archive contains more than one track folder; import each track as a separate ZIP");
+    }
+    let Some(car) = setups.first().map(|setup| setup.car.clone()) else {
+        return result.fail("setup archive did not retain a vehicle identity");
+    };
+    if setups.iter().any(|setup| setup.car != car) {
+        return result.fail("setup archive contains setups for more than one vehicle");
+    }
+
+    let destination = setups_folder.join(&track);
+    if let Err(error) = fs::create_dir_all(&destination) {
+        return result.fail(format!(
+            "could not create {}: {error}",
+            destination.display()
+        ));
+    }
+    result.car = Some(car);
+    result.track = Some(track);
+    result.destination = Some(destination.to_string_lossy().into_owned());
+    for setup in setups {
+        match write_setup_file(&destination.join(&setup.name), &setup.contents, overwrite) {
+            Ok(true) => result.files.push(setup.name),
+            Ok(false) => result.skipped.push(setup.name),
+            Err(error) => return result.fail(error),
+        }
+    }
+    result.success = true;
+    result
+}
+
+fn setup_version(name: &str) -> Option<[u32; 4]> {
+    name.split_ascii_whitespace().find_map(|token| {
+        let value = token
+            .strip_prefix('V')
+            .or_else(|| token.strip_prefix('v'))?;
+        if value.is_empty()
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        {
+            return None;
+        }
+        let mut parsed = [0_u32; 4];
+        let mut count = 0;
+        for component in value.split('.') {
+            if component.is_empty() || count == parsed.len() {
+                return None;
+            }
+            parsed[count] = component.parse().ok()?;
+            count += 1;
+        }
+        (count > 0).then_some(parsed)
+    })
+}
+
 #[allow(clippy::too_many_lines)] // Kept linear so every archive validation precedes filesystem writes.
 fn import_archive(path: &Path, setups_folder: &Path, overwrite: bool) -> SetupImportResult {
     let mut result = SetupImportResult::for_path(path);
@@ -1501,6 +1731,58 @@ mod tests {
         assert_eq!(imported.track.as_deref(), Some("Monza"));
         assert!(settings.join("Monza/race.svm").is_file());
         fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn imports_only_the_latest_lmu_setup_version_from_an_archive() {
+        let root = test_directory();
+        let archive_path = root.join("go-pack.zip");
+        let settings = root.join("Settings");
+        let setup = b"VehicleClassSetting=\"GT3 Mercedes_AMG_GT3 WEC2026\"\n//VEH=C:\\LMU\\Installed\\Vehicles\\Mercedes_AMGGT3Evo_2025\\1.15\\car.VEH\n[GENERAL]\nFuelSetting=50\n";
+        write_archive(
+            &archive_path,
+            &[
+                ("Monza/GO V1.3.3 AMG Q Esport.svm", setup),
+                ("Monza/GO V1.4.3 AMG Q Esport.svm", setup),
+                ("Monza/GO V1.4.3 AMG R Esport.svm", setup),
+                ("Monza/GO V1.4.3 AMG Replay.Vcr", b"replay"),
+            ],
+        );
+
+        let imported = import_lmu_archive(&archive_path, &settings, false, true);
+
+        assert!(imported.success, "{:?}", imported.error);
+        assert_eq!(imported.track.as_deref(), Some("Monza"));
+        assert_eq!(imported.car.as_deref(), Some("Mercedes_AMGGT3Evo_2025"));
+        assert_eq!(imported.older_versions_skipped, 1);
+        assert_eq!(
+            imported.files,
+            vec!["GO V1.4.3 AMG Q Esport.svm", "GO V1.4.3 AMG R Esport.svm"]
+        );
+        assert!(!settings.join("Monza/GO V1.3.3 AMG Q Esport.svm").exists());
+        assert!(settings.join("Monza/GO V1.4.3 AMG Q Esport.svm").is_file());
+
+        let all_settings = root.join("AllSettings");
+        let imported_all = import_lmu_archive(&archive_path, &all_settings, false, false);
+        assert!(imported_all.success, "{:?}", imported_all.error);
+        assert_eq!(imported_all.files.len(), 3);
+        assert_eq!(imported_all.older_versions_skipped, 0);
+        assert!(
+            all_settings
+                .join("Monza/GO V1.3.3 AMG Q Esport.svm")
+                .is_file()
+        );
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn recognises_setup_pack_versions() {
+        assert_eq!(setup_version("GO V1.4 AMG R Safe.svm"), Some([1, 4, 0, 0]));
+        assert_eq!(
+            setup_version("GO V1.4.3 AMG R Safe.svm"),
+            Some([1, 4, 3, 0])
+        );
+        assert_eq!(setup_version("Unversioned setup.svm"), None);
     }
 
     #[test]
