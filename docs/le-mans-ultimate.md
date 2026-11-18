@@ -129,6 +129,12 @@ At the finish line, it derives sector three from the last lap and cumulative sec
 values. A completed lap with an observed false invalidation flag is stored as valid;
 sources without an authoritative validity channel remain unknown.
 
+Lap-counter and completed-lap-time fields can also be published on different shared-memory
+updates. TRACE therefore calculates its fallback from LMU's session and current-lap clocks,
+never from the collector's wall clock, and keeps the completed lap pending long enough to
+accept a subsequently published authoritative `mLastLapTime`. This avoids assigning the
+previous lap's time to a new lap and remains stable across process stalls or pauses.
+
 Tyre slip angle is derived from LMU's lateral and longitudinal ground-contact velocity
 for each wheel and stored in TRACE's canonical wheel channel. Values below 1 m/s contact
 speed are omitted because their direction is unstable. This enables the rule-based
@@ -205,14 +211,24 @@ mise run build-lmu-fixture-collector
 ```
 
 With LMU in an active session, run
-`capture_lmu_fixture.exe <output-directory> [duration-seconds]`. The collector prints
-`READY` before sampling at 10 Hz for up to ten minutes by default. Create an empty
+`capture_lmu_fixture.exe <output-directory> [duration-seconds] [interval-ms]`. The collector prints
+`READY` before sampling every 20 ms for up to ten minutes by default. Create an empty
 `STOP` file in the output directory to finish early without corrupting the compressed
 recording. It rebuilds every successful sample as a one-player mapping and removes
 driver names, Steam IDs, other vehicles, result streams, filesystem paths, and reserved
-expansion bytes before writing `snapshots.trlmu` and its text manifest. Inspect that
-output before adding an explicitly authorised fixture under
+expansion bytes before writing `snapshots.trlmu`, `lap-timing.csv`, and its text manifest.
+The CSV exposes the exact completed-lap counter, current and previous lap clocks, sector
+clock, and LMU session clock at every sample. This makes non-atomic shared-memory updates
+visible without retaining another driver's identity. Inspect that output before adding
+an explicitly authorised fixture under
 `crates/trace-lmu/tests/fixtures/`.
+
+For a lap-time discrepancy, begin capturing before leaving the pits and stop at least ten
+seconds after the final crossing. Keep the full-rate output and provide it together with
+the matching external MoTeC `.ld`/`.ldx`, the TRACE session export, and the in-game lap
+list. The reporter should also identify the LMU build, car, track, and session type. A
+thinned fixture is useful for general mapping tests but cannot prove publication order or
+hundredth-of-a-second timing.
 
 Inspect and optionally thin a capture from 10 Hz to 1 Hz with:
 

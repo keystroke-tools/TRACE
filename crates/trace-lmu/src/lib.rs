@@ -148,6 +148,8 @@ impl LmuSnapshot {
         let current_lap_time_ns =
             nonnegative(page.f64(telemetry + 12)? - page.f64(telemetry + 24)?)
                 .and_then(seconds_to_ns);
+        let simulator_session_time_ns =
+            nonnegative(page.f64(telemetry + 12)?).and_then(seconds_to_ns);
         let last_lap_time_ns = positive(page.f64(scoring + 168)?).and_then(seconds_to_ns);
         let sector = current_sector(page.i32(telemetry + 600)?);
         let last_sector_time_ns =
@@ -160,6 +162,7 @@ impl LmuSnapshot {
             lap: LapObservation {
                 completed_laps: u32::try_from(page.i16(scoring + 100)?).ok(),
                 normalized_position,
+                simulator_session_time_ns,
                 current_lap_time_ns,
                 last_lap_time_ns,
                 simulator_distance_m: lap_distance,
@@ -878,6 +881,7 @@ mod tests {
             .expect("frame");
         assert_eq!(frame.lap.completed_laps, Some(4));
         assert_eq!(frame.lap.normalized_position, Some(0.5));
+        assert_eq!(frame.lap.simulator_session_time_ns, Some(700_000_000_000));
         assert_eq!(frame.lap.current_sector_index, Some(1));
         assert_eq!(frame.lap.last_lap_time_ns, Some(95_000_000_000));
         assert_eq!(frame.lap.last_sector_time_ns, Some(31_000_000_000));

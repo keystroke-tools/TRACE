@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use trace_domain::{ElapsedNanoseconds, FrameSequence};
+use trace_domain::{ElapsedNanoseconds, FrameSequence, TelemetryFrame};
 use trace_lmu::LmuSnapshot;
 
 #[derive(Default)]
@@ -51,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut session = None;
     let mut previous_lap = None;
     let mut previous_sector = None;
+    let mut previous_last_lap_time = None;
     while let Some((elapsed_ms, bytes)) = read_snapshot(&mut input, snapshot_bytes)? {
         if summary.samples % 10 == 0
             && let Some(output) = &mut thin
@@ -68,15 +69,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(page_error)?;
         if frame.lap.completed_laps != previous_lap
             || frame.lap.current_sector_index != previous_sector
+            || frame.lap.last_lap_time_ns != previous_last_lap_time
         {
-            println!(
-                "event elapsed_ms={elapsed_ms} lap={:?} sector={:?} last_sector_ns={:?}",
-                frame.lap.completed_laps,
-                frame.lap.current_sector_index,
-                frame.lap.last_sector_time_ns
-            );
+            print_timing_event(elapsed_ms, &snapshot, &frame)?;
             previous_lap = frame.lap.completed_laps;
             previous_sector = frame.lap.current_sector_index;
+            previous_last_lap_time = frame.lap.last_lap_time_ns;
         }
         summary.samples += 1;
         summary.last_elapsed_ms = elapsed_ms;
@@ -145,6 +143,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(output) = thin {
         println!("thin_samples={}", output.finish()?);
     }
+    Ok(())
+}
+
+fn print_timing_event(
+    elapsed_ms: u64,
+    snapshot: &LmuSnapshot,
+    frame: &TelemetryFrame,
+) -> io::Result<()> {
+    println!(
+        "event elapsed_ms={elapsed_ms} session_elapsed_s={:.6} lap={:?} current_lap_ns={:?} last_lap_ns={:?} sector={:?} last_sector_ns={:?}",
+        snapshot.session_elapsed_seconds().map_err(page_error)?,
+        frame.lap.completed_laps,
+        frame.lap.current_lap_time_ns,
+        frame.lap.last_lap_time_ns,
+        frame.lap.current_sector_index,
+        frame.lap.last_sector_time_ns
+    );
     Ok(())
 }
 

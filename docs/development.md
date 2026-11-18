@@ -37,6 +37,7 @@ mise run format
 mise run check
 mise run bench-storage
 mise run build-ac-fixture-collector
+mise run build-lmu-fixture-collector
 mise run build-windows-desktop
 ```
 
@@ -68,6 +69,11 @@ produce a Windows executable without requiring a separate Windows Rust installat
 Run the resulting `capture_fixture.exe <output-directory>` as a Windows process while
 AC is on track. Its static page is reconstructed from a non-personal allowlist before
 being written; never replace this with a raw static-page dump.
+
+`build-lmu-fixture-collector` produces the equivalent privacy-redacted LMU diagnostic
+collector. Its default 20 ms interval is intentionally higher resolution than the
+checked-in fixture so delayed lap-counter, lap-clock, and sector-clock publications can
+be diagnosed against matching in-game and MoTeC results.
 
 `build-windows-desktop` uses the same cross environment plus task-scoped LLD and LLVM
 resource/library tools. It builds the frontend first and emits

@@ -80,6 +80,7 @@ struct ActiveSession {
     retain_frames: bool,
     laps: Vec<RecordedLap>,
     current_lap: Option<OpenLap>,
+    pending_lap_timing: Option<PendingLapTiming>,
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +88,7 @@ struct OpenLap {
     index: u32,
     sample_start: u64,
     started_offset_ns: u64,
+    started_simulator_offset_ns: Option<u64>,
     started_at_boundary: bool,
     validity_observed: bool,
     invalidated: bool,
@@ -109,8 +111,16 @@ struct PendingSector {
 struct InitialBoundaryCandidate {
     sample_start: u64,
     started_offset_ns: u64,
+    started_simulator_offset_ns: Option<u64>,
     sector: Option<u32>,
     lap_position: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingLapTiming {
+    recorded_lap_index: usize,
+    completed_laps: u32,
+    boundary_last_lap_time_ns: Option<u64>,
 }
 
 const INITIAL_BOUNDARY_CONFIRMATION_NS: u64 = 1_000_000_000;
@@ -242,6 +252,7 @@ impl ActiveSession {
             retain_frames,
             laps: Vec::new(),
             current_lap: None,
+            pending_lap_timing: None,
         }
     }
 
@@ -256,6 +267,7 @@ impl ActiveSession {
         }
 
         let sample_index = self.sample_count;
+        self.resolve_pending_lap_timing(frame);
         self.resynchronize_initial_lap_boundary(frame, sample_index);
         self.observe_lap_position(frame);
         self.observe_sector(frame);
@@ -266,6 +278,7 @@ impl ActiveSession {
                         index: completed_laps,
                         sample_start: sample_index,
                         started_offset_ns: frame.elapsed.0,
+                        started_simulator_offset_ns: inferred_simulator_lap_start(frame),
                         started_at_boundary: false,
                         validity_observed: false,
                         invalidated: false,
@@ -281,39 +294,8 @@ impl ActiveSession {
                 Some(open) if completed_laps == open.index => {}
                 Some(open) if completed_laps == open.index + 1 => {
                     let open = self.current_lap.take().expect("open lap exists");
-                    let partial = !open.started_at_boundary || !open.has_full_position_coverage();
-                    let boundary_offset_ns = inferred_lap_start_offset(frame);
-                    self.laps.push(RecordedLap {
-                        lap_index: open.index.saturating_add(1),
-                        started_offset_ns: open.started_offset_ns,
-                        duration_ns: (!partial).then_some(
-                            frame.lap.last_lap_time_ns.unwrap_or_else(|| {
-                                boundary_offset_ns.saturating_sub(open.started_offset_ns)
-                            }),
-                        ),
-                        sample_start: open.sample_start,
-                        sample_count: sample_index - open.sample_start,
-                        partial,
-                        validity_observed: open.validity_observed,
-                        invalidated: open.invalidated,
-                        max_tyres_out: open.max_tyres_out,
-                        sectors: open.sectors,
-                    });
-                    self.current_lap = Some(OpenLap {
-                        index: completed_laps,
-                        sample_start: sample_index,
-                        started_offset_ns: boundary_offset_ns,
-                        started_at_boundary: true,
-                        validity_observed: false,
-                        invalidated: false,
-                        max_tyres_out: None,
-                        current_sector_index: frame.lap.current_sector_index,
-                        pending_sector: None,
-                        initial_boundary_candidate: None,
-                        minimum_lap_position: frame.lap.normalized_position,
-                        maximum_lap_position: frame.lap.normalized_position,
-                        sectors: Vec::new(),
-                    });
+                    let next_lap = self.complete_lap(frame, sample_index, completed_laps, open);
+                    self.current_lap = Some(next_lap);
                 }
                 Some(open) if completed_laps < open.index => {
                     return Err(RecorderError::CompletedLapCounterRegressed);
@@ -340,6 +322,71 @@ impl ActiveSession {
             self.frames.push(frame.clone());
         }
         Ok(())
+    }
+
+    fn complete_lap(
+        &mut self,
+        frame: &TelemetryFrame,
+        sample_index: u64,
+        completed_laps: u32,
+        open: OpenLap,
+    ) -> OpenLap {
+        let partial = !open.started_at_boundary || !open.has_full_position_coverage();
+        let boundary_offset_ns = inferred_lap_start_offset(frame);
+        let boundary_simulator_offset_ns = inferred_simulator_lap_start(frame);
+        let previous_last_lap_time_ns = self
+            .last_frame
+            .as_ref()
+            .and_then(|previous| previous.lap.last_lap_time_ns);
+        let fresh_last_lap_time_ns = frame
+            .lap
+            .last_lap_time_ns
+            .filter(|value| Some(*value) != previous_last_lap_time_ns);
+        let simulator_duration_ns = open
+            .started_simulator_offset_ns
+            .zip(boundary_simulator_offset_ns)
+            .and_then(|(started, ended)| ended.checked_sub(started));
+        let recorded_lap_index = self.laps.len();
+        self.laps.push(RecordedLap {
+            lap_index: open.index.saturating_add(1),
+            started_offset_ns: open.started_offset_ns,
+            duration_ns: (!partial).then(|| {
+                fresh_last_lap_time_ns
+                    .or(simulator_duration_ns)
+                    .or(frame.lap.last_lap_time_ns)
+                    .unwrap_or_else(|| boundary_offset_ns.saturating_sub(open.started_offset_ns))
+            }),
+            sample_start: open.sample_start,
+            sample_count: sample_index - open.sample_start,
+            partial,
+            validity_observed: open.validity_observed,
+            invalidated: open.invalidated,
+            max_tyres_out: open.max_tyres_out,
+            sectors: open.sectors,
+        });
+        if !partial && boundary_simulator_offset_ns.is_some() && fresh_last_lap_time_ns.is_none() {
+            self.pending_lap_timing = Some(PendingLapTiming {
+                recorded_lap_index,
+                completed_laps,
+                boundary_last_lap_time_ns: frame.lap.last_lap_time_ns,
+            });
+        }
+        OpenLap {
+            index: completed_laps,
+            sample_start: sample_index,
+            started_offset_ns: boundary_offset_ns,
+            started_simulator_offset_ns: boundary_simulator_offset_ns,
+            started_at_boundary: true,
+            validity_observed: false,
+            invalidated: false,
+            max_tyres_out: None,
+            current_sector_index: frame.lap.current_sector_index,
+            pending_sector: None,
+            initial_boundary_candidate: None,
+            minimum_lap_position: frame.lap.normalized_position,
+            maximum_lap_position: frame.lap.normalized_position,
+            sectors: Vec::new(),
+        }
     }
 
     /// LMU can expose the formation lap with a zero completed-lap counter and then
@@ -372,6 +419,7 @@ impl ActiveSession {
             open.initial_boundary_candidate = Some(InitialBoundaryCandidate {
                 sample_start: sample_index,
                 started_offset_ns: inferred_lap_start_offset(frame),
+                started_simulator_offset_ns: inferred_simulator_lap_start(frame),
                 sector: frame.lap.current_sector_index,
                 lap_position: frame.lap.normalized_position,
             });
@@ -387,6 +435,7 @@ impl ActiveSession {
             index: open.index,
             sample_start: candidate.sample_start,
             started_offset_ns: candidate.started_offset_ns,
+            started_simulator_offset_ns: candidate.started_simulator_offset_ns,
             started_at_boundary: true,
             validity_observed: false,
             invalidated: false,
@@ -415,6 +464,27 @@ impl ActiveSession {
             open.maximum_lap_position
                 .map_or(position, |current| current.max(position)),
         );
+    }
+
+    fn resolve_pending_lap_timing(&mut self, frame: &TelemetryFrame) {
+        let Some(pending) = self.pending_lap_timing else {
+            return;
+        };
+        if frame.lap.completed_laps != Some(pending.completed_laps) {
+            self.pending_lap_timing = None;
+            return;
+        }
+        let Some(duration_ns) = frame
+            .lap
+            .last_lap_time_ns
+            .filter(|value| Some(*value) != pending.boundary_last_lap_time_ns)
+        else {
+            return;
+        };
+        if let Some(lap) = self.laps.get_mut(pending.recorded_lap_index) {
+            lap.duration_ns = Some(duration_ns);
+        }
+        self.pending_lap_timing = None;
     }
 
     fn observe_sector(&mut self, frame: &TelemetryFrame) {
@@ -484,6 +554,14 @@ fn inferred_lap_start_offset(frame: &TelemetryFrame) -> u64 {
         .unwrap_or(frame.elapsed.0)
 }
 
+fn inferred_simulator_lap_start(frame: &TelemetryFrame) -> Option<u64> {
+    frame
+        .lap
+        .simulator_session_time_ns
+        .zip(frame.lap.current_lap_time_ns)
+        .and_then(|(session_time, lap_time)| session_time.checked_sub(lap_time))
+}
+
 impl OpenLap {
     fn has_full_position_coverage(&self) -> bool {
         match (self.minimum_lap_position, self.maximum_lap_position) {
@@ -546,6 +624,20 @@ mod tests {
     ) -> TelemetryFrame {
         let mut value = frame(sequence, elapsed, completed, lap_time);
         value.lap.normalized_position = Some(position);
+        value
+    }
+
+    fn frame_with_simulator_clock(
+        sequence: u64,
+        elapsed: u64,
+        completed: u32,
+        session_time: u64,
+        lap_time: u64,
+        last_lap_time: Option<u64>,
+    ) -> TelemetryFrame {
+        let mut value = frame(sequence, elapsed, completed, lap_time);
+        value.lap.simulator_session_time_ns = Some(session_time);
+        value.lap.last_lap_time_ns = last_lap_time;
         value
     }
 
@@ -668,6 +760,64 @@ mod tests {
         };
         assert_eq!(session.laps[1].started_offset_ns, 400);
         assert_eq!(session.laps[1].duration_ns, Some(300));
+    }
+
+    #[test]
+    fn uses_one_simulator_clock_for_lap_time_fallback() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for value in [
+            frame_with_simulator_clock(1, 100, 0, 800, 700, None),
+            frame_with_simulator_clock(2, 200, 0, 900, 800, None),
+            frame_with_simulator_clock(3, 450, 1, 1_000, 10, None),
+            frame_with_simulator_clock(4, 1_000, 1, 1_100, 110, None),
+            frame_with_simulator_clock(5, 5_000, 1, 1_200, 210, None),
+            frame_with_simulator_clock(6, 7_000, 2, 1_295, 5, None),
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps[1].duration_ns, Some(300));
+    }
+
+    #[test]
+    fn accepts_authoritative_lap_time_published_after_the_lap_counter() {
+        let mut recorder = SessionRecorder::new();
+        recorder
+            .consume(AdapterEvent::Detected(source()))
+            .expect("detected");
+        recorder
+            .consume(AdapterEvent::Connected(SessionSeed::default()))
+            .expect("connected");
+        for value in [
+            frame_with_simulator_clock(1, 100, 0, 800, 700, Some(123)),
+            frame_with_simulator_clock(2, 200, 0, 900, 800, Some(123)),
+            frame_with_simulator_clock(3, 300, 1, 1_000, 10, Some(123)),
+            frame_with_simulator_clock(4, 400, 1, 1_100, 110, Some(123)),
+            frame_with_simulator_clock(5, 500, 1, 1_200, 210, Some(123)),
+            // LMU increments the counter before replacing the previous lap value.
+            frame_with_simulator_clock(6, 600, 2, 1_295, 5, Some(123)),
+            frame_with_simulator_clock(7, 700, 2, 1_310, 20, Some(297)),
+        ] {
+            recorder.consume(AdapterEvent::Frame(value)).expect("frame");
+        }
+        let output = recorder
+            .consume(AdapterEvent::Disconnected(DisconnectReason::SessionEnded))
+            .expect("disconnected");
+        let RecorderOutput::SessionCompleted(session) = &output[0] else {
+            panic!("expected completed session");
+        };
+        assert_eq!(session.laps[1].duration_ns, Some(297));
     }
 
     #[test]

@@ -3497,7 +3497,7 @@ fn create_export_file(
 }
 
 fn format_lap_time(duration_ns: u64) -> String {
-    let total_ms = duration_ns / 1_000_000;
+    let total_ms = duration_ns.saturating_add(500_000) / 1_000_000;
     let minutes = total_ms / 60_000;
     let seconds = (total_ms / 1_000) % 60;
     let milliseconds = total_ms % 1_000;
@@ -4080,7 +4080,7 @@ mod tests {
 
     #[test]
     fn lap_times_are_formatted_with_tabular_precision() {
-        assert_eq!(format_lap_time(110_906_999_999), "1:50.906");
+        assert_eq!(format_lap_time(110_906_999_999), "1:50.907");
         assert_eq!(format_lap_time(59_042_000_000), "0:59.042");
     }
 

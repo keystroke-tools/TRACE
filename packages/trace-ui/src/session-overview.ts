@@ -67,7 +67,7 @@ export function sectorPerformance(laps: SessionOverviewLap[], lap: SessionOvervi
 
 export function formatLapDurationNs(nanoseconds: number | null) {
 	if (nanoseconds == null || !Number.isFinite(nanoseconds)) return "—";
-	const milliseconds = Math.floor(nanoseconds / 1_000_000);
+	const milliseconds = Math.round(nanoseconds / 1_000_000);
 	const minutes = Math.floor(milliseconds / 60_000);
 	const seconds = Math.floor((milliseconds % 60_000) / 1_000);
 	return `${minutes}:${String(seconds).padStart(2, "0")}.${String(milliseconds % 1_000).padStart(3, "0")}`;

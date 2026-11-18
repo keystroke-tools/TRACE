@@ -235,6 +235,10 @@ pub type WheelStates = BTreeMap<WheelCorner, WheelState>;
 pub struct LapObservation {
     pub completed_laps: Option<u32>,
     pub normalized_position: Option<f32>,
+    /// Monotonic session clock from the simulator, used to keep lap-boundary
+    /// calculations in the same time domain as the simulator's lap clock.
+    #[serde(default)]
+    pub simulator_session_time_ns: Option<u64>,
     pub current_lap_time_ns: Option<u64>,
     /// Authoritative duration of the most recently completed lap, when exposed.
     pub last_lap_time_ns: Option<u64>,
