@@ -2995,6 +2995,7 @@ mod tests {
             lap: LapObservation {
                 completed_laps: Some(3),
                 normalized_position: Some(0.4),
+                simulator_session_time_ns: Some(8),
                 current_lap_time_ns: Some(9),
                 last_lap_time_ns: None,
                 simulator_distance_m: Some(10.0),
