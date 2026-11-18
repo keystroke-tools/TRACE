@@ -47,7 +47,7 @@ function normalizeServiceEndpoint(value: string) {
 	}
 }
 
-export function SettingsPage() {
+export function SettingsPage({ onShowChangelog }: { onShowChangelog: () => void }) {
 	const showToast = useToast();
 	const updater = useUpdater();
 	const [activeTab, setActiveTab] = useState<SettingsTab>("general");
@@ -956,22 +956,31 @@ export function SettingsPage() {
 								</div>
 							)}
 						</div>
-						<button
-							type="button"
-							onClick={runUpdateAction}
-							disabled={updateBusy}
-							className="min-h-11 min-w-44 shrink-0 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
-						>
-							{updater.phase === "checking"
-								? "CHECKING…"
-								: updater.phase === "downloading" || updater.phase === "installing" || updater.phase === "restarting"
-									? "UPDATING…"
-									: updater.availableVersion
-										? `${updater.phase === "failed" ? "TRY UPDATE" : "UPDATE NOW"} · ${updater.availableVersion}`
-										: updater.phase === "failed"
-											? "CHECK AGAIN"
-											: "CHECK FOR UPDATES"}
-						</button>
+						<div className="flex shrink-0 flex-wrap justify-end gap-2">
+							<button
+								type="button"
+								onClick={onShowChangelog}
+								className="min-h-11 border border-trace-divider bg-trace-deep px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-muted hover:border-trace-soft hover:text-trace-text"
+							>
+								WHAT&apos;S NEW
+							</button>
+							<button
+								type="button"
+								onClick={runUpdateAction}
+								disabled={updateBusy}
+								className="min-h-11 min-w-44 border border-trace-accent bg-trace-accent-wash px-4 font-mono text-[11px] font-bold tracking-[.06em] text-trace-accent hover:bg-trace-accent hover:text-trace-black disabled:cursor-wait disabled:border-trace-divider disabled:bg-trace-deep disabled:text-trace-dim"
+							>
+								{updater.phase === "checking"
+									? "CHECKING…"
+									: updater.phase === "downloading" || updater.phase === "installing" || updater.phase === "restarting"
+										? "UPDATING…"
+										: updater.availableVersion
+											? `${updater.phase === "failed" ? "TRY UPDATE" : "UPDATE NOW"} · ${updater.availableVersion}`
+											: updater.phase === "failed"
+												? "CHECK AGAIN"
+												: "CHECK FOR UPDATES"}
+							</button>
+						</div>
 					</div>
 				</section>
 			</div>

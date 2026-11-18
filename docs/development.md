@@ -87,6 +87,12 @@ Tauri's `latest.json`, and retains the installer as a workflow artifact. It also
 the standalone `trace.exe` and privacy-redacted `capture_fixture.exe` available for
 portable diagnostics.
 
+Before bumping a desktop release, update `CURRENT_CHANGELOG` in
+`apps/desktop/src/features/changelog/changelog.ts` with that release's user-facing
+highlights. TRACE shows those notes once on the first launch of each installed version
+and keeps them available from **Settings → Updates & About → What's new**. The seen
+version is stored locally, so manual installs and updater-driven installs behave the same.
+
 Tauri update signatures are independent of Windows Authenticode signing. Installed
 apps trust the public key committed in `tauri.conf.json`; GitHub Actions signs each
 installer using the `TAURI_SIGNING_PRIVATE_KEY` repository secret. The corresponding

@@ -16,6 +16,8 @@ import {
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
 import { ImportProgressOverlay } from "./components/ImportProgressOverlay";
+import { markChangelogSeen, shouldShowChangelog } from "./features/changelog/changelog";
+import { WhatsNewDialog } from "./features/changelog/WhatsNewDialog";
 import { ComparePage } from "./features/compare/ComparePage";
 import type { ComparisonSelection } from "./features/compare/comparison-selection";
 import { LivePage } from "./features/live/LivePage";
@@ -28,6 +30,7 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { SetupsPage } from "./features/setups/SetupsPage";
 import { StatsPage } from "./features/stats/StatsPage";
 import { autoIndexSetupsEnabled, indexDetectedSetupLibraries } from "./features/setups/setup-preferences";
+import { useUpdater } from "./features/update/UpdateContext";
 import { TitleBar } from "./TitleBar";
 import { useToast } from "./Toast";
 
@@ -39,6 +42,7 @@ function updateDiscordReviewActivity(activity: DiscordReviewActivity | null) {
 
 export function App() {
 	const showToast = useToast();
+	const updater = useUpdater();
 	const [status, setStatus] = useState<TelemetryStatus | null>(null);
 	const [liveBroadcast, setLiveBroadcast] = useState<LiveBroadcastStatus | null>(null);
 	const [liveSettings, setLiveSettings] = useState<LiveSettings | null>(null);
@@ -52,6 +56,7 @@ export function App() {
 	const [comparisonSelection, setComparisonSelection] = useState<ComparisonSelection | null>(null);
 	const [sharedImportProgress, setSharedImportProgress] = useState<SharedSessionImportProgress | null>(null);
 	const [starting, setStarting] = useState(true);
+	const [whatsNewOpen, setWhatsNewOpen] = useState(() => shouldShowChangelog(updater.currentVersion));
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
@@ -59,6 +64,15 @@ export function App() {
 	const startupSetupIndexStarted = useRef(false);
 	const openSession = sessions.find((session) => session.id === openSessionId) ?? null;
 	const summarySession = sessions.find((session) => session.id === summarySessionId) ?? null;
+
+	useEffect(() => {
+		if (shouldShowChangelog(updater.currentVersion)) setWhatsNewOpen(true);
+	}, [updater.currentVersion]);
+
+	function closeWhatsNew() {
+		markChangelogSeen(updater.currentVersion);
+		setWhatsNewOpen(false);
+	}
 
 	useEffect(() => {
 		if (!isTauri()) return undefined;
@@ -469,10 +483,11 @@ export function App() {
 				)}
 				{section === "OVERLAYS" && <OverlaysPage sessions={sessions} status={status} />}
 				{section === "SETUPS" && <SetupsPage />}
-				{section === "SETTINGS" && <SettingsPage />}
+				{section === "SETTINGS" && <SettingsPage onShowChangelog={() => setWhatsNewOpen(true)} />}
 			</section>
 			<Footer status={status} />
 			{starting && <StartupOverlay />}
+			{!starting && whatsNewOpen && <WhatsNewDialog version={updater.currentVersion} onClose={closeWhatsNew} />}
 			{summarySession && (
 				<SessionSummaryModal
 					session={summarySession}
