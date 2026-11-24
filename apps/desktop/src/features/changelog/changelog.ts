@@ -46,3 +46,9 @@ export function markChangelogSeen(version: string, storage: Pick<Storage, "setIt
 		// A locked-down webview should not prevent TRACE from opening.
 	}
 }
+
+export function consumeChangelog(version: string, storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage) {
+	if (!shouldShowChangelog(version, storage)) return false;
+	markChangelogSeen(version, storage);
+	return true;
+}

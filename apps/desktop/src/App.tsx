@@ -16,7 +16,7 @@ import {
 import { Footer } from "./app/Footer";
 import { Navigation, type Section } from "./app/Navigation";
 import { ImportProgressOverlay } from "./components/ImportProgressOverlay";
-import { markChangelogSeen, shouldShowChangelog } from "./features/changelog/changelog";
+import { consumeChangelog, markChangelogSeen } from "./features/changelog/changelog";
 import { WhatsNewDialog } from "./features/changelog/WhatsNewDialog";
 import { ComparePage } from "./features/compare/ComparePage";
 import type { ComparisonSelection } from "./features/compare/comparison-selection";
@@ -56,7 +56,7 @@ export function App() {
 	const [comparisonSelection, setComparisonSelection] = useState<ComparisonSelection | null>(null);
 	const [sharedImportProgress, setSharedImportProgress] = useState<SharedSessionImportProgress | null>(null);
 	const [starting, setStarting] = useState(true);
-	const [whatsNewOpen, setWhatsNewOpen] = useState(() => shouldShowChangelog(updater.currentVersion));
+	const [whatsNewOpen, setWhatsNewOpen] = useState(() => consumeChangelog(updater.currentVersion));
 	const announcedAutomaticSession = useRef<string | null>(null);
 	const announcedAutomaticError = useRef<string | null>(null);
 	const handledCompletedSession = useRef<string | null>(null);
@@ -66,7 +66,7 @@ export function App() {
 	const summarySession = sessions.find((session) => session.id === summarySessionId) ?? null;
 
 	useEffect(() => {
-		if (shouldShowChangelog(updater.currentVersion)) setWhatsNewOpen(true);
+		if (consumeChangelog(updater.currentVersion)) setWhatsNewOpen(true);
 	}, [updater.currentVersion]);
 
 	function closeWhatsNew() {
