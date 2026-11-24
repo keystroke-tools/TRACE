@@ -9,16 +9,12 @@ export const CURRENT_CHANGELOG: { intro: string; highlights: ChangelogHighlight[
 	intro: "A quick look at the changes that matter before you get back on track.",
 	highlights: [
 		{
-			title: "More reliable LMU lap times",
-			description: "Lap boundaries now stay on LMU's simulator clock and tolerate its completed-lap fields arriving on different updates.",
+			title: "Release notes stay dismissed",
+			description: "What's changed now appears once for each installed version, even when TRACE closes before you dismiss it.",
 		},
 		{
-			title: "Simpler LMU setup imports",
-			description: "Drop setup ZIP packs directly into TRACE and keep only the latest included revision when that is all you need.",
-		},
-		{
-			title: "Consistent timing everywhere",
-			description: "Desktop and shared-session views now use the same millisecond rounding for displayed lap and sector times.",
+			title: "More reliable server deployments",
+			description: "Self-hosted Docker builds now avoid concurrent cache corruption and use less memory during the final server link.",
 		},
 	],
 };
