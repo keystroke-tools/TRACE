@@ -30,8 +30,9 @@ COPY . .
 COPY --from=library-builder /src/crates/trace-server/assets/library \
     crates/trace-server/assets/library
 
-RUN --mount=type=cache,id=trace-cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=trace-server-target,target=/src/target \
+RUN --mount=type=cache,id=trace-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=trace-server-target-v2,target=/src/target,sharing=locked \
+    CARGO_BUILD_JOBS=2 RUSTFLAGS="-C link-arg=-Wl,--threads=1" \
     cargo build --locked --release -p trace-server --bin trace-server && \
     cp target/release/trace-server /usr/local/bin/trace-server
 
